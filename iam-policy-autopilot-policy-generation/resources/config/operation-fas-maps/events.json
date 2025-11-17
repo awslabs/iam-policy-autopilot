@@ -1,0 +1,8 @@
+{
+    "Name": "events",
+    "Operations": [
+         {
+            "Name" : "PutEvents"
+        }
+    ]
+}

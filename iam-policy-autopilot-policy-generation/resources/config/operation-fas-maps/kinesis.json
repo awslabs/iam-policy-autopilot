@@ -1,0 +1,35 @@
+{
+    "Name": "kinesis",
+    "Operations": [
+         {
+            "Name" : "PutRecord",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "kinesis.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "PutRecords",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "kinesis.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name": "GetRecords",
+             "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "kinesis.${region}.amazonaws.com"
+                }
+            }]
+        }
+    ]
+}

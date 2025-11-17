@@ -1,0 +1,97 @@
+{
+    "Name": "s3",
+    "Operations": [
+        {
+            "Name" : "CopyObject",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            },
+            {
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name": "CreateMultipartUpload",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "DeleteObject"
+        },
+        {
+            "Name" : "DeleteObjects"
+        },
+        {
+            "Name": "DeleteObjectTagging"
+        },
+        {
+            "Name" : "GetObject",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "GetObjectAcl"
+        },
+         {
+            "Name" : "HeadObject",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name": "ListObjectsV2"
+        },
+        {
+            "Name" : "PutObject",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name": "UploadPart",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        },
+         {
+            "Name": "UploadPartCopy",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "s3.${region}.amazonaws.com"
+                }
+            }]
+        }
+    ]
+}

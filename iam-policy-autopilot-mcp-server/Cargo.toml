@@ -1,0 +1,47 @@
+[package]
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+name = "iam-policy-autopilot-mcp-server"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+log.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+tempfile.workspace = true
+chrono.workspace = true
+schemars.workspace = true
+env_logger.workspace = true
+tokio.workspace = true
+
+axum = "^0.8"
+rmcp = { version = "^0.8" , features = [
+    "server",
+    "macros",
+    "client",
+    "transport-sse-server",
+    "transport-io",
+    "transport-streamable-http-server",
+    "auth",
+    "elicitation",
+    "schemars",
+]}  # Replace with the actual version used
+
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
+iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-denied" }
+
+[dev-dependencies]
+serial_test.workspace = true
+reqwest.workspace = true
+rmcp = { version = "^0.8" , features = [
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+]}  # Replace with the actual version used
+tokio = {version = "^1", features = ["full"]}

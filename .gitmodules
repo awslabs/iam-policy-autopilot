@@ -1,0 +1,6 @@
+[submodule "boto3"]
+	path = iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
+	url = https://github.com/boto/boto3.git
+[submodule "botocore"]
+	path = iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data
+	url = https://github.com/boto/botocore.git
