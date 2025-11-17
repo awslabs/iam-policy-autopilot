@@ -21,7 +21,9 @@ use std::process;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use iam_policy_autopilot_policy_generation::api::model::{AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig};
+use iam_policy_autopilot_policy_generation::api::model::{
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
+};
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
 use iam_policy_autopilot_tools::PolicyUploader;

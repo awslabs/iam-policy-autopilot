@@ -4,10 +4,10 @@
 //! mappings from waiter names to their underlying SDK operations.
 //! Waiters are available across all AWS SDKs (Python boto3, JavaScript/TypeScript, Go, etc.)
 
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use crate::embedded_data::EmbeddedServiceData;
 use crate::providers::JsonProvider;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Minimal waiter entry that only captures the operation field
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,11 +40,14 @@ impl WaitersRegistry {
     ///
     /// # Returns
     /// HashMap of waiter names to waiter entries, or None if no waiters found
-    pub async fn load_waiters_from_embedded(service_name: &str, api_version: &str) -> Option<HashMap<String, WaiterEntry>> {
+    pub async fn load_waiters_from_embedded(
+        service_name: &str,
+        api_version: &str,
+    ) -> Option<HashMap<String, WaiterEntry>> {
         let waiters_data = EmbeddedServiceData::get_waiters_raw(service_name, api_version)?;
-        
+
         let waiters_str = std::str::from_utf8(&waiters_data).ok()?;
-        
+
         match JsonProvider::parse::<WaitersDescription>(waiters_str).await {
             Ok(waiters_desc) => Some(waiters_desc.waiters),
             Err(_) => None, // Silently skip on parse error

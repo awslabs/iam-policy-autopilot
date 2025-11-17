@@ -4,9 +4,9 @@
 //! service definitions, ensuring that only legitimate AWS SDK calls are included in the
 //! final results. It performs parameter validation and filters out non-AWS method calls.
 
+use crate::extraction::sdk_model::{ServiceMethodRef, ServiceModelIndex, Shape};
+use crate::extraction::{Parameter, SdkMethodCall};
 use std::collections::HashSet;
-use crate::extraction::{SdkMethodCall, Parameter};
-use crate::extraction::sdk_model::{ServiceModelIndex, Shape, ServiceMethodRef};
 
 /// Method disambiguation engine for validating AWS SDK method calls.
 ///
@@ -36,15 +36,19 @@ impl<'a> MethodDisambiguator<'a> {
     /// # Returns
     ///
     /// A filtered list of validated AWS SDK method calls with accurate service mappings.
-    pub(crate) fn disambiguate_method_calls(&self, method_calls: Vec<SdkMethodCall>) -> Vec<SdkMethodCall> {
+    pub(crate) fn disambiguate_method_calls(
+        &self,
+        method_calls: Vec<SdkMethodCall>,
+    ) -> Vec<SdkMethodCall> {
         let mut validated_methods = Vec::new();
 
         for mut method_call in method_calls {
             // Check if this method name exists in the SDK
             if let Some(service_refs) = self.service_index.method_lookup.get(&method_call.name) {
                 // Validate the method call against each possible service
-                let valid_services = self.validate_method_against_services(&method_call, service_refs);
-                
+                let valid_services =
+                    self.validate_method_against_services(&method_call, service_refs);
+
                 if !valid_services.is_empty() {
                     // Update the method call with only the valid services
                     method_call.possible_services = valid_services;
@@ -94,7 +98,10 @@ impl<'a> MethodDisambiguator<'a> {
         };
 
         // Get the operation definition
-        let operation = match service_definition.operations.get(&service_ref.operation_name) {
+        let operation = match service_definition
+            .operations
+            .get(&service_ref.operation_name)
+        {
             Some(op) => op,
             None => return false, // Operation not found
         };
@@ -136,7 +143,12 @@ impl<'a> MethodDisambiguator<'a> {
     /// * `parameters` - The explicit parameters provided in the method call
     /// * `shape` - The AWS service input shape definition
     /// * `has_unpacking` - Whether dictionary unpacking is used (affects required parameter validation)
-    fn validate_parameters_against_shape(&self, parameters: &[Parameter], shape: &Shape, has_unpacking: bool) -> bool {
+    fn validate_parameters_against_shape(
+        &self,
+        parameters: &[Parameter],
+        shape: &Shape,
+        has_unpacking: bool,
+    ) -> bool {
         // Extract parameter names from the method call, filtering by parameter type instead of name prefix
         let provided_params: HashSet<String> = parameters
             .iter()
@@ -180,10 +192,11 @@ impl<'a> MethodDisambiguator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
     use crate::extraction::sdk_model::{
-        ServiceModelIndex, SdkServiceDefinition, ServiceMetadata, Operation, Shape, ShapeReference, ServiceMethodRef
+        Operation, SdkServiceDefinition, ServiceMetadata, ServiceMethodRef, ServiceModelIndex,
+        Shape, ShapeReference,
     };
+    use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
     use std::collections::HashMap;
 
     fn create_test_service_index() -> ServiceModelIndex {
@@ -195,33 +208,55 @@ mod tests {
         let mut shapes = HashMap::new();
 
         // Create CreateApiMapping operation
-        operations.insert("CreateApiMapping".to_string(), Operation {
-            name: "CreateApiMapping".to_string(),
-            input: Some(ShapeReference {
-                shape: "CreateApiMappingRequest".to_string(),
-            }),
-        });
+        operations.insert(
+            "CreateApiMapping".to_string(),
+            Operation {
+                name: "CreateApiMapping".to_string(),
+                input: Some(ShapeReference {
+                    shape: "CreateApiMappingRequest".to_string(),
+                }),
+            },
+        );
 
         // Create input shape with required and optional parameters
         let mut members = HashMap::new();
-        members.insert("DomainName".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        members.insert("Stage".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        members.insert("ApiId".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        members.insert("ApiMappingKey".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        members.insert(
+            "DomainName".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        members.insert(
+            "Stage".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        members.insert(
+            "ApiId".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        members.insert(
+            "ApiMappingKey".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        shapes.insert("CreateApiMappingRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members,
-            required: Some(vec!["DomainName".to_string(), "Stage".to_string(), "ApiId".to_string()]),
-        });
+        shapes.insert(
+            "CreateApiMappingRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members,
+                required: Some(vec![
+                    "DomainName".to_string(),
+                    "Stage".to_string(),
+                    "ApiId".to_string(),
+                ]),
+            },
+        );
 
         let service_def = SdkServiceDefinition {
             version: Some("2.0".to_string()),
@@ -229,20 +264,21 @@ mod tests {
                 api_version: "2018-11-29".to_string(),
                 service_id: "ApiGatewayV2".to_string(),
             },
-            operations, 
-            shapes, 
+            operations,
+            shapes,
             waiters: HashMap::new(),
         };
 
         services.insert("apigatewayv2".to_string(), service_def);
 
         // Add method lookup entry
-        method_lookup.insert("create_api_mapping".to_string(), vec![
-            ServiceMethodRef {
+        method_lookup.insert(
+            "create_api_mapping".to_string(),
+            vec![ServiceMethodRef {
                 service_name: "apigatewayv2".to_string(),
                 operation_name: "CreateApiMapping".to_string(),
-            }
-        ]);
+            }],
+        );
 
         ServiceModelIndex {
             services,
@@ -330,12 +366,10 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::DictionarySplat {
-                        expression: "**params".to_string(),
-                        position: 0,
-                    }
-                ],
+                parameters: vec![Parameter::DictionarySplat {
+                    expression: "**params".to_string(),
+                    position: 0,
+                }],
                 return_type: None,
                 start_position: (1, 1),
                 end_position: (1, 30),
@@ -357,14 +391,12 @@ mod tests {
             name: "non_aws_method".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "custom_param".to_string(),
-                        value: ParameterValue::Resolved("value".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                ],
+                parameters: vec![Parameter::Keyword {
+                    name: "custom_param".to_string(),
+                    value: ParameterValue::Resolved("value".to_string()),
+                    position: 0,
+                    type_annotation: None,
+                }],
                 return_type: None,
                 start_position: (1, 1),
                 end_position: (1, 30),

@@ -3,7 +3,6 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-
 /// Result type alias for operations that can fail with `ExtractorError`
 pub(crate) type Result<T> = std::result::Result<T, ExtractorError>;
 
@@ -50,7 +49,6 @@ pub enum ExtractorError {
         /// Unsupported language
         language: String,
     },
-
 
     /// Configuration validation and setup errors
     #[error("Configuration error: {message}")]
@@ -210,10 +208,10 @@ impl ExtractorError {
     }
 
     /// Create an unsupported language error
-    pub(crate) fn unsupported_language_override(
-        language: impl Into<String>,
-    ) -> Self {
-        Self::UnsupportedLanguage { language: language.into() }
+    pub(crate) fn unsupported_language_override(language: impl Into<String>) -> Self {
+        Self::UnsupportedLanguage {
+            language: language.into(),
+        }
     }
 
     /// Create a validation error
@@ -313,7 +311,7 @@ mod tests {
     fn test_file_system_error_creation() {
         let io_error = std::io::Error::new(std::io::ErrorKind::NotFound, "File not found");
         let error = ExtractorError::file_system("read", "/path/to/file", io_error);
-        
+
         assert!(matches!(error, ExtractorError::FileSystem { .. }));
         assert!(error.to_string().contains("read"));
         assert!(error.to_string().contains("/path/to/file"));

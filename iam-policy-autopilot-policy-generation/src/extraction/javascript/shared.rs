@@ -3,9 +3,9 @@
 //! This module contains common functionality shared between JavaScript and TypeScript
 //! extractors.
 
-use std::collections::HashMap;
-use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::extraction::javascript::types::JavaScriptScanResults;
+use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use std::collections::HashMap;
 
 /// Shared extraction utilities for JavaScript/TypeScript AWS SDK method calls
 pub(crate) struct ExtractionUtils;
@@ -15,7 +15,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_operations_from_imports<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
-    ) -> Vec<SdkMethodCall> 
+    ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
     {
@@ -24,14 +24,17 @@ impl ExtractionUtils {
         // Extract operations from Command imports (e.g., PutObjectCommand -> PutObject operation)
         method_calls.extend(Self::extract_command_operations(scan_results, scanner));
 
-        // Extract operations from paginate function imports (e.g., paginateQuery -> Query operation)  
+        // Extract operations from paginate function imports (e.g., paginateQuery -> Query operation)
         method_calls.extend(Self::extract_paginate_operations(scan_results, scanner));
 
         // Extract operations from waiter function imports (e.g., waitUntilBucketExists -> BucketExists waiter)
         method_calls.extend(Self::extract_waiter_operations(scan_results, scanner));
 
         // Extract operations from CommandInput imports (e.g., QueryCommandInput -> Query operation)
-        method_calls.extend(Self::extract_command_input_operations(scan_results, scanner));
+        method_calls.extend(Self::extract_command_input_operations(
+            scan_results,
+            scanner,
+        ));
 
         method_calls
     }
@@ -40,7 +43,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_command_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
-    ) -> Vec<SdkMethodCall> 
+    ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
     {
@@ -50,28 +53,32 @@ impl ExtractionUtils {
         for import_source in [&scan_results.imports, &scan_results.requires] {
             for sublibrary_info in import_source {
                 // Skip sublibraries that don't match known patterns
-                let Some(service) = Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary) else {
+                let Some(service) =
+                    Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary)
+                else {
                     continue;
                 };
-                
+
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a Command type (ends with "Command")
                     if import_info.original_name.ends_with("Command") {
                         // Extract operation name by removing "Command" suffix
-                        if let Some(operation_name) = import_info.original_name.strip_suffix("Command") {
+                        if let Some(operation_name) =
+                            import_info.original_name.strip_suffix("Command")
+                        {
                             // Try to find the actual constructor instantiation with arguments
                             // Use the local name for the search (handles renames)
                             let (usage_position, parameters) = scanner
                                 .find_command_instantiation_with_args(&import_info.local_name)
                                 .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
-                            
+
                             // Keep PascalCase operation name to match service index
                             // e.g., "CreateBucket" stays "CreateBucket"
                             let method_call = SdkMethodCall {
                                 name: operation_name.to_string(),
                                 possible_services: vec![service.clone()],
                                 metadata: Some(SdkMethodCallMetadata {
-                                    parameters, 
+                                    parameters,
                                     return_type: None,
                                     start_position: (usage_position, 1),
                                     end_position: (usage_position, 1),
@@ -92,7 +99,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_paginate_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
-    ) -> Vec<SdkMethodCall> 
+    ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
     {
@@ -102,21 +109,25 @@ impl ExtractionUtils {
         for import_source in [&scan_results.imports, &scan_results.requires] {
             for sublibrary_info in import_source {
                 // Skip sublibraries that don't match known patterns
-                let Some(service) = Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary) else {
+                let Some(service) =
+                    Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary)
+                else {
                     continue;
                 };
-                
+
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a paginate function (starts with "paginate")
                     if import_info.original_name.starts_with("paginate") {
                         // Extract operation name by removing "paginate" prefix
-                        if let Some(operation_name) = import_info.original_name.strip_prefix("paginate") {
+                        if let Some(operation_name) =
+                            import_info.original_name.strip_prefix("paginate")
+                        {
                             // Try to find the actual paginate function call with arguments
                             // Use the local name for the search (handles renames)
                             let (usage_position, parameters) = scanner
                                 .find_paginate_function_with_args(&import_info.local_name)
                                 .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
-                            
+
                             // Keep PascalCase operation name to match service index
                             // e.g., "ListTables" stays "ListTables"
                             let method_call = SdkMethodCall {
@@ -146,7 +157,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_waiter_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
-    ) -> Vec<SdkMethodCall> 
+    ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
     {
@@ -156,21 +167,25 @@ impl ExtractionUtils {
         for import_source in [&scan_results.imports, &scan_results.requires] {
             for sublibrary_info in import_source {
                 // Skip sublibraries that don't match known patterns
-                let Some(service) = Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary) else {
+                let Some(service) =
+                    Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary)
+                else {
                     continue;
                 };
-                
+
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a waiter function (starts with "waitUntil")
                     if import_info.original_name.starts_with("waitUntil") {
                         // Extract waiter name by removing "waitUntil" prefix
-                        if let Some(waiter_name) = import_info.original_name.strip_prefix("waitUntil") {
+                        if let Some(waiter_name) =
+                            import_info.original_name.strip_prefix("waitUntil")
+                        {
                             // Try to find the actual waiter function call with arguments
                             // Use the local name for the search (handles renames)
                             let (usage_position, parameters) = scanner
                                 .find_waiter_function_with_args(&import_info.local_name)
                                 .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
-                            
+
                             // Keep PascalCase waiter name
                             // e.g., "BucketExists" from "waitUntilBucketExists"
                             // This will be resolved to the actual operation (e.g., "HeadBucket") in filter_map
@@ -181,7 +196,7 @@ impl ExtractionUtils {
                                     parameters, // Extracted from 2nd argument (operation params)
                                     return_type: None,
                                     start_position: (usage_position, 1),
-                                    end_position: (usage_position, 1), 
+                                    end_position: (usage_position, 1),
                                     receiver: None, // Waiter functions are standalone
                                 }),
                             };
@@ -199,7 +214,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_command_input_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
-    ) -> Vec<SdkMethodCall> 
+    ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
     {
@@ -209,10 +224,12 @@ impl ExtractionUtils {
         for import_source in [&scan_results.imports, &scan_results.requires] {
             for sublibrary_info in import_source {
                 // Skip sublibraries that don't match known patterns
-                let Some(service) = Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary) else {
+                let Some(service) =
+                    Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary)
+                else {
                     continue;
                 };
-                
+
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a CommandInput or Input type
                     let operation_name = if import_info.original_name.ends_with("CommandInput") {
@@ -228,7 +245,7 @@ impl ExtractionUtils {
                         let usage_position = scanner
                             .find_command_input_usage_position(&import_info.local_name)
                             .unwrap_or(import_info.line); // Fallback to import position
-                        
+
                         // Keep PascalCase operation name to match service index
                         // e.g., "Query" stays "Query"
                         let method_call = SdkMethodCall {
@@ -238,7 +255,7 @@ impl ExtractionUtils {
                                 parameters: Vec::new(), // TODO: Extract from variable assignments
                                 return_type: None,
                                 start_position: (usage_position, 1), // Using enhanced position tracking
-                                end_position: (usage_position, 1),   // Using enhanced position tracking
+                                end_position: (usage_position, 1), // Using enhanced position tracking
                                 receiver: None,
                             }),
                         };
@@ -265,7 +282,9 @@ impl ExtractionUtils {
             }
 
             // Skip method calls from sublibraries that don't match known patterns
-            let Some(service) = Self::extract_service_from_sublibrary(&method_call.client_sublibrary) else {
+            let Some(service) =
+                Self::extract_service_from_sublibrary(&method_call.client_sublibrary)
+            else {
                 continue;
             };
 
@@ -287,7 +306,7 @@ impl ExtractionUtils {
                     receiver: Some(method_call.client_variable.clone()),
                 }),
             };
-            
+
             operations.push(sdk_method_call);
         }
 
@@ -300,7 +319,7 @@ impl ExtractionUtils {
         if input.is_empty() {
             return input.to_string();
         }
-        
+
         let mut chars = input.chars();
         if let Some(first_char) = chars.next() {
             first_char.to_uppercase().collect::<String>() + chars.as_str()
@@ -318,7 +337,11 @@ impl ExtractionUtils {
         // "client-lambda" -> Some("lambda")
         if let Some(service) = sublibrary.strip_prefix("client-") {
             Some(service.to_string())
-        } else { sublibrary.strip_prefix("lib-").map(|service| service.to_string()) }
+        } else {
+            sublibrary
+                .strip_prefix("lib-")
+                .map(|service| service.to_string())
+        }
     }
 
     /// Convert argument HashMap to Parameter vector
@@ -339,7 +362,6 @@ impl ExtractionUtils {
 
         parameters
     }
-
 }
 
 #[cfg(test)]
@@ -349,16 +371,40 @@ mod tests {
     #[test]
     fn test_extract_service_from_sublibrary() {
         // Test successful pattern matching (Some cases)
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("client-s3"), Some("s3".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("lib-dynamodb"), Some("dynamodb".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("client-lambda"), Some("lambda".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("client-ec2"), Some("ec2".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("lib-storage"), Some("storage".to_string()));
-        
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-s3"),
+            Some("s3".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("lib-dynamodb"),
+            Some("dynamodb".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-lambda"),
+            Some("lambda".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-ec2"),
+            Some("ec2".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("lib-storage"),
+            Some("storage".to_string())
+        );
+
         // Test unsuccessful pattern matching (None cases)
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("other"), None);
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("unknown-prefix-service"), None);
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("service-s3"), None);
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("other"),
+            None
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("unknown-prefix-service"),
+            None
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("service-s3"),
+            None
+        );
         assert_eq!(ExtractionUtils::extract_service_from_sublibrary(""), None);
     }
 
@@ -391,9 +437,18 @@ mod tests {
 
     #[test]
     fn test_camel_case_to_pascal_case() {
-        assert_eq!(ExtractionUtils::camel_case_to_pascal_case("getObject"), "GetObject");
-        assert_eq!(ExtractionUtils::camel_case_to_pascal_case("listTables"), "ListTables");
-        assert_eq!(ExtractionUtils::camel_case_to_pascal_case("createBucket"), "CreateBucket");
+        assert_eq!(
+            ExtractionUtils::camel_case_to_pascal_case("getObject"),
+            "GetObject"
+        );
+        assert_eq!(
+            ExtractionUtils::camel_case_to_pascal_case("listTables"),
+            "ListTables"
+        );
+        assert_eq!(
+            ExtractionUtils::camel_case_to_pascal_case("createBucket"),
+            "CreateBucket"
+        );
         assert_eq!(ExtractionUtils::camel_case_to_pascal_case("query"), "Query");
         assert_eq!(ExtractionUtils::camel_case_to_pascal_case(""), "");
     }

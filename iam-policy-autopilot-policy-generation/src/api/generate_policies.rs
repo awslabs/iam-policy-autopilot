@@ -4,10 +4,7 @@ use std::time::Instant;
 use log::{debug, info, trace};
 
 use crate::{
-    api::{
-        common::process_source_files,
-        model::GeneratePolicyConfig,
-    },
+    api::{common::process_source_files, model::GeneratePolicyConfig},
     extraction::SdkMethodCall,
     policy_generation::{merge::PolicyMergerConfig, MethodActionMapping, PolicyWithMetadata},
     EnrichmentEngine, PolicyGenerationEngine,
@@ -38,7 +35,8 @@ pub async fn generate_policies(
 
     let extracted_methods = extracted_methods
         .methods
-        .into_iter().collect::<Vec<SdkMethodCall>>();
+        .into_iter()
+        .collect::<Vec<SdkMethodCall>>();
 
     debug!(
         "Extracted {} methods, starting enrichment pipeline",
@@ -54,9 +52,7 @@ pub async fn generate_policies(
     let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
 
     // Run the complete enrichment pipeline
-    let enriched_results = enrichment_engine
-        .enrich_methods(&extracted_methods)
-        .await?;
+    let enriched_results = enrichment_engine.enrich_methods(&extracted_methods).await?;
 
     let enrichment_duration = pipeline_start.elapsed();
     trace!("Enrichment pipeline completed in {:?}", enrichment_duration);
@@ -65,7 +61,7 @@ pub async fn generate_policies(
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
     };
-    
+
     let policy_engine = PolicyGenerationEngine::with_merger_config(
         &config.aws_context.partition,
         &config.aws_context.region,
@@ -96,7 +92,7 @@ pub async fn generate_policies(
             .merge_policies(&final_policies)
             .context("Failed to merge IAM policies")?;
     }
-    
+
     // Handle policy output based on configuration
     if config.generate_action_mappings {
         // Extract method to action mappings using the core method

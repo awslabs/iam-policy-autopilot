@@ -1,27 +1,30 @@
 //! SDK method extraction for Go using ast-grep
 
-use async_trait::async_trait;
-use ast_grep_core::tree_sitter::LanguageExt;
-use ast_grep_language::Go;
-use ast_grep_config::from_yaml_string;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::go::disambiguation::GoMethodDisambiguator;
 use crate::extraction::go::paginator_extractor::GoPaginatorExtractor;
-use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
 use crate::extraction::go::types::{GoImportInfo, ImportInfo};
+use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
+use ast_grep_config::from_yaml_string;
+use ast_grep_core::tree_sitter::LanguageExt;
+use ast_grep_language::Go;
+use async_trait::async_trait;
 
-pub(crate) struct GoExtractor { }
+pub(crate) struct GoExtractor {}
 
 impl GoExtractor {
     /// Create a new Go extractor instance
     pub(crate) fn new() -> Self {
-        Self { }
+        Self {}
     }
 
     /// Extract import statements from Go source code using ast-grep
-    fn extract_imports(&self, ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>) -> GoImportInfo {
+    fn extract_imports(
+        &self,
+        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> GoImportInfo {
         let mut import_info = GoImportInfo::new();
         let root = ast.root();
 
@@ -38,7 +41,8 @@ rule:
 "#;
 
         let globals = ast_grep_config::GlobalRules::default();
-        let config = &from_yaml_string::<Go>(import_config, &globals).expect("import rule should parse")[0];
+        let config =
+            &from_yaml_string::<Go>(import_config, &globals).expect("import rule should parse")[0];
 
         // Find all import statements
         for node_match in root.find_all(&config.matcher) {
@@ -64,7 +68,8 @@ rule:
         kind: interpreted_string_literal
 "#;
 
-        let alias_config = &from_yaml_string::<Go>(import_alias_config, &globals).expect("import alias rule should parse")[0];
+        let alias_config = &from_yaml_string::<Go>(import_alias_config, &globals)
+            .expect("import alias rule should parse")[0];
 
         // Find all aliased import statements
         for node_match in root.find_all(&alias_config.matcher) {
@@ -77,50 +82,57 @@ rule:
     }
 
     /// Parse a single import statement
-    fn parse_import(&self, node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>) -> Option<ImportInfo> {
+    fn parse_import(
+        &self,
+        node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> Option<ImportInfo> {
         let env = node_match.get_env();
-        
+
         if let Some(path_node) = env.get_match("PATH") {
             let path_text = path_node.text();
             // Remove quotes from the import path
             let import_path = path_text.trim_matches('"');
-            
+
             // Extract the package name (last part of the path)
             let package_name = import_path.split('/').next_back().unwrap_or(import_path);
-            
+
             // Get line number
             let line = path_node.start_pos().line() + 1;
-            
+
             return Some(ImportInfo::new(
                 import_path.to_string(),
                 package_name.to_string(),
-                line
+                line,
             ));
         }
-        
+
         None
     }
 
     /// Parse an aliased import statement
-    fn parse_aliased_import(&self, node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>) -> Option<ImportInfo> {
+    fn parse_aliased_import(
+        &self,
+        node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> Option<ImportInfo> {
         let env = node_match.get_env();
-        
-        if let (Some(alias_node), Some(path_node)) = (env.get_match("ALIAS"), env.get_match("PATH")) {
+
+        if let (Some(alias_node), Some(path_node)) = (env.get_match("ALIAS"), env.get_match("PATH"))
+        {
             let alias_text = alias_node.text();
             let path_text = path_node.text();
             // Remove quotes from the import path
             let import_path = path_text.trim_matches('"');
-            
+
             // Get line number
             let line = path_node.start_pos().line() + 1;
-            
+
             return Some(ImportInfo::new(
                 import_path.to_string(),
                 alias_text.to_string(),
-                line
+                line,
             ));
         }
-        
+
         None
     }
 
@@ -130,9 +142,11 @@ rule:
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
     ) -> Option<SdkMethodCall> {
         let env = node_match.get_env();
-        
+
         // Extract the receiver (object before the dot)
-        let receiver = env.get_match("OBJ").map(|obj_node| obj_node.text().to_string());
+        let receiver = env
+            .get_match("OBJ")
+            .map(|obj_node| obj_node.text().to_string());
 
         // Extract the method name
         let method_name = if let Some(method_node) = env.get_match("METHOD") {
@@ -149,7 +163,7 @@ rule:
         let node = node_match.get_node();
         let start = node.start_pos();
         let end = node.end_pos();
-        
+
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
@@ -171,10 +185,10 @@ rule:
         args_nodes: &[ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>],
     ) -> Vec<Parameter> {
         let mut parameters = Vec::new();
-        
+
         for (position, arg_node) in args_nodes.iter().enumerate() {
             let arg_text = arg_node.text().to_string();
-            
+
             // Check if this is a context parameter (first parameter in Go AWS SDK calls)
             if position == 0 && self.is_context_parameter(arg_node) {
                 parameters.push(Parameter::context(arg_text, position));
@@ -195,13 +209,19 @@ rule:
     }
 
     /// Check if a node represents a context parameter
-    fn is_context_parameter(&self, node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>) -> bool {
+    fn is_context_parameter(
+        &self,
+        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> bool {
         let text = node.text();
         text.starts_with("context.") || text == "ctx" || text.contains("Context")
     }
 
     /// Check if a node represents a struct literal (&Type{...})
-    fn is_struct_literal(&self, node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>) -> bool {
+    fn is_struct_literal(
+        &self,
+        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> bool {
         let text = node.text();
         let trimmed = text.trim();
         trimmed.starts_with('&') && trimmed.contains('{') && trimmed.ends_with('}')
@@ -214,23 +234,23 @@ rule:
         position: usize,
     ) -> Option<Parameter> {
         let text = node.text();
-        
+
         // Extract type name from &TypeName{...}
         let type_start = if text.starts_with('&') { 1 } else { 0 };
         let brace_pos = text.find('{')?;
         let type_name = text[type_start..brace_pos].trim().to_string();
-        
+
         // Extract fields from the struct literal
         let fields_text = &text[brace_pos + 1..text.len() - 1];
         let fields = self.parse_struct_fields(fields_text);
-        
+
         Some(Parameter::struct_literal(type_name, fields, position))
     }
 
     /// Parse struct fields from the content between braces
     fn parse_struct_fields(&self, fields_text: &str) -> Vec<StructField> {
         let mut fields = Vec::new();
-        
+
         // Simple parsing - split by commas and extract field: value pairs
         // This is a basic implementation; a more robust version would use proper AST parsing
         for field_part in fields_text.split(',') {
@@ -238,14 +258,14 @@ rule:
             if field_part.is_empty() {
                 continue;
             }
-            
+
             if let Some(colon_pos) = field_part.find(':') {
                 let name = field_part[..colon_pos].trim().to_string();
                 let value = field_part[colon_pos + 1..].trim().to_string();
                 fields.push(StructField { name, value });
             }
         }
-        
+
         fields
     }
 }
@@ -270,9 +290,9 @@ impl Extractor for GoExtractor {
     async fn parse(&self, source_code: &str) -> crate::extraction::extractor::ExtractorResult {
         let ast_grep = Go.ast_grep(source_code);
         let root = ast_grep.root();
-        
+
         let mut method_calls = Vec::new();
-        
+
         let config = r#"
 id: method_call_extraction
 language: Go
@@ -295,27 +315,31 @@ rule:
         pattern: $$$ARGS
         kind: argument_list
         "#;
-        
+
         let globals = ast_grep_config::GlobalRules::default();
         let config = &from_yaml_string::<Go>(config, &globals).expect("rule should parse")[0];
-        
+
         // Find all method calls with attribute access: receiver.method(args)
         for node_match in root.find_all(&config.matcher) {
             if let Some(method_call) = self.parse_method_call(&node_match) {
                 method_calls.push(method_call);
             }
         }
-        
+
         // Extract import information
         let import_info = self.extract_imports(&ast_grep);
-        
+
         crate::extraction::extractor::ExtractorResult::Go(ast_grep, method_calls, import_info)
     }
 
-    fn filter_map(&self, extractor_results: &mut [ExtractorResult], service_index: &ServiceModelIndex) {
+    fn filter_map(
+        &self,
+        extractor_results: &mut [ExtractorResult],
+        service_index: &ServiceModelIndex,
+    ) {
         let method_disambiguator = GoMethodDisambiguator::new(service_index);
         let waiter_extractor = GoWaiterExtractor::new(service_index);
-        
+
         for extractor_result in extractor_results.iter_mut() {
             match extractor_result {
                 ExtractorResult::Python(_, _) => {
@@ -326,14 +350,15 @@ rule:
                     // Add waiter method calls
                     let waiter_calls = waiter_extractor.extract_waiter_method_calls(ast);
                     method_calls.extend(waiter_calls);
-                    
+
                     // Add paginator method calls
                     let paginator_extractor = GoPaginatorExtractor::new(service_index);
                     let paginator_calls = paginator_extractor.extract_paginator_method_calls(ast);
                     method_calls.extend(paginator_calls);
-                    
+
                     // Clone the method calls to pass to disambiguate_method_calls
-                    let filtered_and_mapped = method_disambiguator.disambiguate_method_calls(method_calls.clone(), Some(import_info));
+                    let filtered_and_mapped = method_disambiguator
+                        .disambiguate_method_calls(method_calls.clone(), Some(import_info));
                     // Replace the method calls in place
                     *method_calls = filtered_and_mapped;
                 }
@@ -349,8 +374,11 @@ rule:
         }
     }
 
-    fn disambiguate(&self, _extractor_results: &mut [ExtractorResult], _service_index: &ServiceModelIndex) {
-
+    fn disambiguate(
+        &self,
+        _extractor_results: &mut [ExtractorResult],
+        _service_index: &ServiceModelIndex,
+    ) {
     }
 }
 
@@ -366,13 +394,18 @@ impl Parameter {
     }
 
     /// Create a struct literal parameter
-    pub(crate) fn struct_literal(type_name: String, fields: Vec<StructField>, position: usize) -> Self {
+    pub(crate) fn struct_literal(
+        type_name: String,
+        fields: Vec<StructField>,
+        position: usize,
+    ) -> Self {
         // Convert struct fields to a string representation
-        let fields_str = fields.iter()
+        let fields_str = fields
+            .iter()
             .map(|f| format!("{}: {}", f.name, f.value))
             .collect::<Vec<_>>()
             .join(", ");
-        
+
         Parameter::Positional {
             value: ParameterValue::Unresolved(format!("&{}{{ {} }}", type_name, fields_str)),
             position,
@@ -397,7 +430,7 @@ mod tests {
     #[tokio::test]
     async fn test_go_method_call_parsing() {
         let extractor = GoExtractor::new();
-        
+
         // Now test with the AWS SDK code
         let aws_code = r#"
 package main
@@ -434,23 +467,29 @@ func main() {
     }
 }
         "#;
-        
+
         let result = extractor.parse(aws_code).await;
         let aws_method_calls = result.method_calls_ref();
-        
+
         println!("AWS test - Found {} method calls:", aws_method_calls.len());
         for call in aws_method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
-        assert!(aws_method_calls.len() == 11, "Should find at least one method call in either test");
+
+        assert!(
+            aws_method_calls.len() == 11,
+            "Should find at least one method call in either test"
+        );
     }
 
     #[tokio::test]
     async fn test_chained_method_call_parsing() {
         let extractor = GoExtractor::new();
-        
+
         // Test the specific issue with chained method calls
         let test_code = r#"
 package main
@@ -468,35 +507,52 @@ func main() {
     result2, err2 := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
         let method_calls = result.method_calls_ref();
-        
-        println!("Chained method call test - Found {} method calls:", method_calls.len());
+
+        println!(
+            "Chained method call test - Found {} method calls:",
+            method_calls.len()
+        );
         for call in method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
+
         // We should find 2 GetCallerIdentity calls
-        let get_caller_identity_calls: Vec<_> = method_calls.iter()
+        let get_caller_identity_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "GetCallerIdentity")
             .collect();
-        
-        assert_eq!(get_caller_identity_calls.len(), 2, "Should find 2 GetCallerIdentity calls");
-        
+
+        assert_eq!(
+            get_caller_identity_calls.len(),
+            2,
+            "Should find 2 GetCallerIdentity calls"
+        );
+
         // Check the receivers
-        let receivers: Vec<_> = get_caller_identity_calls.iter()
-            .map(|call| call.metadata.as_ref().and_then(|m| m.receiver.as_ref()).unwrap())
+        let receivers: Vec<_> = get_caller_identity_calls
+            .iter()
+            .map(|call| {
+                call.metadata
+                    .as_ref()
+                    .and_then(|m| m.receiver.as_ref())
+                    .unwrap()
+            })
             .collect();
-        
+
         println!("Receivers found: {:?}", receivers);
     }
 
     #[tokio::test]
     async fn test_longer_chained_method_call_parsing() {
         let extractor = GoExtractor::new();
-        
+
         // Test with longer chains to ensure the pattern works for complex scenarios
         let test_code = r#"
 package main
@@ -518,41 +574,68 @@ func main() {
     result3, err3 := client.GetObject(ctx, &s3.GetObjectInput{})
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
         let method_calls = result.method_calls_ref();
-        
-        println!("Longer chain test - Found {} method calls:", method_calls.len());
+
+        println!(
+            "Longer chain test - Found {} method calls:",
+            method_calls.len()
+        );
         for call in method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
+
         // We should find 3 method calls
         assert_eq!(method_calls.len(), 3, "Should find 3 method calls");
-        
+
         // Check specific method calls and their receivers
-        let list_buckets_call = method_calls.iter()
+        let list_buckets_call = method_calls
+            .iter()
             .find(|call| call.name == "ListBuckets")
             .expect("Should find ListBuckets call");
         assert_eq!(
-            list_buckets_call.metadata.as_ref().unwrap().receiver.as_ref().unwrap(),
+            list_buckets_call
+                .metadata
+                .as_ref()
+                .unwrap()
+                .receiver
+                .as_ref()
+                .unwrap(),
             "app.services.s3Client"
         );
-        
-        let describe_instances_call = method_calls.iter()
+
+        let describe_instances_call = method_calls
+            .iter()
             .find(|call| call.name == "DescribeInstances")
             .expect("Should find DescribeInstances call");
         assert_eq!(
-            describe_instances_call.metadata.as_ref().unwrap().receiver.as_ref().unwrap(),
+            describe_instances_call
+                .metadata
+                .as_ref()
+                .unwrap()
+                .receiver
+                .as_ref()
+                .unwrap(),
             "config.aws.clients.ec2"
         );
-        
-        let get_object_call = method_calls.iter()
+
+        let get_object_call = method_calls
+            .iter()
             .find(|call| call.name == "GetObject")
             .expect("Should find GetObject call");
         assert_eq!(
-            get_object_call.metadata.as_ref().unwrap().receiver.as_ref().unwrap(),
+            get_object_call
+                .metadata
+                .as_ref()
+                .unwrap()
+                .receiver
+                .as_ref()
+                .unwrap(),
             "client"
         );
     }
@@ -560,7 +643,7 @@ func main() {
     #[tokio::test]
     async fn test_method_calls_in_receiver_chain() {
         let extractor = GoExtractor::new();
-        
+
         // Test with method calls within the receiver chain
         let test_code = r#"
 package main
@@ -582,47 +665,71 @@ func main() {
     result3, err3 := factory.createClient("s3").GetObject(ctx, &s3.GetObjectInput{})
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
         let method_calls = result.method_calls_ref();
-        
-        println!("Method calls in receiver chain test - Found {} method calls:", method_calls.len());
+
+        println!(
+            "Method calls in receiver chain test - Found {} method calls:",
+            method_calls.len()
+        );
         for call in method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
+
         // Let's see what we actually get and analyze the behavior
         // We expect to find multiple method calls, including the intermediate ones
-        assert!(method_calls.len() >= 3, "Should find at least 3 method calls");
-        
+        assert!(
+            method_calls.len() >= 3,
+            "Should find at least 3 method calls"
+        );
+
         // Check if we can find the final method calls we're interested in
-        let list_buckets_calls: Vec<_> = method_calls.iter()
+        let list_buckets_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "ListBuckets")
             .collect();
-        let describe_instances_calls: Vec<_> = method_calls.iter()
+        let describe_instances_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "DescribeInstances")
             .collect();
-        let get_object_calls: Vec<_> = method_calls.iter()
+        let get_object_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "GetObject")
             .collect();
-        
+
         println!("Found {} ListBuckets calls", list_buckets_calls.len());
-        println!("Found {} DescribeInstances calls", describe_instances_calls.len());
+        println!(
+            "Found {} DescribeInstances calls",
+            describe_instances_calls.len()
+        );
         println!("Found {} GetObject calls", get_object_calls.len());
-        
+
         // We should find at least one of each final method call
-        assert!(!list_buckets_calls.is_empty(), "Should find at least 1 ListBuckets call");
-        assert!(!describe_instances_calls.is_empty(), "Should find at least 1 DescribeInstances call");
-        assert!(!get_object_calls.is_empty(), "Should find at least 1 GetObject call");
-        
+        assert!(
+            !list_buckets_calls.is_empty(),
+            "Should find at least 1 ListBuckets call"
+        );
+        assert!(
+            !describe_instances_calls.is_empty(),
+            "Should find at least 1 DescribeInstances call"
+        );
+        assert!(
+            !get_object_calls.is_empty(),
+            "Should find at least 1 GetObject call"
+        );
+
         println!("✅ Method calls in receiver chain test completed!");
     }
 
     #[tokio::test]
     async fn test_no_match_for_methods_without_receiver() {
         let extractor = GoExtractor::new();
-        
+
         // Test code with plain function calls (no receiver) - these should NOT match
         let test_code = r#"
 package main
@@ -650,44 +757,80 @@ func main() {
     DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
         let method_calls = result.method_calls_ref();
-        
-        println!("No receiver test - Found {} method calls:", method_calls.len());
+
+        println!(
+            "No receiver test - Found {} method calls:",
+            method_calls.len()
+        );
         for call in method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
+
         // We expect to find method calls with receivers (aws.String calls + client.ListBuckets)
         // but NOT plain function calls without receivers
-        assert!(!method_calls.is_empty(), "Should find at least 1 method call with receiver");
-        
+        assert!(
+            !method_calls.is_empty(),
+            "Should find at least 1 method call with receiver"
+        );
+
         // Verify that we find the client.ListBuckets call
-        let list_buckets_calls: Vec<_> = method_calls.iter()
+        let list_buckets_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "ListBuckets")
             .collect();
-        assert_eq!(list_buckets_calls.len(), 1, "Should find exactly 1 ListBuckets call");
         assert_eq!(
-            list_buckets_calls[0].metadata.as_ref().unwrap().receiver.as_ref().unwrap(),
+            list_buckets_calls.len(),
+            1,
+            "Should find exactly 1 ListBuckets call"
+        );
+        assert_eq!(
+            list_buckets_calls[0]
+                .metadata
+                .as_ref()
+                .unwrap()
+                .receiver
+                .as_ref()
+                .unwrap(),
             "client"
         );
-        
+
         // Verify that plain function calls like ListObjectsV2, GetObject, DescribeInstances are NOT matched
-        let plain_function_calls: Vec<_> = method_calls.iter()
-            .filter(|call| matches!(call.name.as_str(), "ListObjectsV2" | "GetObject" | "DescribeInstances"))
+        let plain_function_calls: Vec<_> = method_calls
+            .iter()
+            .filter(|call| {
+                matches!(
+                    call.name.as_str(),
+                    "ListObjectsV2" | "GetObject" | "DescribeInstances"
+                )
+            })
             .collect();
-        
-        assert_eq!(plain_function_calls.len(), 0,
-            "Plain function calls without receiver should not be matched by ast-grep configuration");
-        
+
+        assert_eq!(
+            plain_function_calls.len(),
+            0,
+            "Plain function calls without receiver should not be matched by ast-grep configuration"
+        );
+
         // Verify that aws.String calls are correctly matched (they have receivers)
-        let aws_string_calls: Vec<_> = method_calls.iter()
-            .filter(|call| call.name == "String" &&
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()) == Some(&"aws".to_string()))
+        let aws_string_calls: Vec<_> = method_calls
+            .iter()
+            .filter(|call| {
+                call.name == "String"
+                    && call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+                        == Some(&"aws".to_string())
+            })
             .collect();
-        assert!(!aws_string_calls.is_empty(), "Should find aws.String calls (they have receivers)");
+        assert!(
+            !aws_string_calls.is_empty(),
+            "Should find aws.String calls (they have receivers)"
+        );
     }
 
     #[test]
@@ -695,7 +838,7 @@ func main() {
         let extractor = GoExtractor::new();
         let fields_text = r#"Bucket: aws.String("my-bucket"), MaxKeys: aws.Int32(10)"#;
         let fields = extractor.parse_struct_fields(fields_text);
-        
+
         assert_eq!(fields.len(), 2);
         assert_eq!(fields[0].name, "Bucket");
         assert_eq!(fields[0].value, r#"aws.String("my-bucket")"#);
@@ -705,105 +848,167 @@ func main() {
 
     #[tokio::test]
     async fn test_import_extraction_and_filtering() {
+        use crate::extraction::sdk_model::{
+            Operation, SdkServiceDefinition, ServiceMetadata, ServiceMethodRef, ServiceModelIndex,
+            Shape, ShapeReference,
+        };
         use std::collections::HashMap;
-        use crate::extraction::sdk_model::{ServiceModelIndex, SdkServiceDefinition, ServiceMetadata, Operation, Shape, ShapeReference, ServiceMethodRef};
-        
+
         let extractor = GoExtractor::new();
-        
+
         // Create a test service index with both s3 and s3control services having GetObject
         let mut services = HashMap::new();
         let mut method_lookup = HashMap::new();
 
         // S3 service
         let mut s3_operations = HashMap::new();
-        s3_operations.insert("ListObjectsV2".to_string(), Operation {
-            name: "ListObjectsV2".to_string(),
-            input: Some(ShapeReference { shape: "ListObjectsV2Request".to_string() }),
-        });
-        s3_operations.insert("GetObject".to_string(), Operation {
-            name: "GetObject".to_string(),
-            input: Some(ShapeReference { shape: "GetObjectRequest".to_string() }),
-        });
+        s3_operations.insert(
+            "ListObjectsV2".to_string(),
+            Operation {
+                name: "ListObjectsV2".to_string(),
+                input: Some(ShapeReference {
+                    shape: "ListObjectsV2Request".to_string(),
+                }),
+            },
+        );
+        s3_operations.insert(
+            "GetObject".to_string(),
+            Operation {
+                name: "GetObject".to_string(),
+                input: Some(ShapeReference {
+                    shape: "GetObjectRequest".to_string(),
+                }),
+            },
+        );
 
         // Create shapes for S3
         let mut s3_shapes = HashMap::new();
         let mut get_object_members = HashMap::new();
-        get_object_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        get_object_members.insert("Key".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-
-        s3_shapes.insert("GetObjectRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: get_object_members,
-            required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-        });
-
-        services.insert("s3".to_string(), SdkServiceDefinition {
-            version: Some("2.0".to_string()),
-            metadata: ServiceMetadata {
-                api_version: "2006-03-01".to_string(),
-                service_id: "S3".to_string(),
+        get_object_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
             },
-            operations: s3_operations,
-            shapes: s3_shapes,
-            waiters: HashMap::new(),
-        });
+        );
+        get_object_members.insert(
+            "Key".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+
+        s3_shapes.insert(
+            "GetObjectRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: get_object_members,
+                required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        );
+
+        services.insert(
+            "s3".to_string(),
+            SdkServiceDefinition {
+                version: Some("2.0".to_string()),
+                metadata: ServiceMetadata {
+                    api_version: "2006-03-01".to_string(),
+                    service_id: "S3".to_string(),
+                },
+                operations: s3_operations,
+                shapes: s3_shapes,
+                waiters: HashMap::new(),
+            },
+        );
 
         // S3Control service
         let mut s3control_operations = HashMap::new();
-        s3control_operations.insert("GetObject".to_string(), Operation {
-            name: "GetObject".to_string(),
-            input: Some(ShapeReference { shape: "GetObjectRequest".to_string() }),
-        });
+        s3control_operations.insert(
+            "GetObject".to_string(),
+            Operation {
+                name: "GetObject".to_string(),
+                input: Some(ShapeReference {
+                    shape: "GetObjectRequest".to_string(),
+                }),
+            },
+        );
 
         // Create shapes for S3Control
         let mut s3control_shapes = HashMap::new();
         let mut s3control_get_object_members = HashMap::new();
-        s3control_get_object_members.insert("AccountId".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        s3control_get_object_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        s3control_get_object_members.insert("Key".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-
-        s3control_shapes.insert("GetObjectRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: s3control_get_object_members,
-            required: Some(vec!["AccountId".to_string(), "Bucket".to_string(), "Key".to_string()]),
-        });
-
-        services.insert("s3control".to_string(), SdkServiceDefinition {
-            version: Some("2.0".to_string()),
-            metadata: ServiceMetadata {
-                api_version: "2018-08-20".to_string(),
-                service_id: "S3Control".to_string(),
+        s3control_get_object_members.insert(
+            "AccountId".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
             },
-            operations: s3control_operations,
-            shapes: s3control_shapes,
-            waiters: HashMap::new(),
-        });
+        );
+        s3control_get_object_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        s3control_get_object_members.insert(
+            "Key".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+
+        s3control_shapes.insert(
+            "GetObjectRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: s3control_get_object_members,
+                required: Some(vec![
+                    "AccountId".to_string(),
+                    "Bucket".to_string(),
+                    "Key".to_string(),
+                ]),
+            },
+        );
+
+        services.insert(
+            "s3control".to_string(),
+            SdkServiceDefinition {
+                version: Some("2.0".to_string()),
+                metadata: ServiceMetadata {
+                    api_version: "2018-08-20".to_string(),
+                    service_id: "S3Control".to_string(),
+                },
+                operations: s3control_operations,
+                shapes: s3control_shapes,
+                waiters: HashMap::new(),
+            },
+        );
 
         // Method lookup
-        method_lookup.insert("ListObjectsV2".to_string(), vec![
-            ServiceMethodRef { service_name: "s3".to_string(), operation_name: "ListObjectsV2".to_string() }
-        ]);
-        method_lookup.insert("GetObject".to_string(), vec![
-            ServiceMethodRef { service_name: "s3".to_string(), operation_name: "GetObject".to_string() },
-            ServiceMethodRef { service_name: "s3control".to_string(), operation_name: "GetObject".to_string() }
-        ]);
+        method_lookup.insert(
+            "ListObjectsV2".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "s3".to_string(),
+                operation_name: "ListObjectsV2".to_string(),
+            }],
+        );
+        method_lookup.insert(
+            "GetObject".to_string(),
+            vec![
+                ServiceMethodRef {
+                    service_name: "s3".to_string(),
+                    operation_name: "GetObject".to_string(),
+                },
+                ServiceMethodRef {
+                    service_name: "s3control".to_string(),
+                    operation_name: "GetObject".to_string(),
+                },
+            ],
+        );
 
         let service_index = ServiceModelIndex {
             services,
             method_lookup,
             waiter_to_services: HashMap::new(),
         };
-        
+
         // Test Go code with S3 import but GetObject call that exists in both s3 and s3control
         let test_code = r#"
 package main
@@ -829,14 +1034,14 @@ func main() {
     _ = objectOutput
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
-        
+
         // Verify import extraction
         if let Some(import_info) = result.go_import_info() {
             let imported_services = import_info.get_imported_services();
             println!("Imported services: {:?}", imported_services);
-            
+
             // Should have extracted S3 service
             assert!(imported_services.contains(&"s3".to_string()));
             // Should not contain s3control
@@ -844,52 +1049,78 @@ func main() {
         } else {
             panic!("Expected Go import info to be present");
         }
-        
+
         // Check method calls before disambiguation
         let method_calls_before = result.method_calls_ref();
-        println!("Found {} method calls before disambiguation:", method_calls_before.len());
+        println!(
+            "Found {} method calls before disambiguation:",
+            method_calls_before.len()
+        );
         for call in method_calls_before {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
             println!("     - possible services: {:?}", call.possible_services);
         }
-        
+
         // Apply disambiguation with the service index
         let mut results = vec![result];
         extractor.filter_map(&mut results, &service_index);
         let result = &results[0];
-        
+
         // Verify method call extraction after disambiguation
         let method_calls = result.method_calls_ref();
-        println!("Found {} method calls after disambiguation:", method_calls.len());
+        println!(
+            "Found {} method calls after disambiguation:",
+            method_calls.len()
+        );
         for call in method_calls {
-            println!("  - {} (possible_services: {:?})", call.name, call.possible_services);
+            println!(
+                "  - {} (possible_services: {:?})",
+                call.name, call.possible_services
+            );
         }
-        
+
         // Find GetObject calls
-        let get_object_calls: Vec<_> = method_calls.iter()
+        let get_object_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "GetObject")
             .collect();
-        
+
         assert!(!get_object_calls.is_empty(), "Should find GetObject calls");
-        
+
         // Critical test: GetObject exists in both s3 and s3control services
         // Since we only import s3 (not s3control), the possible_services should be filtered to only include s3
         for get_object_call in &get_object_calls {
-            println!("GetObject call possible_services: {:?}", get_object_call.possible_services);
-            assert!(get_object_call.possible_services.contains(&"s3".to_string()),
-                "GetObject should include s3 service");
-            assert!(!get_object_call.possible_services.contains(&"s3control".to_string()),
-                "GetObject should NOT include s3control service when only s3 is imported");
+            println!(
+                "GetObject call possible_services: {:?}",
+                get_object_call.possible_services
+            );
+            assert!(
+                get_object_call
+                    .possible_services
+                    .contains(&"s3".to_string()),
+                "GetObject should include s3 service"
+            );
+            assert!(
+                !get_object_call
+                    .possible_services
+                    .contains(&"s3control".to_string()),
+                "GetObject should NOT include s3control service when only s3 is imported"
+            );
         }
-        
-        println!("✅ Import-based filtering test passed - s3control filtered out when only s3 imported");
+
+        println!(
+            "✅ Import-based filtering test passed - s3control filtered out when only s3 imported"
+        );
     }
 
     #[tokio::test]
     async fn test_cloudwatch_logs_service_name_mismatch() {
         let extractor = GoExtractor::new();
-        
+
         // Test Go code with CloudWatch Logs import (service name mismatch case)
         // Go uses "cloudwatchlogs" but AWS service is "logs"
         let test_code = r#"
@@ -924,42 +1155,48 @@ func main() {
     _ = output
 }
         "#;
-        
+
         let result = extractor.parse(test_code).await;
-        
+
         // Verify import extraction
         if let Some(import_info) = result.go_import_info() {
             let imported_services = import_info.get_imported_services();
             println!("Imported services: {:?}", imported_services);
-            
+
             // Should have extracted "cloudwatchlogs" as the service name from the import
             assert!(imported_services.contains(&"cloudwatchlogs".to_string()));
-            
+
             // Should NOT contain "logs" (the actual AWS service name)
             assert!(!imported_services.contains(&"logs".to_string()));
         } else {
             panic!("Expected Go import info to be present");
         }
-        
+
         // Verify method call extraction
         let method_calls = result.method_calls_ref();
         println!("Found {} method calls:", method_calls.len());
         for call in method_calls {
-            println!("  - {} (receiver: {:?})", call.name,
-                call.metadata.as_ref().and_then(|m| m.receiver.as_ref()));
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
         }
-        
+
         // Should find the CreateLogGroup method call
-        let create_log_group_calls: Vec<_> = method_calls.iter()
+        let create_log_group_calls: Vec<_> = method_calls
+            .iter()
             .filter(|call| call.name == "CreateLogGroup")
             .collect();
-        
+
         // This is the key test: even though we import "cloudwatchlogs" but the AWS service is "logs",
         // the disambiguation should NOT filter out the method call because the service names don't match.
         // This prevents false negatives when Go service names don't exactly match AWS service names.
-        assert!(!create_log_group_calls.is_empty(), "Should find CreateLogGroup calls even with service name mismatch");
-        
+        assert!(
+            !create_log_group_calls.is_empty(),
+            "Should find CreateLogGroup calls even with service name mismatch"
+        );
+
         println!("✅ CloudWatch Logs service name mismatch test passed - method calls preserved when Go import name doesn't match AWS service name");
     }
-
 }

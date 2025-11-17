@@ -11,32 +11,40 @@ pub struct ParameterFilter;
 impl ParameterFilter {
     /// Filter out pagination-specific parameters
     pub fn filter_pagination_parameters(parameters: Vec<Parameter>) -> Vec<Parameter> {
-        parameters.into_iter().filter(|param| {
-            match param {
-                Parameter::Keyword { name, .. } => {
-                    // Filter out known pagination-specific parameters
-                    !matches!(name.as_str(), "PaginationConfig" | "StartingToken" | "PageSize")
-                },
-                // Keep positional arguments and dictionary splats
-                Parameter::Positional { .. } | Parameter::DictionarySplat { .. } => true,
-            }
-        }).collect()
+        parameters
+            .into_iter()
+            .filter(|param| {
+                match param {
+                    Parameter::Keyword { name, .. } => {
+                        // Filter out known pagination-specific parameters
+                        !matches!(
+                            name.as_str(),
+                            "PaginationConfig" | "StartingToken" | "PageSize"
+                        )
+                    }
+                    // Keep positional arguments and dictionary splats
+                    Parameter::Positional { .. } | Parameter::DictionarySplat { .. } => true,
+                }
+            })
+            .collect()
     }
 
     /// Filter out waiter-specific parameters
     pub fn filter_waiter_parameters(parameters: Vec<Parameter>) -> Vec<Parameter> {
-        parameters.into_iter().filter(|param| {
-            match param {
-                Parameter::Keyword { name, .. } => {
-                    // Filter out waiter-specific parameters
-                    name != "WaiterConfig"
-                },
-                // Keep positional arguments and dictionary splats
-                Parameter::Positional { .. } | Parameter::DictionarySplat { .. } => true,
-            }
-        }).collect()
+        parameters
+            .into_iter()
+            .filter(|param| {
+                match param {
+                    Parameter::Keyword { name, .. } => {
+                        // Filter out waiter-specific parameters
+                        name != "WaiterConfig"
+                    }
+                    // Keep positional arguments and dictionary splats
+                    Parameter::Positional { .. } | Parameter::DictionarySplat { .. } => true,
+                }
+            })
+            .collect()
     }
-
 }
 
 #[cfg(test)]
@@ -73,20 +81,23 @@ mod tests {
                 type_annotation: None,
             },
         ];
-        
+
         let filtered = ParameterFilter::filter_pagination_parameters(parameters);
-        
+
         // Should keep Bucket and Prefix, filter out PaginationConfig and StartingToken
         assert_eq!(filtered.len(), 2);
-        
-        let param_names: Vec<String> = filtered.iter()
+
+        let param_names: Vec<String> = filtered
+            .iter()
             .filter_map(|param| {
                 if let Parameter::Keyword { name, .. } = param {
                     Some(name.clone())
-                } else { None }
+                } else {
+                    None
+                }
             })
             .collect();
-        
+
         assert!(param_names.contains(&"Bucket".to_string()));
         assert!(param_names.contains(&"Prefix".to_string()));
         assert!(!param_names.contains(&"PaginationConfig".to_string()));
@@ -109,17 +120,16 @@ mod tests {
                 type_annotation: None,
             },
         ];
-        
+
         let filtered = ParameterFilter::filter_waiter_parameters(parameters);
-        
+
         // Should keep InstanceIds, filter out WaiterConfig
         assert_eq!(filtered.len(), 1);
-        
+
         if let Parameter::Keyword { name, .. } = &filtered[0] {
             assert_eq!(name, "InstanceIds");
         } else {
             panic!("Expected keyword parameter");
         }
     }
-
 }

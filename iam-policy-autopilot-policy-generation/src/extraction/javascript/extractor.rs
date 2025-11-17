@@ -33,7 +33,7 @@ impl Extractor for JavaScriptExtractor {
     async fn parse(&self, source_code: &str) -> ExtractorResult {
         // Create AST once and reuse it
         let ast = JavaScript.ast_grep(source_code);
-        
+
         // Create scanner with the pre-built AST
         let mut scanner = ASTScanner::new(ast.clone(), JavaScript.into());
 
@@ -47,10 +47,13 @@ impl Extractor for JavaScriptExtractor {
         };
 
         // Extract operations from imported types and method calls using shared utilities
-        let mut method_calls = ExtractionUtils::extract_operations_from_imports(&scan_results, &mut scanner);
-        
+        let mut method_calls =
+            ExtractionUtils::extract_operations_from_imports(&scan_results, &mut scanner);
+
         // Also extract operations from direct client method calls
-        method_calls.extend(ExtractionUtils::extract_operations_from_method_calls(&scan_results));
+        method_calls.extend(ExtractionUtils::extract_operations_from_method_calls(
+            &scan_results,
+        ));
 
         // Return JavaScript variant with the same AST (no double construction)
         ExtractorResult::JavaScript(ast, method_calls)
@@ -66,7 +69,9 @@ impl Extractor for JavaScriptExtractor {
                 ExtractorResult::JavaScript(_ast, method_calls) => method_calls,
                 _ => {
                     // This shouldn't happen in JavaScript extractor
-                    log::warn!("Received non-JavaScript result during JavaScript method extraction.");
+                    log::warn!(
+                        "Received non-JavaScript result during JavaScript method extraction."
+                    );
                     continue;
                 }
             };
@@ -87,7 +92,7 @@ impl Extractor for JavaScriptExtractor {
                 }
             }
 
-            // Second: Validate method calls against service index  
+            // Second: Validate method calls against service index
             method_calls.retain_mut(|call| {
                 // Check if this method name exists in the SDK
                 if let Some(service_refs) = service_index.method_lookup.get(&call.name) {
@@ -95,10 +100,10 @@ impl Extractor for JavaScriptExtractor {
                     let valid_services: HashSet<String> = service_refs.iter()
                         .map(|service_ref| service_ref.service_name.clone())
                         .collect();
-                    
+
                     // Filter possible_services to only include services that actually contain this method
                     call.possible_services.retain(|service| valid_services.contains(service));
-                    
+
                     // FALLBACK: If no services matched from import, use all valid services for this operation
                     if call.possible_services.is_empty() {
                         log::debug!(
@@ -108,7 +113,7 @@ impl Extractor for JavaScriptExtractor {
                         );
                         call.possible_services = valid_services.into_iter().collect();
                     }
-                    
+
                     // Keep method call - it now has at least one valid service
                     true
                 } else {
@@ -140,8 +145,6 @@ impl Extractor for JavaScriptExtractor {
     }
 }
 
-
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,10 +154,22 @@ mod tests {
     #[test]
     fn test_extract_service_from_sublibrary() {
         // Test using shared utilities
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("client-s3"), Some("s3".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("lib-dynamodb"), Some("dynamodb".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("client-lambda"), Some("lambda".to_string()));
-        assert_eq!(ExtractionUtils::extract_service_from_sublibrary("other"), None);
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-s3"),
+            Some("s3".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("lib-dynamodb"),
+            Some("dynamodb".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-lambda"),
+            Some("lambda".to_string())
+        );
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("other"),
+            None
+        );
     }
 
     #[test]
@@ -206,24 +221,40 @@ createMyBucket();
 
         let result = extractor.parse(source_code).await;
         let method_calls = result.method_calls_ref();
-        
+
         // Should infer CreateBucket operation from CreateBucketCommand import
-        assert!(!method_calls.is_empty(), "Should find method calls from imported Command types");
-        
+        assert!(
+            !method_calls.is_empty(),
+            "Should find method calls from imported Command types"
+        );
+
         // Should find CreateBucket operation inferred from CreateBucketCommand
-        let create_bucket_op = method_calls.iter()
+        let create_bucket_op = method_calls
+            .iter()
             .find(|call| call.name == "CreateBucket")
             .expect("Should find CreateBucket operation from CreateBucketCommand import");
-        
+
         // Should be associated with s3 service (from client-s3 sublibrary)
-        assert_eq!(create_bucket_op.possible_services, vec!["s3"], "Should associate with s3 service");
-        
-        println!("✅ Found {} operations inferred from imports", method_calls.len());
+        assert_eq!(
+            create_bucket_op.possible_services,
+            vec!["s3"],
+            "Should associate with s3 service"
+        );
+
+        println!(
+            "✅ Found {} operations inferred from imports",
+            method_calls.len()
+        );
         for call in method_calls {
             let empty_params = Vec::new();
-            let params = call.metadata.as_ref().map(|m| &m.parameters).unwrap_or(&empty_params);
-            println!("  - {} (service: {:?}, params: {} args)", 
-                call.name, 
+            let params = call
+                .metadata
+                .as_ref()
+                .map(|m| &m.parameters)
+                .unwrap_or(&empty_params);
+            println!(
+                "  - {} (service: {:?}, params: {} args)",
+                call.name,
                 call.possible_services,
                 params.len()
             );
@@ -262,19 +293,30 @@ getAllDynamoDBTables();
 
         let result = extractor.parse(source_code).await;
         let method_calls = result.method_calls_ref();
-        
+
         // Should infer ListTables operation from paginateListTables import
-        assert!(!method_calls.is_empty(), "Should find operations from paginate function imports");
-        
+        assert!(
+            !method_calls.is_empty(),
+            "Should find operations from paginate function imports"
+        );
+
         // Should find ListTables operation inferred from paginateListTables
-        let list_tables_op = method_calls.iter()
+        let list_tables_op = method_calls
+            .iter()
             .find(|call| call.name == "ListTables")
             .expect("Should find ListTables operation from paginateListTables import");
-        
+
         // Should be associated with dynamodb service (from client-dynamodb sublibrary)
-        assert_eq!(list_tables_op.possible_services, vec!["dynamodb"], "Should associate with dynamodb service");
-        
-        println!("✅ Found {} operations inferred from paginate imports", method_calls.len());
+        assert_eq!(
+            list_tables_op.possible_services,
+            vec!["dynamodb"],
+            "Should associate with dynamodb service"
+        );
+
+        println!(
+            "✅ Found {} operations inferred from paginate imports",
+            method_calls.len()
+        );
     }
 
     #[tokio::test]
@@ -304,25 +346,33 @@ const __error__ = await bodyStream.transformToString();
 
         let result = extractor.parse(source_code).await;
         let method_calls = result.method_calls_ref();
-        
+
         // Should find GetObject operation from direct client method call
         // Note: This currently may not work since scanner.method_calls is empty in scan_all()
-        
+
         if method_calls.is_empty() {
             println!("⚠️ No method calls found - method call scanning may need to be integrated in scanner.scan_all()");
             // For now, we'll pass the test but note the issue
             return;
         }
-        
+
         // Should find GetObject operation from client.getObject() call
-        let get_object_op = method_calls.iter()
+        let get_object_op = method_calls
+            .iter()
             .find(|call| call.name == "GetObject")
             .expect("Should find GetObject operation from client.getObject() call");
-        
+
         // Should be associated with s3 service (from client-s3 sublibrary)
-        assert_eq!(get_object_op.possible_services, vec!["s3"], "Should associate with s3 service");
-        
-        println!("✅ Found {} operations from direct client method calls", method_calls.len());
+        assert_eq!(
+            get_object_op.possible_services,
+            vec!["s3"],
+            "Should associate with s3 service"
+        );
+
+        println!(
+            "✅ Found {} operations from direct client method calls",
+            method_calls.len()
+        );
     }
 
     #[tokio::test]
@@ -331,7 +381,7 @@ const __error__ = await bodyStream.transformToString();
         use crate::Language;
 
         let extractor = JavaScriptExtractor::new();
-        
+
         // This code imports from a non-existent service but uses a valid operation
         let javascript_code = r#"
 const { FakeClient, GetObjectCommand } = require("@aws-sdk/client-fake-service");
@@ -342,41 +392,54 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
 
         // Parse the code
         let mut results = vec![extractor.parse(javascript_code).await];
-        
+
         // Build a minimal service index with real services for testing
         let services = ServiceDiscovery::discover_services().expect("Failed to discover services");
-        let limited_services: Vec<_> = services.into_iter()
+        let limited_services: Vec<_> = services
+            .into_iter()
             .filter(|s| s.name == "s3" || s.name == "glacier")
             .collect();
-        
-        let service_index = ServiceDiscovery::load_service_index(Language::JavaScript, limited_services)
-            .await
-            .expect("Failed to load service index");
-        
+
+        let service_index =
+            ServiceDiscovery::load_service_index(Language::JavaScript, limited_services)
+                .await
+                .expect("Failed to load service index");
+
         // Apply filter_map which should trigger the fallback
         extractor.filter_map(&mut results, &service_index);
-        
+
         // Verify the results
         match &results[0] {
             ExtractorResult::JavaScript(_ast, method_calls) => {
                 // Should find GetObject operation
-                let get_object_calls: Vec<_> = method_calls.iter()
+                let get_object_calls: Vec<_> = method_calls
+                    .iter()
                     .filter(|call| call.name == "GetObject")
                     .collect();
-                
-                assert!(!get_object_calls.is_empty(), "Should find GetObject operation");
-                
+
+                assert!(
+                    !get_object_calls.is_empty(),
+                    "Should find GetObject operation"
+                );
+
                 // The fallback should have populated possible_services with all services that have GetObject
                 // (both s3 and glacier have GetObject operation)
                 for call in get_object_calls {
-                    assert!(!call.possible_services.is_empty(), 
-                        "Fallback should populate possible_services with valid services");
-                    
+                    assert!(
+                        !call.possible_services.is_empty(),
+                        "Fallback should populate possible_services with valid services"
+                    );
+
                     // Should contain at least s3 (GetObject is in s3)
-                    assert!(call.possible_services.contains(&"s3".to_string()),
-                        "Should include s3 as a valid service for GetObject");
-                    
-                    println!("✅ Fallback worked! GetObject associated with services: {:?}", call.possible_services);
+                    assert!(
+                        call.possible_services.contains(&"s3".to_string()),
+                        "Should include s3 as a valid service for GetObject"
+                    );
+
+                    println!(
+                        "✅ Fallback worked! GetObject associated with services: {:?}",
+                        call.possible_services
+                    );
                 }
             }
             _ => {

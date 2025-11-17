@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashMap;
 
 pub(crate) mod engine;
-pub(crate) mod utils;
 pub(crate) mod merge;
+pub(crate) mod utils;
 
 #[cfg(test)]
 mod integration_tests;
@@ -20,28 +20,25 @@ use crate::enrichment::Condition;
 
 /// Custom serializer for IAM policy conditions
 /// Converts Vec<Condition> to the proper IAM policy condition format
-fn serialize_conditions<S>(
-    conditions: &Vec<Condition>,
-    serializer: S,
-) -> Result<S::Ok, S::Error>
+fn serialize_conditions<S>(conditions: &Vec<Condition>, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
 {
     let mut condition_map = HashMap::new();
-    
+
     for condition in conditions {
         let operator_str = match condition.operator {
             crate::enrichment::Operator::StringEquals => "StringEquals",
             crate::enrichment::Operator::StringLike => "StringLike",
         };
-        
+
         let operator_conditions = condition_map
             .entry(operator_str)
             .or_insert_with(HashMap::new);
-        
+
         operator_conditions.insert(&condition.key, &condition.values);
     }
-    
+
     condition_map.serialize(serializer)
 }
 
@@ -116,14 +113,12 @@ pub enum Effect {
 }
 
 /// Policy type enumeration
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Copy, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PolicyType {
     /// Identity-based policy (attached to users, groups, or roles)
     #[default]
     Identity,
 }
-
 
 /// A policy with its associated type information
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -159,11 +154,7 @@ impl Default for IamPolicy {
 
 impl Statement {
     /// Create a new IAM policy statement
-    pub fn new(
-        effect: Effect,
-        action: Vec<String>,
-        resource: Vec<String>,
-    ) -> Self {
+    pub fn new(effect: Effect, action: Vec<String>, resource: Vec<String>) -> Self {
         Self {
             sid: None,
             effect,
@@ -177,7 +168,7 @@ impl Statement {
     pub fn allow(action: Vec<String>, resource: Vec<String>) -> Self {
         Self::new(Effect::Allow, action, resource)
     }
-    
+
     /// Set the condition
     pub(crate) fn with_conditions(mut self, condition: Vec<Condition>) -> Self {
         self.condition = condition;
@@ -209,7 +200,7 @@ mod tests {
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::bucket/*".to_string()],
         );
-        
+
         assert_eq!(statement.effect, Effect::Allow);
         assert_eq!(statement.action, vec!["s3:GetObject"]);
         assert_eq!(statement.resource, vec!["arn:aws:s3:::bucket/*"]);
@@ -222,8 +213,9 @@ mod tests {
         let statement = Statement::allow(
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::bucket/*".to_string()],
-        ).with_sid("AllowS3GetObject".to_string());
-        
+        )
+        .with_sid("AllowS3GetObject".to_string());
+
         assert_eq!(statement.sid, Some("AllowS3GetObject".to_string()));
     }
 
@@ -244,21 +236,22 @@ mod tests {
     #[test]
     fn test_condition_serialization() {
         use crate::enrichment::{Condition, Operator};
-        
+
         // Create a condition
         let condition = Condition {
             operator: Operator::StringEquals,
             key: "aws:RequestedRegion".to_string(),
             values: vec!["us-east-1".to_string(), "us-west-2".to_string()],
         };
-        
+
         let statement = Statement::allow(
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::bucket/*".to_string()],
-        ).with_conditions(vec![condition]);
+        )
+        .with_conditions(vec![condition]);
 
         let json = serde_json::to_string(&statement).unwrap();
-        
+
         // Verify the condition is serialized in the correct IAM format
         assert!(json.contains("\"Condition\":{\"StringEquals\":{\"aws:RequestedRegion\":[\"us-east-1\",\"us-west-2\"]}}"));
     }
@@ -277,7 +270,8 @@ mod tests {
         let statement = Statement::allow(
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::my-bucket/*".to_string()],
-        ).with_conditions(vec![condition]);
+        )
+        .with_conditions(vec![condition]);
 
         let mut policy = IamPolicy::new();
         policy.add_statement(statement);

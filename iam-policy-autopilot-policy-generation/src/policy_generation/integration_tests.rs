@@ -5,8 +5,8 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::{Engine, Effect};
-    use crate::enrichment::{EnrichedSdkMethodCall, Action, Resource};
+    use super::super::{Effect, Engine};
+    use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::errors::ExtractorError;
     use crate::SdkMethodCall;
 
@@ -21,11 +21,7 @@ mod tests {
     #[test]
     fn test_complete_policy_generation_flow() {
         // Create policy generation engine
-        let engine = Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        );
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
 
         // Create test enriched method call (simulating enrichment engine output)
         let sdk_call = create_test_sdk_call();
@@ -35,28 +31,24 @@ mod tests {
             actions: vec![
                 Action::new(
                     "s3:GetObject".to_string(),
-                    vec![
-                        Resource::new(
-                            "object".to_string(),
-                            Some(vec![
-                                "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                            ])
-                        )
-                    ],
-                    vec![]
+                    vec![Resource::new(
+                        "object".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
+                    )],
+                    vec![],
                 ),
                 Action::new(
                     "s3:GetObjectVersion".to_string(),
-                    vec![
-                        Resource::new(
-                            "object".to_string(),
-                            Some(vec![
-                                "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                            ])
-                        )
-                    ],
-                    vec![]
-                )
+                    vec![Resource::new(
+                        "object".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
+                    )],
+                    vec![],
+                ),
             ],
             sdk_method_call: &sdk_call,
         };
@@ -67,7 +59,7 @@ mod tests {
         // Verify results
         assert_eq!(policies.len(), 1);
         let policy = &policies[0].policy;
-        
+
         // Check policy structure
         assert_eq!(policy.version, "2012-10-17");
         assert_eq!(policy.statements.len(), 2);
@@ -89,11 +81,7 @@ mod tests {
 
     #[test]
     fn test_multiple_enriched_calls_generate_multiple_policies() {
-        let engine = Engine::new(
-            "aws",
-            "us-west-2",
-            "987654321098",
-        );
+        let engine = Engine::new("aws", "us-west-2", "987654321098");
 
         let sdk_call1 = SdkMethodCall {
             name: "get_object".to_string(),
@@ -111,33 +99,33 @@ mod tests {
             EnrichedSdkMethodCall {
                 method_name: "get_object".to_string(),
                 service: "s3".to_string(),
-                actions: vec![
-                    Action::new(
-                        "s3:GetObject".to_string(),
-                        vec![Resource::new(
-                            "object".to_string(),
-                            Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
-                        )],
-                        vec![]
-                    )
-                ],
+                actions: vec![Action::new(
+                    "s3:GetObject".to_string(),
+                    vec![Resource::new(
+                        "object".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
+                    )],
+                    vec![],
+                )],
                 sdk_method_call: &sdk_call1,
             },
             EnrichedSdkMethodCall {
                 method_name: "put_object".to_string(),
                 service: "s3".to_string(),
-                actions: vec![
-                    Action::new(
-                        "s3:PutObject".to_string(),
-                        vec![Resource::new(
-                            "object".to_string(),
-                            Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
-                        )],
-                        vec![]
-                    )
-                ],
+                actions: vec![Action::new(
+                    "s3:PutObject".to_string(),
+                    vec![Resource::new(
+                        "object".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
+                    )],
+                    vec![],
+                )],
                 sdk_method_call: &sdk_call2,
-            }
+            },
         ];
 
         let policies = engine.generate_policies(&enriched_calls).unwrap();
@@ -161,11 +149,7 @@ mod tests {
     #[test]
     fn test_complex_arn_patterns_with_different_aws_contexts() {
         // Test with China partition
-        let engine = Engine::new(
-            "aws-cn",
-            "cn-north-1",
-            "123456789012",
-        );
+        let engine = Engine::new("aws-cn", "cn-north-1", "123456789012");
 
         let sdk_call = create_test_sdk_call();
         let enriched_call = EnrichedSdkMethodCall {
@@ -199,34 +183,33 @@ mod tests {
         let statement = &policy.statements[0];
 
         // Verify ARN patterns are correctly processed for China partition
-        assert_eq!(statement.resource, vec![
-            "arn:aws-cn:s3:cn-north-1:123456789012:accesspoint/*",
-            "arn:aws-cn:s3:::*/*"
-        ]);
+        assert_eq!(
+            statement.resource,
+            vec![
+                "arn:aws-cn:s3:cn-north-1:123456789012:accesspoint/*",
+                "arn:aws-cn:s3:::*/*"
+            ]
+        );
     }
 
     #[test]
     fn test_policy_json_serialization() {
-        let engine = Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        );
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
 
         let sdk_call = create_test_sdk_call();
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "get_object".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:GetObject".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
-                    )],
-                    vec![]
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
             sdk_method_call: &sdk_call,
         };
 
@@ -235,7 +218,7 @@ mod tests {
 
         // Test JSON serialization
         let json = serde_json::to_string_pretty(policy).unwrap();
-        
+
         // Verify JSON structure (flexible formatting)
         assert!(json.contains("\"Version\": \"2012-10-17\""));
         assert!(json.contains("\"Effect\": \"Allow\""));
@@ -246,33 +229,29 @@ mod tests {
 
     #[test]
     fn test_invalid_arn_pattern_handling() {
-        let engine = Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        );
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
 
         let sdk_call = create_test_sdk_call();
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "get_object".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:GetObject".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec!["arn:${Partition}:s3:${}:bucket/${ObjectName}".to_string()]) // Invalid empty placeholder
-                    )],
-                    vec![]
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:${}:bucket/${ObjectName}".to_string()
+                    ]), // Invalid empty placeholder
+                )],
+                vec![],
+            )],
             sdk_method_call: &sdk_call,
         };
 
         // Should fail due to empty placeholder
         let result = engine.generate_policies(&[enriched_call]);
         assert!(result.is_err());
-        
+
         if let Err(ExtractorError::PolicyGeneration { message, .. }) = result {
             assert!(message.contains("empty placeholder"));
         } else {
@@ -282,23 +261,17 @@ mod tests {
 
     #[test]
     fn test_no_arn_patterns_fallback_to_wildcard() {
-        let engine = Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        );
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
 
         let sdk_call = create_test_sdk_call();
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "list_buckets".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:ListAllMyBuckets".to_string(),
-                    vec![Resource::new("*".to_string(), None)], // No ARN patterns
-                    vec![]
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:ListAllMyBuckets".to_string(),
+                vec![Resource::new("*".to_string(), None)], // No ARN patterns
+                vec![],
+            )],
             sdk_method_call: &sdk_call,
         };
 

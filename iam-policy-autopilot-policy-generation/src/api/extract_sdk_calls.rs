@@ -2,17 +2,12 @@ use anyhow::{Context, Result};
 use log::info;
 
 use crate::{
-    api::{
-        common::process_source_files,
-        model::ExtractSdkCallsConfig,
-    },
+    api::{common::process_source_files, model::ExtractSdkCallsConfig},
     ExtractedMethods,
 };
 
 /// Handle the extract-sdk-calls
-pub async fn extract_sdk_calls(
-    config: &ExtractSdkCallsConfig,
-) -> Result<ExtractedMethods> {
+pub async fn extract_sdk_calls(config: &ExtractSdkCallsConfig) -> Result<ExtractedMethods> {
     info!("Extracting Sdk Calls");
 
     // Create the extractor

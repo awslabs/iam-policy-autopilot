@@ -12,12 +12,8 @@ use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
-use crate::extraction::{
-    self, ExtractedMethods, ExtractionMetadata, SourceFile
-};
-use crate::extraction::sdk_model::{
-    ServiceDiscovery, ServiceModelIndex,
-};
+use crate::extraction::sdk_model::{ServiceDiscovery, ServiceModelIndex};
+use crate::extraction::{self, ExtractedMethods, ExtractionMetadata, SourceFile};
 use crate::Language;
 
 /// Core business logic for extracting method definitions and SDK method calls from source code.
@@ -49,52 +45,58 @@ impl Engine {
     /// # Returns
     ///
     /// Complete extraction results including only validated AWS SDK method calls and metadata.
-    pub async fn extract_sdk_method_calls(&self, language: Language, source_files: Vec<SourceFile>) -> Result<ExtractedMethods> {
+    pub async fn extract_sdk_method_calls(
+        &self,
+        language: Language,
+        source_files: Vec<SourceFile>,
+    ) -> Result<ExtractedMethods> {
         let start_time = Instant::now();
-        
+
         // Validate that source files are provided
         if source_files.is_empty() {
             return Err(ExtractorError::validation(
-                "No source files provided for SDK method call extraction".to_string()
+                "No source files provided for SDK method call extraction".to_string(),
             ));
         }
-        
+
         // Load SDK service index for validation
         log::debug!("Loading AWS SDK service definitions for validation (language: {language})...");
         let sdk_load_start = Instant::now();
         let service_index = self.load_service_index(language).await?;
         let sdk_load_duration = sdk_load_start.elapsed();
-        
+
         log::debug!(
             "Loaded AWS SDK definitions in {:.2}ms: {} services, {} method mappings",
             sdk_load_duration.as_secs_f64() * 1000.0,
             service_index.services.len(),
             service_index.method_lookup.len()
         );
-        
+
         #[allow(unreachable_patterns)]
         let extractor: Arc<dyn Extractor + Send + Sync> = match language {
             Language::Python => Arc::new(extraction::python::extractor::PythonExtractor::new()),
             Language::Go => Arc::new(extraction::go::extractor::GoExtractor::new()),
-            Language::JavaScript => Arc::new(extraction::javascript::extractor::JavaScriptExtractor::new()),
-            Language::TypeScript => Arc::new(extraction::typescript::extractor::TypeScriptExtractor::new()),
-            _ => return Err(ExtractorError::unsupported_language_override(language))
+            Language::JavaScript => {
+                Arc::new(extraction::javascript::extractor::JavaScriptExtractor::new())
+            }
+            Language::TypeScript => {
+                Arc::new(extraction::typescript::extractor::TypeScriptExtractor::new())
+            }
+            _ => return Err(ExtractorError::unsupported_language_override(language)),
         };
 
         // Initialize metadata with loaded files
         let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
-        
+
         // Extract SDK method calls from all source files concurrently
         let mut all_extraction_results = Vec::new();
         let mut join_set = JoinSet::new();
-        
+
         for source_file in source_files {
             let extractor = extractor.clone();
-            join_set.spawn(async move {
-                extractor.parse(&source_file.content).await
-            });
+            join_set.spawn(async move { extractor.parse(&source_file.content).await });
         }
-        
+
         // Collect results from concurrent tasks
         while let Some(result) = join_set.join_next().await {
             match result {
@@ -113,22 +115,25 @@ impl Engine {
         }
 
         extractor.filter_map(&mut all_extraction_results, &service_index);
-        
+
         // Disambiguate and validate method calls against SDK definitions
         extractor.disambiguate(&mut all_extraction_results, &service_index);
-        
-        let method_calls = all_extraction_results.into_iter().flat_map(|r| r.method_calls()).collect::<Vec<_>>();
-        
+
+        let method_calls = all_extraction_results
+            .into_iter()
+            .flat_map(|r| r.method_calls())
+            .collect::<Vec<_>>();
+
         // Update metadata with final method count
         metadata.update_method_count(method_calls.len());
-        
+
         let total_duration = start_time.elapsed();
         log::debug!(
             "SDK method call extraction completed in {:.2}ms: {} validated SDK methods found",
             total_duration.as_secs_f64() * 1000.0,
             method_calls.len()
         );
-        
+
         // Create final results
         Ok(ExtractedMethods {
             methods: method_calls,
@@ -144,7 +149,7 @@ impl Engine {
     pub fn detect_and_validate_language(&self, source_files: &[&Path]) -> Result<Language> {
         if source_files.is_empty() {
             return Err(ExtractorError::validation(
-                "No source files provided for language detection".to_string()
+                "No source files provided for language detection".to_string(),
             ));
         }
 
@@ -171,14 +176,14 @@ impl Engine {
                 error_msg.push_str(&format!("  {} -> {}\n", file_path.display(), language));
             }
             error_msg.push_str("All source files must be in the same programming language, or use --language to override.");
-            
+
             return Err(ExtractorError::validation(error_msg));
         }
 
         // Return the single detected language
         Ok(detected_languages.into_iter().next().unwrap())
     }
-    
+
     /// Load the AWS SDK service index for method validation.
     ///
     /// This method discovers and loads all AWS SDK service definitions to build
@@ -186,7 +191,7 @@ impl Engine {
     async fn load_service_index(&self, language: Language) -> Result<ServiceModelIndex> {
         // Discover all available services
         let services = ServiceDiscovery::discover_services()?;
-        
+
         // Load the service index
         ServiceDiscovery::load_service_index(language, services).await
     }
@@ -210,7 +215,9 @@ mod tests {
 
         for (filename, expected) in test_cases {
             let path = PathBuf::from(filename);
-            let detected = SourceFile::detect_language(&path).map(|lang| lang.to_string()).unwrap_or_else(|| "unsupported".to_string());
+            let detected = SourceFile::detect_language(&path)
+                .map(|lang| lang.to_string())
+                .unwrap_or_else(|| "unsupported".to_string());
             assert_eq!(detected, expected, "Failed for {filename}");
         }
     }
@@ -219,8 +226,8 @@ mod tests {
     /// Test that the extractor can be created with real providers and process a simple file.
     #[tokio::test]
     async fn test_extractor_with_real_providers() {
-        use tempfile::NamedTempFile;
         use std::io::Write;
+        use tempfile::NamedTempFile;
 
         // Create a temporary Python file
         let python_source = r#"
@@ -240,21 +247,30 @@ def helper_function():
         let mut temp_file = NamedTempFile::new().unwrap();
         temp_file.write_all(python_source.as_bytes()).unwrap();
         let temp_path = temp_file.path().to_path_buf();
-        
+
         // Create extractor with base path for real service definitions
         let extractor = Engine::new();
-        
+
         // Create a SourceFile from the temporary file
-        let source_file = SourceFile::with_language(temp_path.clone(), python_source.to_string(), Language::Python);
-        
+        let source_file = SourceFile::with_language(
+            temp_path.clone(),
+            python_source.to_string(),
+            Language::Python,
+        );
+
         // Test that we can call the extraction method without errors
         // Note: This may not find actual SDK methods since we're using real parsing,
         // but it should not crash and should return a valid result structure
-        let result = extractor.extract_sdk_method_calls(Language::Python, vec![source_file]).await;
-        
+        let result = extractor
+            .extract_sdk_method_calls(Language::Python, vec![source_file])
+            .await;
+
         // The result should be Ok, even if no methods are found
-        assert!(result.is_ok(), "Extraction should not fail with real providers");
-        
+        assert!(
+            result.is_ok(),
+            "Extraction should not fail with real providers"
+        );
+
         let results = result.unwrap();
         // Metadata should be populated
         assert_eq!(results.metadata.source_files.len(), 1);
@@ -265,10 +281,12 @@ def helper_function():
     #[tokio::test]
     async fn test_empty_source_files_handling() {
         let extractor = Engine::new();
-        
+
         // Test with empty source files list
-        let result = extractor.extract_sdk_method_calls(Language::Python, vec![]).await;
-        
+        let result = extractor
+            .extract_sdk_method_calls(Language::Python, vec![])
+            .await;
+
         // Should return an error for empty source files list
         assert!(result.is_err());
     }

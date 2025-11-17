@@ -6,11 +6,14 @@
 #[cfg(test)]
 mod tests {
     use crate::extraction::extractor::Extractor;
-    use crate::extraction::python::extractor::PythonExtractor;
-    use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata, SourceFile};
     use crate::extraction::python::disambiguation::MethodDisambiguator;
+    use crate::extraction::python::extractor::PythonExtractor;
     use crate::extraction::sdk_model::{
-        ServiceModelIndex, SdkServiceDefinition, ServiceMetadata, Operation, Shape, ShapeReference, ServiceMethodRef
+        Operation, SdkServiceDefinition, ServiceMetadata, ServiceMethodRef, ServiceModelIndex,
+        Shape, ShapeReference,
+    };
+    use crate::extraction::{
+        Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata, SourceFile,
     };
     use std::collections::HashMap;
     use std::path::PathBuf;
@@ -25,33 +28,55 @@ mod tests {
         let mut apigateway_shapes = HashMap::new();
 
         // CreateApiMapping operation
-        apigateway_operations.insert("CreateApiMapping".to_string(), Operation {
-            name: "CreateApiMapping".to_string(),
-            input: Some(ShapeReference {
-                shape: "CreateApiMappingRequest".to_string(),
-            }),
-        });
+        apigateway_operations.insert(
+            "CreateApiMapping".to_string(),
+            Operation {
+                name: "CreateApiMapping".to_string(),
+                input: Some(ShapeReference {
+                    shape: "CreateApiMappingRequest".to_string(),
+                }),
+            },
+        );
 
         // CreateApiMapping input shape
         let mut create_api_mapping_members = HashMap::new();
-        create_api_mapping_members.insert("DomainName".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        create_api_mapping_members.insert("Stage".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        create_api_mapping_members.insert("ApiId".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        create_api_mapping_members.insert("ApiMappingKey".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        create_api_mapping_members.insert(
+            "DomainName".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        create_api_mapping_members.insert(
+            "Stage".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        create_api_mapping_members.insert(
+            "ApiId".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        create_api_mapping_members.insert(
+            "ApiMappingKey".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        apigateway_shapes.insert("CreateApiMappingRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: create_api_mapping_members,
-            required: Some(vec!["DomainName".to_string(), "Stage".to_string(), "ApiId".to_string()]),
-        });
+        apigateway_shapes.insert(
+            "CreateApiMappingRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: create_api_mapping_members,
+                required: Some(vec![
+                    "DomainName".to_string(),
+                    "Stage".to_string(),
+                    "ApiId".to_string(),
+                ]),
+            },
+        );
 
         let apigateway_service = SdkServiceDefinition {
             version: Some("2.0".to_string()),
@@ -71,30 +96,45 @@ mod tests {
         let mut s3_shapes = HashMap::new();
 
         // GetObject operation
-        s3_operations.insert("GetObject".to_string(), Operation {
-            name: "GetObject".to_string(),
-            input: Some(ShapeReference {
-                shape: "GetObjectRequest".to_string(),
-            }),
-        });
+        s3_operations.insert(
+            "GetObject".to_string(),
+            Operation {
+                name: "GetObject".to_string(),
+                input: Some(ShapeReference {
+                    shape: "GetObjectRequest".to_string(),
+                }),
+            },
+        );
 
         // GetObject input shape
         let mut get_object_members = HashMap::new();
-        get_object_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        get_object_members.insert("Key".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        get_object_members.insert("VersionId".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        get_object_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        get_object_members.insert(
+            "Key".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        get_object_members.insert(
+            "VersionId".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        s3_shapes.insert("GetObjectRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: get_object_members,
-            required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-        });
+        s3_shapes.insert(
+            "GetObjectRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: get_object_members,
+                required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        );
 
         let s3_service = SdkServiceDefinition {
             version: Some("2.0".to_string()),
@@ -110,19 +150,21 @@ mod tests {
         services.insert("s3".to_string(), s3_service);
 
         // === Method Lookup ===
-        method_lookup.insert("create_api_mapping".to_string(), vec![
-            ServiceMethodRef {
+        method_lookup.insert(
+            "create_api_mapping".to_string(),
+            vec![ServiceMethodRef {
                 service_name: "apigatewayv2".to_string(),
                 operation_name: "CreateApiMapping".to_string(),
-            }
-        ]);
+            }],
+        );
 
-        method_lookup.insert("get_object".to_string(), vec![
-            ServiceMethodRef {
+        method_lookup.insert(
+            "get_object".to_string(),
+            vec![ServiceMethodRef {
                 service_name: "s3".to_string(),
                 operation_name: "GetObject".to_string(),
-            }
-        ]);
+            }],
+        );
 
         ServiceModelIndex {
             services,
@@ -257,12 +299,10 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::DictionarySplat {
-                        expression: "**params".to_string(),
-                        position: 0,
-                    }
-                ],
+                parameters: vec![Parameter::DictionarySplat {
+                    expression: "**params".to_string(),
+                    position: 0,
+                }],
                 return_type: None,
                 start_position: (1, 1),
                 end_position: (1, 50),
@@ -274,7 +314,11 @@ mod tests {
         assert_eq!(result.len(), 1); // Should be kept for future analysis
         assert_eq!(result[0].name, "create_api_mapping");
         assert_eq!(result[0].possible_services, vec!["apigatewayv2"]);
-        assert!(result[0].metadata.as_ref().unwrap().has_dictionary_unpacking());
+        assert!(result[0]
+            .metadata
+            .as_ref()
+            .unwrap()
+            .has_dictionary_unpacking());
     }
 
     #[tokio::test]
@@ -286,14 +330,12 @@ mod tests {
             name: "custom_method".to_string(), // Not an AWS SDK method
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "custom_param".to_string(),
-                        value: ParameterValue::Resolved("value".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                ],
+                parameters: vec![Parameter::Keyword {
+                    name: "custom_param".to_string(),
+                    value: ParameterValue::Resolved("value".to_string()),
+                    position: 0,
+                    type_annotation: None,
+                }],
                 return_type: None,
                 start_position: (1, 1),
                 end_position: (1, 30),
@@ -341,14 +383,12 @@ mod tests {
                 name: "get_object".to_string(),
                 possible_services: Vec::new(),
                 metadata: Some(SdkMethodCallMetadata {
-                    parameters: vec![
-                        Parameter::Keyword {
-                            name: "custom_param".to_string(), // Invalid parameter for AWS S3
-                            value: ParameterValue::Resolved("value".to_string()),
-                            position: 0,
-                            type_annotation: None,
-                        },
-                    ],
+                    parameters: vec![Parameter::Keyword {
+                        name: "custom_param".to_string(), // Invalid parameter for AWS S3
+                        value: ParameterValue::Resolved("value".to_string()),
+                        position: 0,
+                        type_annotation: None,
+                    }],
                     return_type: None,
                     start_position: (2, 1),
                     end_position: (2, 30),
@@ -360,14 +400,12 @@ mod tests {
                 name: "custom_method".to_string(),
                 possible_services: Vec::new(),
                 metadata: Some(SdkMethodCallMetadata {
-                    parameters: vec![
-                        Parameter::Keyword {
-                            name: "param".to_string(),
-                            value: ParameterValue::Resolved("value".to_string()),
-                            position: 0,
-                            type_annotation: None,
-                        },
-                    ],
+                    parameters: vec![Parameter::Keyword {
+                        name: "param".to_string(),
+                        value: ParameterValue::Resolved("value".to_string()),
+                        position: 0,
+                        type_annotation: None,
+                    }],
                     return_type: None,
                     start_position: (3, 1),
                     end_position: (3, 25),
@@ -377,12 +415,15 @@ mod tests {
         ];
 
         let result = disambiguator.disambiguate_method_calls(method_calls);
-        
+
         // Only the valid AWS SDK call should remain
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].name, "get_object");
         assert_eq!(result[0].possible_services, vec!["s3"]);
-        assert_eq!(result[0].metadata.as_ref().unwrap().receiver, Some("s3_client".to_string()));
+        assert_eq!(
+            result[0].metadata.as_ref().unwrap().receiver,
+            Some("s3_client".to_string())
+        );
     }
 
     #[tokio::test]
@@ -418,11 +459,11 @@ def example():
         let source = SourceFile::with_language(
             PathBuf::from("test.py"),
             python_code.to_string(),
-            crate::Language::Python
+            crate::Language::Python,
         );
 
         let extractor = PythonExtractor::new();
-        
+
         // Extract method calls using tree-sitter
         let mut result = vec![extractor.parse(&source.content).await];
         assert_eq!(result.first().unwrap().method_calls_ref().len(), 7);
@@ -432,19 +473,19 @@ def example():
 
         // Should have 3 valid AWS SDK calls:
         // 1. s3_client.get_object with explicit params
-        // 2. apigateway_client.create_api_mapping with explicit params  
+        // 2. apigateway_client.create_api_mapping with explicit params
         // 3. s3_client.get_object with dictionary unpacking
         assert_eq!(result.first().unwrap().method_calls_ref().len(), 3);
-        
+
         // Apply disambiguation
         extractor.disambiguate(&mut result, &service_index);
 
         // Should still have 3 valid AWS SDK calls:
         // 1. s3_client.get_object with explicit params
-        // 2. apigateway_client.create_api_mapping with explicit params  
+        // 2. apigateway_client.create_api_mapping with explicit params
         // 3. s3_client.get_object with dictionary unpacking
         assert_eq!(result.first().unwrap().method_calls_ref().len(), 3);
-        
+
         let calls = result.first().unwrap().method_calls_ref();
 
         // Check that we have the expected method names
@@ -453,7 +494,8 @@ def example():
         assert!(method_names.contains(&"create_api_mapping"));
 
         // Check that dictionary unpacking is detected
-        let unpacking_call = calls.iter()
+        let unpacking_call = calls
+            .iter()
             .find(|call| call.metadata.as_ref().unwrap().has_dictionary_unpacking())
             .expect("Should have a call with dictionary unpacking");
         assert_eq!(unpacking_call.name, "get_object");
@@ -506,12 +548,12 @@ def example():
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
-        
+
         // The method call should be filtered out because "arg_custom_param" is not a valid S3 parameter
         // But the important thing is that it was evaluated as a keyword parameter, not filtered out
         // due to the "arg_" prefix. The filtering happens because it's an invalid parameter name for S3.
         assert_eq!(result.len(), 0); // Filtered out due to invalid parameter, not due to arg_ prefix
-        
+
         // To demonstrate the fix more clearly, let's test with a method that would accept any parameter
         // We'll create a simpler test case
     }
@@ -556,7 +598,7 @@ def example():
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
-        
+
         // This should be valid because:
         // 1. Required keyword parameters (Bucket, Key) are provided
         // 2. Positional parameter is correctly ignored during validation (filtered by parameter_type)

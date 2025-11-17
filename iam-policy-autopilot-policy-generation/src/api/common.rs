@@ -4,7 +4,7 @@ use log::{info, trace, warn};
 
 use crate::{ExtractedMethods, ExtractionEngine, Language, SourceFile};
 
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 
 /// Process source files and extract SDK method calls
 pub(crate) async fn process_source_files(
@@ -31,24 +31,22 @@ pub(crate) async fn process_source_files(
         let detected_language = extractor
             .detect_and_validate_language(&source_file_paths)
             .context("Failed to detect or validate programming language consistency")?;
-        
+
         info!("Detected programming language: {}", detected_language);
         detected_language.to_string()
     };
-    
+
     let language = Language::try_from_str(&language)?;
-    
+
     // Load all source files into SourceFile objects
     let mut loaded_source_files = Vec::new();
     for file_path in source_files {
-        let content = std::fs::read_to_string(file_path)
-            .context(format!("Failed to read source file: {}", file_path.display()))?;
-        
-        let source_file = SourceFile::with_language(
-            file_path.clone(),
-            content,
-            language,
-        );
+        let content = std::fs::read_to_string(file_path).context(format!(
+            "Failed to read source file: {}",
+            file_path.display()
+        ))?;
+
+        let source_file = SourceFile::with_language(file_path.clone(), content, language);
         loaded_source_files.push(source_file);
     }
 

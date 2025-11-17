@@ -4,9 +4,13 @@
 //! from embedded data with caching for performance optimization.
 
 use crate::errors::Result;
-use std::{borrow::Cow, collections::HashMap, sync::{Arc, OnceLock}};
-use serde::{Deserialize};
 use rust_embed::RustEmbed;
+use serde::Deserialize;
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    sync::{Arc, OnceLock},
+};
 
 /// Operation rename configuration
 #[derive(Clone, Debug, Deserialize)]
@@ -32,27 +36,35 @@ pub(crate) struct ServiceConfiguration {
 }
 
 impl ServiceConfiguration {
-    pub(crate) fn rename_service_operation_action_map<'a>(&self, original: &'a str) -> Cow<'a, str> {
+    pub(crate) fn rename_service_operation_action_map<'a>(
+        &self,
+        original: &'a str,
+    ) -> Cow<'a, str> {
         match self.rename_services_operation_action_map.get(original) {
             Some(renamed) => Cow::Owned(renamed.clone()),
             None => Cow::Borrowed(original),
         }
     }
-    
+
     pub(crate) fn rename_service_service_reference<'a>(&self, original: &'a str) -> Cow<'a, str> {
         match self.rename_services_service_reference.get(original) {
             Some(renamed) => Cow::Owned(renamed.clone()),
             None => Cow::Borrowed(original),
         }
     }
-    
+
     pub(crate) fn rename_operation<'a>(&self, service: &str, original: &'a str) -> Cow<'a, str> {
         let tmp = format!("{}:{}", service, original);
         match self.rename_operations.get(&tmp) {
             Some(operation_rename) => {
-                log::debug!("Renamed {} to {}:{}", original, operation_rename.service, operation_rename.operation);
+                log::debug!(
+                    "Renamed {} to {}:{}",
+                    original,
+                    operation_rename.service,
+                    operation_rename.operation
+                );
                 Cow::Owned(operation_rename.operation.clone())
-            },
+            }
             None => Cow::Borrowed(original),
         }
     }
@@ -84,17 +96,17 @@ pub(crate) fn load_service_configuration() -> Result<Arc<ServiceConfiguration>> 
     let config = SERVICE_CONFIG_CACHE.get_or_init(|| {
         let embedded_file = EmbeddedServiceConfig::get("service-configuration.json")
             .expect("Embedded service configuration file not found");
-        
+
         let json_str = std::str::from_utf8(&embedded_file.data)
             .expect("Invalid UTF-8 in embedded service configuration");
-        
+
         // Parse JSON synchronously
         let service_config: ServiceConfiguration = serde_json::from_str(json_str)
             .expect("Failed to parse embedded service configuration JSON");
-        
+
         Arc::new(service_config)
     });
-    
+
     Ok(config.clone())
 }
 
@@ -106,47 +118,81 @@ mod tests {
     fn test_load_service_configuration_embedded() {
         // Test loading the embedded service configuration
         let config = load_service_configuration().unwrap();
-        
+
         // Verify the configuration has expected structure
         assert!(!config.rename_services_operation_action_map.is_empty());
-        
+
         // Test that subsequent calls return the same cached data
         let config2 = load_service_configuration().unwrap();
-        
+
         // Since we're returning clones of the same cached data, they should be equal
-        assert_eq!(config.rename_services_operation_action_map, config2.rename_services_operation_action_map);
+        assert_eq!(
+            config.rename_services_operation_action_map,
+            config2.rename_services_operation_action_map
+        );
     }
 
     #[test]
     fn test_service_configuration_rename_methods() {
         let config = ServiceConfiguration {
-            rename_services_operation_action_map: [("old-service".to_string(), "new-service".to_string())].iter().cloned().collect(),
+            rename_services_operation_action_map: [(
+                "old-service".to_string(),
+                "new-service".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
             rename_services_service_reference: HashMap::new(),
-            rename_operations: [("old:Operation".to_string(), OperationRename {
-                service: "new".to_string(),
-                operation: "NewOperation".to_string(),
-            })].iter().cloned().collect(),
+            rename_operations: [(
+                "old:Operation".to_string(),
+                OperationRename {
+                    service: "new".to_string(),
+                    operation: "NewOperation".to_string(),
+                },
+            )]
+            .iter()
+            .cloned()
+            .collect(),
             resource_overrides: HashMap::new(),
         };
 
         // Test service renaming
-        assert_eq!(config.rename_service_operation_action_map("old-service"), "new-service");
-        assert_eq!(config.rename_service_operation_action_map("unchanged-service"), "unchanged-service");
+        assert_eq!(
+            config.rename_service_operation_action_map("old-service"),
+            "new-service"
+        );
+        assert_eq!(
+            config.rename_service_operation_action_map("unchanged-service"),
+            "unchanged-service"
+        );
 
         // Test operation renaming
         assert_eq!(config.rename_operation("old", "Operation"), "NewOperation");
-        assert_eq!(config.rename_operation("unchanged", "Operation"), "Operation");
+        assert_eq!(
+            config.rename_operation("unchanged", "Operation"),
+            "Operation"
+        );
     }
 
     #[test]
     fn test_embedded_service_configuration_content() {
         // Load the actual embedded configuration and verify it has expected content
         let config = load_service_configuration().unwrap();
-        
+
         // Test some known renames
-        assert_eq!(config.rename_services_operation_action_map.get("accessanalyzer"), Some(&"access-analyzer".to_string()));
-        assert_eq!(config.rename_services_operation_action_map.get("stepfunctions"), Some(&"states".to_string()));
-        
+        assert_eq!(
+            config
+                .rename_services_operation_action_map
+                .get("accessanalyzer"),
+            Some(&"access-analyzer".to_string())
+        );
+        assert_eq!(
+            config
+                .rename_services_operation_action_map
+                .get("stepfunctions"),
+            Some(&"states".to_string())
+        );
+
         // Test operation rename
         if let Some(rename_op) = config.rename_operations.get("s3:ListObjectsV2") {
             assert_eq!(rename_op.service, "s3");

@@ -4,10 +4,10 @@
 //! service definitions, ensuring that only legitimate AWS SDK calls are included in the
 //! final results. It performs parameter validation and filters out non-AWS method calls.
 
-use std::collections::HashSet;
-use crate::extraction::{SdkMethodCall, Parameter};
-use crate::extraction::sdk_model::{ServiceModelIndex, Shape, ServiceMethodRef};
 use crate::extraction::go::types::GoImportInfo;
+use crate::extraction::sdk_model::{ServiceMethodRef, ServiceModelIndex, Shape};
+use crate::extraction::{Parameter, SdkMethodCall};
+use std::collections::HashSet;
 
 const WITH_CONTEXT_SUFFIX: &str = "WithContext";
 
@@ -40,16 +40,25 @@ impl<'a> GoMethodDisambiguator<'a> {
     /// # Returns
     ///
     /// A filtered list of validated AWS SDK method calls with accurate service mappings.
-    pub(crate) fn disambiguate_method_calls(&self, method_calls: Vec<SdkMethodCall>, import_info: Option<&GoImportInfo>) -> Vec<SdkMethodCall> {
+    pub(crate) fn disambiguate_method_calls(
+        &self,
+        method_calls: Vec<SdkMethodCall>,
+        import_info: Option<&GoImportInfo>,
+    ) -> Vec<SdkMethodCall> {
         let mut validated_methods = Vec::new();
 
         for mut method_call in method_calls {
-            method_call.name = method_call.name.strip_suffix(WITH_CONTEXT_SUFFIX).unwrap_or(&method_call.name).to_string();
+            method_call.name = method_call
+                .name
+                .strip_suffix(WITH_CONTEXT_SUFFIX)
+                .unwrap_or(&method_call.name)
+                .to_string();
             // Check if this method name exists in the SDK
             if let Some(service_refs) = self.service_index.method_lookup.get(&method_call.name) {
                 // Validate the method call against each possible service
-                let valid_services = self.validate_method_against_services(&method_call, service_refs);
-                
+                let valid_services =
+                    self.validate_method_against_services(&method_call, service_refs);
+
                 if !valid_services.is_empty() {
                     // Filter services based on imports if import information is available
                     let filtered_services = if let Some(imports) = import_info {
@@ -57,7 +66,7 @@ impl<'a> GoMethodDisambiguator<'a> {
                     } else {
                         valid_services
                     };
-                    
+
                     // Only include the method call if we have valid services after filtering
                     if !filtered_services.is_empty() {
                         method_call.possible_services = filtered_services;
@@ -108,7 +117,10 @@ impl<'a> GoMethodDisambiguator<'a> {
         };
 
         // Get the operation definition
-        let operation = match service_definition.operations.get(&service_ref.operation_name) {
+        let operation = match service_definition
+            .operations
+            .get(&service_ref.operation_name)
+        {
             Some(op) => op,
             None => return false, // Operation not found
         };
@@ -122,13 +134,16 @@ impl<'a> GoMethodDisambiguator<'a> {
         // For Go, we need to handle context parameters specially
         // Context parameters are always the first parameter and should not be validated against AWS schemas
         let has_context = self.has_context_parameter(&metadata.parameters);
-        
+
         // Get the input shape for parameter validation
         let input_shape_name = match &operation.input {
             Some(input_ref) => &input_ref.shape,
             None => {
                 // No input expected, so only context parameters should be provided
-                return metadata.parameters.iter().all(|p| self.is_context_parameter(p));
+                return metadata
+                    .parameters
+                    .iter()
+                    .all(|p| self.is_context_parameter(p));
             }
         };
 
@@ -149,12 +164,18 @@ impl<'a> GoMethodDisambiguator<'a> {
     /// Check if a parameter is a context parameter
     fn is_context_parameter(&self, parameter: &Parameter) -> bool {
         match parameter {
-            Parameter::Positional { value, type_annotation, .. } => {
+            Parameter::Positional {
+                value,
+                type_annotation,
+                ..
+            } => {
                 if let Some(type_ann) = type_annotation {
                     type_ann.contains("context.Context")
                 } else {
                     let value_str = value.as_string();
-                    value_str.starts_with("context.") || value_str == "ctx" || value_str.contains("Context")
+                    value_str.starts_with("context.")
+                        || value_str == "ctx"
+                        || value_str.contains("Context")
                 }
             }
             _ => false,
@@ -172,19 +193,28 @@ impl<'a> GoMethodDisambiguator<'a> {
     /// * `parameters` - The parameters provided in the method call
     /// * `shape` - The AWS service input shape definition
     /// * `has_context` - Whether a context parameter is present (affects parameter indexing)
-    fn validate_parameters_against_shape(&self, parameters: &[Parameter], shape: &Shape, _has_context: bool) -> bool {
+    fn validate_parameters_against_shape(
+        &self,
+        parameters: &[Parameter],
+        shape: &Shape,
+        _has_context: bool,
+    ) -> bool {
         // Extract parameter names from struct literals (the main way Go SDK passes parameters)
         let provided_params: HashSet<String> = parameters
             .iter()
             .filter_map(|p| match p {
-                Parameter::Positional { value, type_annotation, .. } => {
+                Parameter::Positional {
+                    value,
+                    type_annotation,
+                    ..
+                } => {
                     // Skip context parameters
                     if let Some(type_ann) = type_annotation {
                         if type_ann.contains("context.Context") {
                             return None;
                         }
                     }
-                    
+
                     let value_str = value.as_string();
                     // Extract field names from struct literals
                     if value_str.contains('{') && value_str.contains('}') {
@@ -228,12 +258,12 @@ impl<'a> GoMethodDisambiguator<'a> {
     /// Extract field names from a struct literal string
     fn extract_struct_field_names(&self, struct_literal: &str) -> Vec<String> {
         let mut field_names = Vec::new();
-        
+
         // Find the content between braces
         if let Some(start) = struct_literal.find('{') {
             if let Some(end) = struct_literal.rfind('}') {
                 let content = &struct_literal[start + 1..end];
-                
+
                 // Simple parsing - split by commas and extract field names
                 for field_part in content.split(',') {
                     let field_part = field_part.trim();
@@ -246,7 +276,7 @@ impl<'a> GoMethodDisambiguator<'a> {
                 }
             }
         }
-        
+
         field_names
     }
 
@@ -256,21 +286,25 @@ impl<'a> GoMethodDisambiguator<'a> {
     /// possible services to only include those that are actually imported.
     /// If no imports match any of the possible services, returns the original list
     /// to avoid filtering out all services (false negatives are worse than false positives).
-    fn filter_services_by_imports(&self, possible_services: &[String], import_info: &GoImportInfo) -> Vec<String> {
+    fn filter_services_by_imports(
+        &self,
+        possible_services: &[String],
+        import_info: &GoImportInfo,
+    ) -> Vec<String> {
         let imported_services = import_info.get_imported_services();
-        
+
         // If no AWS services are imported, return the original list
         if imported_services.is_empty() {
             return possible_services.to_vec();
         }
-        
+
         // Filter possible services to only those that are imported
         let filtered: Vec<String> = possible_services
             .iter()
             .filter(|service| imported_services.contains(service))
             .cloned()
             .collect();
-        
+
         // If filtering would remove all services, return the original list
         // This prevents false negatives when imports might be missing or not detected
         if filtered.is_empty() {
@@ -284,10 +318,11 @@ impl<'a> GoMethodDisambiguator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
     use crate::extraction::sdk_model::{
-        ServiceModelIndex, SdkServiceDefinition, ServiceMetadata, Operation, Shape, ShapeReference, ServiceMethodRef
+        Operation, SdkServiceDefinition, ServiceMetadata, ServiceMethodRef, ServiceModelIndex,
+        Shape, ShapeReference,
     };
+    use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
     use std::collections::HashMap;
 
     fn create_test_service_index() -> ServiceModelIndex {
@@ -299,52 +334,79 @@ mod tests {
         let mut s3_shapes = HashMap::new();
 
         // Create ListObjectsV2 operation
-        s3_operations.insert("ListObjectsV2".to_string(), Operation {
-            name: "ListObjectsV2".to_string(),
-            input: Some(ShapeReference {
-                shape: "ListObjectsV2Request".to_string(),
-            }),
-        });
+        s3_operations.insert(
+            "ListObjectsV2".to_string(),
+            Operation {
+                name: "ListObjectsV2".to_string(),
+                input: Some(ShapeReference {
+                    shape: "ListObjectsV2Request".to_string(),
+                }),
+            },
+        );
 
         // Create GetObject operation (exists in both s3 and s3control)
-        s3_operations.insert("GetObject".to_string(), Operation {
-            name: "GetObject".to_string(),
-            input: Some(ShapeReference {
-                shape: "GetObjectRequest".to_string(),
-            }),
-        });
+        s3_operations.insert(
+            "GetObject".to_string(),
+            Operation {
+                name: "GetObject".to_string(),
+                input: Some(ShapeReference {
+                    shape: "GetObjectRequest".to_string(),
+                }),
+            },
+        );
 
         // Create input shapes
         let mut list_objects_members = HashMap::new();
-        list_objects_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        list_objects_members.insert("MaxKeys".to_string(), ShapeReference {
-            shape: "Integer".to_string(),
-        });
-        list_objects_members.insert("Prefix".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        list_objects_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        list_objects_members.insert(
+            "MaxKeys".to_string(),
+            ShapeReference {
+                shape: "Integer".to_string(),
+            },
+        );
+        list_objects_members.insert(
+            "Prefix".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        s3_shapes.insert("ListObjectsV2Request".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: list_objects_members,
-            required: Some(vec!["Bucket".to_string()]),
-        });
+        s3_shapes.insert(
+            "ListObjectsV2Request".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: list_objects_members,
+                required: Some(vec!["Bucket".to_string()]),
+            },
+        );
 
         let mut get_object_members = HashMap::new();
-        get_object_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        get_object_members.insert("Key".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        get_object_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        get_object_members.insert(
+            "Key".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        s3_shapes.insert("GetObjectRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: get_object_members,
-            required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-        });
+        s3_shapes.insert(
+            "GetObjectRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: get_object_members,
+                required: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        );
 
         let s3_service_def = SdkServiceDefinition {
             version: Some("2.0".to_string()),
@@ -363,29 +425,48 @@ mod tests {
         let mut s3control_operations = HashMap::new();
         let mut s3control_shapes = HashMap::new();
 
-        s3control_operations.insert("GetObject".to_string(), Operation {
-            name: "GetObject".to_string(),
-            input: Some(ShapeReference {
-                shape: "GetObjectRequest".to_string(),
-            }),
-        });
+        s3control_operations.insert(
+            "GetObject".to_string(),
+            Operation {
+                name: "GetObject".to_string(),
+                input: Some(ShapeReference {
+                    shape: "GetObjectRequest".to_string(),
+                }),
+            },
+        );
 
         let mut s3control_get_object_members = HashMap::new();
-        s3control_get_object_members.insert("AccountId".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        s3control_get_object_members.insert("Bucket".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
-        s3control_get_object_members.insert("Key".to_string(), ShapeReference {
-            shape: "String".to_string(),
-        });
+        s3control_get_object_members.insert(
+            "AccountId".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        s3control_get_object_members.insert(
+            "Bucket".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        s3control_get_object_members.insert(
+            "Key".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
 
-        s3control_shapes.insert("GetObjectRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: s3control_get_object_members,
-            required: Some(vec!["AccountId".to_string(), "Bucket".to_string(), "Key".to_string()]),
-        });
+        s3control_shapes.insert(
+            "GetObjectRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: s3control_get_object_members,
+                required: Some(vec![
+                    "AccountId".to_string(),
+                    "Bucket".to_string(),
+                    "Key".to_string(),
+                ]),
+            },
+        );
 
         let s3control_service_def = SdkServiceDefinition {
             version: Some("2.0".to_string()),
@@ -401,23 +482,27 @@ mod tests {
         services.insert("s3control".to_string(), s3control_service_def);
 
         // Add method lookup entries
-        method_lookup.insert("ListObjectsV2".to_string(), vec![
-            ServiceMethodRef {
+        method_lookup.insert(
+            "ListObjectsV2".to_string(),
+            vec![ServiceMethodRef {
                 service_name: "s3".to_string(),
                 operation_name: "ListObjectsV2".to_string(),
-            }
-        ]);
+            }],
+        );
 
-        method_lookup.insert("GetObject".to_string(), vec![
-            ServiceMethodRef {
-                service_name: "s3".to_string(),
-                operation_name: "GetObject".to_string(),
-            },
-            ServiceMethodRef {
-                service_name: "s3control".to_string(),
-                operation_name: "GetObject".to_string(),
-            }
-        ]);
+        method_lookup.insert(
+            "GetObject".to_string(),
+            vec![
+                ServiceMethodRef {
+                    service_name: "s3".to_string(),
+                    operation_name: "GetObject".to_string(),
+                },
+                ServiceMethodRef {
+                    service_name: "s3control".to_string(),
+                    operation_name: "GetObject".to_string(),
+                },
+            ],
+        );
 
         ServiceModelIndex {
             services,
@@ -442,7 +527,10 @@ mod tests {
                         type_annotation: Some("context.Context".to_string()),
                     },
                     Parameter::Positional {
-                        value: ParameterValue::Unresolved("&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string()),
+                        value: ParameterValue::Unresolved(
+                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
+                                .to_string(),
+                        ),
                         position: 1,
                         type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
                     },
@@ -486,7 +574,8 @@ mod tests {
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
-        let struct_literal = "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\"), MaxKeys: aws.Int32(10) }";
+        let struct_literal =
+            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\"), MaxKeys: aws.Int32(10) }";
         let field_names = disambiguator.extract_struct_field_names(struct_literal);
 
         assert_eq!(field_names.len(), 2);
@@ -503,13 +592,11 @@ mod tests {
             name: "NonAwsMethod".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("someParam".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                ],
+                parameters: vec![Parameter::Positional {
+                    value: ParameterValue::Unresolved("someParam".to_string()),
+                    position: 0,
+                    type_annotation: None,
+                }],
                 return_type: None,
                 start_position: (1, 1),
                 end_position: (1, 30),
@@ -524,7 +611,7 @@ mod tests {
     #[test]
     fn test_import_based_filtering() {
         use crate::extraction::go::types::{GoImportInfo, ImportInfo};
-        
+
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
@@ -533,7 +620,7 @@ mod tests {
         import_info.add_import(ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/s3".to_string(),
             "s3".to_string(),
-            5
+            5,
         ));
 
         // Create a method call that could match multiple services but we only have S3 imported
@@ -548,7 +635,10 @@ mod tests {
                         type_annotation: Some("context.Context".to_string()),
                     },
                     Parameter::Positional {
-                        value: ParameterValue::Unresolved("&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string()),
+                        value: ParameterValue::Unresolved(
+                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
+                                .to_string(),
+                        ),
                         position: 1,
                         type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
                     },
@@ -568,7 +658,7 @@ mod tests {
     #[test]
     fn test_no_imports_keeps_all_services() {
         use crate::extraction::go::types::GoImportInfo;
-        
+
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
@@ -586,7 +676,10 @@ mod tests {
                         type_annotation: Some("context.Context".to_string()),
                     },
                     Parameter::Positional {
-                        value: ParameterValue::Unresolved("&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string()),
+                        value: ParameterValue::Unresolved(
+                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
+                                .to_string(),
+                        ),
                         position: 1,
                         type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
                     },
@@ -607,7 +700,7 @@ mod tests {
     #[test]
     fn test_import_filtering_with_aliases() {
         use crate::extraction::go::types::{GoImportInfo, ImportInfo};
-        
+
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
@@ -616,7 +709,7 @@ mod tests {
         import_info.add_import(ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/s3".to_string(),
             "myS3".to_string(), // aliased import
-            5
+            5,
         ));
 
         let method_call = SdkMethodCall {
@@ -630,7 +723,10 @@ mod tests {
                         type_annotation: Some("context.Context".to_string()),
                     },
                     Parameter::Positional {
-                        value: ParameterValue::Unresolved("&myS3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string()),
+                        value: ParameterValue::Unresolved(
+                            "&myS3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
+                                .to_string(),
+                        ),
                         position: 1,
                         type_annotation: Some("*myS3.ListObjectsV2Input".to_string()),
                     },
@@ -647,4 +743,3 @@ mod tests {
         assert_eq!(result[0].possible_services, vec!["s3"]);
     }
 }
-

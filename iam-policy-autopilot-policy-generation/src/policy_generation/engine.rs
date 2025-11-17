@@ -4,12 +4,12 @@
 //! The engine processes EnrichedSdkMethodCall instances and creates corresponding IAM policies
 //! with proper ARN pattern replacement.
 
+use super::merge::{PolicyMerger, PolicyMergerConfig};
+use super::utils::{ArnParser, ConditionValueProcessor};
+use super::{ActionMapping, IamPolicy, MethodActionMapping, Statement};
 use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
-use super::{IamPolicy, Statement, MethodActionMapping, ActionMapping};
-use super::utils::{ArnParser, ConditionValueProcessor};
-use super::merge::{PolicyMerger, PolicyMergerConfig};
 
 /// Policy generation engine that converts enriched method calls into IAM policies
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ impl<'a> Engine<'a> {
         partition: &'a str,
         region: &'a str,
         account: &'a str,
-        merger_config: PolicyMergerConfig
+        merger_config: PolicyMergerConfig,
     ) -> Self {
         Self {
             arn_parser: ArnParser::new(partition, region, account),
@@ -48,7 +48,10 @@ impl<'a> Engine<'a> {
     /// Creates one IAM policy per EnrichedSdkMethodCall, with each Action becoming
     /// a separate statement within the policy. ARN patterns are processed to replace
     /// placeholder variables with actual values or wildcards.
-    pub fn generate_policies(&self, enriched_calls: &[EnrichedSdkMethodCall]) -> Result<Vec<PolicyWithMetadata>> {
+    pub fn generate_policies(
+        &self,
+        enriched_calls: &[EnrichedSdkMethodCall],
+    ) -> Result<Vec<PolicyWithMetadata>> {
         let mut policies = Vec::new();
 
         for enriched_call in enriched_calls {
@@ -60,7 +63,10 @@ impl<'a> Engine<'a> {
     }
 
     /// Generate a single IAM policy for an enriched method call
-    fn generate_policy_for_call(&self, enriched_call: &EnrichedSdkMethodCall) -> Result<PolicyWithMetadata> {
+    fn generate_policy_for_call(
+        &self,
+        enriched_call: &EnrichedSdkMethodCall,
+    ) -> Result<PolicyWithMetadata> {
         let mut policy = IamPolicy::new();
 
         for (index, action) in enriched_call.actions.iter().enumerate() {
@@ -75,8 +81,11 @@ impl<'a> Engine<'a> {
                 enriched_call.method_name
             )));
         }
-        
-        let policy_with_metadata = PolicyWithMetadata { policy, policy_type: PolicyType::Identity };
+
+        let policy_with_metadata = PolicyWithMetadata {
+            policy,
+            policy_type: PolicyType::Identity,
+        };
 
         Ok(policy_with_metadata)
     }
@@ -92,15 +101,12 @@ impl<'a> Engine<'a> {
         let resources = self.process_action_resources(action)?;
 
         // Create the statement
-        let mut statement = Statement::allow(
-            vec![action.name.clone()],
-            resources,
-        );
-        
+        let mut statement = Statement::allow(vec![action.name.clone()], resources);
+
         let conditions = self.process_action_conditions(action)?;
-        
+
         statement = statement.with_conditions(conditions.clone());
-        
+
         // Generate a descriptive SID
         let sid = self.generate_statement_id(enriched_call, action, index);
         statement = statement.with_sid(sid);
@@ -115,9 +121,17 @@ impl<'a> Engine<'a> {
         for resource in &action.resources {
             if let Some(arn_patterns) = &resource.arn_patterns {
                 // Process each ARN pattern
-                log::debug!("process_action_resources: unprocessed ARN patterns: {}, {:?}", action.name, arn_patterns);
+                log::debug!(
+                    "process_action_resources: unprocessed ARN patterns: {}, {:?}",
+                    action.name,
+                    arn_patterns
+                );
                 let processed_patterns = self.arn_parser.process_arn_patterns(arn_patterns)?;
-                log::debug!("process_action_resources: processed ARN patterns: {}, {:?}", action.name, processed_patterns);
+                log::debug!(
+                    "process_action_resources: processed ARN patterns: {}, {:?}",
+                    action.name,
+                    processed_patterns
+                );
                 processed_resources.extend(processed_patterns);
             } else {
                 // No ARN patterns available, use wildcard
@@ -131,26 +145,30 @@ impl<'a> Engine<'a> {
         }
 
         // Remove subsumed resources to avoid redundant permissions
-        let optimized_resources = self.policy_merger.remove_subsumed_resources(processed_resources)?;
+        let optimized_resources = self
+            .policy_merger
+            .remove_subsumed_resources(processed_resources)?;
 
         Ok(optimized_resources)
     }
-    
+
     /// Process conditions for an action to replace placeholder variables
     pub(crate) fn process_action_conditions(&self, action: &Action) -> Result<Vec<Condition>> {
         let mut processed_conditions = Vec::new();
-        
+
         for condition in &action.conditions {
             // Process each condition value to replace placeholders
-            let (processed_values, wildcards_introduced) = self.condition_processor.process_condition_values(&condition.values)?;
-            
+            let (processed_values, wildcards_introduced) = self
+                .condition_processor
+                .process_condition_values(&condition.values)?;
+
             // Change operator to ...Like if wildcards were introduced
             let operator = if wildcards_introduced {
                 condition.operator.to_like_version()
             } else {
                 condition.operator.clone()
             };
-            
+
             processed_conditions.push(Condition {
                 operator,
                 key: condition.key.clone(),
@@ -180,7 +198,11 @@ impl<'a> Engine<'a> {
             "Allow{}{}{}",
             enriched_call.service.to_uppercase(),
             action_name,
-            if index > 0 { index.to_string() } else { String::new() }
+            if index > 0 {
+                index.to_string()
+            } else {
+                String::new()
+            }
         )
     }
 
@@ -199,15 +221,28 @@ impl<'a> Engine<'a> {
     ///
     /// # Errors
     /// Returns an error if policy merging fails
-    pub fn merge_policies(&self, policies: &[PolicyWithMetadata]) -> Result<Vec<PolicyWithMetadata>> {
+    pub fn merge_policies(
+        &self,
+        policies: &[PolicyWithMetadata],
+    ) -> Result<Vec<PolicyWithMetadata>> {
         match policies.first() {
             None => Ok(vec![]),
-            Some(first) if policies.iter().any(|p| p.policy_type != first.policy_type) =>
-                Err(ExtractorError::policy_generation("Cannot merge policies with different types")),
+            Some(first) if policies.iter().any(|p| p.policy_type != first.policy_type) => Err(
+                ExtractorError::policy_generation("Cannot merge policies with different types"),
+            ),
             Some(first) => {
-                let policies = policies.iter().map(|p| p.policy.clone()).collect::<Vec<_>>();
+                let policies = policies
+                    .iter()
+                    .map(|p| p.policy.clone())
+                    .collect::<Vec<_>>();
                 let merged = self.policy_merger.merge_policies(&policies)?;
-                Ok(merged.iter().map(|policy| PolicyWithMetadata { policy: policy.clone(), policy_type: first.policy_type}).collect::<Vec<_>>())
+                Ok(merged
+                    .iter()
+                    .map(|policy| PolicyWithMetadata {
+                        policy: policy.clone(),
+                        policy_type: first.policy_type,
+                    })
+                    .collect::<Vec<_>>())
             }
         }
     }
@@ -228,7 +263,10 @@ impl<'a> Engine<'a> {
     ///
     /// # Errors
     /// Returns an error if resource processing fails for any action
-    pub fn extract_action_mappings(&self, enriched_calls: &[EnrichedSdkMethodCall]) -> Result<Vec<MethodActionMapping>> {
+    pub fn extract_action_mappings(
+        &self,
+        enriched_calls: &[EnrichedSdkMethodCall],
+    ) -> Result<Vec<MethodActionMapping>> {
         let mut mappings = Vec::new();
 
         for enriched_call in enriched_calls {
@@ -264,16 +302,12 @@ mod tests {
     use super::*;
     use crate::SdkMethodCall;
 
-    use crate::enrichment::{EnrichedSdkMethodCall, Action, Resource};
-    use crate::errors::ExtractorError;
     use super::super::Effect;
+    use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
+    use crate::errors::ExtractorError;
 
     fn create_test_engine() -> Engine<'static> {
-        Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        )
+        Engine::new("aws", "us-east-1", "123456789012")
     }
 
     fn create_test_sdk_call() -> SdkMethodCall {
@@ -292,16 +326,16 @@ mod tests {
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "get_object".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:GetObject".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
-                    )],
-                    vec![]
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
             sdk_method_call: &sdk_call,
         };
 
@@ -332,7 +366,9 @@ mod tests {
                     "s3:GetObject".to_string(),
                     vec![Resource::new(
                         "object".to_string(),
-                        Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
                     )],
                     vec![],
                 ),
@@ -340,10 +376,12 @@ mod tests {
                     "s3:GetObjectVersion".to_string(),
                     vec![Resource::new(
                         "object".to_string(),
-                        Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
                     )],
                     vec![],
-                )
+                ),
             ],
             sdk_method_call: &sdk_call,
         };
@@ -373,13 +411,11 @@ mod tests {
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "list_buckets".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:ListAllMyBuckets".to_string(),
-                    vec![Resource::new("*".to_string(), None)],
-                    vec![],
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:ListAllMyBuckets".to_string(),
+                vec![Resource::new("*".to_string(), None)],
+                vec![],
+            )],
             sdk_method_call: &sdk_call,
         };
 
@@ -423,10 +459,13 @@ mod tests {
 
         let policy = &policies[0].policy;
         let statement = &policy.statements[0];
-        assert_eq!(statement.resource, vec![
-            "arn:aws:s3:::*/*",
-            "arn:aws:s3:us-east-1:123456789012:accesspoint/*"
-        ]);
+        assert_eq!(
+            statement.resource,
+            vec![
+                "arn:aws:s3:::*/*",
+                "arn:aws:s3:us-east-1:123456789012:accesspoint/*"
+            ]
+        );
     }
 
     #[test]
@@ -473,7 +512,7 @@ mod tests {
 
         let result = engine.generate_policies(&[enriched_call]);
         assert!(result.is_err());
-        
+
         if let Err(ExtractorError::PolicyGeneration { message, .. }) = result {
             assert!(message.contains("No statements generated"));
         } else {
@@ -484,20 +523,32 @@ mod tests {
     #[test]
     fn test_merge_policies() {
         let engine = create_test_engine();
-        
+
         // Create two policies with equivalent resources that should be merged
         let mut policy1 = IamPolicy::new();
-        policy1.add_statement(create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::bucket/*"]));
-        let policy1 = PolicyWithMetadata { policy: policy1, policy_type: PolicyType::Identity };
-        
+        policy1.add_statement(create_test_statement(
+            vec!["s3:GetObject"],
+            vec!["arn:aws:s3:::bucket/*"],
+        ));
+        let policy1 = PolicyWithMetadata {
+            policy: policy1,
+            policy_type: PolicyType::Identity,
+        };
+
         let mut policy2 = IamPolicy::new();
-        policy2.add_statement(create_test_statement(vec!["s3:PutObject"], vec!["arn:aws:s3:::bucket/*"]));
-        let policy2 = PolicyWithMetadata { policy: policy2, policy_type: PolicyType::Identity };
-        
+        policy2.add_statement(create_test_statement(
+            vec!["s3:PutObject"],
+            vec!["arn:aws:s3:::bucket/*"],
+        ));
+        let policy2 = PolicyWithMetadata {
+            policy: policy2,
+            policy_type: PolicyType::Identity,
+        };
+
         let merged = engine.merge_policies(&[policy1, policy2]).unwrap();
         assert_eq!(merged.len(), 1);
         let policy = &merged[0].policy;
-        
+
         // Should be merged into a single statement
         assert_eq!(policy.statements.len(), 1);
         let statement = &policy.statements[0];
@@ -510,7 +561,7 @@ mod tests {
     #[test]
     fn test_merge_policies_empty() {
         let engine = create_test_engine();
-        
+
         let merged = engine.merge_policies(&[]).unwrap();
         assert!(merged.is_empty());
     }
@@ -525,61 +576,66 @@ mod tests {
     #[test]
     fn test_process_action_resources_removes_subsumed() {
         let engine = create_test_engine();
-        
+
         // Create an action with subsumed resources (the example case from requirements)
         let action = Action::new(
             "events:PutRule".to_string(),
-            vec![
-                Resource::new(
-                    "rule".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:events:${Region}:${Account}:rule/*".to_string(),
-                        "arn:${Partition}:events:${Region}:${Account}:rule/*/*".to_string(),
-                    ])
-                )
-            ],
+            vec![Resource::new(
+                "rule".to_string(),
+                Some(vec![
+                    "arn:${Partition}:events:${Region}:${Account}:rule/*".to_string(),
+                    "arn:${Partition}:events:${Region}:${Account}:rule/*/*".to_string(),
+                ]),
+            )],
             vec![],
         );
 
         let processed_resources = engine.process_action_resources(&action).unwrap();
-        
+
         // Should only contain the more general resource (rule/*), not the subsumed one (rule/*/*)
         assert_eq!(processed_resources.len(), 1);
-        assert_eq!(processed_resources[0], "arn:aws:events:us-east-1:123456789012:rule/*");
+        assert_eq!(
+            processed_resources[0],
+            "arn:aws:events:us-east-1:123456789012:rule/*"
+        );
     }
 
     #[test]
     fn test_process_action_resources_preserves_incomparable() {
         let engine = create_test_engine();
-        
+
         // Create an action with incomparable resources (different services)
         let action = Action::new(
             "multi:Action".to_string(),
             vec![
                 Resource::new(
                     "s3-bucket".to_string(),
-                    Some(vec!["arn:${Partition}:s3:::${BucketName}/*".to_string()])
+                    Some(vec!["arn:${Partition}:s3:::${BucketName}/*".to_string()]),
                 ),
                 Resource::new(
                     "dynamodb-table".to_string(),
-                    Some(vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()])
-                )
+                    Some(vec![
+                        "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"
+                            .to_string(),
+                    ]),
+                ),
             ],
             vec![],
         );
 
         let processed_resources = engine.process_action_resources(&action).unwrap();
-        
+
         // Should contain both resources since they're incomparable (different services)
         assert_eq!(processed_resources.len(), 2);
         assert!(processed_resources.contains(&"arn:aws:s3:::*/*".to_string()));
-        assert!(processed_resources.contains(&"arn:aws:dynamodb:us-east-1:123456789012:table/*".to_string()));
+        assert!(processed_resources
+            .contains(&"arn:aws:dynamodb:us-east-1:123456789012:table/*".to_string()));
     }
 
     #[test]
     fn test_process_action_conditions() {
         let engine = create_test_engine();
-        
+
         // Create an action with conditions containing placeholders
         let action = Action::new(
             "s3:GetObject".to_string(),
@@ -593,23 +649,20 @@ mod tests {
                 Condition {
                     operator: crate::enrichment::Operator::StringEquals,
                     key: "aws:RequestedRegion".to_string(),
-                    values: vec![
-                        "${region}".to_string(),
-                        "us-west-${unknown}".to_string(),
-                    ],
+                    values: vec!["${region}".to_string(), "us-west-${unknown}".to_string()],
                 },
             ],
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 2);
-        
+
         // Check first condition
         let condition1 = &processed_conditions[0];
         assert_eq!(condition1.key, "s3:ExistingObjectTag/Environment");
         assert_eq!(condition1.values, vec!["s3.us-east-1.amazonaws.com"]);
-        
+
         // Check second condition
         let condition2 = &processed_conditions[1];
         assert_eq!(condition2.key, "aws:RequestedRegion");
@@ -619,24 +672,22 @@ mod tests {
     #[test]
     fn test_process_action_conditions_no_placeholders() {
         let engine = create_test_engine();
-        
+
         // Create an action with conditions without placeholders
         let action = Action::new(
             "s3:GetObject".to_string(),
             vec![],
-            vec![
-                Condition {
-                    operator: crate::enrichment::Operator::StringEquals,
-                    key: "s3:ExistingObjectTag/Environment".to_string(),
-                    values: vec!["production".to_string(), "staging".to_string()],
-                },
-            ],
+            vec![Condition {
+                operator: crate::enrichment::Operator::StringEquals,
+                key: "s3:ExistingObjectTag/Environment".to_string(),
+                values: vec!["production".to_string(), "staging".to_string()],
+            }],
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
         assert_eq!(condition.key, "s3:ExistingObjectTag/Environment");
         assert_eq!(condition.values, vec!["production", "staging"]);
@@ -645,40 +696,34 @@ mod tests {
     #[test]
     fn test_process_action_conditions_empty() {
         let engine = create_test_engine();
-        
+
         // Create an action with no conditions
-        let action = Action::new(
-            "s3:GetObject".to_string(),
-            vec![],
-            vec![],
-        );
+        let action = Action::new("s3:GetObject".to_string(), vec![], vec![]);
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 0);
     }
 
     #[test]
     fn test_process_action_conditions_with_wildcards() {
         let engine = create_test_engine();
-        
+
         // Create an action with conditions that will introduce wildcards
         let action = Action::new(
             "s3:GetObject".to_string(),
             vec![],
-            vec![
-                Condition {
-                    operator: crate::enrichment::Operator::StringEquals,
-                    key: "s3:ExistingObjectTag/Environment".to_string(),
-                    values: vec!["s3.${unknown}.amazonaws.com".to_string()],
-                },
-            ],
+            vec![Condition {
+                operator: crate::enrichment::Operator::StringEquals,
+                key: "s3:ExistingObjectTag/Environment".to_string(),
+                values: vec!["s3.${unknown}.amazonaws.com".to_string()],
+            }],
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
         assert_eq!(condition.key, "s3:ExistingObjectTag/Environment");
         assert_eq!(condition.values, vec!["s3.*.amazonaws.com"]);
@@ -689,7 +734,7 @@ mod tests {
     #[test]
     fn test_process_action_conditions_mixed_wildcards() {
         let engine = create_test_engine();
-        
+
         // Create an action with conditions where some introduce wildcards and some don't
         let action = Action::new(
             "s3:GetObject".to_string(),
@@ -709,15 +754,18 @@ mod tests {
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 2);
-        
+
         // First condition should keep StringEquals (no wildcards introduced)
         let condition1 = &processed_conditions[0];
         assert_eq!(condition1.key, "aws:RequestedRegion");
         assert_eq!(condition1.values, vec!["us-east-1"]);
-        assert_eq!(condition1.operator, crate::enrichment::Operator::StringEquals);
-        
+        assert_eq!(
+            condition1.operator,
+            crate::enrichment::Operator::StringEquals
+        );
+
         // Second condition should change to StringLike (wildcards introduced)
         let condition2 = &processed_conditions[1];
         assert_eq!(condition2.key, "s3:ExistingObjectTag/Environment");
@@ -728,27 +776,25 @@ mod tests {
     #[test]
     fn test_process_action_conditions_multiple_values_with_wildcards() {
         let engine = create_test_engine();
-        
+
         // Create an action with a condition that has multiple values, some introducing wildcards
         let action = Action::new(
             "s3:GetObject".to_string(),
             vec![],
-            vec![
-                Condition {
-                    operator: crate::enrichment::Operator::StringEquals,
-                    key: "aws:RequestedRegion".to_string(),
-                    values: vec![
-                        "${region}".to_string(),        // Known placeholder, no wildcards
-                        "us-west-${unknown}".to_string(), // Unknown placeholder, introduces wildcards
-                    ],
-                },
-            ],
+            vec![Condition {
+                operator: crate::enrichment::Operator::StringEquals,
+                key: "aws:RequestedRegion".to_string(),
+                values: vec![
+                    "${region}".to_string(),          // Known placeholder, no wildcards
+                    "us-west-${unknown}".to_string(), // Unknown placeholder, introduces wildcards
+                ],
+            }],
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
-        
+
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
         assert_eq!(condition.key, "aws:RequestedRegion");
         assert_eq!(condition.values, vec!["us-east-1", "us-west-*"]);
@@ -759,72 +805,73 @@ mod tests {
     #[test]
     fn test_stringlike_operator_when_partition_region_account_is_wildcard() {
         // Test when partition is "*" - should produce StringLike
-        let engine_wildcard_partition = Engine::new(
-            "*",
-            "us-east-1",
-            "123456789012",
-        );
-        
+        let engine_wildcard_partition = Engine::new("*", "us-east-1", "123456789012");
+
         let action = Action::new(
             "s3:GetObject".to_string(),
             vec![],
-            vec![
-                Condition {
-                    operator: crate::enrichment::Operator::StringEquals,
-                    key: "s3:ExistingObjectTag/Environment".to_string(),
-                    values: vec!["arn:${partition}:s3:${region}:${account}:bucket/test".to_string()],
-                },
-            ],
+            vec![Condition {
+                operator: crate::enrichment::Operator::StringEquals,
+                key: "s3:ExistingObjectTag/Environment".to_string(),
+                values: vec!["arn:${partition}:s3:${region}:${account}:bucket/test".to_string()],
+            }],
         );
 
-        let processed_conditions = engine_wildcard_partition.process_action_conditions(&action).unwrap();
+        let processed_conditions = engine_wildcard_partition
+            .process_action_conditions(&action)
+            .unwrap();
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
-        assert_eq!(condition.values, vec!["arn:*:s3:us-east-1:123456789012:bucket/test"]);
+        assert_eq!(
+            condition.values,
+            vec!["arn:*:s3:us-east-1:123456789012:bucket/test"]
+        );
         assert_eq!(condition.operator, crate::enrichment::Operator::StringLike);
 
         // Test when region is "*" - should produce StringLike
-        let engine_wildcard_region = Engine::new(
-            "aws",
-            "*",
-            "123456789012",
-        );
-        
-        let processed_conditions = engine_wildcard_region.process_action_conditions(&action).unwrap();
+        let engine_wildcard_region = Engine::new("aws", "*", "123456789012");
+
+        let processed_conditions = engine_wildcard_region
+            .process_action_conditions(&action)
+            .unwrap();
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
-        assert_eq!(condition.values, vec!["arn:aws:s3:*:123456789012:bucket/test"]);
+        assert_eq!(
+            condition.values,
+            vec!["arn:aws:s3:*:123456789012:bucket/test"]
+        );
         assert_eq!(condition.operator, crate::enrichment::Operator::StringLike);
 
         // Test when account is "*" - should produce StringLike
-        let engine_wildcard_account = Engine::new(
-            "aws",
-            "us-east-1",
-            "*",
-        );
-        
-        let processed_conditions = engine_wildcard_account.process_action_conditions(&action).unwrap();
+        let engine_wildcard_account = Engine::new("aws", "us-east-1", "*");
+
+        let processed_conditions = engine_wildcard_account
+            .process_action_conditions(&action)
+            .unwrap();
         assert_eq!(processed_conditions.len(), 1);
-        
+
         let condition = &processed_conditions[0];
         assert_eq!(condition.values, vec!["arn:aws:s3:us-east-1:*:bucket/test"]);
         assert_eq!(condition.operator, crate::enrichment::Operator::StringLike);
 
         // Test when all are specific values - should keep StringEquals
-        let engine_no_wildcards = Engine::new(
-            "aws",
-            "us-east-1",
-            "123456789012",
-        );
-        
-        let processed_conditions = engine_no_wildcards.process_action_conditions(&action).unwrap();
-        assert_eq!(processed_conditions.len(), 1);
-        
-        let condition = &processed_conditions[0];
-        assert_eq!(condition.values, vec!["arn:aws:s3:us-east-1:123456789012:bucket/test"]);
-        assert_eq!(condition.operator, crate::enrichment::Operator::StringEquals);
-    }
+        let engine_no_wildcards = Engine::new("aws", "us-east-1", "123456789012");
 
+        let processed_conditions = engine_no_wildcards
+            .process_action_conditions(&action)
+            .unwrap();
+        assert_eq!(processed_conditions.len(), 1);
+
+        let condition = &processed_conditions[0];
+        assert_eq!(
+            condition.values,
+            vec!["arn:aws:s3:us-east-1:123456789012:bucket/test"]
+        );
+        assert_eq!(
+            condition.operator,
+            crate::enrichment::Operator::StringEquals
+        );
+    }
 }

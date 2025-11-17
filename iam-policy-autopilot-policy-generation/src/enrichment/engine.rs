@@ -7,12 +7,12 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use crate::enrichment::operation_fas_map::OperationFasMaps;
-use crate::errors::{ExtractorError, Result};
 use super::EnrichedSdkMethodCall;
+use crate::enrichment::operation_fas_map::OperationFasMaps;
 use crate::enrichment::{load_operation_fas_map, ResourceMatcher, ServiceReferenceLoader};
+use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::{self, ServiceConfiguration};
-use crate::{SdkMethodCall};
+use crate::SdkMethodCall;
 
 /// Core enrichment engine that orchestrates the 3-stage enrichment pipeline
 ///
@@ -30,9 +30,7 @@ impl Engine {
     ///
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
-    pub fn new(
-        disable_file_system_cache: bool,
-    ) -> Result<Self> {
+    pub fn new(disable_file_system_cache: bool) -> Result<Self> {
         Ok(Self {
             service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
         })
@@ -43,15 +41,22 @@ impl Engine {
     /// This is the main entry point for the enrichment process. It processes
     /// ExtractedMethods through all three stages and returns FullyEnrichedMethods
     /// with complete IAM metadata and pipeline metrics.
-    pub async fn enrich_methods<'a>(&mut self, extracted_methods: &'a [SdkMethodCall]) -> Result<Vec<EnrichedSdkMethodCall<'a>>> {
+    pub async fn enrich_methods<'a>(
+        &mut self,
+        extracted_methods: &'a [SdkMethodCall],
+    ) -> Result<Vec<EnrichedSdkMethodCall<'a>>> {
         let unique_services = self.get_unique_services(extracted_methods);
-        
+
         let service_cfg = service_configuration::load_service_configuration()?;
-        
-        let fas_maps = self.load_fas_maps_for_services(&unique_services, &service_cfg).await?;
+
+        let fas_maps = self
+            .load_fas_maps_for_services(&unique_services, &service_cfg)
+            .await?;
 
         let resource_matcher = ResourceMatcher::new(service_cfg, fas_maps);
-        let enriched_calls = self.enrich_all_methods(extracted_methods, &resource_matcher).await?;
+        let enriched_calls = self
+            .enrich_all_methods(extracted_methods, &resource_matcher)
+            .await?;
 
         Ok(enriched_calls)
     }
@@ -68,13 +73,13 @@ impl Engine {
     /// A vector of unique service names found across all method calls
     pub(crate) fn get_unique_services(&self, extracted_methods: &[SdkMethodCall]) -> Vec<String> {
         let mut services = HashSet::new();
-        
+
         for method in extracted_methods {
             for service in &method.possible_services {
                 services.insert(service.clone());
             }
         }
-        
+
         let mut result: Vec<String> = services.into_iter().collect();
         result.sort();
         result
@@ -97,18 +102,28 @@ impl Engine {
 
             let renamed_service = service_cfg.rename_service_operation_action_map(service);
             if renamed_service.as_ref() != service {
-                log::debug!("Service '{}' renamed to '{}' for operation action map lookup", service, renamed_service);
+                log::debug!(
+                    "Service '{}' renamed to '{}' for operation action map lookup",
+                    service,
+                    renamed_service
+                );
             }
-            
+
             match load_operation_fas_map(renamed_service.as_ref()) {
                 None => {
-                    log::debug!("No operation FAS map found for service '{}' (expected)", renamed_service);
+                    log::debug!(
+                        "No operation FAS map found for service '{}' (expected)",
+                        renamed_service
+                    );
                     // We don't expect that a service also has a FAS map
                     continue;
                 }
                 Some(operation_fas_map) => {
-                    log::debug!("Successfully loaded operation FAS map for service '{}' ({} operations)",
-                               renamed_service, operation_fas_map.fas_operations.len());
+                    log::debug!(
+                        "Successfully loaded operation FAS map for service '{}' ({} operations)",
+                        renamed_service,
+                        operation_fas_map.fas_operations.len()
+                    );
                     loaded_fas_maps.push(renamed_service.clone());
                     fas.insert(renamed_service.to_string(), operation_fas_map);
                 }
@@ -117,7 +132,6 @@ impl Engine {
 
         Ok(fas)
     }
-
 
     /// Enrich all method calls using loaded OperationAction maps and SDFs
     ///
@@ -142,7 +156,10 @@ impl Engine {
         let mut enriched_calls = Vec::new();
 
         for method in methods {
-            match resource_matcher.enrich_method_call(method, &self.service_reference_loader).await {
+            match resource_matcher
+                .enrich_method_call(method, &self.service_reference_loader)
+                .await
+            {
                 Ok(mut method_calls) => {
                     enriched_calls.append(&mut method_calls);
                 }
@@ -157,7 +174,6 @@ impl Engine {
 
         Ok(enriched_calls)
     }
-    
 }
 
 // Implement Clone for MethodEnrichmentEngine when providers support it
@@ -193,96 +209,114 @@ mod tests {
         use std::time::Instant;
 
         let start_time = Instant::now();
-        
+
         let (_services, service_index) = match discover_all_services().await {
             Ok(result) => result,
             Err(e) => {
                 panic!("Failed to discover services: {}", e);
             }
         };
-        
+
         println!("\nCreating SdkMethodCall objects from operations...");
         let sdk_method_calls = create_sdk_method_calls_from_service_index(&service_index);
-        
+
         println!("Created {} SdkMethodCall objects", sdk_method_calls.len());
-        
-        
+
         if sdk_method_calls.is_empty() {
             panic!("No operations found to test - this may indicate missing botocore data");
         }
-        
+
         println!("\nSetting up enrichment engine...");
         let mut enrichment_engine = Engine::new(true).unwrap();
         println!("Enrichment engine initialized");
-        
+
         println!("\nRunning enrichment on all operations...");
         let enrichment_start = Instant::now();
-        
+
         match enrichment_engine.enrich_methods(&sdk_method_calls).await {
             Ok(enriched_calls) => {
                 let enrichment_duration = enrichment_start.elapsed();
-                
+
                 println!("Enrichment Results:");
                 println!("   • Input operations: {}", sdk_method_calls.len());
                 println!("   • Enriched calls: {}", enriched_calls.len());
                 println!("   • Processing time: {:?}", enrichment_duration);
-                
+
                 println!("\nAnalyzing enrichment results...");
                 analyze_enrichment_results(&enriched_calls);
-                
+
                 // Assertions
-                assert!(!enriched_calls.is_empty(), "Should have at least some enriched calls");
-                
+                assert!(
+                    !enriched_calls.is_empty(),
+                    "Should have at least some enriched calls"
+                );
+
                 // Verify structure of enriched calls
                 for enriched_call in enriched_calls {
-                    assert!(!enriched_call.method_name.is_empty(), "Method name should not be empty");
-                    assert!(!enriched_call.service.is_empty(), "Service should not be empty");
+                    assert!(
+                        !enriched_call.method_name.is_empty(),
+                        "Method name should not be empty"
+                    );
+                    assert!(
+                        !enriched_call.service.is_empty(),
+                        "Service should not be empty"
+                    );
                 }
-                
             }
             Err(e) => {
                 panic!("Enrichment failed: {}", e);
             }
         }
-        
+
         let total_duration = start_time.elapsed();
         println!("\nTest completed in {:?}", total_duration);
     }
 
     /// Discover all available AWS services and build service index
-    async fn discover_all_services() -> std::result::Result<(Vec<crate::extraction::sdk_model::SdkModel>, crate::extraction::sdk_model::ServiceModelIndex), Box<dyn std::error::Error>> {
+    async fn discover_all_services() -> std::result::Result<
+        (
+            Vec<crate::extraction::sdk_model::SdkModel>,
+            crate::extraction::sdk_model::ServiceModelIndex,
+        ),
+        Box<dyn std::error::Error>,
+    > {
         use crate::extraction::sdk_model::ServiceDiscovery;
 
         // Discover all services
         let services = ServiceDiscovery::discover_services()?;
-        
+
         if services.is_empty() {
             return Err("No services discovered - botocore data may not be available".into());
         }
 
         println!("Building service index (this may take a moment)...");
-        let service_index = ServiceDiscovery::load_service_index(Language::Python, services.clone()).await?;
-        
+        let service_index =
+            ServiceDiscovery::load_service_index(Language::Python, services.clone()).await?;
+
         Ok((services, service_index))
     }
 
     /// Create SdkMethodCall objects from the service index
     fn create_sdk_method_calls_from_service_index(
-        service_index: &crate::extraction::sdk_model::ServiceModelIndex
+        service_index: &crate::extraction::sdk_model::ServiceModelIndex,
     ) -> Vec<SdkMethodCall> {
         use crate::extraction::sdk_model::ServiceDiscovery;
 
         let mut sdk_method_calls = Vec::new();
-        
+
         // Iterate through all services and their operations
         for (service_name, service_definition) in &service_index.services {
-            println!("Processing service: {} ({} operations)",
-                service_name, service_definition.operations.len());
-            
+            println!(
+                "Processing service: {} ({} operations)",
+                service_name,
+                service_definition.operations.len()
+            );
+
             for operation_name in service_definition.operations.keys() {
                 // Convert operation name to snake_case using the existing function
-                let method_name = ServiceDiscovery::operation_to_method_name(operation_name, Language::Python);
-                
+                let method_name =
+                    ServiceDiscovery::operation_to_method_name(operation_name, Language::Python);
+
                 // Create SdkMethodCall with:
                 // - Operation name in snake_case
                 // - Single service name
@@ -292,16 +326,18 @@ mod tests {
                     possible_services: vec![service_name.clone()],
                     metadata: None,
                 };
-                
+
                 sdk_method_calls.push(sdk_method_call);
             }
         }
-        
+
         // Sort for consistent ordering
         sdk_method_calls.sort_by(|a, b| {
-            a.name.cmp(&b.name).then_with(|| a.possible_services.cmp(&b.possible_services))
+            a.name
+                .cmp(&b.name)
+                .then_with(|| a.possible_services.cmp(&b.possible_services))
         });
-        
+
         sdk_method_calls
     }
 
@@ -312,24 +348,32 @@ mod tests {
         let mut service_counts = HashMap::new();
         let mut total_actions = 0;
         let mut calls_with_actions = 0;
-        
+
         for enriched_call in enriched_calls {
             // Count by service
-            *service_counts.entry(enriched_call.service.clone()).or_insert(0) += 1;
-            
+            *service_counts
+                .entry(enriched_call.service.clone())
+                .or_insert(0) += 1;
+
             // Count actions
             total_actions += enriched_call.actions.len();
             if !enriched_call.actions.is_empty() {
                 calls_with_actions += 1;
             }
         }
-        
+
         println!("Enrichment Analysis:");
         println!("   • Total enriched calls: {}", enriched_calls.len());
         println!("   • Calls with actions: {}", calls_with_actions);
         println!("   • Total actions found: {}", total_actions);
-        println!("   • Average actions per call: {:.2}",
-            if enriched_calls.is_empty() { 0.0 } else { total_actions as f64 / enriched_calls.len() as f64 });
+        println!(
+            "   • Average actions per call: {:.2}",
+            if enriched_calls.is_empty() {
+                0.0
+            } else {
+                total_actions as f64 / enriched_calls.len() as f64
+            }
+        );
     }
 
     #[tokio::test]
@@ -337,11 +381,14 @@ mod tests {
         use crate::extraction::sdk_model::ServiceDiscovery;
 
         println!("Testing basic service discovery functionality...");
-        
+
         match ServiceDiscovery::discover_services() {
             Ok(services) => {
                 println!("Discovered {} services", services.len());
-                assert!(!services.is_empty(), "Should discover at least some services");
+                assert!(
+                    !services.is_empty(),
+                    "Should discover at least some services"
+                );
             }
             Err(e) => {
                 panic!("Service discovery failed: {}", e);

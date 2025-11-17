@@ -1,7 +1,7 @@
 //! JavaScript/TypeScript specific data types for AWS SDK extraction
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Information about a single import with rename support
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,7 +49,7 @@ impl SublibraryInfo {
             name_mappings: HashMap::new(),
         }
     }
-    
+
     /// Add an import to this sublibrary
     pub(crate) fn add_import(&mut self, import_info: ImportInfo) {
         self.name_mappings.insert(
@@ -77,11 +77,10 @@ pub(crate) struct ClientInstantiation {
     pub(crate) line: usize,
 }
 
-
 /// Information about valid AWS client types discovered from imports
 #[derive(Debug, Clone)]
 pub(crate) struct ValidClientTypes {
-    /// List of valid local client type names (e.g., "S3Client", "MyS3Client") 
+    /// List of valid local client type names (e.g., "S3Client", "MyS3Client")
     pub(crate) client_types: Vec<String>,
     /// Mapping from local names to original AWS names (handles renames)
     pub(crate) name_mappings: HashMap<String, String>,
@@ -102,7 +101,7 @@ impl ValidClientTypes {
             sublibrary_mappings,
         }
     }
-    
+
     /// Check if this collection is empty
     pub(crate) fn is_empty(&self) -> bool {
         self.client_types.is_empty()
@@ -127,7 +126,6 @@ pub(crate) struct MethodCall {
     /// Line number where call occurs
     pub(crate) line: usize,
 }
-
 
 /// Combined results from all scanning operations
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

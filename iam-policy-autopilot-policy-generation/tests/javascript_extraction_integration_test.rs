@@ -3,28 +3,32 @@
 //! This test verifies that the JavaScript extractor can properly identify
 //! AWS SDK usage patterns in JavaScript and TypeScript code.
 
-use iam_policy_autopilot_policy_generation::{Language, SourceFile, ExtractionEngine};
+use iam_policy_autopilot_policy_generation::{ExtractionEngine, Language, SourceFile};
 use std::path::PathBuf;
-
 
 #[test]
 fn test_javascript_language_support() {
     // Test that JavaScript/TypeScript languages are properly supported
     use iam_policy_autopilot_policy_generation::Language;
-    
+
     // Test language enum values
     assert_eq!(Language::JavaScript.to_string(), "javascript");
     assert_eq!(Language::TypeScript.to_string(), "typescript");
-    
+
     // Test language parsing
     assert_eq!(Language::try_from_str("js").unwrap(), Language::JavaScript);
-    assert_eq!(Language::try_from_str("javascript").unwrap(), Language::JavaScript);
+    assert_eq!(
+        Language::try_from_str("javascript").unwrap(),
+        Language::JavaScript
+    );
     assert_eq!(Language::try_from_str("ts").unwrap(), Language::TypeScript);
-    assert_eq!(Language::try_from_str("typescript").unwrap(), Language::TypeScript);
-    
+    assert_eq!(
+        Language::try_from_str("typescript").unwrap(),
+        Language::TypeScript
+    );
+
     println!("✓ JavaScript/TypeScript language support working correctly");
 }
-
 
 #[tokio::test]
 async fn test_javascript_basic_import_es6_extraction() {
@@ -67,42 +71,66 @@ createMyBucket();
     let engine = ExtractionEngine::new();
 
     // Extract operations from the source code
-    let result = engine.extract_sdk_method_calls(Language::JavaScript, vec![source_file]).await;
-    
+    let result = engine
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .await;
+
     match result {
         Ok(extracted_methods) => {
             println!("✅ JavaScript ES6 extraction succeeded");
             println!("  Found {} method calls", extracted_methods.methods.len());
-            
+
             // Should find operations from Command imports
-            assert!(!extracted_methods.methods.is_empty(), "Should find operations from Command imports");
-            
+            assert!(
+                !extracted_methods.methods.is_empty(),
+                "Should find operations from Command imports"
+            );
+
             // Expected operations from Command imports: CreateBucket, PutObject, ListObjectsV2, GetObject, DeleteObject, DeleteBucket
-            let expected_operations = ["CreateBucket", "PutObject", "ListObjectsV2", "GetObject", "DeleteObject", "DeleteBucket"];
-            
+            let expected_operations = [
+                "CreateBucket",
+                "PutObject",
+                "ListObjectsV2",
+                "GetObject",
+                "DeleteObject",
+                "DeleteBucket",
+            ];
+
             for expected_op in &expected_operations {
-                let found_op = extracted_methods.methods.iter()
+                let found_op = extracted_methods
+                    .methods
+                    .iter()
                     .find(|call| call.name == *expected_op)
-                    .unwrap_or_else(|| panic!("Should find {} operation from Command import", expected_op));
-                    
-                assert_eq!(found_op.possible_services, vec!["s3"], "All operations should be associated with s3 service");
-            }
-            
-            // Print detailed output
-            println!("✅ Found {} operations from ES6 imports and requires", extracted_methods.methods.len());
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", 
-                    call.name, 
-                    call.possible_services
+                    .unwrap_or_else(|| {
+                        panic!("Should find {} operation from Command import", expected_op)
+                    });
+
+                assert_eq!(
+                    found_op.possible_services,
+                    vec!["s3"],
+                    "All operations should be associated with s3 service"
                 );
+            }
+
+            // Print detailed output
+            println!(
+                "✅ Found {} operations from ES6 imports and requires",
+                extracted_methods.methods.len()
+            );
+            for call in &extracted_methods.methods {
+                println!("  - {} (service: {:?})", call.name, call.possible_services);
             }
         }
         Err(e) => {
             println!("JavaScript extraction failed: {}", e);
             // For testing, we'll allow this to pass if it's a service validation issue
             let error_message = format!("{}", e);
-            assert!(error_message.contains("Service root directory") || error_message.contains("Failed to load"), 
-                "Should be a service validation error, got: {}", e);
+            assert!(
+                error_message.contains("Service root directory")
+                    || error_message.contains("Failed to load"),
+                "Should be a service validation error, got: {}",
+                e
+            );
         }
     }
 }
@@ -135,41 +163,55 @@ const { DynamoDB } = require("@aws-sdk/client-dynamodb");
     let engine = ExtractionEngine::new();
 
     // Extract operations from the source code
-    let result = engine.extract_sdk_method_calls(Language::JavaScript, vec![source_file]).await;
-    
+    let result = engine
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .await;
+
     match result {
         Ok(extracted_methods) => {
             println!("✅ JavaScript low-level client method extraction succeeded");
             println!("  Found {} method calls", extracted_methods.methods.len());
-            
+
             // Should find operations from client method calls
-            assert!(!extracted_methods.methods.is_empty(), "Should find operations from client method calls");
-            
+            assert!(
+                !extracted_methods.methods.is_empty(),
+                "Should find operations from client method calls"
+            );
+
             // Should find ListTables operation from client.listTables() call
-            let list_tables_op = extracted_methods.methods.iter()
+            let list_tables_op = extracted_methods
+                .methods
+                .iter()
                 .find(|call| call.name == "ListTables")
                 .expect("Should find ListTables operation from client.listTables() call");
-            
+
             // Should be associated with dynamodb service (from client-dynamodb sublibrary)
-            assert_eq!(list_tables_op.possible_services, vec!["dynamodb"], "Should associate with dynamodb service");
-            
-            println!("✅ Found {} operations from low-level client calls", extracted_methods.methods.len());
+            assert_eq!(
+                list_tables_op.possible_services,
+                vec!["dynamodb"],
+                "Should associate with dynamodb service"
+            );
+
+            println!(
+                "✅ Found {} operations from low-level client calls",
+                extracted_methods.methods.len()
+            );
             for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", 
-                    call.name, 
-                    call.possible_services
-                );
+                println!("  - {} (service: {:?})", call.name, call.possible_services);
             }
         }
         Err(e) => {
             println!("JavaScript extraction failed: {}", e);
             let error_message = format!("{}", e);
-            assert!(error_message.contains("Service root directory") || error_message.contains("Failed to load"), 
-                "Should be a service validation error, got: {}", e);
+            assert!(
+                error_message.contains("Service root directory")
+                    || error_message.contains("Failed to load"),
+                "Should be a service validation error, got: {}",
+                e
+            );
         }
     }
 }
-
 
 #[tokio::test]
 async fn test_javascript_client_send_extraction() {
@@ -200,37 +242,52 @@ const { DynamoDBClient, ListTablesCommand } = require("@aws-sdk/client-dynamodb"
     let engine = ExtractionEngine::new();
 
     // Extract operations from the source code
-    let result = engine.extract_sdk_method_calls(Language::JavaScript, vec![source_file]).await;
-    
+    let result = engine
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .await;
+
     match result {
         Ok(extracted_methods) => {
             println!("✅ JavaScript client send extraction succeeded");
             println!("  Found {} method calls", extracted_methods.methods.len());
-            
+
             // Should find operations from Command imports
-            assert!(!extracted_methods.methods.is_empty(), "Should find operations from Command imports");
-            
+            assert!(
+                !extracted_methods.methods.is_empty(),
+                "Should find operations from Command imports"
+            );
+
             // Should find ListTables operation inferred from ListTablesCommand
-            let list_tables_op = extracted_methods.methods.iter()
+            let list_tables_op = extracted_methods
+                .methods
+                .iter()
                 .find(|call| call.name == "ListTables")
                 .expect("Should find ListTables operation from ListTablesCommand import");
-            
+
             // Should be associated with dynamodb service (from client-dynamodb sublibrary)
-            assert_eq!(list_tables_op.possible_services, vec!["dynamodb"], "Should associate with dynamodb service");
-            
-            println!("✅ Found {} operations from client send pattern", extracted_methods.methods.len());
+            assert_eq!(
+                list_tables_op.possible_services,
+                vec!["dynamodb"],
+                "Should associate with dynamodb service"
+            );
+
+            println!(
+                "✅ Found {} operations from client send pattern",
+                extracted_methods.methods.len()
+            );
             for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", 
-                    call.name, 
-                    call.possible_services
-                );
+                println!("  - {} (service: {:?})", call.name, call.possible_services);
             }
         }
         Err(e) => {
             println!("JavaScript extraction failed: {}", e);
             let error_message = format!("{}", e);
-            assert!(error_message.contains("Service root directory") || error_message.contains("Failed to load"), 
-                "Should be a service validation error, got: {}", e);
+            assert!(
+                error_message.contains("Service root directory")
+                    || error_message.contains("Failed to load"),
+                "Should be a service validation error, got: {}",
+                e
+            );
         }
     }
 }
@@ -404,44 +461,67 @@ runS3Operations();
     let engine = ExtractionEngine::new();
 
     // Extract operations from the source code
-    let result = engine.extract_sdk_method_calls(Language::JavaScript, vec![source_file]).await;
-    
+    let result = engine
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .await;
+
     match result {
         Ok(extracted_methods) => {
             println!("✅ JavaScript multiple S3 operations extraction succeeded");
             println!("  Found {} method calls", extracted_methods.methods.len());
-            
+
             // Should find operations from Command imports
-            assert!(!extracted_methods.methods.is_empty(), "Should find operations from Command imports");
-            
+            assert!(
+                !extracted_methods.methods.is_empty(),
+                "Should find operations from Command imports"
+            );
+
             // Expected operations from Command imports: CreateBucket, PutObject, ListObjectsV2, GetObject, DeleteObject, DeleteBucket
-            let expected_operations = ["CreateBucket", "PutObject", "ListObjectsV2", "GetObject", "DeleteObject", "DeleteBucket"];
-            
+            let expected_operations = [
+                "CreateBucket",
+                "PutObject",
+                "ListObjectsV2",
+                "GetObject",
+                "DeleteObject",
+                "DeleteBucket",
+            ];
+
             for expected_op in &expected_operations {
-                let found_op = extracted_methods.methods.iter()
+                let found_op = extracted_methods
+                    .methods
+                    .iter()
                     .find(|call| call.name == *expected_op)
-                    .unwrap_or_else(|| panic!("Should find {} operation from Command import", expected_op));
-                    
-                assert_eq!(found_op.possible_services, vec!["s3"], "All operations should be associated with s3 service");
-            }
-            
-            println!("✅ Found {} S3 operations from Command imports", extracted_methods.methods.len());
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", 
-                    call.name, 
-                    call.possible_services
+                    .unwrap_or_else(|| {
+                        panic!("Should find {} operation from Command import", expected_op)
+                    });
+
+                assert_eq!(
+                    found_op.possible_services,
+                    vec!["s3"],
+                    "All operations should be associated with s3 service"
                 );
+            }
+
+            println!(
+                "✅ Found {} S3 operations from Command imports",
+                extracted_methods.methods.len()
+            );
+            for call in &extracted_methods.methods {
+                println!("  - {} (service: {:?})", call.name, call.possible_services);
             }
         }
         Err(e) => {
             println!("JavaScript extraction failed: {}", e);
             let error_message = format!("{}", e);
-            assert!(error_message.contains("Service root directory") || error_message.contains("Failed to load"), 
-                "Should be a service validation error, got: {}", e);
+            assert!(
+                error_message.contains("Service root directory")
+                    || error_message.contains("Failed to load"),
+                "Should be a service validation error, got: {}",
+                e
+            );
         }
     }
 }
-
 
 #[tokio::test]
 async fn test_javascript_pagination_extraction() {
@@ -508,41 +588,59 @@ for await (const page of paginator) {
     let engine = ExtractionEngine::new();
 
     // Extract operations from the source code
-    let result = engine.extract_sdk_method_calls(Language::JavaScript, vec![source_file]).await;
-    
+    let result = engine
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .await;
+
     match result {
         Ok(extracted_methods) => {
             println!("✅ JavaScript pagination extraction succeeded");
             println!("  Found {} method calls", extracted_methods.methods.len());
-            
+
             // Should find operations from paginate and CommandInput imports
-            assert!(!extracted_methods.methods.is_empty(), "Should find operations from paginate and CommandInput imports");
-            
+            assert!(
+                !extracted_methods.methods.is_empty(),
+                "Should find operations from paginate and CommandInput imports"
+            );
+
             // Should find Query operations from both paginateQuery and QueryCommandInput (PascalCase)
-            let query_operations: Vec<_> = extracted_methods.methods.iter()
+            let query_operations: Vec<_> = extracted_methods
+                .methods
+                .iter()
                 .filter(|call| call.name == "Query")
                 .collect();
-            
-            assert!(!query_operations.is_empty(), "Should find Query operations from paginate and CommandInput imports");
-            
+
+            assert!(
+                !query_operations.is_empty(),
+                "Should find Query operations from paginate and CommandInput imports"
+            );
+
             // All query operations should be associated with dynamodb service
             for query_op in &query_operations {
-                assert_eq!(query_op.possible_services, vec!["dynamodb"], "query operations should be associated with dynamodb service");
-            }
-            
-            println!("✅ Found {} operations from pagination patterns", extracted_methods.methods.len());
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", 
-                    call.name, 
-                    call.possible_services
+                assert_eq!(
+                    query_op.possible_services,
+                    vec!["dynamodb"],
+                    "query operations should be associated with dynamodb service"
                 );
+            }
+
+            println!(
+                "✅ Found {} operations from pagination patterns",
+                extracted_methods.methods.len()
+            );
+            for call in &extracted_methods.methods {
+                println!("  - {} (service: {:?})", call.name, call.possible_services);
             }
         }
         Err(e) => {
             println!("JavaScript extraction failed: {}", e);
             let error_message = format!("{}", e);
-            assert!(error_message.contains("Service root directory") || error_message.contains("Failed to load"), 
-                "Should be a service validation error, got: {}", e);
+            assert!(
+                error_message.contains("Service root directory")
+                    || error_message.contains("Failed to load"),
+                "Should be a service validation error, got: {}",
+                e
+            );
         }
     }
 }
