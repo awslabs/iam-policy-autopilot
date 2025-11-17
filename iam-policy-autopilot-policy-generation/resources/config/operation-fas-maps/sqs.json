@@ -1,0 +1,53 @@
+{
+    "Name": "sqs",
+    "Operations": [
+         {
+            "Name" : "DeleteMessage"        
+        },
+        {
+            "Name" : "DeleteMessageBatch"        
+        },
+        {
+            "Name" : "ChangeMessageVisibility"
+        },
+        {
+            "Name": "ChangeMessageVisibilityBatch"        
+        },
+        {
+            "Name" : "GetQueueAttributes"        
+        },
+        {
+            "Name" : "GetQueueUrl"        
+        },
+        {
+            "Name" : "ReceiveMessage",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sqs.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "SendMessage",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sqs.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "SendMessageBatch",
+            "FasOperations": [{
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sqs.${region}.amazonaws.com"
+                }
+            }]
+        }        
+    ]
+}

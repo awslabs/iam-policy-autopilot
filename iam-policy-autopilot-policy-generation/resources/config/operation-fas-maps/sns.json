@@ -1,0 +1,51 @@
+{
+    "Name": "sns",
+    "Operations": [
+        {
+            "Name" : "GetTopicAttributes"
+        },
+         {
+            "Name" : "Publish",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sns.${region}.amazonaws.com"
+                }
+            },
+            {
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sns.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "PublishBatch",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sns.${region}.amazonaws.com"
+                }
+            },
+            {
+                "Operation": "GenerateDataKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "sns.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "SetTopicAttributes"
+        },
+        {
+            "Name" : "Subscribe"
+        },
+        {
+            "Name" : "Unsubscribe"
+        }
+    ]
+}

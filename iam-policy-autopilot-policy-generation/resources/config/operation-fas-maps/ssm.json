@@ -1,0 +1,65 @@
+{
+    "Name": "ssm",
+    "Operations": [
+        {
+            "Name": "GetParameter",
+            "FasOperations": [
+                {
+                    "Operation": "Decrypt",
+                    "Service": "kms",
+                    "Context": {
+                        "kms:ViaService": "ssm.${region}.amazonaws.com"
+                    }
+                }
+            ]
+        },
+        {
+            "Name": "GetParameterHistory",
+            "FasOperations": [
+                {
+                    "Operation": "Decrypt",
+                    "Service": "kms",
+                    "Context": {
+                        "kms:ViaService": "ssm.${region}.amazonaws.com"
+                    }
+                }
+            ]
+        },
+        {
+            "Name": "GetParameters",
+            "FasOperations": [
+                {
+                    "Operation": "Decrypt",
+                    "Service": "kms",
+                    "Context": {
+                        "kms:ViaService": "ssm.${region}.amazonaws.com"
+                    }
+                }
+            ]
+        },
+        {
+            "Name": "GetParametersByPath",
+            "FasOperations": [
+                {
+                    "Operation": "Decrypt",
+                    "Service": "kms",
+                    "Context": {
+                        "kms:ViaService": "ssm.${region}.amazonaws.com"
+                    }
+                }
+            ]
+        },
+        {
+            "Name": "PutParameter",
+            "FasOperations": [
+                {
+                    "Operation": "Encrypt",
+                    "Service": "kms",
+                    "Context": {
+                        "kms:ViaService": "ssm.${region}.amazonaws.com"
+                    }
+                }
+            ]
+        }
+    ]
+}

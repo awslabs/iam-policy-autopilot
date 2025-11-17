@@ -1,0 +1,11 @@
+out
+dist
+node_modules
+.vscode/
+.vscode-test/
+*.vsix
+doc
+Cargo.lock
+target/
+build
+.DS_Store
