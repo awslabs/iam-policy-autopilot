@@ -181,7 +181,10 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: dyna
 
         // Call plan - should return error
         let result = service.plan(error_text).await;
-        assert!(result.is_err(), "plan() should return error for non-AccessDenied text");
+        assert!(
+            result.is_err(),
+            "plan() should return error for non-AccessDenied text"
+        );
 
         // Verify error type is Parsing
         match result {
@@ -206,16 +209,15 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:G
 
         // Call plan
         let result = service.plan(error_text).await;
-        assert!(result.is_ok(), "plan() should succeed with duplicate messages");
+        assert!(
+            result.is_ok(),
+            "plan() should succeed with duplicate messages"
+        );
 
         let plan = result.unwrap();
 
         // Should only have one action despite three identical messages
-        assert_eq!(
-            plan.actions.len(),
-            1,
-            "Should deduplicate to single action"
-        );
+        assert_eq!(plan.actions.len(), 1, "Should deduplicate to single action");
         assert_eq!(plan.actions[0], "s3:GetObject");
 
         // Policy should have one statement

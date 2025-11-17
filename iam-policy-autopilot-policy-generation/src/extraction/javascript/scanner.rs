@@ -1,8 +1,8 @@
 //! Core JavaScript/TypeScript scanning logic for AWS SDK extraction
 
 use crate::extraction::javascript::types::{
-    ImportInfo, SublibraryInfo, ClientInstantiation, 
-    ValidClientTypes, MethodCall, JavaScriptScanResults
+    ClientInstantiation, ImportInfo, JavaScriptScanResults, MethodCall, SublibraryInfo,
+    ValidClientTypes,
 };
 
 use ast_grep_core::matcher::Pattern;
@@ -110,13 +110,7 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
         let final_value = match value.to_lowercase().as_str() {
             "true" => "true".to_string(),
             "false" => "false".to_string(),
-            _ => {
-                if value.parse::<i64>().is_ok() || value.parse::<f64>().is_ok() {
-                    value.to_string()
-                } else {
-                    value.to_string()
-                }
-            }
+            _ => value.to_string(),
         };
 
         result.insert(key.to_string(), final_value);
@@ -124,7 +118,11 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
 }
 
 /// Parse and add imports from import text with line number - standalone utility function
-fn parse_and_add_imports_with_line(imports_text: &str, sublibrary_info: &mut SublibraryInfo, line: usize) {
+fn parse_and_add_imports_with_line(
+    imports_text: &str,
+    sublibrary_info: &mut SublibraryInfo,
+    line: usize,
+) {
     // Handle different import formats
     if imports_text.starts_with('{') && imports_text.ends_with('}') {
         // Destructuring - parse with rename support
@@ -145,8 +143,8 @@ fn parse_and_add_imports_with_line(imports_text: &str, sublibrary_info: &mut Sub
 }
 
 /// Core AST scanner for JavaScript/TypeScript AWS SDK usage patterns
-pub(crate) struct ASTScanner<T> 
-where 
+pub(crate) struct ASTScanner<T>
+where
     T: ast_grep_core::Doc + Clone,
 {
     /// Pre-built AST grep root passed from extractor
@@ -154,16 +152,16 @@ where
     language: ast_grep_language::SupportLang,
 }
 
-impl<T> ASTScanner<T> 
-where 
+impl<T> ASTScanner<T>
+where
     T: ast_grep_core::Doc + Clone,
 {
     /// Create a new scanner with pre-built AST from extractor
-    pub(crate) fn new(ast_grep: ast_grep_core::AstGrep<T>, language: ast_grep_language::SupportLang) -> Self {
-        Self {
-            ast_grep,
-            language
-        }
+    pub(crate) fn new(
+        ast_grep: ast_grep_core::AstGrep<T>,
+        language: ast_grep_language::SupportLang,
+    ) -> Self {
+        Self { ast_grep, language }
     }
 
     /// Execute a pattern match against the AST - now generic for both JavaScript and TypeScript
@@ -173,32 +171,34 @@ where
         pattern: &str,
     ) -> Result<Vec<ast_grep_core::NodeMatch<'_, T>>, String> {
         let root = self.ast_grep.root();
-        
+
         // Build pattern with relaxed strictness to handle inline comments
-        let pattern_obj = Pattern::new(pattern, self.language)
-            .with_strictness(MatchStrictness::Relaxed);
-        
+        let pattern_obj =
+            Pattern::new(pattern, self.language).with_strictness(MatchStrictness::Relaxed);
+
         Ok(root.find_all(pattern_obj).collect())
     }
 
-
     /// Find Command instantiation and extract its arguments
     /// Returns (line_number, parameters) tuple
-    pub(crate) fn find_command_instantiation_with_args(&self, command_name: &str) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    pub(crate) fn find_command_instantiation_with_args(
+        &self,
+        command_name: &str,
+    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
-        
+
         let pattern = format!("new {}($ARGS)", command_name);
-        
+
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let line = first_match.get_node().start_pos().line() + 1;
                 let env = first_match.get_env();
-                
+
                 // Extract arguments from the ARGS node
                 // env.get_match returns Option<&Node>, so pass directly
                 let args_node = env.get_match("ARGS");
                 let parameters = ArgumentExtractor::extract_object_parameters(args_node);
-                
+
                 return Some((line, parameters));
             }
         }
@@ -207,21 +207,24 @@ where
 
     /// Find paginate function call and extract operation parameters (2nd argument)
     /// Returns (line_number, parameters) tuple
-    pub(crate) fn find_paginate_function_with_args(&self, function_name: &str) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    pub(crate) fn find_paginate_function_with_args(
+        &self,
+        function_name: &str,
+    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
-        
+
         // Use explicit two-argument pattern
         let pattern = format!("{}($ARG1, $ARG2)", function_name);
-        
+
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let line = first_match.get_node().start_pos().line() + 1;
                 let env = first_match.get_env();
-                
+
                 // Extract parameters from second argument (ARG2 = operation params)
                 let second_arg = env.get_match("ARG2");
                 let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
-                
+
                 return Some((line, parameters));
             }
         }
@@ -230,25 +233,28 @@ where
 
     /// Find waiter function call and extract operation parameters (2nd argument)
     /// Returns (line_number, parameters) tuple
-    pub(crate) fn find_waiter_function_with_args(&self, function_name: &str) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    pub(crate) fn find_waiter_function_with_args(
+        &self,
+        function_name: &str,
+    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
-        
+
         // Try patterns with and without await keyword using explicit two-argument pattern
         let patterns = [
-            format!("await {}($ARG1, $ARG2)", function_name),  // With await
-            format!("{}($ARG1, $ARG2)", function_name),        // Without await
+            format!("await {}($ARG1, $ARG2)", function_name), // With await
+            format!("{}($ARG1, $ARG2)", function_name),       // Without await
         ];
-        
+
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
                     let line = first_match.get_node().start_pos().line() + 1;
                     let env = first_match.get_env();
-                    
+
                     // Extract parameters from second argument (ARG2 = operation params)
                     let second_arg = env.get_match("ARG2");
                     let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
-                    
+
                     return Some((line, parameters));
                 }
             }
@@ -261,11 +267,11 @@ where
     pub(crate) fn find_command_input_usage_position(&self, type_name: &str) -> Option<usize> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
-            format!("const $VAR: {} = $VALUE", type_name),   // const variable: Type = value
-            format!("let $VAR: {} = $VALUE", type_name),     // let variable: Type = value  
-            format!("$VAR: {} = $VALUE", type_name),         // variable: Type = value
+            format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
+            format!("let $VAR: {} = $VALUE", type_name),   // let variable: Type = value
+            format!("$VAR: {} = $VALUE", type_name),       // variable: Type = value
         ];
-        
+
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
@@ -275,7 +281,6 @@ where
         }
         None
     }
-
 
     /// Scan AWS import/require statements generically
     fn scan_aws_statements(&self, pattern: &str) -> Result<Vec<SublibraryInfo>, String> {
@@ -292,7 +297,7 @@ where
         matches: Vec<ast_grep_core::NodeMatch<U>>,
         sublibrary_data: &mut HashMap<String, SublibraryInfo>,
         include_line_numbers: bool,
-    ) -> Result<(), String> 
+    ) -> Result<(), String>
     where
         U: ast_grep_core::Doc + std::clone::Clone,
     {
@@ -321,7 +326,7 @@ where
                     .or_insert_with(|| SublibraryInfo::new(sublibrary));
 
                 if include_line_numbers {
-                    // Get line number from AST node  
+                    // Get line number from AST node
                     let line = node_match.get_node().start_pos().line() + 1;
                     parse_and_add_imports_with_line(imports_text_str, sublibrary_info, line);
                 } else {
@@ -332,10 +337,6 @@ where
         Ok(())
     }
 
-
-
-
-
     /// Scan for AWS SDK ES6 imports
     pub(crate) fn scan_aws_imports(&mut self) -> Result<Vec<SublibraryInfo>, String> {
         self.scan_aws_statements("import $IMPORTS from $MODULE")
@@ -345,18 +346,18 @@ where
     pub(crate) fn scan_aws_requires(&mut self) -> Result<Vec<SublibraryInfo>, String> {
         // Support multiple require patterns (const, let, var - both destructuring and default imports)
         const REQUIRE_PATTERNS: &[&str] = &[
-            "const $IMPORTS = require($MODULE)",  // Destructuring: const { S3Client } = require(...)
-            "let $IMPORTS = require($MODULE)",    // Destructuring: let { S3Client } = require(...)
-            "var $IMPORTS = require($MODULE)",    // Destructuring: var { S3Client } = require(...) [legacy]
+            "const $IMPORTS = require($MODULE)", // Destructuring: const { S3Client } = require(...)
+            "let $IMPORTS = require($MODULE)",   // Destructuring: let { S3Client } = require(...)
+            "var $IMPORTS = require($MODULE)", // Destructuring: var { S3Client } = require(...) [legacy]
         ];
-        
+
         let mut all_requires = Vec::new();
-        
+
         for pattern in REQUIRE_PATTERNS {
             let mut requires = self.scan_aws_statements(pattern)?;
             all_requires.append(&mut requires);
         }
-        
+
         Ok(all_requires)
     }
 
@@ -400,9 +401,12 @@ where
             }
         }
 
-        Ok(ValidClientTypes::new(client_types, name_mappings, sublibrary_mappings))
+        Ok(ValidClientTypes::new(
+            client_types,
+            name_mappings,
+            sublibrary_mappings,
+        ))
     }
-
 
     /// Scan for AWS client instantiations
     pub(crate) fn scan_client_instantiations(
@@ -443,7 +447,7 @@ where
         client_name_mappings: &HashMap<String, String>,
         client_sublibrary_mappings: &HashMap<String, String>,
         results: &mut Vec<ClientInstantiation>,
-    ) -> Result<(), String> 
+    ) -> Result<(), String>
     where
         U: ast_grep_core::Doc + std::clone::Clone,
     {
@@ -500,7 +504,7 @@ where
         client_variables: &[String],
         client_info_map: &HashMap<String, (String, String, String)>,
         results: &mut Vec<MethodCall>,
-    ) -> Result<(), String> 
+    ) -> Result<(), String>
     where
         U: ast_grep_core::Doc + std::clone::Clone,
     {
@@ -546,8 +550,6 @@ where
         Ok(())
     }
 
-
-
     /// Scan for method calls on AWS client instances
     pub(crate) fn scan_method_calls(&mut self) -> Result<Vec<MethodCall>, String> {
         let mut results = Vec::new();
@@ -587,7 +589,6 @@ where
         Ok(results)
     }
 
-
     /// Perform all scanning operations and return combined results
     pub(crate) fn scan_all(&mut self) -> Result<JavaScriptScanResults, String> {
         let (imports, requires) = self.scan_all_aws_imports()?;
@@ -604,7 +605,6 @@ where
         })
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -655,95 +655,150 @@ const { SESClient } = require("@aws-sdk/client-ses");
 
         // === VERIFY BASIC COUNTS ===
         assert_eq!(imports.len(), 3, "Should find 3 ES6 import sublibraries");
-        assert!(requires.len() >= 2, "Should find at least 2 CommonJS require sublibraries");
+        assert!(
+            requires.len() >= 2,
+            "Should find at least 2 CommonJS require sublibraries"
+        );
 
         // === VERIFY ES6 IMPORTS ===
-        
+
         // Test client-s3 sublibrary
-        let s3_sublibrary = imports.iter().find(|s| s.sublibrary == "client-s3")
+        let s3_sublibrary = imports
+            .iter()
+            .find(|s| s.sublibrary == "client-s3")
             .expect("Should find client-s3 sublibrary");
-        assert_eq!(s3_sublibrary.imports.len(), 3, "client-s3 should have 3 imports");
-        
+        assert_eq!(
+            s3_sublibrary.imports.len(),
+            3,
+            "client-s3 should have 3 imports"
+        );
+
         // Verify S3Client import (no rename)
-        let s3_client = s3_sublibrary.imports.iter()
+        let s3_client = s3_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "S3Client")
             .expect("Should find S3Client import");
         assert_eq!(s3_client.local_name, "S3Client");
         assert!(!s3_client.is_renamed);
-        
+
         // Verify PutObjectCommand import (with rename)
-        let put_object = s3_sublibrary.imports.iter()
+        let put_object = s3_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "PutObjectCommand")
             .expect("Should find PutObjectCommand import");
         assert_eq!(put_object.local_name, "PutObject");
         assert!(put_object.is_renamed);
-        
+
         // Verify GetObjectCommand import (no rename)
-        let get_object = s3_sublibrary.imports.iter()
+        let get_object = s3_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "GetObjectCommand")
             .expect("Should find GetObjectCommand import");
         assert_eq!(get_object.local_name, "GetObjectCommand");
         assert!(!get_object.is_renamed);
 
-        // Test client-dynamodb sublibrary  
-        let dynamo_sublibrary = imports.iter().find(|s| s.sublibrary == "client-dynamodb")
+        // Test client-dynamodb sublibrary
+        let dynamo_sublibrary = imports
+            .iter()
+            .find(|s| s.sublibrary == "client-dynamodb")
             .expect("Should find client-dynamodb sublibrary");
-        assert_eq!(dynamo_sublibrary.imports.len(), 2, "client-dynamodb should have 2 imports");
-        
+        assert_eq!(
+            dynamo_sublibrary.imports.len(),
+            2,
+            "client-dynamodb should have 2 imports"
+        );
+
         // Verify DynamoDBClient import (with rename)
-        let dynamo_client = dynamo_sublibrary.imports.iter()
+        let dynamo_client = dynamo_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "DynamoDBClient")
             .expect("Should find DynamoDBClient import");
         assert_eq!(dynamo_client.local_name, "DynamoDB");
         assert!(dynamo_client.is_renamed);
 
         // Test lib-dynamodb sublibrary (paginate functions)
-        let lib_dynamo_sublibrary = imports.iter().find(|s| s.sublibrary == "lib-dynamodb")
+        let lib_dynamo_sublibrary = imports
+            .iter()
+            .find(|s| s.sublibrary == "lib-dynamodb")
             .expect("Should find lib-dynamodb sublibrary");
-        assert_eq!(lib_dynamo_sublibrary.imports.len(), 2, "lib-dynamodb should have 2 imports");
-        
+        assert_eq!(
+            lib_dynamo_sublibrary.imports.len(),
+            2,
+            "lib-dynamodb should have 2 imports"
+        );
+
         // Verify paginateScan rename
-        let paginate_scan = lib_dynamo_sublibrary.imports.iter()
+        let paginate_scan = lib_dynamo_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "paginateScan")
             .expect("Should find paginateScan import");
         assert_eq!(paginate_scan.local_name, "PaginateScanRenamed");
         assert!(paginate_scan.is_renamed);
 
         // === VERIFY COMMONJS REQUIRES ===
-        
+
         // Test client-lambda require
-        let lambda_sublibrary = requires.iter().find(|s| s.sublibrary == "client-lambda")
+        let lambda_sublibrary = requires
+            .iter()
+            .find(|s| s.sublibrary == "client-lambda")
             .expect("Should find client-lambda sublibrary");
-        assert_eq!(lambda_sublibrary.imports.len(), 2, "client-lambda should have 2 imports");
-        
-        let lambda_client = lambda_sublibrary.imports.iter()
+        assert_eq!(
+            lambda_sublibrary.imports.len(),
+            2,
+            "client-lambda should have 2 imports"
+        );
+
+        let lambda_client = lambda_sublibrary
+            .imports
+            .iter()
             .find(|i| i.original_name == "LambdaClient")
             .expect("Should find LambdaClient require");
         assert_eq!(lambda_client.local_name, "LambdaClient");
         assert!(!lambda_client.is_renamed);
 
         // Test client-ses require
-        let ses_sublibrary = requires.iter().find(|s| s.sublibrary == "client-ses")
+        let ses_sublibrary = requires
+            .iter()
+            .find(|s| s.sublibrary == "client-ses")
             .expect("Should find client-ses sublibrary");
-        assert_eq!(ses_sublibrary.imports.len(), 1, "client-ses should have 1 import");
+        assert_eq!(
+            ses_sublibrary.imports.len(),
+            1,
+            "client-ses should have 1 import"
+        );
 
         // === VERIFY NAME MAPPINGS ===
-        
+
         // Test renamed import mappings
-        assert_eq!(s3_sublibrary.name_mappings.get("PutObject"), 
-                   Some(&"PutObjectCommand".to_string()), 
-                   "Should map local name to original name");
-        assert_eq!(dynamo_sublibrary.name_mappings.get("DynamoDB"), 
-                   Some(&"DynamoDBClient".to_string()),
-                   "Should map renamed client correctly");
-        assert_eq!(lib_dynamo_sublibrary.name_mappings.get("PaginateScanRenamed"), 
-                   Some(&"paginateScan".to_string()),
-                   "Should map renamed paginate function correctly");
+        assert_eq!(
+            s3_sublibrary.name_mappings.get("PutObject"),
+            Some(&"PutObjectCommand".to_string()),
+            "Should map local name to original name"
+        );
+        assert_eq!(
+            dynamo_sublibrary.name_mappings.get("DynamoDB"),
+            Some(&"DynamoDBClient".to_string()),
+            "Should map renamed client correctly"
+        );
+        assert_eq!(
+            lib_dynamo_sublibrary
+                .name_mappings
+                .get("PaginateScanRenamed"),
+            Some(&"paginateScan".to_string()),
+            "Should map renamed paginate function correctly"
+        );
 
         // Test non-renamed mappings
-        assert_eq!(s3_sublibrary.name_mappings.get("S3Client"), 
-                   Some(&"S3Client".to_string()),
-                   "Non-renamed imports should map to themselves");
+        assert_eq!(
+            s3_sublibrary.name_mappings.get("S3Client"),
+            Some(&"S3Client".to_string()),
+            "Non-renamed imports should map to themselves"
+        );
 
         // Comprehensive test validates import/require parsing functionality
         // Type extraction and classification methods were removed during cleanup
@@ -778,18 +833,28 @@ async function uploadFile() {
 
         let ast = JavaScript.ast_grep(source_with_usage);
         let scanner = ASTScanner::new(ast, JavaScript.into());
-        
+
         // Should find CreateBucketCommand instantiation at line ~6
         let create_bucket_pos = scanner.find_command_instantiation_with_args("CreateBucketCommand");
-        assert!(create_bucket_pos.is_some(), "Should find CreateBucketCommand instantiation");
+        assert!(
+            create_bucket_pos.is_some(),
+            "Should find CreateBucketCommand instantiation"
+        );
 
         // Should find PutObject instantiation (renamed) at line ~11
         let put_object_pos = scanner.find_command_instantiation_with_args("PutObject");
-        assert!(put_object_pos.is_some(), "Should find PutObject instantiation");
+        assert!(
+            put_object_pos.is_some(),
+            "Should find PutObject instantiation"
+        );
 
         // Should return None for command that wasn't used
-        let missing_command_pos = scanner.find_command_instantiation_with_args("DeleteBucketCommand");
-        assert!(missing_command_pos.is_none(), "Should return None for unused command");
+        let missing_command_pos =
+            scanner.find_command_instantiation_with_args("DeleteBucketCommand");
+        assert!(
+            missing_command_pos.is_none(),
+            "Should return None for unused command"
+        );
 
         println!("✅ Command instantiation position heuristics working correctly");
     }
@@ -819,7 +884,7 @@ async function listAllTables() {
 
         let ast = JavaScript.ast_grep(source_with_usage);
         let scanner = ASTScanner::new(ast, JavaScript.into());
-        
+
         // Should find paginateQuery call at line ~7
         let paginate_query = scanner.find_paginate_function_with_args("paginateQuery");
         assert!(paginate_query.is_some(), "Should find paginateQuery call");
@@ -830,7 +895,10 @@ async function listAllTables() {
 
         // Should return None for function that wasn't called
         let missing_function_pos = scanner.find_paginate_function_with_args("paginateScan");
-        assert!(missing_function_pos.is_none(), "Should return None for unused function");
+        assert!(
+            missing_function_pos.is_none(),
+            "Should return None for unused function"
+        );
 
         println!("✅ Paginate function position heuristics working correctly");
     }
@@ -861,22 +929,35 @@ function createListParams(): ListTablesInput {
 
         let ast = TypeScript.ast_grep(typescript_source);
         let scanner = ASTScanner::new(ast, TypeScript.into());
-        
+
         // Should find QueryCommandInput usage at line ~8
         let query_input_pos = scanner.find_command_input_usage_position("QueryCommandInput");
-        assert!(query_input_pos.is_some(), "Should find QueryCommandInput usage");
-        assert!(query_input_pos.unwrap() > 7 && query_input_pos.unwrap() < 11,
-                "QueryCommandInput should be around line 8-9");
+        assert!(
+            query_input_pos.is_some(),
+            "Should find QueryCommandInput usage"
+        );
+        assert!(
+            query_input_pos.unwrap() > 7 && query_input_pos.unwrap() < 11,
+            "QueryCommandInput should be around line 8-9"
+        );
 
         // Should find ListTablesInput usage at line ~15
         let list_input_pos = scanner.find_command_input_usage_position("ListTablesInput");
-        assert!(list_input_pos.is_some(), "Should find ListTablesInput usage");
-        assert!(list_input_pos.unwrap() > 14 && list_input_pos.unwrap() < 18,
-                "ListTablesInput should be around line 15-16");
+        assert!(
+            list_input_pos.is_some(),
+            "Should find ListTablesInput usage"
+        );
+        assert!(
+            list_input_pos.unwrap() > 14 && list_input_pos.unwrap() < 18,
+            "ListTablesInput should be around line 15-16"
+        );
 
         // Should return None for type that wasn't used
         let missing_type_pos = scanner.find_command_input_usage_position("PutItemInput");
-        assert!(missing_type_pos.is_none(), "Should return None for unused type");
+        assert!(
+            missing_type_pos.is_none(),
+            "Should return None for unused type"
+        );
 
         println!("✅ CommandInput type usage position heuristics working correctly");
     }
@@ -892,14 +973,20 @@ const command = new CreateBucketCommand({ Bucket: "test" });
 
         let ast = JavaScript.ast_grep(javascript_source);
         let scanner = ASTScanner::new(ast, JavaScript.into());
-        
+
         // JavaScript should find command instantiation
         let command_pos = scanner.find_command_instantiation_with_args("CreateBucketCommand");
-        assert!(command_pos.is_some(), "Should find command instantiation in JavaScript");
+        assert!(
+            command_pos.is_some(),
+            "Should find command instantiation in JavaScript"
+        );
 
         // JavaScript should return None for TypeScript-specific CommandInput usage
         let type_pos = scanner.find_command_input_usage_position("QueryCommandInput");
-        assert!(type_pos.is_none(), "Should return None for CommandInput in JavaScript");
+        assert!(
+            type_pos.is_none(),
+            "Should return None for CommandInput in JavaScript"
+        );
 
         println!("✅ JavaScript fallback behavior working correctly");
     }
@@ -929,54 +1016,103 @@ var ec2Sdk = require("@aws-sdk/client-ec2");
 
         // === VERIFY COUNTS ===
         assert_eq!(imports.len(), 0, "Should find 0 ES6 imports");
-        
+
         // Should find requires from all three patterns: const, let, var
         // But may be fewer than 6 due to deduplication by sublibrary
         assert!(requires.len() >= 3, "Should find at least 3 require sublibraries (client-s3, client-dynamodb, client-lambda)");
-        assert!(requires.len() <= 8, "Should find at most 8 require sublibraries");
+        assert!(
+            requires.len() <= 8,
+            "Should find at most 8 require sublibraries"
+        );
 
         // === VERIFY SPECIFIC PATTERNS ===
-        
+
         // Should find client-s3 from const destructuring
         let s3_sublibrary = requires.iter().find(|s| s.sublibrary == "client-s3");
-        assert!(s3_sublibrary.is_some(), "Should find client-s3 from const require");
-        
-        // Should find client-dynamodb from let destructuring  
+        assert!(
+            s3_sublibrary.is_some(),
+            "Should find client-s3 from const require"
+        );
+
+        // Should find client-dynamodb from let destructuring
         let dynamo_sublibrary = requires.iter().find(|s| s.sublibrary == "client-dynamodb");
-        assert!(dynamo_sublibrary.is_some(), "Should find client-dynamodb from let require");
-        
+        assert!(
+            dynamo_sublibrary.is_some(),
+            "Should find client-dynamodb from let require"
+        );
+
         // Should find client-lambda from var destructuring
         let lambda_sublibrary = requires.iter().find(|s| s.sublibrary == "client-lambda");
-        assert!(lambda_sublibrary.is_some(), "Should find client-lambda from var require");
+        assert!(
+            lambda_sublibrary.is_some(),
+            "Should find client-lambda from var require"
+        );
 
         // === VERIFY IMPORT PARSING ===
         if let Some(s3_sub) = s3_sublibrary {
             // Should find both S3Client and CreateBucketCommand from const destructuring
-            assert!(s3_sub.imports.len() >= 2, "Should find at least 2 imports from const destructuring");
-            
-            let s3_client = s3_sub.imports.iter().find(|i| i.original_name == "S3Client");
-            assert!(s3_client.is_some(), "Should find S3Client from const require");
-            
-            let create_bucket = s3_sub.imports.iter().find(|i| i.original_name == "CreateBucketCommand");
-            assert!(create_bucket.is_some(), "Should find CreateBucketCommand from const require");
+            assert!(
+                s3_sub.imports.len() >= 2,
+                "Should find at least 2 imports from const destructuring"
+            );
+
+            let s3_client = s3_sub
+                .imports
+                .iter()
+                .find(|i| i.original_name == "S3Client");
+            assert!(
+                s3_client.is_some(),
+                "Should find S3Client from const require"
+            );
+
+            let create_bucket = s3_sub
+                .imports
+                .iter()
+                .find(|i| i.original_name == "CreateBucketCommand");
+            assert!(
+                create_bucket.is_some(),
+                "Should find CreateBucketCommand from const require"
+            );
         }
 
         if let Some(dynamo_sub) = dynamo_sublibrary {
             // Should find DynamoDBClient and renamed QueryCommand from let destructuring
-            assert!(dynamo_sub.imports.len() >= 2, "Should find at least 2 imports from let destructuring");
-            
-            let dynamo_client = dynamo_sub.imports.iter().find(|i| i.original_name == "DynamoDBClient");
-            assert!(dynamo_client.is_some(), "Should find DynamoDBClient from let require");
-            
-            let query_renamed = dynamo_sub.imports.iter().find(|i| i.original_name == "QueryCommand" && i.local_name == "Query");
-            assert!(query_renamed.is_some(), "Should find renamed QueryCommand as Query from let require");
+            assert!(
+                dynamo_sub.imports.len() >= 2,
+                "Should find at least 2 imports from let destructuring"
+            );
+
+            let dynamo_client = dynamo_sub
+                .imports
+                .iter()
+                .find(|i| i.original_name == "DynamoDBClient");
+            assert!(
+                dynamo_client.is_some(),
+                "Should find DynamoDBClient from let require"
+            );
+
+            let query_renamed = dynamo_sub
+                .imports
+                .iter()
+                .find(|i| i.original_name == "QueryCommand" && i.local_name == "Query");
+            assert!(
+                query_renamed.is_some(),
+                "Should find renamed QueryCommand as Query from let require"
+            );
         }
 
         println!("✅ Comprehensive require pattern test passed!");
-        println!("   📦 Found {} require sublibraries covering const/let/var patterns", requires.len());
-        
+        println!(
+            "   📦 Found {} require sublibraries covering const/let/var patterns",
+            requires.len()
+        );
+
         for sublibrary in &requires {
-            println!("   - {} ({} imports)", sublibrary.sublibrary, sublibrary.imports.len());
+            println!(
+                "   - {} ({} imports)",
+                sublibrary.sublibrary,
+                sublibrary.imports.len()
+            );
         }
     }
 }

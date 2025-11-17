@@ -5,23 +5,26 @@
 //! to policy generation using only the public API.
 
 use iam_policy_autopilot_policy_generation::{
-    EnrichmentEngine, ExtractionEngine, FileSystemProvider, JsonProvider, Language, PolicyGenerationEngine, SourceFile
+    EnrichmentEngine, ExtractionEngine, FileSystemProvider, JsonProvider, Language,
+    PolicyGenerationEngine, SourceFile,
 };
+use std::io::Write;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
-use std::io::Write;
 
 /// Helper function to create a temporary Python file with SDK calls
 fn create_test_python_file(content: &str) -> NamedTempFile {
     let mut temp_file = NamedTempFile::new().expect("Failed to create temp file");
-    temp_file.write_all(content.as_bytes()).expect("Failed to write to temp file");
+    temp_file
+        .write_all(content.as_bytes())
+        .expect("Failed to write to temp file");
     temp_file
 }
 
 #[tokio::test]
 async fn test_complete_workflow_s3_operations() {
     // Test the complete workflow: Extraction -> Enrichment -> Policy Generation
-    
+
     // 1. Create test source file with S3 operations
     let python_source = r#"
 import boto3
@@ -55,11 +58,11 @@ def download_object():
 
     // 2. Test Extraction Engine (Public API)
     let extraction_engine = ExtractionEngine::new();
-    
+
     let source_file = SourceFile::with_language(
         temp_path.clone(),
         python_source.to_string(),
-        Language::Python
+        Language::Python,
     );
 
     let extracted_methods = extraction_engine
@@ -68,14 +71,20 @@ def download_object():
         .expect("Extraction should succeed");
 
     // Verify extraction results using only public API
-    assert!(!extracted_methods.methods.is_empty(), "Should extract some methods");
+    assert!(
+        !extracted_methods.methods.is_empty(),
+        "Should extract some methods"
+    );
     assert_eq!(extracted_methods.metadata.source_files.len(), 1);
-    assert_eq!(extracted_methods.metadata.source_files[0].language, Language::Python);
-    
+    assert_eq!(
+        extracted_methods.metadata.source_files[0].language,
+        Language::Python
+    );
+
     println!("Extracted {} methods", extracted_methods.methods.len());
     // Note: Cannot access private fields, so we test serialization instead
-    let methods_json = serde_json::to_string(&extracted_methods.methods)
-        .expect("Should serialize methods");
+    let methods_json =
+        serde_json::to_string(&extracted_methods.methods).expect("Should serialize methods");
     assert!(!methods_json.is_empty());
 
     // 3. Test Enrichment Engine (Public API)
@@ -91,11 +100,7 @@ def download_object():
     println!("Enriched {} method calls", enriched_methods.len());
 
     // 4. Test Policy Generation Engine (Public API)
-    let policy_engine = PolicyGenerationEngine::new(
-        "aws",
-        "us-east-1",
-        "123456789012",
-    );
+    let policy_engine = PolicyGenerationEngine::new("aws", "us-east-1", "123456789012");
 
     let policies = policy_engine
         .generate_policies(&enriched_methods)
@@ -104,11 +109,10 @@ def download_object():
     // Verify policy generation results using serialization
     assert!(!policies.is_empty(), "Should generate policies");
     println!("Generated {} policies", policies.len());
-    
+
     // Test that policies can be serialized (verifies structure)
     for (i, policy) in policies.iter().enumerate() {
-        let policy_json = serde_json::to_string(policy)
-            .expect("Should serialize policy");
+        let policy_json = serde_json::to_string(policy).expect("Should serialize policy");
         assert!(policy_json.contains("2012-10-17"));
         assert!(policy_json.contains("Statement"));
         println!("  Policy {}: serialized successfully", i + 1);
@@ -119,8 +123,8 @@ def download_object():
         .merge_policies(&policies)
         .expect("Policy merging should succeed");
 
-    let merged_json = serde_json::to_string(&merged_policy)
-        .expect("Should serialize merged policy");
+    let merged_json =
+        serde_json::to_string(&merged_policy).expect("Should serialize merged policy");
     assert!(merged_json.contains("2012-10-17"));
     println!("Merged policy serialized successfully");
 
@@ -131,10 +135,10 @@ def download_object():
 
     assert!(!action_mappings.is_empty(), "Should have action mappings");
     println!("Generated {} action mappings", action_mappings.len());
-    
+
     // Test serialization of action mappings
-    let mappings_json = serde_json::to_string(&action_mappings)
-        .expect("Should serialize action mappings");
+    let mappings_json =
+        serde_json::to_string(&action_mappings).expect("Should serialize action mappings");
     assert!(!mappings_json.is_empty());
 }
 
@@ -176,16 +180,15 @@ async fn test_source_file_creation_and_serialization() {
     assert_eq!(source_file.content, "print('hello')");
 
     // Test serialization through JsonProvider
-    let json_str = JsonProvider::stringify(&source_file)
-        .expect("Should serialize SourceFile");
-    
+    let json_str = JsonProvider::stringify(&source_file).expect("Should serialize SourceFile");
+
     assert!(json_str.contains("python"));
     assert!(!json_str.contains("print('hello')")); // content is skipped in serialization
 
     // Test pretty printing
     let pretty_json = JsonProvider::stringify_pretty(&source_file)
         .expect("Should serialize SourceFile with pretty printing");
-    
+
     assert!(pretty_json.contains('\n'));
     assert!(pretty_json.contains("  "));
 }
@@ -204,8 +207,7 @@ async fn test_json_provider_public_api() {
     });
 
     // Test stringify
-    let json_str = JsonProvider::stringify(&test_data)
-        .expect("Should stringify JSON");
+    let json_str = JsonProvider::stringify(&test_data).expect("Should stringify JSON");
     assert!(json_str.contains("\"name\":\"test\""));
 
     // Test stringify_pretty
@@ -215,10 +217,8 @@ async fn test_json_provider_public_api() {
     assert!(pretty_str.contains("  "));
 
     // Test value operations
-    let value_str = JsonProvider::stringify_value(&test_data)
-        .expect("Should stringify value");
-    let parsed_value = JsonProvider::parse_to_value(&value_str)
-        .expect("Should parse to value");
+    let value_str = JsonProvider::stringify_value(&test_data).expect("Should stringify value");
+    let parsed_value = JsonProvider::parse_to_value(&value_str).expect("Should parse to value");
     assert_eq!(parsed_value, test_data);
 }
 
@@ -280,7 +280,7 @@ def multi_service_operations():
     let source_file = SourceFile::with_language(
         temp_path,
         multi_service_source.to_string(),
-        Language::Python
+        Language::Python,
     );
 
     let extracted = extraction_engine
@@ -289,46 +289,48 @@ def multi_service_operations():
         .expect("Should extract methods");
 
     // Verify we found methods (using serialization to check content)
-    let methods_json = serde_json::to_string(&extracted.methods)
-        .expect("Should serialize methods");
+    let methods_json = serde_json::to_string(&extracted.methods).expect("Should serialize methods");
     println!("Extracted methods JSON length: {}", methods_json.len());
-    
+
     // Continue with enrichment and policy generation
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
-    
+
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods)
         .await
         .expect("Should enrich methods");
 
-    let policy_engine = PolicyGenerationEngine::new(
-        "aws",
-        "us-west-2",
-        "987654321098",
-    );
+    let policy_engine = PolicyGenerationEngine::new("aws", "us-west-2", "987654321098");
 
     let policies = policy_engine
         .generate_policies(&enriched)
         .expect("Should generate policies");
 
     // Verify we got policies for multi-service operations
-    println!("Generated {} policies for multi-service operations", policies.len());
-    assert!(!policies.is_empty(), "Should generate policies for multi-service code");
+    println!(
+        "Generated {} policies for multi-service operations",
+        policies.len()
+    );
+    assert!(
+        !policies.is_empty(),
+        "Should generate policies for multi-service code"
+    );
 }
 
 #[test]
 fn test_public_types_serialization() {
     // Test that all public types can be serialized/deserialized
     use serde_json::json;
-    
+
     // Test basic JSON serialization of a simple structure
     let test_data = json!({
         "test": "value",
         "number": 42
     });
-    
+
     let json_str = serde_json::to_string(&test_data).expect("Should serialize test data");
-    let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("Should deserialize test data");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&json_str).expect("Should deserialize test data");
     assert_eq!(test_data, parsed);
 }
 
@@ -349,11 +351,8 @@ class TestClass:
     let temp_path = temp_file.path().to_path_buf();
 
     let extraction_engine = ExtractionEngine::new();
-    let source_file = SourceFile::with_language(
-        temp_path,
-        simple_python.to_string(),
-        Language::Python
-    );
+    let source_file =
+        SourceFile::with_language(temp_path, simple_python.to_string(), Language::Python);
 
     let extracted = extraction_engine
         .extract_sdk_method_calls(Language::Python, vec![source_file])
@@ -361,11 +360,14 @@ class TestClass:
         .expect("Should extract methods");
 
     // Should succeed but find no AWS SDK methods
-    println!("Extracted {} methods from simple Python code", extracted.methods.len());
-    
+    println!(
+        "Extracted {} methods from simple Python code",
+        extracted.methods.len()
+    );
+
     // Test that we can serialize the results
-    let json = serde_json::to_string(&extracted.methods)
-        .expect("Should serialize extracted methods");
+    let json =
+        serde_json::to_string(&extracted.methods).expect("Should serialize extracted methods");
     assert!(!json.is_empty());
 }
 
@@ -373,31 +375,28 @@ class TestClass:
 async fn test_provider_integration() {
     // Test that providers work together correctly
     let test_json = r#"{"name": "test", "value": 42}"#;
-    
+
     // Create a temporary file with JSON content
     let temp_file = create_test_python_file(test_json);
     let temp_path = temp_file.path();
-    
+
     // Read the file using FileSystemProvider
     let file_content = FileSystemProvider::read_file(temp_path)
         .await
         .expect("Should read file");
-    
+
     // Parse the content using JsonProvider
-    let parsed_value = JsonProvider::parse_to_value(&file_content)
-        .expect("Should parse JSON");
-    
+    let parsed_value = JsonProvider::parse_to_value(&file_content).expect("Should parse JSON");
+
     // Verify the parsed content
     assert_eq!(parsed_value["name"], "test");
     assert_eq!(parsed_value["value"], 42);
-    
+
     // Serialize it back
-    let serialized = JsonProvider::stringify_value(&parsed_value)
-        .expect("Should serialize value");
-    
+    let serialized = JsonProvider::stringify_value(&parsed_value).expect("Should serialize value");
+
     // Should be able to parse it again
-    let reparsed = JsonProvider::parse_to_value(&serialized)
-        .expect("Should reparse JSON");
-    
+    let reparsed = JsonProvider::parse_to_value(&serialized).expect("Should reparse JSON");
+
     assert_eq!(parsed_value, reparsed);
 }

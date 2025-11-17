@@ -39,7 +39,10 @@ pub async fn fix_access_denied(error_text: &str, yes: bool) -> ExitCode {
     match service.plan(error_text).await {
         Ok(plan) => fix_access_denied_with_service(plan, yes, service).await,
         Err(e) => {
-            if matches!(e, iam_policy_autopilot_access_denied::IamPolicyAutopilotError::Parsing(_)) {
+            if matches!(
+                e,
+                iam_policy_autopilot_access_denied::IamPolicyAutopilotError::Parsing(_)
+            ) {
                 output::note("No AccessDenied found in provided text");
             } else {
                 output::note(&format!("Failed to create plan: {}", e));

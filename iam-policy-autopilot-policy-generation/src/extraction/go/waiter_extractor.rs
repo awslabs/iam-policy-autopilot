@@ -3,10 +3,10 @@
 //! This module handles extraction of Go AWS SDK waiter patterns, which involve
 //! creating a waiter from a client, then calling Wait() on the waiter.
 
-use ast_grep_language::Go;
-use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::extraction::go::utils;
+use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
+use ast_grep_language::Go;
 
 /// Information about a discovered waiter creation call
 #[derive(Debug, Clone)]
@@ -61,14 +61,14 @@ impl<'a> GoWaiterExtractor<'a> {
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all waiter creation calls
         let waiters = self.find_waiter_creation_calls(ast);
-        
+
         // Step 2: Find all Wait calls
         let wait_calls = self.find_wait_calls(ast);
-        
+
         // Step 3: Match Wait calls to their waiters and create synthetic calls
         let mut synthetic_calls = Vec::new();
         let mut matched_waiter_indices = std::collections::HashSet::new();
-        
+
         for wait_call in wait_calls {
             if let Some((waiter, waiter_idx)) = self.match_wait_to_waiter(&wait_call, &waiters) {
                 let calls = self.create_synthetic_call(&wait_call, waiter);
@@ -76,7 +76,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 matched_waiter_indices.insert(waiter_idx);
             }
         }
-        
+
         // Step 4: Handle unmatched waiter creation calls
         for (idx, waiter) in waiters.iter().enumerate() {
             if !matched_waiter_indices.contains(&idx) {
@@ -84,7 +84,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 synthetic_calls.extend(calls);
             }
         }
-        
+
         synthetic_calls
     }
 
@@ -95,16 +95,16 @@ impl<'a> GoWaiterExtractor<'a> {
     ) -> Vec<WaiterInfo> {
         let root = ast.root();
         let mut waiters = Vec::new();
-        
+
         // Pattern: $VAR := $PACKAGE.$FUNCTION($$$ARGS) where FUNCTION contains "New" and "Waiter"
         let waiter_pattern = "$VAR := $PACKAGE.$FUNCTION($$$ARGS)";
-        
+
         for node_match in root.find_all(waiter_pattern) {
             if let Some(waiter_info) = self.parse_waiter_creation_call(&node_match) {
                 waiters.push(waiter_info);
             }
         }
-        
+
         waiters
     }
 
@@ -115,16 +115,16 @@ impl<'a> GoWaiterExtractor<'a> {
     ) -> Vec<WaitCallInfo> {
         let root = ast.root();
         let mut wait_calls = Vec::new();
-        
+
         // Pattern: $WAITER.Wait($$$ARGS)
         let wait_pattern = "$WAITER.Wait($$$ARGS)";
-        
+
         for node_match in root.find_all(wait_pattern) {
             if let Some(wait_info) = self.parse_wait_call(&node_match) {
                 wait_calls.push(wait_info);
             }
         }
-        
+
         wait_calls
     }
 
@@ -134,18 +134,18 @@ impl<'a> GoWaiterExtractor<'a> {
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
     ) -> Option<WaiterInfo> {
         let env = node_match.get_env();
-        
+
         // Extract variable name
         let variable_name = env.get_match("VAR")?.text().to_string();
-        
+
         // Extract function name
         let function_name = env.get_match("FUNCTION")?.text();
-        
+
         // Check if this is a waiter creation call (contains "New" and "Waiter")
         if !function_name.contains("New") || !function_name.ends_with("Waiter") {
             return None;
         }
-        
+
         // Extract client parameter from arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
         let client_receiver = if let Some(first_arg) = args_nodes.first() {
@@ -153,16 +153,16 @@ impl<'a> GoWaiterExtractor<'a> {
         } else {
             return None; // Waiter creation should have at least one argument (the client)
         };
-        
+
         // Extract waiter name from function name (remove "New" prefix and "Waiter" suffix)
         // e.g., "NewInstanceTerminatedWaiter" -> "InstanceTerminated"
         let waiter_name = function_name
             .strip_prefix("New")
             .and_then(|s| s.strip_suffix("Waiter"));
-            
+
         if let Some(waiter_name) = waiter_name {
             let creation_line = node_match.get_node().start_pos().line() + 1;
-            
+
             return Some(WaiterInfo {
                 variable_name,
                 waiter_type: waiter_name.to_string(),
@@ -170,7 +170,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 creation_line,
             });
         }
-        
+
         None
     }
 
@@ -180,19 +180,19 @@ impl<'a> GoWaiterExtractor<'a> {
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
     ) -> Option<WaitCallInfo> {
         let env = node_match.get_env();
-        
+
         // Extract waiter variable name
         let waiter_var = env.get_match("WAITER")?.text().to_string();
-        
+
         // Extract arguments
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = utils::extract_arguments(&args_nodes);
-        
+
         // Get position information
         let node = node_match.get_node();
         let start = node.start_pos();
         let end = node.end_pos();
-        
+
         Some(WaitCallInfo {
             waiter_var,
             arguments,
@@ -201,8 +201,6 @@ impl<'a> GoWaiterExtractor<'a> {
             end_position: (end.line() + 1, end.column(node) + 1),
         })
     }
-
-
 
     /// Match a Wait call to its corresponding waiter creation call
     fn match_wait_to_waiter<'b>(
@@ -214,7 +212,7 @@ impl<'a> GoWaiterExtractor<'a> {
         let mut best_match = None;
         let mut best_distance = usize::MAX;
         let mut best_idx = 0;
-        
+
         for (idx, waiter) in waiters.iter().enumerate() {
             if waiter.variable_name == wait_call.waiter_var {
                 // Only consider waiters that come before the wait call
@@ -228,7 +226,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 }
             }
         }
-        
+
         best_match.map(|w| (w, best_idx))
     }
 
@@ -239,25 +237,29 @@ impl<'a> GoWaiterExtractor<'a> {
         waiter_info: &WaiterInfo,
     ) -> Vec<SdkMethodCall> {
         let waiter_name = &waiter_info.waiter_type;
-        
+
         // Look up all services that provide this waiter
-        let candidate_services = self.service_index.waiter_to_services.get(waiter_name)
+        let candidate_services = self
+            .service_index
+            .waiter_to_services
+            .get(waiter_name)
             .cloned()
             .unwrap_or_default();
-        
+
         if candidate_services.is_empty() {
             return Vec::new();
         }
-        
+
         let mut synthetic_calls = Vec::new();
-        
+
         // Create one call per service
         for service_name in candidate_services {
             if let Some(service_def) = self.service_index.services.get(&service_name) {
                 if let Some(operation) = service_def.waiters.get(waiter_name) {
                     // Filter out waiter-specific parameters
-                    let filtered_params = self.filter_waiter_parameters(wait_call.arguments.clone());
-                    
+                    let filtered_params =
+                        self.filter_waiter_parameters(wait_call.arguments.clone());
+
                     synthetic_calls.push(SdkMethodCall {
                         name: operation.name.clone(),
                         possible_services: vec![service_name.clone()], // Single service per call
@@ -272,7 +274,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 }
             }
         }
-        
+
         synthetic_calls
     }
 
@@ -281,25 +283,29 @@ impl<'a> GoWaiterExtractor<'a> {
     fn create_fallback_synthetic_call(&self, waiter_info: &WaiterInfo) -> Vec<SdkMethodCall> {
         // waiter_type already contains the clean waiter name (e.g., "InstanceTerminated")
         let waiter_name = &waiter_info.waiter_type;
-        
+
         // Look up all services that provide this waiter
-        let candidate_services = self.service_index.waiter_to_services.get(waiter_name)
+        let candidate_services = self
+            .service_index
+            .waiter_to_services
+            .get(waiter_name)
             .cloned()
             .unwrap_or_default();
-        
+
         if candidate_services.is_empty() {
             return Vec::new();
         }
-        
+
         let mut synthetic_calls = Vec::new();
-        
+
         // Create one call per service
         for service_name in candidate_services {
             if let Some(service_def) = self.service_index.services.get(&service_name) {
                 if let Some(operation) = service_def.waiters.get(waiter_name) {
                     // Get required parameters for this operation
-                    let required_params = self.get_required_parameters(&service_name, &operation.name);
-                    
+                    let required_params =
+                        self.get_required_parameters(&service_name, &operation.name);
+
                     synthetic_calls.push(SdkMethodCall {
                         name: operation.name.clone(),
                         possible_services: vec![service_name.clone()], // Single service per call
@@ -314,20 +320,14 @@ impl<'a> GoWaiterExtractor<'a> {
                 }
             }
         }
-        
+
         synthetic_calls
     }
 
-
-
     /// Get required parameters for an operation from the service index
-    fn get_required_parameters(
-        &self,
-        service_name: &str,
-        operation_name: &str,
-    ) -> Vec<Parameter> {
+    fn get_required_parameters(&self, service_name: &str, operation_name: &str) -> Vec<Parameter> {
         let mut parameters = Vec::new();
-        
+
         if let Some(service_def) = self.service_index.services.get(service_name) {
             if let Some(operation) = service_def.operations.get(operation_name) {
                 // Get the input shape if it exists
@@ -347,7 +347,7 @@ impl<'a> GoWaiterExtractor<'a> {
                 }
             }
         }
-        
+
         parameters
     }
 
@@ -366,59 +366,78 @@ mod tests {
     use ast_grep_language::Go;
     use std::collections::HashMap;
 
-    fn create_test_ast(source_code: &str) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>> {
+    fn create_test_ast(
+        source_code: &str,
+    ) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>> {
         Go.ast_grep(source_code)
     }
 
     fn create_test_service_index() -> ServiceModelIndex {
-        use crate::extraction::sdk_model::{SdkServiceDefinition, ServiceMetadata, Operation, Shape, ShapeReference};
-        
+        use crate::extraction::sdk_model::{
+            Operation, SdkServiceDefinition, ServiceMetadata, Shape, ShapeReference,
+        };
+
         let mut services = HashMap::new();
         let mut waiter_to_services = HashMap::new();
-        
+
         // Create EC2 service with DescribeInstances operation
         let mut ec2_operations = HashMap::new();
         let mut ec2_waiters = HashMap::new();
         let mut ec2_shapes = HashMap::new();
-        
+
         // Create input shape with required parameters
         let mut input_shape_members = HashMap::new();
-        input_shape_members.insert("InstanceIds".to_string(), ShapeReference {
-            shape: "InstanceIdStringList".to_string(),
-        });
-        
-        ec2_shapes.insert("DescribeInstancesRequest".to_string(), Shape {
-            type_name: "structure".to_string(),
-            members: input_shape_members,
-            required: Some(vec!["InstanceIds".to_string()]),
-        });
-        
+        input_shape_members.insert(
+            "InstanceIds".to_string(),
+            ShapeReference {
+                shape: "InstanceIdStringList".to_string(),
+            },
+        );
+
+        ec2_shapes.insert(
+            "DescribeInstancesRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: input_shape_members,
+                required: Some(vec!["InstanceIds".to_string()]),
+            },
+        );
+
         let describe_instances_op = Operation {
             name: "DescribeInstances".to_string(),
             input: Some(ShapeReference {
                 shape: "DescribeInstancesRequest".to_string(),
             }),
         };
-        
-        ec2_operations.insert("DescribeInstances".to_string(), describe_instances_op.clone());
-        ec2_waiters.insert("InstanceTerminated".to_string(), describe_instances_op.clone());
+
+        ec2_operations.insert(
+            "DescribeInstances".to_string(),
+            describe_instances_op.clone(),
+        );
+        ec2_waiters.insert(
+            "InstanceTerminated".to_string(),
+            describe_instances_op.clone(),
+        );
         ec2_waiters.insert("InstanceRunning".to_string(), describe_instances_op);
-        
-        services.insert("ec2".to_string(), SdkServiceDefinition {
-            version: Some("2.0".to_string()),
-            metadata: ServiceMetadata {
-                api_version: "2016-11-15".to_string(),
-                service_id: "EC2".to_string(),
+
+        services.insert(
+            "ec2".to_string(),
+            SdkServiceDefinition {
+                version: Some("2.0".to_string()),
+                metadata: ServiceMetadata {
+                    api_version: "2016-11-15".to_string(),
+                    service_id: "EC2".to_string(),
+                },
+                operations: ec2_operations,
+                shapes: ec2_shapes,
+                waiters: ec2_waiters,
             },
-            operations: ec2_operations,
-            shapes: ec2_shapes,
-            waiters: ec2_waiters,
-        });
-        
+        );
+
         // Use PascalCase for waiter_to_services index
         waiter_to_services.insert("InstanceTerminated".to_string(), vec!["ec2".to_string()]);
         waiter_to_services.insert("InstanceRunning".to_string(), vec!["ec2".to_string()]);
-        
+
         ServiceModelIndex {
             services,
             method_lookup: HashMap::new(),
@@ -456,26 +475,27 @@ func main() {
     _ = bucketWaiter
 }
 "#;
-        
+
         let ast = create_test_ast(source_code);
         let service_index = create_test_service_index();
         let extractor = GoWaiterExtractor::new(&service_index);
-        
+
         let waiters = extractor.find_waiter_creation_calls(&ast);
-        
+
         println!("Found {} waiters", waiters.len());
         for waiter in &waiters {
-            println!("  - {} := {}.{}", waiter.variable_name, waiter.client_receiver, waiter.waiter_type);
+            println!(
+                "  - {} := {}.{}",
+                waiter.variable_name, waiter.client_receiver, waiter.waiter_type
+            );
         }
-        
+
         // Should find waiter creation calls with correct Go SDK pattern
         assert_eq!(waiters.len(), 2);
         assert_eq!(waiters[0].variable_name, "instanceWaiter");
         assert_eq!(waiters[0].waiter_type, "InstanceRunning");
         assert_eq!(waiters[0].client_receiver, "client"); // Client parameter, not package name
     }
-
-
 
     #[test]
     fn test_matched_waiter_and_wait() {
@@ -506,13 +526,13 @@ func main() {
     }
 }
 "#;
-        
+
         let ast = create_test_ast(source_code);
         let service_index = create_test_service_index();
         let extractor = GoWaiterExtractor::new(&service_index);
-        
+
         let calls = extractor.extract_waiter_method_calls(&ast);
-        
+
         // Should extract synthetic call for matched waiter pattern
         assert!(!calls.is_empty());
         assert_eq!(calls[0].name, "DescribeInstances");
@@ -522,7 +542,7 @@ func main() {
     fn test_filter_waiter_parameters() {
         let service_index = create_test_service_index();
         let extractor = GoWaiterExtractor::new(&service_index);
-        
+
         // Real Go SDK v2 waiter.Wait() parameters: context, input struct, timeout
         let parameters = vec![
             Parameter::expression("context.TODO()".to_string(), 0),
@@ -532,26 +552,35 @@ func main() {
                     name: "InstanceIds".to_string(),
                     value: "[]string{\"i-123\"}".to_string(),
                 }],
-                1
+                1,
             ),
             Parameter::expression("5*time.Minute".to_string(), 2), // timeout - should be filtered out
         ];
-        
+
         let filtered = extractor.filter_waiter_parameters(parameters);
-        
+
         // Should keep context and input struct, filter out timeout
         assert_eq!(filtered.len(), 2);
-        
+
         // First parameter should be context expression
         if let Parameter::Positional { value, .. } = &filtered[0] {
-            assert_eq!(value, &ParameterValue::Unresolved("context.TODO()".to_string()));
+            assert_eq!(
+                value,
+                &ParameterValue::Unresolved("context.TODO()".to_string())
+            );
         } else {
             panic!("Expected context expression parameter");
         }
-        
+
         // Second parameter should be struct literal
-        if let Parameter::Positional { type_annotation, .. } = &filtered[1] {
-            assert!(type_annotation.as_ref().unwrap().contains("DescribeInstancesInput"));
+        if let Parameter::Positional {
+            type_annotation, ..
+        } = &filtered[1]
+        {
+            assert!(type_annotation
+                .as_ref()
+                .unwrap()
+                .contains("DescribeInstancesInput"));
         } else {
             panic!("Expected struct literal parameter");
         }
@@ -580,23 +609,31 @@ func main() {
     _ = instanceWaiter // Use variable to avoid unused warning
 }
 "#;
-        
+
         let ast = create_test_ast(source_code);
         let service_index = create_test_service_index();
         let extractor = GoWaiterExtractor::new(&service_index);
-        
+
         let calls = extractor.extract_waiter_method_calls(&ast);
-        
+
         // Should create synthetic call for unmatched waiter
         assert!(!calls.is_empty());
         assert_eq!(calls[0].name, "DescribeInstances");
         // Should have required parameters with placeholder values
         assert!(!calls[0].metadata.as_ref().unwrap().parameters.is_empty());
-        
+
         // Check that required parameter has parameter name as value
         let params = &calls[0].metadata.as_ref().unwrap().parameters;
-        if let Parameter::Positional { value, type_annotation, .. } = &params[0] {
-            assert_eq!(value, &ParameterValue::Unresolved("InstanceIds".to_string()));
+        if let Parameter::Positional {
+            value,
+            type_annotation,
+            ..
+        } = &params[0]
+        {
+            assert_eq!(
+                value,
+                &ParameterValue::Unresolved("InstanceIds".to_string())
+            );
             assert!(type_annotation.is_none());
         } else {
             panic!("Expected positional parameter with parameter name as value");

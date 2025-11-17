@@ -77,8 +77,7 @@ impl AwsContext {
         }
     }
 }
-#[
-cfg(test)]
+#[cfg(test)]
 mod tests {
     use super::*;
 

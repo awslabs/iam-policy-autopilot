@@ -1,4 +1,3 @@
-
 //! SDK Model - Consolidated SDK service discovery, parsing, and type definitions.
 //!
 //! This module provides comprehensive functionality for AWS SDK services including:
@@ -10,14 +9,14 @@
 
 use std::collections::HashMap;
 
-use tokio::task::JoinSet;
 use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
-use serde::{Deserialize, Serialize};
 use convert_case::{Case, Casing};
+use serde::{Deserialize, Serialize};
 
-use crate::errors::{ExtractorError, Result};
 use crate::embedded_data::EmbeddedServiceData;
+use crate::errors::{ExtractorError, Result};
 use crate::Language;
 
 // ================================================================================================
@@ -35,11 +34,9 @@ pub(crate) struct SdkModel {
 
 impl SdkModel {
     /// Create a new `SdkModel` instance
-    #[must_use] pub(crate) const fn new(name: String, api_version: String) -> Self {
-        Self {
-            name,
-            api_version,
-        }
+    #[must_use]
+    pub(crate) const fn new(name: String, api_version: String) -> Self {
+        Self { name, api_version }
     }
 }
 
@@ -168,10 +165,10 @@ impl ServiceDiscovery {
     pub(crate) fn discover_services() -> Result<Vec<SdkModel>> {
         let start_time = std::time::Instant::now();
         log::debug!("Starting optimized service discovery...");
-        
+
         // Use the optimized single-iteration approach
         let service_versions_map = EmbeddedServiceData::build_service_versions_map();
-        
+
         let mut services = Vec::new();
         for (service_name, api_versions) in service_versions_map {
             // Since build.rs only processes the latest version, there should be exactly one version
@@ -184,7 +181,11 @@ impl ServiceDiscovery {
         services.sort_by(|a, b| a.name.cmp(&b.name).then(a.api_version.cmp(&b.api_version)));
 
         let total_duration = start_time.elapsed();
-        log::debug!("Optimized service discovery completed in {:?} - found {} services", total_duration, services.len());
+        log::debug!(
+            "Optimized service discovery completed in {:?} - found {} services",
+            total_duration,
+            services.len()
+        );
         Ok(services)
     }
 
@@ -200,8 +201,19 @@ impl ServiceDiscovery {
         let mut method_lookup = HashMap::new();
         let mut load_errors = Vec::new();
 
-        log::debug!("Attempting to load {} services in parallel for language '{}'", services.len(), language);
-        Self::load_services_parallel(services, &mut service_models, &mut method_lookup, &mut load_errors, language).await?;
+        log::debug!(
+            "Attempting to load {} services in parallel for language '{}'",
+            services.len(),
+            language
+        );
+        Self::load_services_parallel(
+            services,
+            &mut service_models,
+            &mut method_lookup,
+            &mut load_errors,
+            language,
+        )
+        .await?;
 
         log::debug!("Successfully loaded {} services", service_models.len());
         log::debug!("Failed to load {} services", load_errors.len());
@@ -249,7 +261,14 @@ impl ServiceDiscovery {
         load_errors: &mut Vec<String>,
         language: Language,
     ) -> Result<()> {
-        let mut join_set: JoinSet<Result<(SdkModel, SdkServiceDefinition, Option<HashMap<String, WaiterEntry>>)>> = JoinSet::new();
+        #[allow(clippy::type_complexity)]
+        let mut join_set: JoinSet<
+            Result<(
+                SdkModel,
+                SdkServiceDefinition,
+                Option<HashMap<String, WaiterEntry>>,
+            )>,
+        > = JoinSet::new();
 
         // Import waiter types for inline loading
         use crate::extraction::waiter_model::WaiterEntry;
@@ -264,32 +283,53 @@ impl ServiceDiscovery {
             let semaphore = semaphore.clone();
             join_set.spawn(async move {
                 let service_start = std::time::Instant::now();
-                
+
                 // Acquire permit for concurrent operations
-                let _permit = semaphore.acquire_owned().await
-                    .map_err(|e| ExtractorError::validation(format!("Failed to acquire semaphore permit: {}", e)))?;
+                let _permit = semaphore.acquire_owned().await.map_err(|e| {
+                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {}", e))
+                })?;
 
                 // Load service definition from embedded data
-                let service_definition = EmbeddedServiceData::get_service_definition(&service_info.name, &service_info.api_version).await
-                    .map_err(|e| ExtractorError::sdk_processing_with_source(
+                let service_definition = EmbeddedServiceData::get_service_definition(
+                    &service_info.name,
+                    &service_info.api_version,
+                )
+                .await
+                .map_err(|e| {
+                    ExtractorError::sdk_processing_with_source(
                         &service_info.name,
                         "Failed to load embedded service definition",
-                        e
-                    ))?;
+                        e,
+                    )
+                })?;
 
                 // Load waiters from embedded data
-                let waiters = crate::extraction::waiter_model::WaitersRegistry::load_waiters_from_embedded(&service_info.name, &service_info.api_version).await;
+                let waiters =
+                    crate::extraction::waiter_model::WaitersRegistry::load_waiters_from_embedded(
+                        &service_info.name,
+                        &service_info.api_version,
+                    )
+                    .await;
 
                 let service_time = service_start.elapsed();
                 if service_time.as_millis() > 100 {
-                    log::debug!("Service {}/{} took {:?} to load", service_info.name, service_info.api_version, service_time);
+                    log::debug!(
+                        "Service {}/{} took {:?} to load",
+                        service_info.name,
+                        service_info.api_version,
+                        service_time
+                    );
                 }
 
                 Ok((service_info, service_definition, waiters))
             });
         }
-        
-        log::debug!("Spawned all {} service loading tasks in {:?}", join_set.len(), start_time.elapsed());
+
+        log::debug!(
+            "Spawned all {} service loading tasks in {:?}",
+            join_set.len(),
+            start_time.elapsed()
+        );
 
         // Collect results from parallel tasks
         while let Some(result) = join_set.join_next().await {
@@ -299,25 +339,32 @@ impl ServiceDiscovery {
                     // Build method lookup index for this service
                     for operation_name in service_model.operations.keys() {
                         let method_name = Self::operation_to_method_name(operation_name, language);
-                        
-                        method_lookup
-                            .entry(method_name.clone())
-                            .or_default()
-                            .push(ServiceMethodRef {
+
+                        method_lookup.entry(method_name.clone()).or_default().push(
+                            ServiceMethodRef {
                                 service_name: service_name.clone(),
                                 operation_name: operation_name.clone(),
-                            });
+                            },
+                        );
                     }
 
                     // Populate waiters directly in service definition in canonical PascalCase
                     if let Some(waiters) = waiters {
                         // Add waiters to the service definition with full Operation structs
                         for (waiter_name_pascal, waiter_entry) in &waiters {
-                            if let Some(operation) = service_model.operations.get(&waiter_entry.operation) {
-                                service_model.waiters.insert(waiter_name_pascal.clone(), operation.clone());
+                            if let Some(operation) =
+                                service_model.operations.get(&waiter_entry.operation)
+                            {
+                                service_model
+                                    .waiters
+                                    .insert(waiter_name_pascal.clone(), operation.clone());
                             } else {
-                                log::debug!("Waiter '{}' references unknown operation '{}' in service '{}'",
-                                    waiter_name_pascal, waiter_entry.operation, service_name);
+                                log::debug!(
+                                    "Waiter '{}' references unknown operation '{}' in service '{}'",
+                                    waiter_name_pascal,
+                                    waiter_entry.operation,
+                                    service_name
+                                );
                             }
                         }
                     }
@@ -361,7 +408,8 @@ impl ServiceDiscovery {
     /// - **Python (boto3)**: `PascalCase` → `snake_case` (`GetObject` → `get_object`)
     /// - **TypeScript/JavaScript**: `PascalCase` → camelCase (`GetObject` → getObject)
     /// - **Go**: `PascalCase` unchanged (`GetObject` → `GetObject`)
-    #[must_use] pub(crate) fn operation_to_method_name(operation_name: &str, language: Language) -> String {
+    #[must_use]
+    pub(crate) fn operation_to_method_name(operation_name: &str, language: Language) -> String {
         #[allow(unreachable_patterns)]
         match language {
             Language::Python => {
@@ -369,10 +417,10 @@ impl ServiceDiscovery {
                 // Handle special AWS version suffixes like V2, V3, etc.
                 Self::aws_python_case_conversion(operation_name)
             }
-        Language::JavaScript | Language::TypeScript => {
-            // Keep PascalCase for TypeScript/JavaScript to match operation-action maps
-            operation_name.to_string()
-        }
+            Language::JavaScript | Language::TypeScript => {
+                // Keep PascalCase for TypeScript/JavaScript to match operation-action maps
+                operation_name.to_string()
+            }
             Language::Go => {
                 // Go uses PascalCase unchanged (GetObject -> GetObject)
                 operation_name.to_string()
@@ -391,12 +439,12 @@ impl ServiceDiscovery {
     ///
     /// Examples:
     /// - "ListObjectsV2" → "list_objects_v2" (not "list_objects_v_2")
-    /// - "GetObjectV1" → "get_object_v1" (not "get_object_v_1") 
+    /// - "GetObjectV1" → "get_object_v1" (not "get_object_v_1")
     /// - "CreateBucket" → "create_bucket" (normal cases unchanged)
     fn aws_python_case_conversion(operation_name: &str) -> String {
         // First, apply normal snake_case conversion
         let snake_case = operation_name.to_case(Case::Snake);
-        
+
         // Fix AWS version suffixes at the end: "_v_N" → "_vN" where N is digits
         // Only replace if "_v_" is followed by digits and is at the end of string
         if snake_case.len() >= 4 && snake_case.ends_with(|c: char| c.is_ascii_digit()) {
@@ -409,22 +457,18 @@ impl ServiceDiscovery {
                 }
             }
         }
-        
+
         snake_case
     }
-
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_service_info_creation() {
-        let service_info = SdkModel::new(
-            "s3".to_string(),
-            "2006-03-01".to_string(),
-        );
+        let service_info = SdkModel::new("s3".to_string(), "2006-03-01".to_string());
 
         assert_eq!(service_info.name, "s3");
         assert_eq!(service_info.api_version, "2006-03-01");
@@ -496,10 +540,10 @@ mod tests {
         match ServiceDiscovery::discover_services() {
             Ok(services) => {
                 println!("✓ Discovered {} embedded services", services.len());
-                
+
                 // Look for some well-known services
                 let service_names: Vec<&str> = services.iter().map(|s| s.name.as_str()).collect();
-                
+
                 if service_names.contains(&"s3") {
                     println!("✓ Found S3 service");
                 }
@@ -509,14 +553,22 @@ mod tests {
                 if service_names.contains(&"lambda") {
                     println!("✓ Found Lambda service");
                 }
-                
+
                 // Print first few services for debugging
                 for (i, service) in services.iter().take(5).enumerate() {
-                    println!("Service {}: {} ({})", i + 1, service.name, service.api_version);
+                    println!(
+                        "Service {}: {} ({})",
+                        i + 1,
+                        service.name,
+                        service.api_version
+                    );
                 }
-                
+
                 // We should have found at least some services
-                assert!(!services.is_empty(), "Should discover at least some embedded services");
+                assert!(
+                    !services.is_empty(),
+                    "Should discover at least some embedded services"
+                );
             }
             Err(e) => {
                 panic!("Service discovery failed: {}", e);
@@ -530,22 +582,30 @@ mod tests {
             Ok(services) => {
                 // Take just a few services to avoid overwhelming the test
                 let limited_services: Vec<_> = services.into_iter().take(3).collect();
-                
-                println!("Building service index for {} embedded services...", limited_services.len());
-                
-                match ServiceDiscovery::load_service_index(Language::Python, limited_services).await {
+
+                println!(
+                    "Building service index for {} embedded services...",
+                    limited_services.len()
+                );
+
+                match ServiceDiscovery::load_service_index(Language::Python, limited_services).await
+                {
                     Ok(index) => {
                         println!("✓ Successfully built service index");
                         println!("Services loaded: {}", index.services.len());
                         println!("Method lookup entries: {}", index.method_lookup.len());
-                        
+
                         // Print some method lookup examples
                         for (method_name, refs) in index.method_lookup.iter().take(5) {
-                            println!("Method '{}' found in {} service(s)", method_name, refs.len());
+                            println!(
+                                "Method '{}' found in {} service(s)",
+                                method_name,
+                                refs.len()
+                            );
                             for service_ref in refs {
-                                println!("  - {}.{}",
-                                    service_ref.service_name,
-                                    service_ref.operation_name,
+                                println!(
+                                    "  - {}.{}",
+                                    service_ref.service_name, service_ref.operation_name,
                                 );
                             }
                         }
@@ -564,20 +624,37 @@ mod tests {
     #[test]
     fn test_method_name_conversion() {
         // Test Python (boto3) method name conversion
-        assert_eq!(ServiceDiscovery::operation_to_method_name("GetObject", Language::Python), "get_object");
-        assert_eq!(ServiceDiscovery::operation_to_method_name("ListBuckets", Language::Python), "list_buckets");
-        assert_eq!(ServiceDiscovery::operation_to_method_name("CreateBucket", Language::Python), "create_bucket");
-        assert_eq!(ServiceDiscovery::operation_to_method_name("PutBucketAcl", Language::Python), "put_bucket_acl");
-        
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("GetObject", Language::Python),
+            "get_object"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("ListBuckets", Language::Python),
+            "list_buckets"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("CreateBucket", Language::Python),
+            "create_bucket"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("PutBucketAcl", Language::Python),
+            "put_bucket_acl"
+        );
+
         // Test JavaScript/TypeScript support (PascalCase to match service index)
-        assert_eq!(ServiceDiscovery::operation_to_method_name("GetObject", Language::JavaScript), "GetObject");
-        assert_eq!(ServiceDiscovery::operation_to_method_name("GetObject", Language::TypeScript), "GetObject");
-        assert_eq!(ServiceDiscovery::operation_to_method_name("GetObject", Language::Go), "GetObject");
-        
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("GetObject", Language::JavaScript),
+            "GetObject"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("GetObject", Language::TypeScript),
+            "GetObject"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("GetObject", Language::Go),
+            "GetObject"
+        );
+
         println!("✓ Method name conversion tests passed");
     }
-
 }
-
-
-

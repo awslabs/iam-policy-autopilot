@@ -8,20 +8,19 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
+use crate::SdkMethodCall;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use crate::SdkMethodCall;
 
-pub(crate) mod operation_fas_map;
-pub(crate) mod service_reference;
-pub(crate) mod resource_matcher;
 pub(crate) mod engine;
+pub(crate) mod operation_fas_map;
+pub(crate) mod resource_matcher;
+pub(crate) mod service_reference;
 
-pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
+pub use engine::Engine;
 pub(crate) use operation_fas_map::load_operation_fas_map;
 pub(crate) use resource_matcher::ResourceMatcher;
-pub use engine::Engine;
-
+pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
 
 /// Represents an enriched method call with actions that need permissions
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -34,7 +33,7 @@ pub struct EnrichedSdkMethodCall<'a> {
     /// Actions which need permissions for executing the method call
     pub(crate) actions: Vec<Action>,
     /// The initial SDK method call
-    pub(crate) sdk_method_call: &'a SdkMethodCall
+    pub(crate) sdk_method_call: &'a SdkMethodCall,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
@@ -46,7 +45,7 @@ pub enum Operator {
 impl Operator {
     pub(crate) fn to_like_version(&self) -> Self {
         match self {
-            Self::StringEquals | Self::StringLike => Self::StringLike
+            Self::StringEquals | Self::StringLike => Self::StringLike,
         }
     }
 }
@@ -92,11 +91,7 @@ impl Action {
     /// * `resources` - List of enriched resources
     /// * `conditions` - List of conditions
     #[must_use]
-    pub(crate) fn new(
-        name: String,
-        resources: Vec<Resource>,
-        conditions: Vec<Condition>,
-    ) -> Self {
+    pub(crate) fn new(name: String, resources: Vec<Resource>, conditions: Vec<Condition>) -> Self {
         Self {
             name,
             resources,
@@ -108,14 +103,8 @@ impl Action {
 impl Resource {
     /// Create a new enriched resource
     #[must_use]
-    pub(crate) fn new(
-        name: String,
-        arn_patterns: Option<Vec<String>>,
-    ) -> Self {
-        Self {
-            name,
-            arn_patterns,
-        }
+    pub(crate) fn new(name: String, arn_patterns: Option<Vec<String>>) -> Self {
+        Self { name, arn_patterns }
     }
 }
 
@@ -129,21 +118,28 @@ mod tests {
             "object".to_string(),
             Some(vec!["arn:aws:s3:::bucket/*".to_string()]),
         );
-        
+
         assert_eq!(resource.name, "object");
-        assert_eq!(resource.arn_patterns, Some(vec!["arn:aws:s3:::bucket/*".to_string()]));
+        assert_eq!(
+            resource.arn_patterns,
+            Some(vec!["arn:aws:s3:::bucket/*".to_string()])
+        );
     }
 }
 
 #[cfg(test)]
 pub(crate) mod mock_remote_service_reference {
+    use crate::enrichment::service_reference::RemoteServiceReferenceLoader;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
-    use crate::enrichment::service_reference::RemoteServiceReferenceLoader;
 
-    pub(crate) async fn mock_server_service_reference_response(mock_server: &MockServer, service_name: &str, service_reference_raw: serde_json::Value) {
+    pub(crate) async fn mock_server_service_reference_response(
+        mock_server: &MockServer,
+        service_name: &str,
+        service_reference_raw: serde_json::Value,
+    ) {
         let mock_server_url = mock_server.uri();
-        
+
         Mock::given(method("GET"))
             .and(path("/"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
@@ -161,7 +157,8 @@ pub(crate) mod mock_remote_service_reference {
             .await
     }
 
-    pub(crate) async fn setup_mock_server_with_loader_without_operation_to_action_mapping() -> (MockServer, RemoteServiceReferenceLoader) {
+    pub(crate) async fn setup_mock_server_with_loader_without_operation_to_action_mapping(
+    ) -> (MockServer, RemoteServiceReferenceLoader) {
         let mock_server = MockServer::start().await;
         let mock_server_url = mock_server.uri();
 
@@ -177,72 +174,70 @@ pub(crate) mod mock_remote_service_reference {
         // Mock the service reference endpoint
         Mock::given(method("GET"))
             .and(path("/s3.json"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({
-                                "Name": "s3",
-                                "Actions": [
-                                    {
-                                        "Name": "AbortMultipartUpload",
-                                        "ActionConditionKeys": [
-                                            "s3:AccessGrantsInstanceArn",
-                                            "s3:ResourceAccount",
-                                            "s3:TlsVersion",
-                                            "s3:authType",
-                                            "s3:signatureAge",
-                                            "s3:signatureversion",
-                                            "s3:x-amz-content-sha256"
-                                        ],
-                                        "Annotations": {
-                                            "Properties": {
-                                            "IsList": false,
-                                            "IsPermissionManagement": false,
-                                            "IsTaggingOnly": false,
-                                            "IsWrite": true
-                                            }
-                                        },
-                                        "Resources": [
-                                            {
-                                            "Name": "accesspointobject"
-                                            },
-                                            {
-                                            "Name": "object"
-                                            }
-                                        ],
-                                        "SupportedBy": {
-                                            "IAM Access Analyzer Policy Generation": false,
-                                            "IAM Action Last Accessed": false
-                                        }
-                                    },
-                                    {
-                                        "Name": "GetObject",
-                                        "Resources": [
-                                            {
-                                                "Name": "bucket"
-                                            },
-                                            {
-                                                "Name": "object"
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "Resources": [
-                                    {
-                                    "Name": "bucket",
-                                    "ARNFormats": [
-                                        "arn:${Partition}:s3:::${BucketName}"
-                                    ]
-                                    },
-                                    {
-                                    "Name": "object",
-                                    "ARNFormats": [
-                                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}"
-                                    ]
-                                    }
-                                ]
-                            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Name": "s3",
+                "Actions": [
+                    {
+                        "Name": "AbortMultipartUpload",
+                        "ActionConditionKeys": [
+                            "s3:AccessGrantsInstanceArn",
+                            "s3:ResourceAccount",
+                            "s3:TlsVersion",
+                            "s3:authType",
+                            "s3:signatureAge",
+                            "s3:signatureversion",
+                            "s3:x-amz-content-sha256"
+                        ],
+                        "Annotations": {
+                            "Properties": {
+                            "IsList": false,
+                            "IsPermissionManagement": false,
+                            "IsTaggingOnly": false,
+                            "IsWrite": true
+                            }
+                        },
+                        "Resources": [
+                            {
+                            "Name": "accesspointobject"
+                            },
+                            {
+                            "Name": "object"
+                            }
+                        ],
+                        "SupportedBy": {
+                            "IAM Access Analyzer Policy Generation": false,
+                            "IAM Action Last Accessed": false
+                        }
+                    },
+                    {
+                        "Name": "GetObject",
+                        "Resources": [
+                            {
+                                "Name": "bucket"
+                            },
+                            {
+                                "Name": "object"
+                            }
+                        ]
+                    }
+                ],
+                "Resources": [
+                    {
+                    "Name": "bucket",
+                    "ARNFormats": [
+                        "arn:${Partition}:s3:::${BucketName}"
+                    ]
+                    },
+                    {
+                    "Name": "object",
+                    "ARNFormats": [
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}"
+                    ]
+                    }
+                ]
+            })))
             .mount(&mock_server)
             .await;
-
 
         let loader = RemoteServiceReferenceLoader::new(true)
             .unwrap()
@@ -251,7 +246,8 @@ pub(crate) mod mock_remote_service_reference {
         (mock_server, loader)
     }
 
-    pub(crate) async fn setup_mock_server_with_loader() -> (MockServer, RemoteServiceReferenceLoader) {
+    pub(crate) async fn setup_mock_server_with_loader() -> (MockServer, RemoteServiceReferenceLoader)
+    {
         // Add small delay to avoid port conflicts in parallel tests
         tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         let mock_server = MockServer::start().await;
@@ -269,112 +265,110 @@ pub(crate) mod mock_remote_service_reference {
         // Mock the service reference endpoint
         Mock::given(method("GET"))
             .and(path("/s3.json"))
-            .respond_with(ResponseTemplate::new(200)
-                .set_body_json(serde_json::json!({
-                                "Name": "s3",
-                                "Actions": [
-                                    {
-                                        "Name": "AbortMultipartUpload",
-                                        "ActionConditionKeys": [
-                                            "s3:AccessGrantsInstanceArn",
-                                            "s3:ResourceAccount",
-                                            "s3:TlsVersion",
-                                            "s3:authType",
-                                            "s3:signatureAge",
-                                            "s3:signatureversion",
-                                            "s3:x-amz-content-sha256"
-                                        ],
-                                        "Annotations": {
-                                            "Properties": {
-                                            "IsList": false,
-                                            "IsPermissionManagement": false,
-                                            "IsTaggingOnly": false,
-                                            "IsWrite": true
-                                            }
-                                        },
-                                        "Resources": [
-                                            {
-                                            "Name": "accesspointobject"
-                                            },
-                                            {
-                                            "Name": "object"
-                                            }
-                                        ],
-                                        "SupportedBy": {
-                                            "IAM Access Analyzer Policy Generation": false,
-                                            "IAM Action Last Accessed": false
-                                        }
-                                    },
-                                    {
-                                        "Name": "GetObject",
-                                        "Resources": [
-                                            {
-                                                "Name": "bucket"
-                                            },
-                                            {
-                                                "Name": "object"
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "Operations": [
-                                    {
-                                        "Name" : "GetObject",
-                                        "AuthorizedActions" : 
-                                        [ 
-                                            {
-                                                "Name" : "GetObject",
-                                                "Service" : "s3"
-                                            }, 
-                                            {
-                                                "Name" : "GetObject",
-                                                "Service" : "s3-object-lambda"
-                                            }, 
-                                            {
-                                                "Name" : "GetObjectLegalHold",
-                                                "Service" : "s3"
-                                            }, 
-                                            {
-                                                "Name" : "GetObjectRetention",
-                                                "Service" : "s3"
-                                            }, 
-                                            {
-                                                "Name" : "GetObjectTagging",
-                                                "Service" : "s3"
-                                            }, 
-                                            {
-                                                "Name" : "GetObjectVersion",
-                                                "Service" : "s3"
-                                            } 
-                                        ],
-                                        "SDK" : 
-                                        [ 
-                                            {
-                                                "Name" : "s3",
-                                                "Method" : "get_object",
-                                                "Package" : "Boto3"
-                                            } 
-                                        ]
-                                    }
-                                ],
-                                "Resources": [
-                                    {
-                                    "Name": "bucket",
-                                    "ARNFormats": [
-                                        "arn:${Partition}:s3:::${BucketName}"
-                                    ]
-                                    },
-                                    {
-                                    "Name": "object",
-                                    "ARNFormats": [
-                                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}"
-                                    ]
-                                    }
-                                ]
-                            })))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Name": "s3",
+                "Actions": [
+                    {
+                        "Name": "AbortMultipartUpload",
+                        "ActionConditionKeys": [
+                            "s3:AccessGrantsInstanceArn",
+                            "s3:ResourceAccount",
+                            "s3:TlsVersion",
+                            "s3:authType",
+                            "s3:signatureAge",
+                            "s3:signatureversion",
+                            "s3:x-amz-content-sha256"
+                        ],
+                        "Annotations": {
+                            "Properties": {
+                            "IsList": false,
+                            "IsPermissionManagement": false,
+                            "IsTaggingOnly": false,
+                            "IsWrite": true
+                            }
+                        },
+                        "Resources": [
+                            {
+                            "Name": "accesspointobject"
+                            },
+                            {
+                            "Name": "object"
+                            }
+                        ],
+                        "SupportedBy": {
+                            "IAM Access Analyzer Policy Generation": false,
+                            "IAM Action Last Accessed": false
+                        }
+                    },
+                    {
+                        "Name": "GetObject",
+                        "Resources": [
+                            {
+                                "Name": "bucket"
+                            },
+                            {
+                                "Name": "object"
+                            }
+                        ]
+                    }
+                ],
+                "Operations": [
+                    {
+                        "Name" : "GetObject",
+                        "AuthorizedActions" :
+                        [
+                            {
+                                "Name" : "GetObject",
+                                "Service" : "s3"
+                            },
+                            {
+                                "Name" : "GetObject",
+                                "Service" : "s3-object-lambda"
+                            },
+                            {
+                                "Name" : "GetObjectLegalHold",
+                                "Service" : "s3"
+                            },
+                            {
+                                "Name" : "GetObjectRetention",
+                                "Service" : "s3"
+                            },
+                            {
+                                "Name" : "GetObjectTagging",
+                                "Service" : "s3"
+                            },
+                            {
+                                "Name" : "GetObjectVersion",
+                                "Service" : "s3"
+                            }
+                        ],
+                        "SDK" :
+                        [
+                            {
+                                "Name" : "s3",
+                                "Method" : "get_object",
+                                "Package" : "Boto3"
+                            }
+                        ]
+                    }
+                ],
+                "Resources": [
+                    {
+                    "Name": "bucket",
+                    "ARNFormats": [
+                        "arn:${Partition}:s3:::${BucketName}"
+                    ]
+                    },
+                    {
+                    "Name": "object",
+                    "ARNFormats": [
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}"
+                    ]
+                    }
+                ]
+            })))
             .mount(&mock_server)
             .await;
-
 
         let loader = RemoteServiceReferenceLoader::new(true)
             .unwrap()

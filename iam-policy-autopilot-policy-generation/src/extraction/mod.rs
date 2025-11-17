@@ -8,23 +8,20 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub(crate) mod engine;
-pub(crate) mod sdk_model;
-pub(crate) mod waiter_model;
 pub(crate) mod extractor;
-pub(crate) mod python;
 pub(crate) mod go;
 pub(crate) mod javascript;
+pub(crate) mod python;
+pub(crate) mod sdk_model;
 pub(crate) mod typescript;
+pub(crate) mod waiter_model;
 
 // Re-export main types for convenience
 pub use engine::Engine;
 pub(crate) use sdk_model::ServiceModelIndex;
 
 // Re-export all core and output types for convenience
-pub use self::{
-    core::*,
-    output::*,
-};
+pub use self::{core::*, output::*};
 
 /// Core data structures for source file parsing and method extraction
 pub mod core {
@@ -58,9 +55,10 @@ pub mod core {
         /// * `path` - The file path
         /// * `content` - The file content
         /// * `language` - The programming language
-        #[must_use] pub fn with_language(path: PathBuf, content: String, language: Language) -> Self {
+        #[must_use]
+        pub fn with_language(path: PathBuf, content: String, language: Language) -> Self {
             let size = content.len();
-            
+
             Self {
                 path,
                 content,
@@ -74,7 +72,6 @@ pub mod core {
             let ext = path.extension()?.to_str()?.to_lowercase();
             Language::try_from_str(&ext).ok()
         }
-
     }
 
     /// Metadata for a parsed method call
@@ -88,13 +85,13 @@ pub mod core {
         pub(crate) parameters: Vec<Parameter>,
         /// Return type annotation if available
         pub(crate) return_type: Option<String>,
-        
+
         // Position information
         /// Starting position (line, column) - both 1-based
         pub(crate) start_position: (usize, usize),
         /// Ending position (line, column) - both 1-based
         pub(crate) end_position: (usize, usize),
-        
+
         // SDK method call context
         /// Receiver variable name (e.g., "`s3_client`", "ec2")
         pub(crate) receiver: Option<String>,
@@ -104,7 +101,9 @@ pub mod core {
         /// Returns whether this method call uses dictionary unpacking
         /// If true, parameter validation should be skipped
         pub(crate) fn has_dictionary_unpacking(&self) -> bool {
-            self.parameters.iter().any(|p| matches!(p, Parameter::DictionarySplat { .. }))
+            self.parameters
+                .iter()
+                .any(|p| matches!(p, Parameter::DictionarySplat { .. }))
         }
     }
 
@@ -124,28 +123,43 @@ pub mod core {
         #[serde(default)]
         pub metadata: Option<SdkMethodCallMetadata>,
     }
-    
+
     #[derive(Serialize)]
     struct SimpleView<'a> {
         name: &'a str,
         possible_services: &'a Vec<String>,
     }
-    
+
     impl SdkMethodCall {
         /// Serialize a list
-        pub fn serialize_list(calls: &[SdkMethodCall], include_metadata: bool, pretty: bool) -> serde_json::Result<String> {
+        pub fn serialize_list(
+            calls: &[SdkMethodCall],
+            include_metadata: bool,
+            pretty: bool,
+        ) -> serde_json::Result<String> {
             if include_metadata {
-                if pretty { serde_json::to_string_pretty(calls) } else { serde_json::to_string(calls) }
+                if pretty {
+                    serde_json::to_string_pretty(calls)
+                } else {
+                    serde_json::to_string(calls)
+                }
             } else {
-                let simple: Vec<SimpleView> = calls.iter().map(|call| SimpleView {
-                    name: &call.name,
-                    possible_services: &call.possible_services,
-                }).collect();
-                if pretty { serde_json::to_string_pretty(&simple) } else { serde_json::to_string(&simple) }
+                let simple: Vec<SimpleView> = calls
+                    .iter()
+                    .map(|call| SimpleView {
+                        name: &call.name,
+                        possible_services: &call.possible_services,
+                    })
+                    .collect();
+                if pretty {
+                    serde_json::to_string_pretty(&simple)
+                } else {
+                    serde_json::to_string(&simple)
+                }
             }
         }
     }
-    
+
     /// Parameter value that distinguishes between resolved literals and unresolved expressions
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub(crate) enum ParameterValue {
@@ -199,7 +213,6 @@ pub mod core {
             position: usize,
         },
     }
-
 }
 
 /// Output data structures for extraction results and metadata
@@ -239,7 +252,8 @@ pub mod output {
 
     impl ExtractionMetadata {
         /// Create new extraction metadata with current timestamp
-        #[must_use] pub(crate) fn new(source_files: Vec<SourceFile>, warnings: Vec<String>) -> Self {
+        #[must_use]
+        pub(crate) fn new(source_files: Vec<SourceFile>, warnings: Vec<String>) -> Self {
             let extraction_time = Self::current_timestamp();
             let total_methods = 0; // Will be updated when methods are added
 
@@ -259,7 +273,7 @@ pub mod output {
         /// Get current timestamp as ISO 8601 string
         fn current_timestamp() -> String {
             use std::time::{SystemTime, UNIX_EPOCH};
-            
+
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|duration| {
@@ -337,9 +351,15 @@ mod tests {
         };
 
         assert_eq!(method.name, "get_object");
-        assert_eq!(method.metadata.as_ref().unwrap().receiver, Some("s3_client".to_string()));
+        assert_eq!(
+            method.metadata.as_ref().unwrap().receiver,
+            Some("s3_client".to_string())
+        );
         assert_eq!(method.possible_services, vec!["s3".to_string()]);
-        if let Parameter::Keyword { value, position, .. } = &method.metadata.as_ref().unwrap().parameters[0] {
+        if let Parameter::Keyword {
+            value, position, ..
+        } = &method.metadata.as_ref().unwrap().parameters[0]
+        {
             assert_eq!(value.as_string(), "my-bucket");
             assert_eq!(*position, 0);
         }

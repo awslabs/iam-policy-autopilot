@@ -5,10 +5,10 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::sync::{Arc, RwLock, OnceLock};
+use std::sync::{Arc, OnceLock, RwLock};
 
-use serde::{Deserialize, Deserializer};
 use rust_embed::RustEmbed;
+use serde::{Deserialize, Deserializer};
 
 use crate::service_configuration::ServiceConfiguration;
 
@@ -51,15 +51,19 @@ pub(crate) struct FasOperation {
     #[serde(rename = "Service")]
     service: String,
     #[serde(rename = "Context")]
-    pub(crate) context: HashMap<String, String>
+    pub(crate) context: HashMap<String, String>,
 }
 
 impl FasOperation {
-    pub(crate) fn new(operation: String, service: String, context: HashMap<String, String>) -> Self {
+    pub(crate) fn new(
+        operation: String,
+        service: String,
+        context: HashMap<String, String>,
+    ) -> Self {
         FasOperation {
             operation,
             service,
-            context
+            context,
         }
     }
 
@@ -70,12 +74,16 @@ impl FasOperation {
         let service = self.service(service_cfg);
         format!("{}:{}", service, self.operation(&service, service_cfg))
     }
-    
+
     pub(crate) fn service<'a>(&'a self, service_cfg: &ServiceConfiguration) -> Cow<'a, str> {
         service_cfg.rename_service_service_reference(&self.service)
     }
-    
-    pub(crate) fn operation<'a>(&'a self, service: &str, service_cfg: &ServiceConfiguration) -> Cow<'a, str> {
+
+    pub(crate) fn operation<'a>(
+        &'a self,
+        service: &str,
+        service_cfg: &ServiceConfiguration,
+    ) -> Cow<'a, str> {
         service_cfg.rename_operation(service, &self.operation)
     }
 }
@@ -86,14 +94,14 @@ impl<'de> Deserialize<'de> for OperationFasMap {
         D: Deserializer<'de>,
     {
         let root = OperationFasMapRoot::deserialize(deserializer)?;
-        
+
         let mut fas_operations = HashMap::new();
         for op in root.operations {
             // Create the key as "service:operation" format
             let key = format!("{}:{}", root.name, op.name);
             fas_operations.insert(key, op.fas_operations);
         }
-        
+
         Ok(OperationFasMap { fas_operations })
     }
 }
@@ -105,7 +113,8 @@ impl<'de> Deserialize<'de> for OperationFasMap {
 struct EmbeddedOperationFasMaps;
 
 /// Cache for parsed operation FAS maps (per service)
-static OPERATION_FAS_MAPS_CACHE: OnceLock<RwLock<HashMap<String, Option<Arc<OperationFasMap>>>>> = OnceLock::new();
+static OPERATION_FAS_MAPS_CACHE: OnceLock<RwLock<HashMap<String, Option<Arc<OperationFasMap>>>>> =
+    OnceLock::new();
 
 /// Load operation FAS map for a specific service from embedded data with caching
 ///
@@ -124,7 +133,7 @@ static OPERATION_FAS_MAPS_CACHE: OnceLock<RwLock<HashMap<String, Option<Arc<Oper
 /// - The JSON structure doesn't match OperationFasMap
 pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<OperationFasMap>> {
     let cache = OPERATION_FAS_MAPS_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
-    
+
     // Check cache first
     {
         let cache_guard = cache.read().unwrap();
@@ -132,29 +141,34 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
             return cached_result.clone();
         }
     }
-    
+
     // Load and parse from embedded data
     let file_name = format!("{}.json", service_name);
     let result = match EmbeddedOperationFasMaps::get(&file_name) {
         Some(embedded_file) => {
             let json_str = std::str::from_utf8(&embedded_file.data)
                 .expect("Invalid UTF-8 in embedded operation FAS map");
-            
+
             // Parse JSON synchronously
-            let operation_fas_map: OperationFasMap = serde_json::from_str(json_str)
-                .unwrap_or_else(|_| panic!("Failed to parse embedded operation FAS map JSON for service: {}", service_name));
-            
+            let operation_fas_map: OperationFasMap =
+                serde_json::from_str(json_str).unwrap_or_else(|_| {
+                    panic!(
+                        "Failed to parse embedded operation FAS map JSON for service: {}",
+                        service_name
+                    )
+                });
+
             Some(Arc::new(operation_fas_map))
         }
         None => None,
     };
-    
+
     // Cache the result
     {
         let mut cache_guard = cache.write().unwrap();
         cache_guard.insert(service_name.to_string(), result.clone());
     }
-    
+
     result
 }
 
@@ -166,17 +180,17 @@ mod tests {
     fn test_load_operation_fas_map_existing_service() {
         // Test loading a FAS map for an existing service
         let ssm_map = load_operation_fas_map("ssm");
-        
+
         // SSM should exist in our embedded data
         assert!(ssm_map.is_some());
-        
+
         let map = ssm_map.unwrap();
         assert!(!map.fas_operations.is_empty());
-        
+
         // Test that subsequent calls return cached result (should be identical)
         let ssm_map2 = load_operation_fas_map("ssm");
         assert!(ssm_map2.is_some());
-        
+
         let map2 = ssm_map2.unwrap();
         assert_eq!(map.fas_operations.len(), map2.fas_operations.len());
     }
@@ -185,10 +199,10 @@ mod tests {
     fn test_load_operation_fas_map_nonexistent_service() {
         // Test loading a FAS map for a non-existent service
         let result = load_operation_fas_map("nonexistent-service");
-        
+
         // Should return None for non-existent service
         assert!(result.is_none());
-        
+
         // Test that subsequent calls return cached None result
         let result2 = load_operation_fas_map("nonexistent-service");
         assert!(result2.is_none());
@@ -199,18 +213,18 @@ mod tests {
         // Test that we have some known services
         let ssm_map = load_operation_fas_map("ssm");
         assert!(ssm_map.is_some());
-        
+
         let s3_map = load_operation_fas_map("s3");
         assert!(s3_map.is_some());
-        
+
         let dynamodb_map = load_operation_fas_map("dynamodb");
         assert!(dynamodb_map.is_some());
-        
+
         // Test SSM map content
         if let Some(ssm_map) = ssm_map {
             // SSM should have operations that require KMS decrypt/encrypt
             assert!(!ssm_map.fas_operations.is_empty());
-            
+
             // Check for a known operation
             let get_param_key = "secretsmanager:GetParameter";
             if let Some(fas_ops) = ssm_map.fas_operations.get(get_param_key) {
@@ -225,21 +239,27 @@ mod tests {
     #[test]
     fn test_fas_operation_methods() {
         use crate::service_configuration::load_service_configuration;
-        
+
         let service_cfg = load_service_configuration().unwrap();
-        
+
         let fas_op = FasOperation::new(
             "Decrypt".to_string(),
             "kms".to_string(),
-            [("kms:ViaService".to_string(), "ssm.${region}.amazonaws.com".to_string())].iter().cloned().collect()
+            [(
+                "kms:ViaService".to_string(),
+                "ssm.${region}.amazonaws.com".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
         );
-        
+
         // Test service method
         assert_eq!(fas_op.service(&service_cfg), "kms");
-        
+
         // Test operation method
         assert_eq!(fas_op.operation("kms", &service_cfg), "Decrypt");
-        
+
         // Test service_operation_name method
         assert_eq!(fas_op.service_operation_name(&service_cfg), "kms:Decrypt");
     }
@@ -263,42 +283,47 @@ mod tests {
                 }
             ]
         }"#;
-        
+
         let operation_fas_map: OperationFasMap = serde_json::from_str(json_content).unwrap();
-        
+
         // Verify the deserialized structure
         assert_eq!(operation_fas_map.fas_operations.len(), 1);
-        
+
         let key = "test-service:TestOperation";
         assert!(operation_fas_map.fas_operations.contains_key(key));
-        
+
         let fas_ops = &operation_fas_map.fas_operations[key];
         assert_eq!(fas_ops.len(), 1);
-        
+
         let fas_op = &fas_ops[0];
         assert_eq!(fas_op.operation, "Decrypt");
         assert_eq!(fas_op.service, "kms");
-        assert_eq!(fas_op.context.get("kms:ViaService"), Some(&"test-service.${region}.amazonaws.com".to_string()));
+        assert_eq!(
+            fas_op.context.get("kms:ViaService"),
+            Some(&"test-service.${region}.amazonaws.com".to_string())
+        );
     }
 
     #[test]
     fn test_caching_behavior() {
         // Test that caching works correctly for both existing and non-existing services
-        
+
         // Load a service that exists
         let ssm_map1 = load_operation_fas_map("ssm");
         let ssm_map2 = load_operation_fas_map("ssm");
-        
+
         // Both should be Some and have the same content
         assert!(ssm_map1.is_some());
         assert!(ssm_map2.is_some());
-        assert_eq!(ssm_map1.as_ref().unwrap().fas_operations.len(), 
-                   ssm_map2.as_ref().unwrap().fas_operations.len());
-        
+        assert_eq!(
+            ssm_map1.as_ref().unwrap().fas_operations.len(),
+            ssm_map2.as_ref().unwrap().fas_operations.len()
+        );
+
         // Load a service that doesn't exist
         let nonexistent1 = load_operation_fas_map("cache-test-nonexistent");
         let nonexistent2 = load_operation_fas_map("cache-test-nonexistent");
-        
+
         // Both should be None
         assert!(nonexistent1.is_none());
         assert!(nonexistent2.is_none());
@@ -308,21 +333,21 @@ mod tests {
     fn test_multiple_service_loads() {
         // Test loading multiple different services to ensure cache isolation
         let services = ["ssm", "s3", "dynamodb", "nonexistent"];
-        
+
         for service in &services {
             let result = load_operation_fas_map(service);
-            
+
             if *service == "nonexistent" {
                 assert!(result.is_none());
             } else {
                 assert!(result.is_some());
             }
         }
-        
+
         // Load them again to test cache hits
         for service in &services {
             let result = load_operation_fas_map(service);
-            
+
             if *service == "nonexistent" {
                 assert!(result.is_none());
             } else {
@@ -336,26 +361,32 @@ mod tests {
         // Test that all embedded FAS map files can be loaded and parsed successfully
         let mut loaded_services = Vec::new();
         let mut failed_services = Vec::new();
-        
+
         // Iterate through all embedded files
         for file_path in EmbeddedOperationFasMaps::iter() {
             let file_name = file_path.as_ref();
-            
+
             // Extract service name from filename (remove .json extension)
             if let Some(service_name) = file_name.strip_suffix(".json") {
                 println!("Testing FAS map for service: {}", service_name);
-                
+
                 match load_operation_fas_map(service_name) {
                     Some(fas_map) => {
                         // Verify the map has some content
-                        assert!(!fas_map.fas_operations.is_empty(),
-                               "FAS map for service '{}' should not be empty", service_name);
-                        
+                        assert!(
+                            !fas_map.fas_operations.is_empty(),
+                            "FAS map for service '{}' should not be empty",
+                            service_name
+                        );
+
                         // Verify all FAS operations have required fields
                         for (operation_key, fas_operations) in &fas_map.fas_operations {
-                            assert!(!operation_key.is_empty(),
-                                   "Operation key should not be empty for service '{}'", service_name);
-                            
+                            assert!(
+                                !operation_key.is_empty(),
+                                "Operation key should not be empty for service '{}'",
+                                service_name
+                            );
+
                             for fas_op in fas_operations {
                                 assert!(!fas_op.operation.is_empty(),
                                        "FAS operation should have non-empty operation field for service '{}'", service_name);
@@ -364,7 +395,7 @@ mod tests {
                                 // Context can be empty, so we don't assert on it
                             }
                         }
-                        
+
                         loaded_services.push(service_name.to_string());
                     }
                     None => {
@@ -374,27 +405,55 @@ mod tests {
                 }
             }
         }
-        
+
         // Print summary
-        println!("Successfully loaded FAS maps for {} services: {:?}",
-                loaded_services.len(), loaded_services);
-        
+        println!(
+            "Successfully loaded FAS maps for {} services: {:?}",
+            loaded_services.len(),
+            loaded_services
+        );
+
         if !failed_services.is_empty() {
-            println!("Failed to load FAS maps for {} services: {:?}",
-                    failed_services.len(), failed_services);
+            println!(
+                "Failed to load FAS maps for {} services: {:?}",
+                failed_services.len(),
+                failed_services
+            );
         }
-        
+
         // Assert that we loaded at least some services and had no failures
-        assert!(!loaded_services.is_empty(), "Should have loaded at least some FAS maps");
-        assert!(failed_services.is_empty(), "All embedded FAS maps should load successfully: {:?}", failed_services);
-        
+        assert!(
+            !loaded_services.is_empty(),
+            "Should have loaded at least some FAS maps"
+        );
+        assert!(
+            failed_services.is_empty(),
+            "All embedded FAS maps should load successfully: {:?}",
+            failed_services
+        );
+
         // Verify we have the expected services (based on the files we know exist)
-        let expected_services = ["dynamodb", "logs", "s3", "secretsmanager", "sns", "sqs", "ssm"];
+        let expected_services = [
+            "dynamodb",
+            "logs",
+            "s3",
+            "secretsmanager",
+            "sns",
+            "sqs",
+            "ssm",
+        ];
         for expected in &expected_services {
-            assert!(loaded_services.contains(&expected.to_string()),
-                   "Expected service '{}' should be in loaded services: {:?}", expected, loaded_services);
+            assert!(
+                loaded_services.contains(&expected.to_string()),
+                "Expected service '{}' should be in loaded services: {:?}",
+                expected,
+                loaded_services
+            );
         }
-        
-        println!("✅ All {} embedded FAS maps loaded and validated successfully", loaded_services.len());
+
+        println!(
+            "✅ All {} embedded FAS maps loaded and validated successfully",
+            loaded_services.len()
+        );
     }
 }

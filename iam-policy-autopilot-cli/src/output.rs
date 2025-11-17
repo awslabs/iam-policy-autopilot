@@ -1,6 +1,8 @@
-use iam_policy_autopilot_access_denied::{DenialType, PlanResult};
 use anyhow::{Context, Result};
-use iam_policy_autopilot_policy_generation::policy_generation::{MethodActionMapping, PolicyWithMetadata};
+use iam_policy_autopilot_access_denied::{DenialType, PlanResult};
+use iam_policy_autopilot_policy_generation::policy_generation::{
+    MethodActionMapping, PolicyWithMetadata,
+};
 use iam_policy_autopilot_tools::BatchUploadResponse;
 use log::debug;
 use std::io::{self, Write};

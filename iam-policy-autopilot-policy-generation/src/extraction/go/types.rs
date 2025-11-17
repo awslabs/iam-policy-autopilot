@@ -1,7 +1,7 @@
 //! Go-specific data types for AWS SDK extraction
 
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Information about a single import with rename support for Go
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -23,7 +23,7 @@ impl ImportInfo {
     pub(crate) fn new(original_name: String, local_name: String, line: usize) -> Self {
         let is_renamed = original_name != local_name;
         let service_name = Self::extract_service_name(&original_name);
-        
+
         Self {
             original_name,
             local_name,
@@ -32,7 +32,7 @@ impl ImportInfo {
             service_name,
         }
     }
-    
+
     /// Extract service name from AWS SDK import path
     /// Examples:
     /// - "github.com/aws/aws-sdk-go-v2/service/s3" -> Some("s3")
@@ -42,7 +42,8 @@ impl ImportInfo {
         // Check if this is an AWS SDK service import
         if import_path.starts_with("github.com/aws/aws-sdk-go-v2/service/") {
             // Extract the service name after the last slash
-            if let Some(service) = import_path.strip_prefix("github.com/aws/aws-sdk-go-v2/service/") {
+            if let Some(service) = import_path.strip_prefix("github.com/aws/aws-sdk-go-v2/service/")
+            {
                 // Handle cases where there might be additional path components
                 let service_name = service.split('/').next().unwrap_or(service);
                 return Some(service_name.to_string());
@@ -69,19 +70,17 @@ impl GoImportInfo {
             service_mappings: HashMap::new(),
         }
     }
-    
+
     /// Add an import to this collection
     pub(crate) fn add_import(&mut self, import_info: ImportInfo) {
         // If this import has a service name, add it to the mappings
         if let Some(ref service_name) = import_info.service_name {
-            self.service_mappings.insert(
-                import_info.local_name.clone(),
-                service_name.clone(),
-            );
+            self.service_mappings
+                .insert(import_info.local_name.clone(), service_name.clone());
         }
         self.imports.push(import_info);
     }
-    
+
     /// Get all AWS service names that are imported
     pub(crate) fn get_imported_services(&self) -> Vec<String> {
         self.service_mappings.values().cloned().collect()
@@ -113,7 +112,7 @@ mod tests {
             ImportInfo::extract_service_name("github.com/aws/aws-sdk-go-v2/service/ec2"),
             Some("ec2".to_string())
         );
-        
+
         // Test non-service AWS SDK imports
         assert_eq!(
             ImportInfo::extract_service_name("github.com/aws/aws-sdk-go-v2/aws"),
@@ -123,16 +122,10 @@ mod tests {
             ImportInfo::extract_service_name("github.com/aws/aws-sdk-go-v2/config"),
             None
         );
-        
+
         // Test non-AWS imports
-        assert_eq!(
-            ImportInfo::extract_service_name("fmt"),
-            None
-        );
-        assert_eq!(
-            ImportInfo::extract_service_name("context"),
-            None
-        );
+        assert_eq!(ImportInfo::extract_service_name("fmt"), None);
+        assert_eq!(ImportInfo::extract_service_name("context"), None);
         assert_eq!(
             ImportInfo::extract_service_name("github.com/some/other/package"),
             None
@@ -144,10 +137,13 @@ mod tests {
         let import_info = ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/s3".to_string(),
             "s3".to_string(),
-            10
+            10,
         );
-        
-        assert_eq!(import_info.original_name, "github.com/aws/aws-sdk-go-v2/service/s3");
+
+        assert_eq!(
+            import_info.original_name,
+            "github.com/aws/aws-sdk-go-v2/service/s3"
+        );
         assert_eq!(import_info.local_name, "s3");
         assert!(import_info.is_renamed); // This is renamed since original != local
         assert_eq!(import_info.line, 10);
@@ -159,10 +155,13 @@ mod tests {
         let import_info = ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/s3".to_string(),
             "myS3".to_string(),
-            15
+            15,
         );
-        
-        assert_eq!(import_info.original_name, "github.com/aws/aws-sdk-go-v2/service/s3");
+
+        assert_eq!(
+            import_info.original_name,
+            "github.com/aws/aws-sdk-go-v2/service/s3"
+        );
         assert_eq!(import_info.local_name, "myS3");
         assert!(import_info.is_renamed);
         assert_eq!(import_info.line, 15);
@@ -172,24 +171,20 @@ mod tests {
     #[test]
     fn test_go_import_info_operations() {
         let mut go_imports = GoImportInfo::new();
-        
+
         // Add some imports
         go_imports.add_import(ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/s3".to_string(),
             "s3".to_string(),
-            5
+            5,
         ));
         go_imports.add_import(ImportInfo::new(
             "github.com/aws/aws-sdk-go-v2/service/dynamodb".to_string(),
             "ddb".to_string(),
-            6
+            6,
         ));
-        go_imports.add_import(ImportInfo::new(
-            "fmt".to_string(),
-            "fmt".to_string(),
-            7
-        ));
-        
+        go_imports.add_import(ImportInfo::new("fmt".to_string(), "fmt".to_string(), 7));
+
         // Test getting imported services
         let services = go_imports.get_imported_services();
         assert_eq!(services.len(), 2);

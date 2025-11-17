@@ -55,33 +55,33 @@ impl NativeFileSystemProvider {
     /// It does not recurse into subdirectories.
     pub async fn list_directories(dir: &Path) -> Result<Vec<PathBuf>> {
         // Check if directory exists and is readable
-        let metadata = fs::metadata(dir).await.map_err(|e| {
-            ExtractorError::file_system("access directory", dir, e)
-        })?;
+        let metadata = fs::metadata(dir)
+            .await
+            .map_err(|e| ExtractorError::file_system("access directory", dir, e))?;
 
         if !metadata.is_dir() {
             return Err(ExtractorError::file_system(
                 "list directories",
                 dir,
-                std::io::Error::new(
-                    std::io::ErrorKind::NotADirectory,
-                    "Path is not a directory",
-                ),
+                std::io::Error::new(std::io::ErrorKind::NotADirectory, "Path is not a directory"),
             ));
         }
 
         let mut directories = Vec::new();
-        let mut entries = fs::read_dir(dir).await.map_err(|e| {
-            ExtractorError::file_system("read directory", dir, e)
-        })?;
+        let mut entries = fs::read_dir(dir)
+            .await
+            .map_err(|e| ExtractorError::file_system("read directory", dir, e))?;
 
-        while let Some(entry) = entries.next_entry().await.map_err(|e| {
-            ExtractorError::file_system("read directory entry", dir, e)
-        })? {
+        while let Some(entry) = entries
+            .next_entry()
+            .await
+            .map_err(|e| ExtractorError::file_system("read directory entry", dir, e))?
+        {
             let path = entry.path();
-            let metadata = entry.metadata().await.map_err(|e| {
-                ExtractorError::file_system("read metadata", &path, e)
-            })?;
+            let metadata = entry
+                .metadata()
+                .await
+                .map_err(|e| ExtractorError::file_system("read metadata", &path, e))?;
 
             // Only include directories, skip files
             if metadata.is_dir() {
@@ -91,7 +91,7 @@ impl NativeFileSystemProvider {
 
         // Sort directories for consistent ordering
         directories.sort();
-        
+
         Ok(directories)
     }
 }
@@ -107,9 +107,8 @@ mod tests {
 
     /// Helper to create a temporary directory with test files
     async fn create_test_directory() -> Result<TempDir> {
-        let temp_dir = TempDir::new().map_err(|e| {
-            ExtractorError::file_system("create temp directory", "temp", e)
-        })?;
+        let temp_dir = TempDir::new()
+            .map_err(|e| ExtractorError::file_system("create temp directory", "temp", e))?;
 
         let base_path = temp_dir.path();
 
@@ -154,8 +153,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_file_not_found() {
-        let result = FileSystemProvider::read_file(&PathBuf::from("nonexistent_file.txt"))
-            .await;
+        let result = FileSystemProvider::read_file(&PathBuf::from("nonexistent_file.txt")).await;
 
         assert!(result.is_err());
         let error = result.unwrap_err();

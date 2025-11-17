@@ -1,18 +1,31 @@
 //! Result type alias for operations that can fail with `ExtractorError`
 use ast_grep_core::AstGrep;
-use ast_grep_language::{Go, Python, JavaScript, TypeScript};
+use ast_grep_language::{Go, JavaScript, Python, TypeScript};
 use async_trait::async_trait;
 
-use crate::{SdkMethodCall, ServiceModelIndex};
 use crate::extraction::go::types::GoImportInfo;
+use crate::{SdkMethodCall, ServiceModelIndex};
 
 /// Enum to handle different AST types from different languages
 #[derive(Clone)]
 pub(crate) enum ExtractorResult {
-    Python(AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>, Vec<SdkMethodCall>),
-    Go(AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>, Vec<SdkMethodCall>, GoImportInfo),
-    JavaScript(AstGrep<ast_grep_core::tree_sitter::StrDoc<JavaScript>>, Vec<SdkMethodCall>),
-    TypeScript(AstGrep<ast_grep_core::tree_sitter::StrDoc<TypeScript>>, Vec<SdkMethodCall>),
+    Python(
+        AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        Vec<SdkMethodCall>,
+    ),
+    Go(
+        AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        Vec<SdkMethodCall>,
+        GoImportInfo,
+    ),
+    JavaScript(
+        AstGrep<ast_grep_core::tree_sitter::StrDoc<JavaScript>>,
+        Vec<SdkMethodCall>,
+    ),
+    TypeScript(
+        AstGrep<ast_grep_core::tree_sitter::StrDoc<TypeScript>>,
+        Vec<SdkMethodCall>,
+    ),
 }
 
 impl ExtractorResult {
@@ -25,7 +38,7 @@ impl ExtractorResult {
             ExtractorResult::TypeScript(_, calls) => calls,
         }
     }
-    
+
     /// Get a reference to the method calls without consuming the result
     #[allow(dead_code)]
     pub(crate) fn method_calls_ref(&self) -> &Vec<SdkMethodCall> {
@@ -36,7 +49,7 @@ impl ExtractorResult {
             ExtractorResult::TypeScript(_, calls) => calls,
         }
     }
-    
+
     /// Get a reference to the import information for Go results
     #[allow(dead_code)]
     pub(crate) fn go_import_info(&self) -> Option<&GoImportInfo> {
@@ -52,9 +65,17 @@ impl ExtractorResult {
 pub(crate) trait Extractor: Send + Sync {
     /// Parse source code into method calls and return the AST
     async fn parse(&self, source_code: &str) -> ExtractorResult;
-    
-    fn filter_map(&self, extraction_results: &mut [ExtractorResult], service_index: &ServiceModelIndex);
-    
+
+    fn filter_map(
+        &self,
+        extraction_results: &mut [ExtractorResult],
+        service_index: &ServiceModelIndex,
+    );
+
     /// Disambiguate extracted method calls
-    fn disambiguate(&self, extraction_results: &mut [ExtractorResult], service_index: &ServiceModelIndex);
+    fn disambiguate(
+        &self,
+        extraction_results: &mut [ExtractorResult],
+        service_index: &ServiceModelIndex,
+    );
 }

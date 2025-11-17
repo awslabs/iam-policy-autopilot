@@ -14,7 +14,6 @@ pub(crate) mod errors;
 // Re-export the enrichment module for public use
 pub(crate) mod enrichment;
 
-
 // Re-export the providers module for public use
 pub(crate) mod providers;
 
@@ -36,15 +35,18 @@ pub mod api;
 
 use std::fmt::Display;
 
-pub use extraction::{ExtractedMethods, SdkMethodCall, SourceFile, Engine as ExtractionEngine};
-pub use enrichment::{Engine as EnrichmentEngine};
-pub use policy_generation::{Engine as PolicyGenerationEngine, PolicyWithMetadata, PolicyType, IamPolicy, MethodActionMapping, Statement, Effect};
+pub use enrichment::Engine as EnrichmentEngine;
+pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
+pub use policy_generation::{
+    Effect, Engine as PolicyGenerationEngine, IamPolicy, MethodActionMapping, PolicyType,
+    PolicyWithMetadata, Statement,
+};
 
 // Re-export commonly used types for convenience
 pub(crate) use extraction::ServiceModelIndex;
 
-pub use providers::JsonProvider;
 pub use providers::FileSystemProvider;
+pub use providers::JsonProvider;
 
 use crate::errors::ExtractorError;
 
@@ -112,7 +114,8 @@ impl From<Language> for String {
             Language::Go => "go",
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
-        }.to_string()
+        }
+        .to_string()
     }
 }
 
@@ -141,8 +144,14 @@ mod tests {
         // Test valid language strings
         assert_eq!(Language::try_from_str("python").unwrap(), Language::Python);
         assert_eq!(Language::try_from_str("go").unwrap(), Language::Go);
-        assert_eq!(Language::try_from_str("javascript").unwrap(), Language::JavaScript);
-        assert_eq!(Language::try_from_str("typescript").unwrap(), Language::TypeScript);
+        assert_eq!(
+            Language::try_from_str("javascript").unwrap(),
+            Language::JavaScript
+        );
+        assert_eq!(
+            Language::try_from_str("typescript").unwrap(),
+            Language::TypeScript
+        );
 
         // Test invalid language string returns error
         assert!(Language::try_from_str("unsupported").is_err());

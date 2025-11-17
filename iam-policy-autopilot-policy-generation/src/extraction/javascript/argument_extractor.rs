@@ -11,15 +11,15 @@ pub(crate) struct ArgumentExtractor;
 
 impl ArgumentExtractor {
     /// Extract parameters from an object literal argument node
-    /// 
+    ///
     /// Handles various JavaScript/TypeScript object patterns:
     /// - Regular properties: `{ Bucket: "test", Key: keyName }`
     /// - Shorthand properties: `{ client }` → `{ client: client }`
     /// - Spread elements: `{ ...config, Bucket: "override" }`
-    /// 
+    ///
     /// Returns a vector of Parameters with proper Resolved/Unresolved classification
     pub fn extract_object_parameters<T>(
-        args_node: Option<&ast_grep_core::Node<T>>
+        args_node: Option<&ast_grep_core::Node<T>>,
     ) -> Vec<Parameter>
     where
         T: ast_grep_core::Doc,
@@ -30,11 +30,10 @@ impl ArgumentExtractor {
 
         let text = node.text();
         let text_str = text.as_ref();
-        
+
         // Parse the object literal structure
         Self::parse_object_literal_with_resolution(text_str)
     }
-
 
     /// Parse object literal text and create Parameters with proper value resolution
     fn parse_object_literal_with_resolution(obj_text: &str) -> Vec<Parameter> {
@@ -55,7 +54,7 @@ impl ArgumentExtractor {
 
         // Parse key-value pairs with proper resolution
         let pairs = Self::split_object_properties(content);
-        
+
         for (position, pair) in pairs.iter().enumerate() {
             if let Some(param) = Self::parse_property_to_parameter(pair, position) {
                 parameters.push(param);
@@ -200,10 +199,7 @@ impl ArgumentExtractor {
 
     /// Normalize property key (remove quotes if present)
     fn normalize_property_key(key: &str) -> String {
-        key.trim()
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string()
+        key.trim().trim_matches('"').trim_matches('\'').to_string()
     }
 
     /// Classify a value as Resolved (literal) or Unresolved (expression)
@@ -211,11 +207,10 @@ impl ArgumentExtractor {
         let trimmed = value_text.trim();
 
         // String literals (single or double quotes)
-        if (trimmed.starts_with('"') && trimmed.ends_with('"')) ||
-           (trimmed.starts_with('\'') && trimmed.ends_with('\'')) {
-            return ParameterValue::Resolved(
-                trimmed[1..trimmed.len() - 1].to_string()
-            );
+        if (trimmed.starts_with('"') && trimmed.ends_with('"'))
+            || (trimmed.starts_with('\'') && trimmed.ends_with('\''))
+        {
+            return ParameterValue::Resolved(trimmed[1..trimmed.len() - 1].to_string());
         }
 
         // Template literals without interpolation
@@ -329,13 +324,19 @@ mod tests {
     fn test_parse_object_literal_with_resolution() {
         // Test regular properties with mixed resolved/unresolved
         let params = ArgumentExtractor::parse_object_literal_with_resolution(
-            r#"{ Bucket: "my-bucket", Key: fileName, Count: 5 }"#
+            r#"{ Bucket: "my-bucket", Key: fileName, Count: 5 }"#,
         );
 
         assert_eq!(params.len(), 3);
 
         // Verify Bucket (resolved)
-        if let Parameter::Keyword { name, value, position, .. } = &params[0] {
+        if let Parameter::Keyword {
+            name,
+            value,
+            position,
+            ..
+        } = &params[0]
+        {
             assert_eq!(name, "Bucket");
             assert!(matches!(value, ParameterValue::Resolved(s) if s == "my-bucket"));
             assert_eq!(*position, 0);
@@ -344,7 +345,13 @@ mod tests {
         }
 
         // Verify Key (unresolved)
-        if let Parameter::Keyword { name, value, position, .. } = &params[1] {
+        if let Parameter::Keyword {
+            name,
+            value,
+            position,
+            ..
+        } = &params[1]
+        {
             assert_eq!(name, "Key");
             assert!(matches!(value, ParameterValue::Unresolved(s) if s == "fileName"));
             assert_eq!(*position, 1);
@@ -353,7 +360,13 @@ mod tests {
         }
 
         // Verify Count (resolved)
-        if let Parameter::Keyword { name, value, position, .. } = &params[2] {
+        if let Parameter::Keyword {
+            name,
+            value,
+            position,
+            ..
+        } = &params[2]
+        {
             assert_eq!(name, "Count");
             assert!(matches!(value, ParameterValue::Resolved(s) if s == "5"));
             assert_eq!(*position, 2);
@@ -365,9 +378,7 @@ mod tests {
     #[test]
     fn test_parse_shorthand_properties() {
         // Test shorthand: { client } means { client: client }
-        let params = ArgumentExtractor::parse_object_literal_with_resolution(
-            "{ client, region }"
-        );
+        let params = ArgumentExtractor::parse_object_literal_with_resolution("{ client, region }");
 
         assert_eq!(params.len(), 2);
 
@@ -392,7 +403,7 @@ mod tests {
     fn test_parse_nested_objects() {
         // Test nested object literals
         let params = ArgumentExtractor::parse_object_literal_with_resolution(
-            r#"{ Bucket: "test", Metadata: { Key: "value" } }"#
+            r#"{ Bucket: "test", Metadata: { Key: "value" } }"#,
         );
 
         assert_eq!(params.len(), 2);
@@ -424,38 +435,54 @@ mod tests {
 
         // Test nested objects
         let props = ArgumentExtractor::split_object_properties(
-            r#"Bucket: "test", Config: { RetryMode: "standard" }, Key: "file""#
+            r#"Bucket: "test", Config: { RetryMode: "standard" }, Key: "file""#,
         );
         assert_eq!(props.len(), 3);
         assert!(props[1].contains("RetryMode"));
 
         // Test with arrays
-        let props = ArgumentExtractor::split_object_properties(
-            r#"Items: [1, 2, 3], Name: "test""#
-        );
+        let props = ArgumentExtractor::split_object_properties(r#"Items: [1, 2, 3], Name: "test""#);
         assert_eq!(props.len(), 2);
         assert!(props[0].contains("[1, 2, 3]"));
     }
 
     #[test]
     fn test_normalize_property_key() {
-        assert_eq!(ArgumentExtractor::normalize_property_key("Bucket"), "Bucket");
-        assert_eq!(ArgumentExtractor::normalize_property_key("\"Bucket\""), "Bucket");
+        assert_eq!(
+            ArgumentExtractor::normalize_property_key("Bucket"),
+            "Bucket"
+        );
+        assert_eq!(
+            ArgumentExtractor::normalize_property_key("\"Bucket\""),
+            "Bucket"
+        );
         assert_eq!(ArgumentExtractor::normalize_property_key("'Key'"), "Key");
-        assert_eq!(ArgumentExtractor::normalize_property_key(" Region "), "Region");
+        assert_eq!(
+            ArgumentExtractor::normalize_property_key(" Region "),
+            "Region"
+        );
     }
 
     #[test]
     fn test_find_property_separator() {
         // Basic case
-        assert_eq!(ArgumentExtractor::find_property_separator("Bucket: value"), Some(6));
-        
+        assert_eq!(
+            ArgumentExtractor::find_property_separator("Bucket: value"),
+            Some(6)
+        );
+
         // Colon in string should be ignored
-        assert_eq!(ArgumentExtractor::find_property_separator(r#"Key: "file:name""#), Some(3));
-        
+        assert_eq!(
+            ArgumentExtractor::find_property_separator(r#"Key: "file:name""#),
+            Some(3)
+        );
+
         // Colon in nested object should be ignored
-        assert_eq!(ArgumentExtractor::find_property_separator("Config: { Mode: 'test' }"), Some(6));
-        
+        assert_eq!(
+            ArgumentExtractor::find_property_separator("Config: { Mode: 'test' }"),
+            Some(6)
+        );
+
         // No separator (shorthand)
         assert_eq!(ArgumentExtractor::find_property_separator("client"), None);
     }
