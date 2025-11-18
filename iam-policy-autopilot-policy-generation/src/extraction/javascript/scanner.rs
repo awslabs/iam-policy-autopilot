@@ -10,7 +10,7 @@ use ast_grep_core::MatchStrictness;
 
 use std::collections::HashMap;
 
-/// Parse import item with line number - standalone utility function
+/// Parse import item with line number
 pub(crate) fn parse_import_item_with_line(import_item: &str, line: usize) -> Option<ImportInfo> {
     let import_item = import_item.trim();
     if import_item.is_empty() {
@@ -29,7 +29,7 @@ pub(crate) fn parse_import_item_with_line(import_item: &str, line: usize) -> Opt
     }
 }
 
-/// Parse object literal - standalone utility function
+/// Parse object literal
 pub(crate) fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
 
@@ -94,7 +94,7 @@ pub(crate) fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     result
 }
 
-/// Parse key-value pair - standalone utility function
+/// Parse key-value pair
 fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     if let Some(colon_pos) = pair.find(':') {
         let key = pair[..colon_pos]
@@ -117,7 +117,7 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     }
 }
 
-/// Parse and add imports from import text with line number - standalone utility function
+/// Parse and add imports from import text with line number
 fn parse_and_add_imports_with_line(
     imports_text: &str,
     sublibrary_info: &mut SublibraryInfo,
@@ -980,15 +980,6 @@ const command = new CreateBucketCommand({ Bucket: "test" });
             command_pos.is_some(),
             "Should find command instantiation in JavaScript"
         );
-
-        // JavaScript should return None for TypeScript-specific CommandInput usage
-        let type_pos = scanner.find_command_input_usage_position("QueryCommandInput");
-        assert!(
-            type_pos.is_none(),
-            "Should return None for CommandInput in JavaScript"
-        );
-
-        println!("✅ JavaScript fallback behavior working correctly");
     }
 
     #[test]

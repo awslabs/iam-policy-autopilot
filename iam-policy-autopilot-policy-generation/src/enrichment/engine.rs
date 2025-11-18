@@ -36,11 +36,9 @@ impl Engine {
         })
     }
 
-    /// Execute the complete 3-stage enrichment pipeline
-    ///
-    /// This is the main entry point for the enrichment process. It processes
-    /// ExtractedMethods through all three stages and returns FullyEnrichedMethods
-    /// with complete IAM metadata and pipeline metrics.
+    /// This is the main entry point for the enrichment process.
+    /// 1. Maps operations to authorized actions
+    /// 2. Expands actions using the FAS (Forward-Access Sessions) model
     pub async fn enrich_methods<'a>(
         &mut self,
         extracted_methods: &'a [SdkMethodCall],
@@ -62,15 +60,6 @@ impl Engine {
     }
 
     /// Extract unique service names from ExtractedMethods
-    ///
-    /// Analyzes all ParsedMethodCalls to identify unique AWS service names
-    /// that need OperationAction maps and Service Reference data loaded.
-    ///
-    /// # Arguments
-    /// * `extracted_methods` - The extracted methods to analyze
-    ///
-    /// # Returns
-    /// A vector of unique service names found across all method calls
     pub(crate) fn get_unique_services(&self, extracted_methods: &[SdkMethodCall]) -> Vec<String> {
         let mut services = HashSet::new();
 
@@ -85,10 +74,7 @@ impl Engine {
         result
     }
 
-    /// Load OperationAction maps for all specified services
-    ///
-    /// Loads operation action maps for all services, updating
-    /// pipeline metadata with success/failure information.
+    /// Load FAS maps for all specified services
     async fn load_fas_maps_for_services(
         &self,
         services: &[String],
@@ -133,21 +119,8 @@ impl Engine {
         Ok(fas)
     }
 
-    /// Enrich all method calls using loaded OperationAction maps and SDFs
-    ///
-    /// Processes all ParsedMethodCalls through the resource matcher to
-    /// generate complete enriched method calls with IAM metadata.
-    ///
-    /// # Arguments
-    /// * `methods` - List of parsed method calls to enrich
-    /// * `service_reference_cache` - Cache for lazy loading service references
-    /// * `resource_matcher` - Resource matcher for enrichment
-    ///
-    /// # Returns
-    /// A vector of all enriched method calls
-    ///
-    /// # Errors
-    /// Returns error if enrichment fails for any method call
+    /// Enrich all method calls using loaded OperationAction maps, service
+    /// references and the FAS model.
     async fn enrich_all_methods<'a>(
         &mut self,
         methods: &'a [SdkMethodCall],
@@ -203,7 +176,6 @@ mod tests {
         assert!(services.contains(&"s3".to_string()));
     }
 
-    // Integration tests moved from core/tests/enrichment_engine_comprehensive_test.rs
     #[test_log::test(tokio::test)]
     async fn test_enrichment_engine_comprehensive() {
         use std::time::Instant;

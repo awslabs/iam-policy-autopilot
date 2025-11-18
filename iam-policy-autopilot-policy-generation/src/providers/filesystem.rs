@@ -1,10 +1,6 @@
-//! Native filesystem provider implementation using `tokio::fs` and glob pattern matching.
-//!
-//! This module provides a robust implementation of the [`FileSystemProvider`] trait
-//! for native environments, using tokio for async file operations and the glob crate
-//! for pattern matching.
+//! Filesystem provider implementation using `tokio::fs`
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs;
 
 use crate::errors::{ExtractorError, Result};
@@ -23,9 +19,9 @@ use crate::errors::{ExtractorError, Result};
 /// - Pattern compilation is cached when possible
 /// - Large directories are processed incrementally
 #[derive(Debug, Clone)]
-pub struct NativeFileSystemProvider;
+pub struct FileSystemProvider;
 
-impl NativeFileSystemProvider {
+impl FileSystemProvider {
     /// Read the entire contents of a file as a UTF-8 string.
     ///
     /// This method uses tokio::fs::read_to_string for efficient async I/O
@@ -34,65 +30,6 @@ impl NativeFileSystemProvider {
         fs::read_to_string(path.as_ref())
             .await
             .map_err(|e| ExtractorError::file_system("read", path.as_ref(), e))
-    }
-
-    /// Check if a file or directory exists.
-    ///
-    /// This method uses tokio::fs::metadata to check for existence, which is
-    /// more reliable than trying to open the file. It handles both files and
-    /// directories uniformly.
-    pub async fn file_exists(path: &Path) -> Result<bool> {
-        match fs::metadata(path).await {
-            Ok(_) => Ok(true),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
-            Err(e) => Err(ExtractorError::file_system("check existence", path, e)),
-        }
-    }
-
-    /// List directories in a directory.
-    ///
-    /// This method lists only directories (not files) in the specified directory.
-    /// It does not recurse into subdirectories.
-    pub async fn list_directories(dir: &Path) -> Result<Vec<PathBuf>> {
-        // Check if directory exists and is readable
-        let metadata = fs::metadata(dir)
-            .await
-            .map_err(|e| ExtractorError::file_system("access directory", dir, e))?;
-
-        if !metadata.is_dir() {
-            return Err(ExtractorError::file_system(
-                "list directories",
-                dir,
-                std::io::Error::new(std::io::ErrorKind::NotADirectory, "Path is not a directory"),
-            ));
-        }
-
-        let mut directories = Vec::new();
-        let mut entries = fs::read_dir(dir)
-            .await
-            .map_err(|e| ExtractorError::file_system("read directory", dir, e))?;
-
-        while let Some(entry) = entries
-            .next_entry()
-            .await
-            .map_err(|e| ExtractorError::file_system("read directory entry", dir, e))?
-        {
-            let path = entry.path();
-            let metadata = entry
-                .metadata()
-                .await
-                .map_err(|e| ExtractorError::file_system("read metadata", &path, e))?;
-
-            // Only include directories, skip files
-            if metadata.is_dir() {
-                directories.push(path);
-            }
-        }
-
-        // Sort directories for consistent ordering
-        directories.sort();
-
-        Ok(directories)
     }
 }
 
@@ -182,36 +119,5 @@ mod tests {
         let content = FileSystemProvider::read_file(&unicode_file).await.unwrap();
 
         assert_eq!(content, unicode_content);
-    }
-
-    #[tokio::test]
-    async fn test_file_exists_true() {
-        let temp_dir = create_test_directory().await.unwrap();
-
-        let exists = FileSystemProvider::file_exists(&temp_dir.path().join("file1.py"))
-            .await
-            .unwrap();
-
-        assert!(exists);
-    }
-
-    #[tokio::test]
-    async fn test_file_exists_false() {
-        let exists = FileSystemProvider::file_exists(&PathBuf::from("nonexistent_file.txt"))
-            .await
-            .unwrap();
-
-        assert!(!exists);
-    }
-
-    #[tokio::test]
-    async fn test_directory_exists() {
-        let temp_dir = create_test_directory().await.unwrap();
-
-        let exists = FileSystemProvider::file_exists(&temp_dir.path().join("subdir"))
-            .await
-            .unwrap();
-
-        assert!(exists);
     }
 }

@@ -100,7 +100,6 @@ pub(crate) fn load_service_configuration() -> Result<Arc<ServiceConfiguration>> 
         let json_str = std::str::from_utf8(&embedded_file.data)
             .expect("Invalid UTF-8 in embedded service configuration");
 
-        // Parse JSON synchronously
         let service_config: ServiceConfiguration = serde_json::from_str(json_str)
             .expect("Failed to parse embedded service configuration JSON");
 

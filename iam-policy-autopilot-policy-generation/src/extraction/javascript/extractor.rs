@@ -55,7 +55,7 @@ impl Extractor for JavaScriptExtractor {
             &scan_results,
         ));
 
-        // Return JavaScript variant with the same AST (no double construction)
+        // Return JavaScript variant with the same AST
         ExtractorResult::JavaScript(ast, method_calls)
     }
 
@@ -351,9 +351,7 @@ const __error__ = await bodyStream.transformToString();
         // Note: This currently may not work since scanner.method_calls is empty in scan_all()
 
         if method_calls.is_empty() {
-            println!("⚠️ No method calls found - method call scanning may need to be integrated in scanner.scan_all()");
-            // For now, we'll pass the test but note the issue
-            return;
+            panic!("method_calls must not be empty")
         }
 
         // Should find GetObject operation from client.getObject() call

@@ -6,15 +6,10 @@ pub(crate) mod filesystem;
 // Native JSON provider implementation
 pub(crate) mod json;
 
-// Conditional compilation for provider types
+// These type aliases are remnants of supporting compilation to wasm.
+// We can use these eventually for conditional compilation again.
 /// Type alias for the filesystem provider implementation.
-///
-/// On native platforms, this resolves to [`NativeFileSystemProvider`](filesystem::NativeFileSystemProvider).
-/// This allows for conditional compilation while maintaining a consistent API.
-pub type FileSystemProvider = filesystem::NativeFileSystemProvider;
+pub type FileSystemProvider = filesystem::FileSystemProvider;
 
 /// Type alias for the JSON provider implementation.
-///
-/// On native platforms, this resolves to [`NativeJsonProvider`](json::NativeJsonProvider).
-/// This allows for conditional compilation while maintaining a consistent API.
-pub type JsonProvider = json::NativeJsonProvider;
+pub type JsonProvider = json::JsonProvider;

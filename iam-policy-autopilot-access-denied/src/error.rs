@@ -1,4 +1,4 @@
-//! Error types for IAM Policy Autopilot (pure Rust)
+//! Error types for IAM Policy Autopilot
 
 use crate::aws::AwsError;
 use crate::types::ApplyError;

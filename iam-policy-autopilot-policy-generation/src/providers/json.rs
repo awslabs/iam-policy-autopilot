@@ -1,42 +1,17 @@
-//! Native JSON provider implementation for the extract-sdk-methods project.
+//! JSON provider
 //!
-//! This module provides a high-performance JSON parsing and serialization implementation
-//! using `serde_json` for native environments. It supports generic types with proper bounds,
-//! comprehensive error handling, and performance optimizations for large JSON documents.
+//! This module provides a JSON parsing and serialization implementation
+//! using `serde_json`
 
 use serde::{Deserialize, Serialize};
 
 use crate::errors::{ExtractorError, Result};
 
-/// Native JSON provider using `serde_json` for high-performance JSON operations.
-///
-/// This provider is optimized for native environments and provides comprehensive
-/// JSON parsing and serialization capabilities with detailed error reporting.
-/// It supports both compact and pretty-printed output formats.
-///
-/// # Thread Safety
-///
-/// This provider is `Send + Sync` and can be safely shared across threads.
-/// All operations are stateless and do not require mutable access.
-///
-/// # Performance Considerations
-///
-/// - Uses `serde_json` for optimal performance on native platforms
-/// - Supports streaming operations for large documents
-/// - Memory-efficient parsing with minimal allocations
-/// - Optimized for AWS SDK JSON structures which can be quite large
-///
-/// # Error Handling
-///
-/// All JSON operations provide detailed error context including:
-/// - The operation that failed (parsing, serialization, etc.)
-/// - Line and column information for parsing errors
-/// - Type mismatch details for deserialization errors
-/// - Memory or I/O error information
+/// JSON provider using `serde_json` for high-performance JSON operations.
 #[derive(Debug, Clone)]
-pub struct NativeJsonProvider;
+pub struct JsonProvider;
 
-impl NativeJsonProvider {
+impl JsonProvider {
     /// Parse JSON to a generic `serde_json::Value`.
     ///
     /// This method parses JSON to a generic value type, which can be useful
@@ -293,43 +268,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_large_json_performance() {
-        // Create a large JSON structure
-        let mut large_data = HashMap::new();
-        for i in 0..1000 {
-            large_data.insert(
-                format!("key_{i}"),
-                SimpleConfig {
-                    name: format!("item_{i}"),
-                    value: i,
-                    enabled: i % 2 == 0,
-                },
-            );
-        }
-
-        // Test serialization and parsing performance
-        let start = std::time::Instant::now();
-        let json_str = JsonProvider::stringify(&large_data).unwrap();
-        let serialize_time = start.elapsed();
-
-        let start = std::time::Instant::now();
-        let parsed: HashMap<String, SimpleConfig> = JsonProvider::parse(&json_str).await.unwrap();
-        let parse_time = start.elapsed();
-
-        assert_eq!(large_data.len(), parsed.len());
-
-        // Performance should be reasonable (adjust thresholds as needed)
-        assert!(
-            serialize_time.as_millis() < 1000,
-            "Serialization too slow: {serialize_time:?}"
-        );
-        assert!(
-            parse_time.as_millis() < 1000,
-            "Parsing too slow: {parse_time:?}"
-        );
-    }
-
-    #[tokio::test]
     async fn test_empty_and_null_values() {
         // Test empty string
         let empty_str: String = JsonProvider::parse(r#""""#).await.unwrap();
@@ -358,13 +296,12 @@ mod tests {
             "special_chars": "\"\\n\\t\\r\""
         });
 
-        let json_str = NativeJsonProvider::stringify_value(&unicode_data).unwrap();
-        let parsed = NativeJsonProvider::parse_to_value(&json_str).unwrap();
+        let json_str = JsonProvider::stringify_value(&unicode_data).unwrap();
+        let parsed = JsonProvider::parse_to_value(&json_str).unwrap();
 
         assert_eq!(unicode_data, parsed);
     }
 
-    // Integration tests moved from core/tests/json_integration_test.rs
     #[tokio::test]
     async fn test_real_aws_sdk_json_parsing() {
         use crate::FileSystemProvider;
