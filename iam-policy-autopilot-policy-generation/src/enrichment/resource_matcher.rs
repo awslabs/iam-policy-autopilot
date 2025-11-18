@@ -37,11 +37,8 @@ impl ResourceMatcher {
         }
     }
 
-    /// Enrich a parsed method call with OperationAction maps and Service Reference data
-    ///
-    /// This is the main entry point for the enrichment process. For each possible
-    /// service in the ParsedMethodCall, it creates one EnrichedMethodCall with
-    /// complete IAM metadata.
+    /// Enrich a parsed method call with OperationAction maps, FAS maps, and Service
+    /// Reference data
     pub(crate) async fn enrich_method_call<'b>(
         &self,
         parsed_call: &'b SdkMethodCall,

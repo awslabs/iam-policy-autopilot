@@ -85,9 +85,6 @@ async fn test_go_extraction_to_policy_generation_integration() {
                 "Should extract at least one method call"
             );
 
-            // Since the fields are private, we'll just verify we got some methods
-            println!("✅ Successfully extracted method calls from Go code");
-
             // Step 3: Enrich method calls with IAM actions and resources
             println!("\nStep 3: Enriching method calls with IAM metadata...");
 
@@ -100,12 +97,9 @@ async fn test_go_extraction_to_policy_generation_integration() {
                 Ok(enriched_calls) => {
                     println!("Enriched {} method calls:", enriched_calls.len());
 
-                    // Check if enrichment worked - it might not in test environment
+                    // Check if enrichment worked
                     if enriched_calls.is_empty() {
-                        println!("⚠️  No method calls were enriched (likely due to missing config files in test environment)");
-                        println!("This is expected behavior when service configuration files are not available");
-                        println!("✅ Extraction and enrichment pipeline structure validated");
-                        return;
+                        panic!("No method calls were enriched (likely due to missing config files in test environment)");
                     }
 
                     // Step 4: Generate IAM policies
@@ -159,10 +153,7 @@ async fn test_go_extraction_to_policy_generation_integration() {
                                         }
                                     }
                                     Err(e) => {
-                                        println!(
-                                            "Policy merging failed (this may be expected): {}",
-                                            e
-                                        );
+                                        panic!("Policy merging failed: {}", e);
                                     }
                                 }
                             } else {
@@ -223,33 +214,12 @@ async fn test_go_extraction_to_policy_generation_integration() {
                     }
                 }
                 Err(e) => {
-                    // Enrichment might fail in test environment due to missing config files
-                    println!(
-                        "⚠️  Enrichment failed (this may be expected in test environment): {}",
-                        e
-                    );
-                    println!("This is likely due to missing operation-action-maps or service reference files");
-
-                    // Still verify that we got to the enrichment stage
-                    assert!(
-                        !extracted_methods.methods.is_empty(),
-                        "Should have method calls to enrich"
-                    );
-
-                    println!("✅ Partial integration test completed (extraction successful)");
+                    panic!("Enrichment failed: {}", e);
                 }
             }
         }
         Err(e) => {
-            // Extraction might fail if Go support is not fully implemented
-            println!(
-                "⚠️  Extraction failed (this may be expected if Go support is not complete): {}",
-                e
-            );
-            println!("This test demonstrates the integration flow even if Go extraction is not fully implemented");
-
-            // This is still a valid test as it shows the integration structure
-            println!("✅ Integration test structure validated");
+            panic!("Extraction failed: {}", e);
         }
     }
 }
@@ -269,44 +239,4 @@ async fn test_go_source_file_creation() {
     assert!(!source_file.content.is_empty());
     assert!(source_file.content.contains("ListObjectsV2"));
     assert!(source_file.content.contains("package main"));
-
-    println!("✅ Go source file creation test completed successfully!");
-}
-
-#[tokio::test]
-async fn test_extraction_engine_initialization() {
-    println!("Testing extraction engine initialization...");
-
-    let extraction_engine = ExtractionEngine::new();
-
-    // Just verify we can create the engine
-    println!("✅ Extraction engine initialized successfully");
-
-    // Test with a simple source file
-    let source_file = SourceFile::with_language(
-        PathBuf::from("simple.go"),
-        "package main\n\nfunc main() {\n    println(\"Hello, World!\")\n}".to_string(),
-        Language::Go,
-    );
-
-    // This may fail if Go support is not implemented, but that's okay for this test
-    match extraction_engine
-        .extract_sdk_method_calls(Language::Go, vec![source_file])
-        .await
-    {
-        Ok(extracted_methods) => {
-            println!(
-                "✅ Extraction completed: {} methods found",
-                extracted_methods.methods.len()
-            );
-        }
-        Err(e) => {
-            println!(
-                "⚠️  Extraction failed (expected if Go support not complete): {}",
-                e
-            );
-        }
-    }
-
-    println!("✅ Extraction engine test completed");
 }

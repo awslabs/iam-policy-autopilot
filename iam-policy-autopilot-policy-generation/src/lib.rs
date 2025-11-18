@@ -23,8 +23,6 @@ pub(crate) mod service_configuration;
 // Embedded AWS service data
 pub mod embedded_data;
 
-// extraction::SdkMethodCall & policy_generation::MethodActionMapping
-// should be moved to somewhere common for public export
 // Re-export the extraction module for public use
 pub mod extraction;
 // Re-export the policy_generation module for public use

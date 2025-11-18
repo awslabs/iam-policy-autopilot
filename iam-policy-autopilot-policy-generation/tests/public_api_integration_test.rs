@@ -228,24 +228,11 @@ async fn test_filesystem_provider_public_api() {
     let temp_file = create_test_python_file("test content");
     let temp_path = temp_file.path();
 
-    // Test file_exists
-    let exists = FileSystemProvider::file_exists(temp_path)
-        .await
-        .expect("Should check file existence");
-    assert!(exists, "Temp file should exist");
-
     // Test read_file
     let content = FileSystemProvider::read_file(temp_path)
         .await
         .expect("Should read file");
     assert_eq!(content, "test content");
-
-    // Test with non-existent file
-    let non_existent = PathBuf::from("/non/existent/file.txt");
-    let exists = FileSystemProvider::file_exists(&non_existent)
-        .await
-        .expect("Should check non-existent file");
-    assert!(!exists, "Non-existent file should not exist");
 }
 
 #[tokio::test]

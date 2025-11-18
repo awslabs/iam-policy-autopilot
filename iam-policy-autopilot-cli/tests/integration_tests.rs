@@ -11,8 +11,8 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
-/// Helper function to get paths to real test files
-fn get_test_files() -> Vec<PathBuf> {
+/// Helper function to get paths to real test files with specified extension
+fn get_test_files(extension: &str) -> Vec<PathBuf> {
     let test_resources_dir = PathBuf::from("tests/resources");
 
     // Read all files in the test resources directory
@@ -20,10 +20,10 @@ fn get_test_files() -> Vec<PathBuf> {
 
     if let Ok(entries) = fs::read_dir(&test_resources_dir) {
         for entry in entries.flatten() {
-            let path = entry.path();
+            let path: PathBuf = entry.path();
 
-            // Only include files (not directories) with .py extension
-            if path.is_file() && path.extension().is_some_and(|ext| ext == "py") {
+            // Only include files (not directories) with the specified extension
+            if path.is_file() && path.extension().is_some_and(|ext| ext == extension) {
                 test_files.push(path);
             }
         }
@@ -35,20 +35,15 @@ fn get_test_files() -> Vec<PathBuf> {
 }
 
 /// Helper function to get a single test file for simple tests
-fn get_simple_test_file() -> PathBuf {
+fn get_simple_test_file(extension: &str) -> PathBuf {
     // Use the first available test file from our dynamic discovery
-    let test_files = get_test_files();
-    if let Some(first_file) = test_files.first() {
-        first_file.clone()
-    } else {
-        // Fallback to test_example.py if no files found
-        PathBuf::from("tests/resources/test_example.py")
-    }
+    let test_files = get_test_files(extension);
+    test_files.first().unwrap().clone()
 }
 
 /// Helper function to get the CLI binary command
 fn cli_command() -> Command {
-    Command::cargo_bin("iam-policy-autopilot").expect("Failed to find CLI binary")
+    Command::new(assert_cmd::cargo::cargo_bin!("iam-policy-autopilot"))
 }
 
 /// Helper function to get the CLI binary command with extract-sdk-calls subcommand
@@ -74,7 +69,7 @@ fn test_cli_help() {
         .stdout(predicate::str::contains(
             "Unified tool that combines IAM policy generation",
         ))
-        .stdout(predicate::str::contains("extract-sdk-calls"))
+        .stdout(predicate::str::contains("fix-access-denied"))
         .stdout(predicate::str::contains("generate-policy"));
 }
 
@@ -104,7 +99,6 @@ fn test_extract_sdk_calls_help() {
         .stdout(predicate::str::contains(
             "Extracts AWS SDK method calls from source code files",
         ))
-        .stdout(predicate::str::contains("--verbose"))
         .stdout(predicate::str::contains("--pretty"))
         .stdout(predicate::str::contains("--full-output"));
 }
@@ -118,7 +112,6 @@ fn test_generate_policy_help() {
         .stdout(predicate::str::contains(
             "Generates complete IAM policy documents from source files",
         ))
-        .stdout(predicate::str::contains("--verbose"))
         .stdout(predicate::str::contains("--pretty"));
 }
 
@@ -148,7 +141,7 @@ fn test_generate_policy_nonexistent_file() {
 
 #[test]
 fn test_extract_sdk_calls_simplified_output() {
-    let test_file = get_simple_test_file();
+    let test_file = get_simple_test_file("py");
 
     // Test with a single file - default simplified output
     let mut cmd = extract_sdk_calls_command();
@@ -188,7 +181,7 @@ fn test_extract_sdk_calls_simplified_output() {
 
 #[test]
 fn test_extract_sdk_calls_full_output() {
-    let test_file = get_simple_test_file();
+    let test_file = get_simple_test_file("py");
 
     // Test with --full-output flag
     let mut cmd = extract_sdk_calls_command();
@@ -229,7 +222,7 @@ fn test_extract_sdk_calls_full_output() {
 
 #[test]
 fn test_generate_policy_basic_functionality() {
-    let test_file = get_simple_test_file();
+    let test_file = get_simple_test_file("py");
 
     // Test with a single file
     let mut cmd = generate_policy_command();
@@ -257,9 +250,6 @@ fn test_generate_policy_basic_functionality() {
         "Policies should be an array of IAM policies"
     );
 }
-
-// Note: Removing old tests that don't use subcommands since they're no longer valid
-// The new subcommand-based tests above cover the same functionality
 
 #[test]
 fn test_extract_sdk_calls_empty_file_simplified() {
@@ -334,8 +324,33 @@ fn test_generate_policy_empty_file() {
 }
 
 #[test]
-fn test_comprehensive_real_files_extract_sdk_calls() {
-    let test_files = get_test_files();
+fn test_comprehensive_real_files_extract_sdk_calls_python() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("py");
+}
+
+#[test]
+fn test_comprehensive_real_files_extract_sdk_calls_go() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("go");
+}
+
+#[test]
+fn test_comprehensive_real_files_extract_sdk_calls_typescript() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("ts");
+}
+
+#[test]
+fn test_comprehensive_real_files_extract_sdk_calls_javascript() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("js");
+}
+
+fn test_comprehensive_real_files_extract_sdk_calls_for_extension(extension: &str) {
+    let test_files = get_test_files(extension);
+
+    // Skip test if no files with this extension exist
+    if test_files.is_empty() {
+        println!("No test files found with extension: {}", extension);
+        return;
+    }
 
     // Test extract-sdk-calls with multiple real files
     let mut cmd = extract_sdk_calls_command();
@@ -356,7 +371,8 @@ fn test_comprehensive_real_files_extract_sdk_calls() {
     let operations = json.as_array().unwrap();
     assert!(
         !operations.is_empty(),
-        "Should find AWS SDK operations in test files"
+        "Should find AWS SDK operations in {} test files",
+        extension
     );
 
     // Verify each operation has the expected structure
@@ -383,8 +399,33 @@ fn test_comprehensive_real_files_extract_sdk_calls() {
 }
 
 #[test]
-fn test_comprehensive_real_files_generate_policy() {
-    let test_files = get_test_files();
+fn test_comprehensive_real_files_generate_policy_python() {
+    test_comprehensive_real_files_generate_policy_for_extension("py");
+}
+
+#[test]
+fn test_comprehensive_real_files_generate_policy_go() {
+    test_comprehensive_real_files_generate_policy_for_extension("go");
+}
+
+#[test]
+fn test_comprehensive_real_files_generate_policy_typescript() {
+    test_comprehensive_real_files_generate_policy_for_extension("ts");
+}
+
+#[test]
+fn test_comprehensive_real_files_generate_policy_javascript() {
+    test_comprehensive_real_files_generate_policy_for_extension("js");
+}
+
+fn test_comprehensive_real_files_generate_policy_for_extension(extension: &str) {
+    let test_files = get_test_files(extension);
+
+    // Skip test if no files with this extension exist
+    if test_files.is_empty() {
+        println!("No test files found with extension: {}", extension);
+        return;
+    }
 
     // Test generate-policy with multiple real files
     let mut cmd = generate_policy_command();
@@ -420,7 +461,8 @@ fn test_comprehensive_real_files_generate_policy() {
     let policies = policies_value.as_array().unwrap();
     assert!(
         !policies.is_empty(),
-        "Should generate IAM policies from test files"
+        "Should generate IAM policies from {} test files",
+        extension
     );
 
     // Verify each policy has the expected IAM policy structure

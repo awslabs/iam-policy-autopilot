@@ -179,23 +179,6 @@ pub(crate) mod mock_remote_service_reference {
                 "Actions": [
                     {
                         "Name": "AbortMultipartUpload",
-                        "ActionConditionKeys": [
-                            "s3:AccessGrantsInstanceArn",
-                            "s3:ResourceAccount",
-                            "s3:TlsVersion",
-                            "s3:authType",
-                            "s3:signatureAge",
-                            "s3:signatureversion",
-                            "s3:x-amz-content-sha256"
-                        ],
-                        "Annotations": {
-                            "Properties": {
-                            "IsList": false,
-                            "IsPermissionManagement": false,
-                            "IsTaggingOnly": false,
-                            "IsWrite": true
-                            }
-                        },
                         "Resources": [
                             {
                             "Name": "accesspointobject"
@@ -204,10 +187,6 @@ pub(crate) mod mock_remote_service_reference {
                             "Name": "object"
                             }
                         ],
-                        "SupportedBy": {
-                            "IAM Access Analyzer Policy Generation": false,
-                            "IAM Action Last Accessed": false
-                        }
                     },
                     {
                         "Name": "GetObject",

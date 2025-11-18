@@ -206,7 +206,7 @@ impl ServiceDiscovery {
             services.len(),
             language
         );
-        Self::load_services_parallel(
+        Self::load_services(
             services,
             &mut service_models,
             &mut method_lookup,
@@ -253,8 +253,8 @@ impl ServiceDiscovery {
         })
     }
 
-    /// Load services in parallel using embedded data (native targets only)
-    async fn load_services_parallel(
+    /// Load services in parallel using embedded data
+    async fn load_services(
         services: Vec<SdkModel>,
         service_models: &mut HashMap<String, SdkServiceDefinition>,
         method_lookup: &mut HashMap<String, Vec<ServiceMethodRef>>,

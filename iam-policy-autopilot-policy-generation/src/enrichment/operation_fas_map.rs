@@ -149,7 +149,6 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
             let json_str = std::str::from_utf8(&embedded_file.data)
                 .expect("Invalid UTF-8 in embedded operation FAS map");
 
-            // Parse JSON synchronously
             let operation_fas_map: OperationFasMap =
                 serde_json::from_str(json_str).unwrap_or_else(|_| {
                     panic!(

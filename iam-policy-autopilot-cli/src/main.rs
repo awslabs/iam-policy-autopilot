@@ -104,14 +104,12 @@ impl GeneratePolicyCliConfig {
     version,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
     long_about = "Unified tool that combines IAM policy generation from source code analysis \
-with automatic AccessDenied error fixing. Supports four main operations:\n\n\
+with automatic AccessDenied error fixing. Supports three main operations:\n\n\
 • fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
-• extract-sdk-calls: Extract SDK method calls from source files (basic extraction)\n\
 • generate-policy: Complete pipeline with enrichment for policy generation\n\
 • mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
 Examples:\n  \
 iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
-iam-policy-autopilot extract-sdk-calls tests/resources/test_example.py --language python\n  \
 iam-policy-autopilot generate-policy tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
 iam-policy-autopilot generate-policy tests/resources/test_example.py --region cn-north-1 --account 123456789012\n  \
 iam-policy-autopilot mcp-server\n  \
@@ -153,6 +151,7 @@ safely automated. For other denial types, you'll still need to review and apply 
 
     /// Extracts AWS SDK method calls from source code files
     #[command(
+        hide = true,
         long_about = "Extracts AWS SDK method calls from source code files and outputs them as JSON. \
 This is the basic extraction functionality that identifies method calls, parameters, \
 and basic metadata without enrichment."
@@ -166,6 +165,7 @@ Go (.go), and others. Files are processed concurrently for better performance.")
 
         /// Enable debug logging output to stderr (most verbose)
         #[arg(
+            hide = true,
             short = 'd',
             long = "debug",
             long_help = "Enables the most detailed logging information \
@@ -175,18 +175,6 @@ All log output is sent to stderr to keep stdout clean for JSON output. \
 If both --debug and --verbose are specified, --debug takes precedence."
         )]
         debug: bool,
-
-        /// Enable verbose logging output to stderr
-        #[arg(
-            short = 'v',
-            long = "verbose",
-            long_help = "Enables detailed logging information including \
-INFO, WARN, and ERROR messages with file processing progress, method extraction details, and \
-performance metrics. Without this flag, only ERROR messages are shown. All log output is \
-sent to stderr to keep stdout clean for JSON output. \
-If both --debug and --verbose are specified, --debug takes precedence."
-        )]
-        verbose: bool,
 
         /// Format JSON output with indentation for readability
         #[arg(
@@ -220,25 +208,18 @@ This flag has no effect on the generate-policy subcommand."
     },
 
     /// Generates complete IAM policy documents from source files
-    #[command(
-        long_about = "Generates complete IAM policy documents from source files. This includes method extraction, \
-enrichment with QS maps and Service Reference data, and policy generation with proper ARN \
-patterns. By default, all policies are merged into a single optimized policy document. \
-Use --individual-policies to output separate policies for each method call. \
-Requires AWS context (region and account) for accurate ARN generation."
-    )]
+    #[command(long_about = "\
+Generates complete IAM policy documents from source files. By default, all \
+policies are merged into a single optimized policy document. \
+Optionally takes AWS context (region and account) for accurate ARN generation.")]
     GeneratePolicy {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)
-        #[arg(short = 'd', long = "debug")]
+        #[arg(hide = true, short = 'd', long = "debug")]
         debug: bool,
-
-        /// Enable verbose logging output to stderr
-        #[arg(short = 'v', long = "verbose")]
-        verbose: bool,
 
         /// Format JSON output with indentation for readability
         #[arg(short = 'p', long = "pretty")]
@@ -248,7 +229,7 @@ Requires AWS context (region and account) for accurate ARN generation."
         #[arg(short = 'l', long = "language")]
         language: Option<String>,
 
-        /// Output full ExtractedMethods instead of simplified operations (not used in generate-policy)
+        /// Output full ExtractedMethods instead of simplified operations
         #[arg(long = "full-output")]
         full_output: bool,
 
@@ -273,6 +254,7 @@ Examples: us-east-1, us-west-2, eu-west-1."
 
         /// Output separate policies for each method call instead of a single merged policy
         #[arg(
+            hide = true,
             long = "individual-policies",
             long_help = "When enabled, outputs individual IAM policies \
 for each method call. Disables --upload-policy, if provided."
@@ -281,6 +263,7 @@ for each method call. Disables --upload-policy, if provided."
 
         /// Include method to action mappings alongside the generated policies
         #[arg(
+            hide = true,
             long = "show-action-mappings",
             long_help = "When enabled, outputs detailed method to action \
 mappings alongside the generated policies. This provides granular visibility into which SDK method calls \
@@ -342,13 +325,10 @@ Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) o
 }
 
 /// Initialize logging based on configuration
-fn init_logging(debug: bool, verbose: bool) -> Result<()> {
+fn init_logging(debug: bool) -> Result<()> {
     let log_level = if debug {
         // Debug takes precedence - most verbose logging including TRACE
         log::LevelFilter::Trace
-    } else if verbose {
-        // Verbose logging includes INFO, WARN, DEBUG, ERROR
-        log::LevelFilter::Info
     } else {
         // Default: only ERROR messages
         log::LevelFilter::Error
@@ -502,13 +482,12 @@ async fn main() {
         Commands::ExtractSdkCalls {
             source_files,
             debug,
-            verbose,
             pretty,
             language,
             full_output,
         } => {
             // Initialize logging
-            if let Err(e) = init_logging(debug, verbose) {
+            if let Err(e) = init_logging(debug) {
                 eprintln!("iam-policy-autopilot: Failed to initialize logging: {}", e);
                 process::exit(1);
             }
@@ -532,7 +511,6 @@ async fn main() {
         Commands::GeneratePolicy {
             source_files,
             debug,
-            verbose,
             pretty,
             language,
             full_output,
@@ -545,7 +523,7 @@ async fn main() {
             disable_cache,
         } => {
             // Initialize logging
-            if let Err(e) = init_logging(debug, verbose) {
+            if let Err(e) = init_logging(debug) {
                 eprintln!("iam-policy-autopilot: Failed to initialize logging: {}", e);
                 process::exit(1);
             }

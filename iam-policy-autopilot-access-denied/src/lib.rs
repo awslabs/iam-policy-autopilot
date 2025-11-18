@@ -1,4 +1,4 @@
-//! This crate provides the core business logic for AWS IAM Policy Autopilot:
+//! This crate provides the core business logic for IAM Policy Autopilot:
 //! - AccessDenied text parsing
 //! - Policy synthesis
 //! - Principal ARN resolution and basic IAM operations (inline policies)

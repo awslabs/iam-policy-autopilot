@@ -1,7 +1,7 @@
 //! AWS IAM client wrapper for policy operations
 //!
-//! TODO: Consider consolidating `put_role_policy` and `put_user_policy` into a generic
-//! implementation when adding support for additional principal types.
+// TODO: Consider consolidating `put_role_policy` and `put_user_policy` into a generic
+// implementation when adding support for additional principal types.
 
 use crate::aws::principal::PrincipalKind;
 use crate::aws::{AwsError, AwsResult};

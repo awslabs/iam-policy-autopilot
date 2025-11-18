@@ -144,8 +144,7 @@ impl Engine {
     /// Detect and validate language consistency across multiple source files.
     ///
     /// This method detects the programming language from file extensions and ensures
-    /// all files have the same detected language. This is useful for CLI tools that
-    /// need to validate language consistency before processing.
+    /// all files have the same detected language.
     pub fn detect_and_validate_language(&self, source_files: &[&Path]) -> Result<Language> {
         if source_files.is_empty() {
             return Err(ExtractorError::validation(
@@ -222,7 +221,6 @@ mod tests {
         }
     }
 
-    // Integration tests moved from core/tests/sdk_validation_test.rs
     /// Test that the extractor can be created with real providers and process a simple file.
     #[tokio::test]
     async fn test_extractor_with_real_providers() {
@@ -259,8 +257,6 @@ def helper_function():
         );
 
         // Test that we can call the extraction method without errors
-        // Note: This may not find actual SDK methods since we're using real parsing,
-        // but it should not crash and should return a valid result structure
         let result = extractor
             .extract_sdk_method_calls(Language::Python, vec![source_file])
             .await;

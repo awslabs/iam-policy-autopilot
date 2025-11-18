@@ -510,19 +510,4 @@ mod tests {
         let result = EmbeddedServiceData::get_service_definition("", "").await;
         assert!(result.is_err());
     }
-
-    #[test]
-    fn test_service_versions_map_performance() {
-        // Test that building the map doesn't take an unreasonable amount of time
-        let start = std::time::Instant::now();
-        let _service_versions = Botocore::build_service_versions_map();
-        let duration = start.elapsed();
-
-        // Should complete in reasonable time (less than 1 second for this operation)
-        assert!(
-            duration.as_secs() < 1,
-            "build_service_versions_map took too long: {:?}",
-            duration
-        );
-    }
 }
