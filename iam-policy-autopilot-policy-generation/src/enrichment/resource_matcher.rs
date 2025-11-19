@@ -1035,8 +1035,6 @@ mod tests {
 
         let result = matcher.expand_fas_operations_to_fixed_point(initial);
 
-        // The algorithm should handle cycles gracefully by not adding duplicate operations
-        // It should succeed and return a finite set
         assert!(
             result.is_ok(),
             "Fixed-point expansion should handle cycles gracefully"
@@ -1074,8 +1072,6 @@ mod tests {
             resource_overrides: HashMap::new(),
         });
 
-        // Create a more complex scenario that could potentially hit max iterations
-        // if the algorithm was poorly designed
         let mut fas_maps = HashMap::new();
 
         // Create a chain that loops back: A -> B -> C -> D -> A
@@ -1120,7 +1116,6 @@ mod tests {
 
         let operations = result.unwrap();
 
-        // We expect operations for the cycle, but the exact count may vary based on the algorithm
         // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
         assert!(
             operations.len() == 5,
@@ -1213,25 +1208,6 @@ mod tests {
         );
 
         let operations = result.unwrap();
-
-        // Debug: print what operations we actually got (sorted for deterministic output)
-        let mut operation_details: Vec<String> = operations
-            .iter()
-            .map(|op| {
-                format!(
-                    "{}:{} (ctx: {:?})",
-                    op.service(&service_cfg),
-                    op.service_operation_name(&service_cfg)
-                        .split(':')
-                        .nth(1)
-                        .unwrap_or("unknown"),
-                    op.context
-                )
-            })
-            .collect();
-        operation_details.sort();
-
-        println!("Self-cycle operations (sorted): {:?}", operation_details);
 
         // Should have exactly 1 operation since A->A with same context creates no new operations
         assert_eq!(
