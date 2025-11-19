@@ -5,7 +5,7 @@
 //! with complete IAM metadata.
 
 use convert_case::{Case, Casing};
-use std::collections::HashMap;
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use super::{Action, EnrichedSdkMethodCall, Resource};
@@ -55,17 +55,9 @@ impl ResourceMatcher {
 
         // For each possible service in the parsed method call
         for service_name in &parsed_call.possible_services {
-            // Find the corresponding OperationFas map (may be None for services without operation action maps)
-            let operation_fas_map_option = self.find_operation_fas_map_for_service(service_name);
-
             // Create enriched method call for this service
             if let Some(enriched_call) = self
-                .create_enriched_method_call(
-                    parsed_call,
-                    service_name,
-                    operation_fas_map_option,
-                    service_reference_loader,
-                )
+                .create_enriched_method_call(parsed_call, service_name, service_reference_loader)
                 .await?
             {
                 enriched_calls.push(enriched_call);
@@ -89,13 +81,88 @@ impl ResourceMatcher {
             .cloned()
     }
 
-    fn make_condition(context: &HashMap<String, String>) -> Vec<Condition> {
+    /// Expand FAS operations to a fixed point, avoiding infinite loops from cycles
+    ///
+    /// This method safely expands FAS operations by iteratively processing new operations
+    /// until no more new operations are discovered (fixed point reached).
+    /// It includes cycle detection to prevent infinite loops.
+    // TODO: If an operation occurs with and without context we may only keep the one with context.
+    fn expand_fas_operations_to_fixed_point(
+        &self,
+        initial: FasOperation,
+    ) -> Result<Vec<FasOperation>> {
+        let mut operations = HashSet::<FasOperation>::new();
+        operations.insert(initial);
+
+        let mut to_process = operations.clone();
+        while !to_process.is_empty() {
+            let mut newly_discovered = HashSet::<FasOperation>::new();
+
+            // Process all operations in the current batch
+            for operation in &to_process {
+                let service_name = operation.service(&self.service_cfg);
+                let operation_fas_map_option =
+                    self.find_operation_fas_map_for_service(&service_name);
+
+                match operation_fas_map_option {
+                    Some(operation_fas_map) => {
+                        let service_operation_name =
+                            operation.service_operation_name(&self.service_cfg);
+                        log::debug!("Looking up {}", service_operation_name);
+
+                        if let Some(additional_operations) = operation_fas_map
+                            .fas_operations
+                            .get(&service_operation_name)
+                        {
+                            for additional_op in additional_operations {
+                                // Only add if we haven't seen this operation before
+                                if !operations.contains(additional_op) {
+                                    newly_discovered.insert(additional_op.clone());
+                                }
+                            }
+                        } else {
+                            log::debug!("Did not find {}", service_operation_name);
+                        }
+                    }
+                    None => {
+                        log::debug!("No FAS map found for service: {}", service_name);
+                    }
+                }
+            }
+
+            // Add newly discovered operations to our complete set
+            operations.extend(newly_discovered.iter().cloned());
+
+            let newly_discovered_count = newly_discovered.len();
+
+            // Set up next iteration to process only newly discovered operations
+            to_process = newly_discovered;
+
+            log::debug!(
+                "FAS expansion discovered {} new operations",
+                newly_discovered_count
+            );
+        }
+
+        log::debug!(
+            "FAS expansion completed with {} total operations",
+            operations.len()
+        );
+
+        // Convert HashSet to Vec and sort by service_operation_name for deterministic output
+        let mut operations_vec: Vec<FasOperation> = operations.into_iter().collect();
+        operations_vec.sort_by_key(|op| op.service_operation_name(&self.service_cfg));
+
+        Ok(operations_vec)
+    }
+
+    fn make_condition(context: &[crate::enrichment::operation_fas_map::Context]) -> Vec<Condition> {
         let mut result = vec![];
-        for (key, value) in context {
+        for ctx in context {
             result.push(Condition {
                 operator: crate::enrichment::Operator::StringEquals,
-                key: key.clone(),
-                values: vec![value.clone()],
+                key: ctx.key.clone(),
+                values: vec![ctx.value.clone()],
             })
         }
         result
@@ -106,7 +173,6 @@ impl ResourceMatcher {
         &self,
         parsed_call: &'a SdkMethodCall,
         service_name: &str,
-        operation_fas_map_option: Option<Arc<OperationFasMap>>,
         service_reference_loader: &ServiceReferenceLoader,
     ) -> Result<Option<EnrichedSdkMethodCall<'a>>> {
         log::debug!(
@@ -114,36 +180,15 @@ impl ResourceMatcher {
             service_name,
             parsed_call.name
         );
-        log::debug!("operation_fas_map_option: {:?}", operation_fas_map_option);
 
         let initial = FasOperation::new(
             parsed_call.name.to_case(Case::Pascal),
             service_name.to_string(),
-            HashMap::new(),
+            Vec::new(),
         );
-        let initial_service_operation_name = initial.service_operation_name(&self.service_cfg);
 
-        let mut operations = vec![initial];
-
-        match operation_fas_map_option {
-            Some(operation_fas_map) => {
-                log::debug!("Looking up {}", initial_service_operation_name);
-                let result = operation_fas_map
-                    .fas_operations
-                    .get(&initial_service_operation_name);
-                result.iter().for_each(|additional_operations| {
-                    operations.extend_from_slice(additional_operations);
-                });
-                if result.is_none() {
-                    log::debug!("Did not find {}", initial_service_operation_name);
-                }
-            }
-            None => {
-                log::debug!("None");
-            }
-        };
-
-        log::debug!("operations: {:?}", operations);
+        // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
+        let operations = self.expand_fas_operations_to_fixed_point(initial)?;
 
         let mut enriched_actions = vec![];
         for operation in operations {
@@ -312,6 +357,7 @@ impl ResourceMatcher {
 mod tests {
     use super::*;
     use crate::enrichment::mock_remote_service_reference;
+    use crate::enrichment::operation_fas_map::{Context, FasOperation, OperationFasMap};
 
     fn create_test_parsed_method_call() -> SdkMethodCall {
         SdkMethodCall {
@@ -836,5 +882,368 @@ mod tests {
         );
 
         println!("✓ Test passed: Mixed resource overrides work correctly - overrides applied selectively");
+    }
+
+    #[tokio::test]
+    async fn test_fas_expansion_fixed_point_no_cycles() {
+        use std::collections::HashMap;
+
+        // Create a simple service configuration
+        let service_cfg = Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        });
+
+        // Create a mock FAS map with no cycles: A -> B -> C (linear chain)
+        let mut fas_maps = HashMap::new();
+
+        // Service A: GetObject -> Service B: Decrypt
+        let mut service_a_operations = HashMap::new();
+        service_a_operations.insert(
+            "service-a:GetObject".to_string(),
+            vec![FasOperation::new(
+                "Decrypt".to_string(),
+                "service-b".to_string(),
+                vec![Context::new("test".to_string(), "value".to_string())],
+            )],
+        );
+
+        // Service B: Decrypt -> Service C: Log
+        let mut service_b_operations = HashMap::new();
+        service_b_operations.insert(
+            "service-b:Decrypt".to_string(),
+            vec![FasOperation::new(
+                "Log".to_string(),
+                "service-c".to_string(),
+                vec![Context::new("test2".to_string(), "value2".to_string())],
+            )],
+        );
+
+        // Service C: Log -> nothing (terminal)
+        let service_c_operations = HashMap::new();
+
+        fas_maps.insert(
+            "service-a".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_a_operations,
+            }),
+        );
+        fas_maps.insert(
+            "service-b".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_b_operations,
+            }),
+        );
+        fas_maps.insert(
+            "service-c".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_c_operations,
+            }),
+        );
+
+        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+
+        // Test expansion starting from GetObject
+        let initial =
+            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
+
+        let result = matcher.expand_fas_operations_to_fixed_point(initial);
+        assert!(
+            result.is_ok(),
+            "Fixed-point expansion should succeed for non-cyclic operations"
+        );
+
+        let operations = result.unwrap();
+        assert_eq!(
+            operations.len(),
+            3,
+            "Should have exactly 3 operations: GetObject, Decrypt, Log"
+        );
+
+        // Verify all expected operations are present
+        let operation_names: std::collections::HashSet<String> = operations
+            .iter()
+            .map(|op| op.service_operation_name(&service_cfg))
+            .collect();
+
+        assert!(operation_names.contains("service-a:GetObject"));
+        assert!(operation_names.contains("service-b:Decrypt"));
+        assert!(operation_names.contains("service-c:Log"));
+
+        println!(
+            "✓ Test passed: Fixed-point expansion works correctly for non-cyclic FAS operations"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fas_expansion_cycle_detection() {
+        use std::collections::HashMap;
+
+        // Create a simple service configuration
+        let service_cfg = Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        });
+
+        // Create a mock FAS map with a cycle: A -> B -> A
+        let mut fas_maps = HashMap::new();
+
+        // Service A: GetObject -> Service B: Decrypt
+        let mut service_a_operations = HashMap::new();
+        service_a_operations.insert(
+            "service-a:GetObject".to_string(),
+            vec![FasOperation::new(
+                "Decrypt".to_string(),
+                "service-b".to_string(),
+                vec![Context::new("test".to_string(), "value".to_string())],
+            )],
+        );
+
+        // Service B: Decrypt -> Service A: GetObject (creates cycle!)
+        let mut service_b_operations = HashMap::new();
+        service_b_operations.insert(
+            "service-b:Decrypt".to_string(),
+            vec![FasOperation::new(
+                "GetObject".to_string(),
+                "service-a".to_string(),
+                vec![Context::new("test2".to_string(), "value2".to_string())],
+            )],
+        );
+
+        fas_maps.insert(
+            "service-a".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_a_operations,
+            }),
+        );
+        fas_maps.insert(
+            "service-b".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_b_operations,
+            }),
+        );
+
+        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+
+        // Test expansion starting from GetObject - should detect cycle and terminate
+        let initial =
+            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
+
+        let result = matcher.expand_fas_operations_to_fixed_point(initial);
+
+        // The algorithm should handle cycles gracefully by not adding duplicate operations
+        // It should succeed and return a finite set
+        assert!(
+            result.is_ok(),
+            "Fixed-point expansion should handle cycles gracefully"
+        );
+
+        let operations = result.unwrap();
+
+        // Debug: print what operations we actually got
+        let operation_names: std::collections::HashSet<String> = operations
+            .iter()
+            .map(|op| op.service_operation_name(&service_cfg))
+            .collect();
+
+        // 3 operations, note that GetObject occurs twice, once with and once without context
+        assert!(operations.len() == 3, "Should have 3 operations");
+
+        // Verify expected operations are present
+        assert!(operation_names.contains("service-a:GetObject"));
+        assert!(operation_names.contains("service-b:Decrypt"));
+
+        println!(
+            "✓ Test passed: Fixed-point expansion handles cycles correctly without infinite loops"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fas_expansion_complex_cycle_with_max_iterations() {
+        use std::collections::HashMap;
+
+        // Create a service configuration
+        let service_cfg = Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        });
+
+        // Create a more complex scenario that could potentially hit max iterations
+        // if the algorithm was poorly designed
+        let mut fas_maps = HashMap::new();
+
+        // Create a chain that loops back: A -> B -> C -> D -> A
+        let operations_data = vec![
+            ("service-a", "GetObject", "service-b", "Decrypt"),
+            ("service-b", "Decrypt", "service-c", "Validate"),
+            ("service-c", "Validate", "service-d", "Log"),
+            ("service-d", "Log", "service-a", "GetObject"), // Back to start
+        ];
+
+        for (from_service, from_op, to_service, to_op) in operations_data {
+            let mut operations = HashMap::new();
+            operations.insert(
+                format!("{}:{}", from_service, from_op),
+                vec![FasOperation::new(
+                    to_op.to_string(),
+                    to_service.to_string(),
+                    vec![Context::new("cycle".to_string(), "test".to_string())],
+                )],
+            );
+
+            fas_maps.insert(
+                from_service.to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: operations,
+                }),
+            );
+        }
+
+        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+
+        let initial =
+            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
+
+        let result = matcher.expand_fas_operations_to_fixed_point(initial);
+
+        // Should succeed and return operations for the cycle
+        assert!(
+            result.is_ok(),
+            "Should handle complex cycles without hitting max iterations"
+        );
+
+        let operations = result.unwrap();
+
+        // We expect operations for the cycle, but the exact count may vary based on the algorithm
+        // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
+        assert!(
+            operations.len() == 5,
+            "Should have 5 operations in the cycle"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fas_expansion_empty_initial() {
+        use std::collections::HashMap;
+
+        let service_cfg = Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        });
+
+        let matcher = ResourceMatcher::new(service_cfg.clone(), HashMap::new());
+
+        let initial = FasOperation::new(
+            "NonExistentOperation".to_string(),
+            "non-existent-service".to_string(),
+            Vec::new(),
+        );
+
+        let result = matcher.expand_fas_operations_to_fixed_point(initial.clone());
+        assert!(result.is_ok(), "Should succeed even with no FAS maps");
+
+        let operations = result.unwrap();
+        assert_eq!(
+            operations.len(),
+            1,
+            "Should contain only the initial operation"
+        );
+        assert!(
+            operations.contains(&initial),
+            "Should contain the initial operation"
+        );
+
+        println!("✓ Test passed: Handles case with no additional FAS operations");
+    }
+
+    #[tokio::test]
+    async fn test_fas_expansion_self_cycle_empty_context() {
+        use std::collections::HashMap;
+
+        // Create a simple service configuration
+        let service_cfg = Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        });
+
+        // Create a FAS map where A -> A with empty context (self-referential)
+        let mut fas_maps = HashMap::new();
+
+        // Service A: GetObject -> Service A: GetObject (with empty context)
+        let mut service_a_operations = HashMap::new();
+        service_a_operations.insert(
+            "service-a:GetObject".to_string(),
+            vec![FasOperation::new(
+                "GetObject".to_string(),
+                "service-a".to_string(),
+                Vec::new(), // Empty context - same as initial
+            )],
+        );
+
+        fas_maps.insert(
+            "service-a".to_string(),
+            Arc::new(OperationFasMap {
+                fas_operations: service_a_operations,
+            }),
+        );
+
+        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+
+        // Test expansion starting from GetObject with empty context
+        let initial = FasOperation::new(
+            "GetObject".to_string(),
+            "service-a".to_string(),
+            Vec::new(), // Empty context
+        );
+
+        let result = matcher.expand_fas_operations_to_fixed_point(initial.clone());
+        assert!(
+            result.is_ok(),
+            "Self-cycle with empty context should be handled gracefully"
+        );
+
+        let operations = result.unwrap();
+
+        // Debug: print what operations we actually got (sorted for deterministic output)
+        let mut operation_details: Vec<String> = operations
+            .iter()
+            .map(|op| {
+                format!(
+                    "{}:{} (ctx: {:?})",
+                    op.service(&service_cfg),
+                    op.service_operation_name(&service_cfg)
+                        .split(':')
+                        .nth(1)
+                        .unwrap_or("unknown"),
+                    op.context
+                )
+            })
+            .collect();
+        operation_details.sort();
+
+        println!("Self-cycle operations (sorted): {:?}", operation_details);
+
+        // Should have exactly 1 operation since A->A with same context creates no new operations
+        assert_eq!(
+            operations.len(),
+            1,
+            "Self-cycle with identical context should result in exactly 1 operation"
+        );
+        assert!(
+            operations.contains(&initial),
+            "Should contain the initial operation"
+        );
+
+        println!("✓ Test passed: Self-cycle with empty context handled correctly");
     }
 }
