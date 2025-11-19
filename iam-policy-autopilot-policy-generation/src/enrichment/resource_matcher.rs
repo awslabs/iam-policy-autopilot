@@ -86,7 +86,6 @@ impl ResourceMatcher {
     /// This method safely expands FAS operations by iteratively processing new operations
     /// until no more new operations are discovered (fixed point reached).
     /// It includes cycle detection to prevent infinite loops.
-    // TODO: If an operation occurs with and without context we may only keep the one with context.
     fn expand_fas_operations_to_fixed_point(
         &self,
         initial: FasOperation,
