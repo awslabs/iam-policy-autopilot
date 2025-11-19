@@ -1,9 +1,28 @@
 # IAM Policy Autopilot
 
-A unified toolset for AWS IAM policy management, providing both proactive policy generation from source code analysis and reactive error fixing from AccessDenied messages.
+IAM Policy Autopilot is an MCP server that helps AI coding assistants analyze application code and quickly create baseline identity-based policies that enable your application to work from day one, giving you a starting point to refine as your application evolves.
 
-## Overview
+## Who is IAM Policy Autopilot for?
 
+IAM Policy Autopilot is for Builders on AWS using AI coding assistants, including developers, product managers, technical experimenters, and business leaders.
+
+## How would IAM Policy Autopilot benefit you? 
+
+### Accelerates initial development by generating identity-based IAM policies to help you get started
+Your AI coding assistant can call IAM Policy Autopilot to analyze AWS SDK calls within your application. IAM Policy Autopilot then automatically creates the necessary  IAM permissions for your application roles. If your application hits permission errors, IAM Policy Autopilot adjusts the identity-based permissions until errors are resolved. This eliminates manual policy writing, saving you time and providing you necessary permissions to start with.
+
+### Creates valid IAM policies to reduce troubleshooting
+IAM Policy Autopilot’s deterministic code analysis helps create reliable and valid IAM policies that reduce policy troubleshooting. By using valid policies created with the MCP server, builders reduce time spent on policy-related debugging and accelerate application deployment by avoiding permission-related delays. The generated policies provide a starting point that builders should review and scope down to implement least privilege permissions.
+
+### Maintains up to date IAM policies for applications
+IAM Policy Autopilot helps keep your application role's permissions current with AWS's evolving capabilities. As AWS releases new services and features, IAM Policy Autopilot's knowledge base gets updated with the latest IAM actions, cross-service dependencies, and permission requirements. When developers modify application code - whether adding new AWS service integrations or updating existing ones – IAM Policy Autopilot analyzes these changes and suggests updated identity-based permissions accordingly. This eliminates the need to manually research and update permissions for new AWS features, ensuring your applications maintain the necessary permissions. 
+
+## How to get started? 
+
+### MCP Server Setup (please move the MCP server setup here) 
+
+
+### CLI Tool Setup 
 This workspace contains the `iam-policy-autopilot` CLI tool, which provides three main commands:
 
 1. **extract-sdk-calls** - Extract AWS SDK method calls from source code files for analysis
@@ -54,7 +73,7 @@ cargo run -- extract-sdk-calls \
 
 ### Generate IAM Policies from Source Code
 
-Generate complete IAM policies with enrichment from source code analysis:
+Generate necessary identity-based IAM policies using static code analysis:
 
 ```bash
 cargo run -- generate-policy \
@@ -76,7 +95,7 @@ cargo run -- generate-policy \
 
 ### Fix AccessDenied Errors
 
-Parse and fix AWS AccessDenied errors by analyzing error messages:
+Parse and fix AWS AccessDenied errors by analyzing error messages if you still run into AccessDenied errors with the generated policy:
 
 ```bash
 # From command line argument
@@ -99,7 +118,7 @@ For integrating the mcp binary with mcp clients using STDIO transport the binary
 ```
 # Move the binary to /usr/local/bin
 sudo cp ./target/debug/iam-policy-autopilot /usr/local/bin/iam-policy-autopilot
-# If using MacOs, we need to sign the binary to run it under /usr/local/bin
+# If using MacOS, we need to sign the binary to run it under /usr/local/bin
 sudo codesign -s - /usr/local/bin/iam-policy-autopilot
 ```
 
