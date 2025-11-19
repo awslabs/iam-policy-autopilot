@@ -51,14 +51,15 @@ mod tests {
                 ),
             ],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
         // Generate policies
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
 
         // Verify results
-        assert_eq!(policies.len(), 1);
-        let policy = &policies[0].policy;
+        assert_eq!(result.policies.len(), 1);
+        let policy = &result.policies[0].policy;
 
         // Check policy structure
         assert_eq!(policy.version, "2012-10-17");
@@ -110,6 +111,7 @@ mod tests {
                     vec![],
                 )],
                 sdk_method_call: &sdk_call1,
+                explanations: vec![],
             },
             EnrichedSdkMethodCall {
                 method_name: "put_object".to_string(),
@@ -125,22 +127,23 @@ mod tests {
                     vec![],
                 )],
                 sdk_method_call: &sdk_call2,
+                explanations: vec![],
             },
         ];
 
-        let policies = engine.generate_policies(&enriched_calls).unwrap();
+        let result = engine.generate_policies(&enriched_calls).unwrap();
 
         // Should generate one policy per enriched call
-        assert_eq!(policies.len(), 2);
+        assert_eq!(result.policies.len(), 2);
 
         // Check first policy
-        let policy1 = &policies[0].policy;
+        let policy1 = &result.policies[0].policy;
         assert_eq!(policy1.statements.len(), 1);
         assert_eq!(policy1.statements[0].action, vec!["s3:GetObject"]);
         assert_eq!(policy1.statements[0].resource, vec!["arn:aws:s3:::*/*"]);
 
         // Check second policy
-        let policy2 = &policies[1].policy;
+        let policy2 = &result.policies[1].policy;
         assert_eq!(policy2.statements.len(), 1);
         assert_eq!(policy2.statements[0].action, vec!["s3:PutObject"]);
         assert_eq!(policy2.statements[0].resource, vec!["arn:aws:s3:::*/*"]);
@@ -176,10 +179,11 @@ mod tests {
                 )
             ],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        let policy = &policies[0].policy;
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        let policy = &result.policies[0].policy;
         let statement = &policy.statements[0];
 
         // Verify ARN patterns are correctly processed for China partition
@@ -211,10 +215,11 @@ mod tests {
                 vec![],
             )],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        let policy = &policies[0];
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        let policy = &result.policies[0];
 
         // Test JSON serialization
         let json = serde_json::to_string_pretty(policy).unwrap();
@@ -246,6 +251,7 @@ mod tests {
                 vec![],
             )],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
         // Should fail due to empty placeholder
@@ -273,10 +279,11 @@ mod tests {
                 vec![],
             )],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        let policy = &policies[0].policy;
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        let policy = &result.policies[0].policy;
         let statement = &policy.statements[0];
 
         // Should fallback to wildcard resource

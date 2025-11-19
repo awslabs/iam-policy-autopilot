@@ -109,59 +109,15 @@ async fn test_go_extraction_to_policy_generation_integration() {
                         PolicyGenerationEngine::new("aws", "us-east-1", "123456789012");
 
                     match policy_engine.generate_policies(&enriched_calls) {
-                        Ok(policies) => {
+                        Ok(result) => {
+                            let policies = result.policies;
                             println!("Generated {} IAM policies:", policies.len());
 
                             // Verify policy generation worked
                             assert!(!policies.is_empty(), "Should generate at least one policy");
 
-                            // Step 5: Test policy merging
-                            println!("\nStep 5: Testing policy merging...");
-
-                            if policies.len() > 1 {
-                                match policy_engine.merge_policies(&policies) {
-                                    Ok(merged_policy) => {
-                                        println!(
-                                            "Successfully merged {} policies into one",
-                                            policies.len()
-                                        );
-
-                                        // Test JSON serialization of merged policy
-                                        match serde_json::to_string_pretty(&merged_policy) {
-                                            Ok(json) => {
-                                                println!(
-                                                    "Merged policy JSON ({} bytes)",
-                                                    json.len()
-                                                );
-
-                                                // Verify JSON structure
-                                                assert!(
-                                                    json.contains("\"Version\""),
-                                                    "JSON should contain Version field"
-                                                );
-                                                assert!(
-                                                    json.contains("\"Statement\""),
-                                                    "JSON should contain Statement field"
-                                                );
-                                            }
-                                            Err(e) => {
-                                                panic!(
-                                                    "Failed to serialize merged policy to JSON: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        panic!("Policy merging failed: {}", e);
-                                    }
-                                }
-                            } else {
-                                println!("Only one policy generated, skipping merge test");
-                            }
-
-                            // Step 6: Test JSON serialization of individual policies
-                            println!("\nStep 6: Testing JSON serialization...");
+                            // Step 5: Test JSON serialization of individual policies
+                            println!("\nStep 5: Testing JSON serialization...");
 
                             for (i, policy) in policies.iter().enumerate() {
                                 match serde_json::to_string_pretty(policy) {

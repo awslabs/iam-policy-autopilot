@@ -94,7 +94,7 @@ impl Engine {
 
         for source_file in source_files {
             let extractor = extractor.clone();
-            join_set.spawn(async move { extractor.parse(&source_file.content).await });
+            join_set.spawn(async move { extractor.parse(&source_file).await });
         }
 
         // Collect results from concurrent tasks

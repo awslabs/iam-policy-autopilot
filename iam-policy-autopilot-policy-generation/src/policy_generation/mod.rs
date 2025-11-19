@@ -42,29 +42,6 @@ where
     condition_map.serialize(serializer)
 }
 
-/// Represents a single IAM action with its associated resources
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-pub(crate) struct ActionMapping {
-    /// The IAM action name (e.g., "s3:GetObject")
-    pub(crate) action_name: String,
-    /// Resources this action applies to
-    pub(crate) resources: Vec<String>,
-}
-
-/// Represents the mapping between a method call and its required IAM actions
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "PascalCase")]
-#[non_exhaustive]
-pub struct MethodActionMapping {
-    /// The method call name
-    pub(crate) method_call: String,
-    /// The AWS service this method belongs to
-    pub(crate) service: String,
-    /// List of IAM actions required by this method
-    pub(crate) actions: Vec<ActionMapping>,
-}
-
 /// Represents a complete IAM policy document
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[non_exhaustive]
@@ -130,6 +107,17 @@ pub struct PolicyWithMetadata {
     pub policy: IamPolicy,
     /// Type of the policy
     pub policy_type: PolicyType,
+}
+
+/// Result of policy generation including policies and explanations
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyGenerationResult {
+    /// Generated policies
+    pub policies: Vec<PolicyWithMetadata>,
+    /// Explanations for why actions were added
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanations: Option<Vec<crate::enrichment::Explanation>>,
 }
 
 impl IamPolicy {
@@ -281,43 +269,6 @@ mod tests {
 
         // Verify the condition is serialized with StringLike operator
         assert!(json.contains("\"Condition\":{\"StringLike\":{\"s3:ExistingObjectTag/Environment\":[\"production-*\",\"staging-*\"]}}"));
-    }
-
-    #[test]
-    fn test_method_action_mapping_serialization() {
-        let action_mapping = ActionMapping {
-            action_name: "s3:GetObject".to_string(),
-            resources: vec!["arn:aws:s3:::*/*".to_string()],
-        };
-
-        let method_mapping = MethodActionMapping {
-            method_call: "get_object".to_string(),
-            service: "s3".to_string(),
-            actions: vec![action_mapping],
-        };
-
-        let json = serde_json::to_string(&method_mapping).unwrap();
-
-        // Verify PascalCase field names
-        assert!(json.contains("\"MethodCall\":\"get_object\""));
-        assert!(json.contains("\"Service\":\"s3\""));
-        assert!(json.contains("\"Actions\":"));
-        assert!(json.contains("\"ActionName\":\"s3:GetObject\""));
-        assert!(json.contains("\"Resources\":"));
-    }
-
-    #[test]
-    fn test_action_mapping_serialization() {
-        let action_mapping = ActionMapping {
-            action_name: "events:PutRule".to_string(),
-            resources: vec!["arn:aws:events:us-east-1:123456789012:rule/*".to_string()],
-        };
-
-        let json = serde_json::to_string(&action_mapping).unwrap();
-
-        // Verify PascalCase field names
-        assert!(json.contains("\"ActionName\":\"events:PutRule\""));
-        assert!(json.contains("\"Resources\":[\"arn:aws:events:us-east-1:123456789012:rule/*\"]"));
     }
 
     #[test]

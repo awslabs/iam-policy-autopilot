@@ -6,8 +6,8 @@
 
 use super::merge::{PolicyMerger, PolicyMergerConfig};
 use super::utils::{ArnParser, ConditionValueProcessor};
-use super::{ActionMapping, IamPolicy, MethodActionMapping, Statement};
-use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall};
+use super::{IamPolicy, PolicyGenerationResult, Statement};
+use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall, Explanation, Reason};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
 
@@ -48,7 +48,7 @@ impl<'a> Engine<'a> {
     /// Creates one IAM policy per EnrichedSdkMethodCall, with each Action becoming
     /// a separate statement within the policy. ARN patterns are processed to replace
     /// placeholder variables with actual values or wildcards.
-    pub fn generate_policies(
+    fn generate_individual_policies(
         &self,
         enriched_calls: &[EnrichedSdkMethodCall],
     ) -> Result<Vec<PolicyWithMetadata>> {
@@ -221,7 +221,7 @@ impl<'a> Engine<'a> {
     ///
     /// # Errors
     /// Returns an error if policy merging fails
-    pub fn merge_policies(
+    pub(crate) fn merge_policies(
         &self,
         policies: &[PolicyWithMetadata],
     ) -> Result<Vec<PolicyWithMetadata>> {
@@ -247,53 +247,76 @@ impl<'a> Engine<'a> {
         }
     }
 
-    /// Extract method to action mappings from enriched method calls
+    /// Generate IAM policies with explanations from enriched method calls
     ///
-    /// This method processes enriched method calls to create detailed mappings
-    /// between SDK method calls and their required IAM actions with associated resources.
-    /// It provides granular visibility into which SDK method calls require which
-    /// specific IAM actions and their associated resources.
+    /// This method generates policies and collects explanations for why each action
+    /// was added. Explanations are deduplicated to avoid redundant entries.
     ///
     /// # Arguments
     /// * `enriched_calls` - Slice of enriched method calls to process
     ///
     /// # Returns
-    /// A vector of method action mappings showing the relationship between
-    /// method calls and their required IAM actions
+    /// A PolicyGenerationResult containing policies and deduplicated explanations
     ///
     /// # Errors
-    /// Returns an error if resource processing fails for any action
-    pub fn extract_action_mappings(
+    /// Returns an error if policy generation fails
+    pub fn generate_policies(
         &self,
         enriched_calls: &[EnrichedSdkMethodCall],
-    ) -> Result<Vec<MethodActionMapping>> {
-        let mut mappings = Vec::new();
+    ) -> Result<PolicyGenerationResult> {
+        let policies = self.generate_individual_policies(enriched_calls)?;
+
+        // Collect and deduplicate explanations
+        let explanations = self.group_explanations_by_action(enriched_calls);
+
+        Ok(PolicyGenerationResult {
+            policies,
+            explanations: if explanations.is_empty() {
+                None
+            } else {
+                Some(explanations)
+            },
+        })
+    }
+
+    /// Collect and deduplicate explanations from enriched method calls
+    ///
+    /// This method gathers all explanations from the enriched calls and groups
+    /// reasons by action name, removing duplicate reasons.
+    fn group_explanations_by_action(
+        &self,
+        enriched_calls: &[EnrichedSdkMethodCall],
+    ) -> Vec<Explanation> {
+        use std::collections::HashMap;
+
+        // Group reasons by action name
+        let mut action_to_reasons: HashMap<String, Vec<Reason>> = HashMap::new();
 
         for enriched_call in enriched_calls {
-            let mut action_mappings = Vec::new();
+            for explanation in &enriched_call.explanations {
+                let reasons = action_to_reasons
+                    .entry(explanation.action.clone())
+                    .or_default();
 
-            for action in &enriched_call.actions {
-                // Process resources to get ARN patterns using the existing method
-                let resources = self.process_action_resources(action)?;
-
-                let action_mapping = ActionMapping {
-                    action_name: action.name.clone(),
-                    resources,
-                };
-
-                action_mappings.push(action_mapping);
+                // Add all reasons from this explanation, deduplicating as we go
+                for reason in &explanation.reasons {
+                    if !reasons.contains(reason) {
+                        reasons.push(reason.clone());
+                    }
+                }
             }
-
-            let method_mapping = MethodActionMapping {
-                method_call: enriched_call.method_name.clone(),
-                service: enriched_call.service.clone(),
-                actions: action_mappings,
-            };
-
-            mappings.push(method_mapping);
         }
 
-        Ok(mappings)
+        // Convert back to Vec<ActionExplanation> and sort
+        let mut result: Vec<Explanation> = action_to_reasons
+            .into_iter()
+            .map(|(action, reasons)| Explanation { action, reasons })
+            .collect();
+
+        // Sort by action name for consistent output
+        result.sort_by(|a, b| a.action.cmp(&b.action));
+
+        result
     }
 }
 
@@ -303,7 +326,7 @@ mod tests {
     use crate::SdkMethodCall;
 
     use super::super::Effect;
-    use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
+    use crate::enrichment::{Action, EnrichedSdkMethodCall, OperationView, Resource};
     use crate::errors::ExtractorError;
 
     fn create_test_engine() -> Engine<'static> {
@@ -337,12 +360,13 @@ mod tests {
                 vec![],
             )],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        assert_eq!(policies.len(), 1);
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert_eq!(result.policies.len(), 1);
 
-        let policy = &policies[0].policy;
+        let policy = &result.policies[0].policy;
         assert_eq!(policy.version, "2012-10-17");
         assert_eq!(policy.statements.len(), 1);
 
@@ -384,12 +408,13 @@ mod tests {
                 ),
             ],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        assert_eq!(policies.len(), 1);
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert_eq!(result.policies.len(), 1);
 
-        let policy = &policies[0].policy;
+        let policy = &result.policies[0].policy;
         assert_eq!(policy.statements.len(), 2);
 
         // Check first statement
@@ -417,12 +442,13 @@ mod tests {
                 vec![],
             )],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        assert_eq!(policies.len(), 1);
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert_eq!(result.policies.len(), 1);
 
-        let policy = &policies[0].policy;
+        let policy = &result.policies[0].policy;
         let statement = &policy.statements[0];
         assert_eq!(statement.resource, vec!["*"]);
     }
@@ -452,12 +478,13 @@ mod tests {
                 )
             ],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
-        let policies = engine.generate_policies(&[enriched_call]).unwrap();
-        assert_eq!(policies.len(), 1);
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert_eq!(result.policies.len(), 1);
 
-        let policy = &policies[0].policy;
+        let policy = &result.policies[0].policy;
         let statement = &policy.statements[0];
         assert_eq!(
             statement.resource,
@@ -478,6 +505,7 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
         let action = Action::new("s3:GetObject".to_string(), vec![], vec![]);
@@ -494,8 +522,8 @@ mod tests {
     #[test]
     fn test_generate_policies_empty_input() {
         let engine = create_test_engine();
-        let policies = engine.generate_policies(&[]).unwrap();
-        assert!(policies.is_empty());
+        let result = engine.generate_policies(&[]).unwrap();
+        assert!(result.policies.is_empty());
     }
 
     #[test]
@@ -508,6 +536,7 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
+            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]);
@@ -873,5 +902,251 @@ mod tests {
             condition.operator,
             crate::enrichment::Operator::StringEquals
         );
+    }
+
+    #[test]
+    fn test_generate_policies_with_explanations() {
+        use crate::enrichment::{Explanation, Reason};
+
+        let engine = create_test_engine();
+        let sdk_call = create_test_sdk_call();
+
+        // Create enriched call with explanations
+        let enriched_call = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
+            sdk_method_call: &sdk_call,
+            explanations: vec![Explanation {
+                action: "s3:GetObject".to_string(),
+                reasons: vec![Reason {
+                    operation: OperationView::from_call(&sdk_call, "s3"),
+                    fas: None,
+                }],
+            }],
+        };
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+
+        // Verify policies were generated
+        assert_eq!(result.policies.len(), 1);
+
+        // Verify explanations were collected
+        assert!(result.explanations.is_some());
+        let explanations = result.explanations.unwrap();
+        assert_eq!(explanations.len(), 1);
+        assert_eq!(explanations[0].action, "s3:GetObject");
+        assert_eq!(explanations[0].reasons.len(), 1);
+        assert!(explanations[0].reasons[0].fas.is_none());
+    }
+
+    #[test]
+    fn test_explanation_deduplication() {
+        use crate::enrichment::{Explanation, Reason};
+
+        let engine = create_test_engine();
+        let sdk_call1 = create_test_sdk_call();
+        let sdk_call2 = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["s3".to_string()],
+            metadata: None,
+        };
+
+        // Create two enriched calls with duplicate explanations
+        let enriched_call1 = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
+            sdk_method_call: &sdk_call1,
+            explanations: vec![Explanation {
+                action: "s3:GetObject".to_string(),
+                reasons: vec![Reason {
+                    operation: OperationView::from_call(&sdk_call1, "s3"),
+                    fas: None,
+                }],
+            }],
+        };
+
+        let enriched_call2 = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
+            sdk_method_call: &sdk_call2,
+            explanations: vec![Explanation {
+                action: "s3:GetObject".to_string(),
+                reasons: vec![Reason {
+                    operation: OperationView::from_call(&sdk_call2, "s3"),
+                    fas: None,
+                }],
+            }],
+        };
+
+        let result = engine
+            .generate_policies(&[enriched_call1, enriched_call2])
+            .unwrap();
+
+        // Verify explanations were grouped by action with deduplicated reasons
+        assert!(result.explanations.is_some());
+        let explanations = result.explanations.unwrap();
+        assert_eq!(
+            explanations.len(),
+            1,
+            "Should have one action with grouped reasons"
+        );
+        assert_eq!(
+            explanations[0].reasons.len(),
+            1,
+            "Duplicate reasons should be deduplicated"
+        );
+    }
+
+    #[test]
+    fn test_explanation_with_fas_expansion() {
+        use crate::enrichment::{Explanation, Reason};
+
+        let engine = create_test_engine();
+        let sdk_call = create_test_sdk_call();
+
+        // Create enriched call with FAS expansion
+        let enriched_call = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![
+                Action::new(
+                    "s3:GetObject".to_string(),
+                    vec![Resource::new(
+                        "object".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                        ]),
+                    )],
+                    vec![],
+                ),
+                Action::new(
+                    "kms:Decrypt".to_string(),
+                    vec![Resource::new(
+                        "key".to_string(),
+                        Some(vec![
+                            "arn:${Partition}:kms:${Region}:${Account}:key/${KeyId}".to_string(),
+                        ]),
+                    )],
+                    vec![],
+                ),
+            ],
+            sdk_method_call: &sdk_call,
+            explanations: vec![
+                Explanation {
+                    action: "s3:GetObject".to_string(),
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call, "s3"),
+                        fas: None,
+                    }],
+                },
+                Explanation {
+                    action: "kms:Decrypt".to_string(),
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call, "s3"),
+                        fas: Some(crate::enrichment::FasInfo::new(vec![
+                            "s3:GetObject".to_string(),
+                            "kms:Decrypt".to_string(),
+                        ])),
+                    }],
+                },
+            ],
+        };
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+
+        // Verify explanations include FAS expansion
+        assert!(result.explanations.is_some());
+        let explanations = result.explanations.unwrap();
+        assert_eq!(explanations.len(), 2);
+
+        // Check the FAS-expanded action
+        let kms_explanation = explanations
+            .iter()
+            .find(|e| e.action == "kms:Decrypt")
+            .expect("Should have kms:Decrypt explanation");
+        assert_eq!(kms_explanation.reasons.len(), 1);
+        assert!(kms_explanation.reasons[0].fas.is_some());
+        let fas_info = kms_explanation.reasons[0].fas.as_ref().unwrap();
+        assert_eq!(fas_info.expansion.len(), 2);
+        assert!(fas_info.expansion.contains(&"s3:GetObject".to_string()));
+        assert!(fas_info.expansion.contains(&"kms:Decrypt".to_string()));
+        // Verify the explanation URL is set
+        assert_eq!(
+            fas_info.explanation,
+            "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html"
+        );
+    }
+
+    #[test]
+    fn test_explanation_with_possible_false_positive() {
+        use crate::enrichment::{Explanation, Reason};
+
+        let engine = create_test_engine();
+        let sdk_call = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["s3".to_string(), "s3-object-lambda".to_string()],
+            metadata: None,
+        };
+
+        // Create enriched call with multiple possible services (false positive flag)
+        let enriched_call = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+            )],
+            sdk_method_call: &sdk_call,
+            explanations: vec![Explanation {
+                action: "s3:GetObject".to_string(),
+                reasons: vec![Reason {
+                    operation: OperationView::from_call(&sdk_call, "s3"),
+                    fas: None,
+                }],
+            }],
+        };
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+
+        // Verify possible_false_positive flag is set
+        assert!(result.explanations.is_some());
+        let explanations = result.explanations.unwrap();
+        assert_eq!(explanations.len(), 1);
     }
 }

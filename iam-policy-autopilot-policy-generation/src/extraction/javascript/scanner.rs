@@ -1,16 +1,24 @@
 //! Core JavaScript/TypeScript scanning logic for AWS SDK extraction
 
+use crate::extraction::javascript::shared::CommandUsage;
 use crate::extraction::javascript::types::{
     ClientInstantiation, ImportInfo, JavaScriptScanResults, MethodCall, SublibraryInfo,
     ValidClientTypes,
 };
+use crate::extraction::AstWithSourceFile;
 
 use ast_grep_core::matcher::Pattern;
-use ast_grep_core::MatchStrictness;
+use ast_grep_core::tree_sitter::StrDoc;
+use ast_grep_core::Doc;
+use ast_grep_core::{tree_sitter, MatchStrictness, NodeMatch};
 
 use std::collections::HashMap;
 
-fn parse_import_item_with_line(import_item: &str, line: usize) -> Option<ImportInfo> {
+fn parse_import_item_with_span(
+    import_item: &str,
+    start_position: (usize, usize),
+    end_position: (usize, usize),
+) -> Option<ImportInfo> {
     let import_item = import_item.trim();
     if import_item.is_empty() {
         return None;
@@ -20,11 +28,23 @@ fn parse_import_item_with_line(import_item: &str, line: usize) -> Option<ImportI
     if let Some(as_pos) = import_item.find(" as ") {
         let original_name = import_item[..as_pos].trim().to_string();
         let local_name = import_item[as_pos + 4..].trim().to_string();
-        Some(ImportInfo::new(original_name, local_name, line))
+        Some(ImportInfo::new(
+            original_name,
+            local_name,
+            import_item,
+            start_position,
+            end_position,
+        ))
     } else {
         // No rename - original name is the same as local name
         let import_name = import_item.trim().to_string();
-        Some(ImportInfo::new(import_name.clone(), import_name, line))
+        Some(ImportInfo::new(
+            import_name.clone(),
+            import_name,
+            import_item,
+            start_position,
+            end_position,
+        ))
     }
 }
 
@@ -114,10 +134,11 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     }
 }
 
-fn parse_and_add_imports_with_line(
+fn parse_and_add_imports_with_span(
     imports_text: &str,
     sublibrary_info: &mut SublibraryInfo,
-    line: usize,
+    start_position: (usize, usize),
+    end_position: (usize, usize),
 ) {
     // Handle different import formats
     if imports_text.starts_with('{') && imports_text.ends_with('}') {
@@ -126,13 +147,17 @@ fn parse_and_add_imports_with_line(
 
         // Split by comma and parse each import
         for import_item in imports_content.split(',') {
-            if let Some(import_info) = parse_import_item_with_line(import_item, line) {
+            if let Some(import_info) =
+                parse_import_item_with_span(import_item, start_position, end_position)
+            {
                 sublibrary_info.add_import(import_info);
             }
         }
     } else {
         // Default import - single identifier
-        if let Some(import_info) = parse_import_item_with_line(imports_text, line) {
+        if let Some(import_info) =
+            parse_import_item_with_span(imports_text, start_position, end_position)
+        {
             sublibrary_info.add_import(import_info);
         }
     }
@@ -141,20 +166,20 @@ fn parse_and_add_imports_with_line(
 /// Core AST scanner for JavaScript/TypeScript AWS SDK usage patterns
 pub(crate) struct ASTScanner<T>
 where
-    T: ast_grep_core::Doc + Clone,
+    T: ast_grep_language::LanguageExt,
 {
     /// Pre-built AST grep root passed from extractor
-    ast_grep: ast_grep_core::AstGrep<T>,
-    language: ast_grep_language::SupportLang,
+    pub(crate) ast_grep: AstWithSourceFile<T>,
+    pub(crate) language: ast_grep_language::SupportLang,
 }
 
 impl<T> ASTScanner<T>
 where
-    T: ast_grep_core::Doc + Clone,
+    T: ast_grep_language::LanguageExt,
 {
     /// Create a new scanner with pre-built AST from extractor
     pub(crate) fn new(
-        ast_grep: ast_grep_core::AstGrep<T>,
+        ast_grep: AstWithSourceFile<T>,
         language: ast_grep_language::SupportLang,
     ) -> Self {
         Self { ast_grep, language }
@@ -164,8 +189,8 @@ where
     fn find_all_matches(
         &self,
         pattern: &str,
-    ) -> Result<Vec<ast_grep_core::NodeMatch<'_, T>>, String> {
-        let root = self.ast_grep.root();
+    ) -> Result<Vec<NodeMatch<'_, tree_sitter::StrDoc<T>>>, String> {
+        let root = self.ast_grep.ast.root();
 
         // Build pattern with relaxed strictness to handle inline comments
         let pattern_obj =
@@ -175,29 +200,41 @@ where
     }
 
     /// Extract 1-based (line, column) position from the first match
-    fn get_first_match_position(matches: &[ast_grep_core::NodeMatch<T>]) -> Option<(usize, usize)> {
+    fn get_first_match_span(
+        matches: &[ast_grep_core::NodeMatch<StrDoc<T>>],
+    ) -> Option<((usize, usize), (usize, usize))> {
         matches.first().map(|first_match| {
             let node = first_match.get_node();
-            let pos = node.start_pos();
-            let line = pos.line() + 1;
-            let column = pos.column(node) + 1;
-            (line, column)
+            let start_pos = {
+                let pos = node.start_pos();
+                let line = pos.line() + 1;
+                let column = pos.column(node) + 1;
+                (line, column)
+            };
+            let end_pos = {
+                let pos = node.end_pos();
+                let line = pos.line() + 1;
+                let column = pos.column(node) + 1;
+                (line, column)
+            };
+            (start_pos, end_pos)
         })
     }
 
     /// Find Command instantiation and extract its arguments
-    /// Returns ((line_number, column_number), parameters) tuple
+    /// Returns CommandInstantiationResult with position and parameters
     pub(crate) fn find_command_instantiation_with_args(
         &self,
         command_name: &str,
-    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
+    ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         let pattern = format!("new {}($ARGS)", command_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(position) = Self::get_first_match_position(&matches) {
+            if let Some(span) = Self::get_first_match_span(&matches) {
                 let first_match = matches.first().unwrap();
+
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -205,7 +242,12 @@ where
                 let args_node = env.get_match("ARGS");
                 let parameters = ArgumentExtractor::extract_object_parameters(args_node);
 
-                return Some((position, parameters));
+                return Some(CommandUsage::new(
+                    first_match.text(),
+                    span.0,
+                    span.1,
+                    parameters,
+                ));
             }
         }
         None
@@ -215,14 +257,14 @@ where
     pub(crate) fn find_paginate_function_with_args(
         &self,
         function_name: &str,
-    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
+    ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Use explicit two-argument pattern
         let pattern = format!("{}($ARG1, $ARG2)", function_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(position) = Self::get_first_match_position(&matches) {
+            if let Some(span) = Self::get_first_match_span(&matches) {
                 let first_match = matches.first().unwrap();
                 let env = first_match.get_env();
 
@@ -230,7 +272,12 @@ where
                 let second_arg = env.get_match("ARG2");
                 let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                return Some((position, parameters));
+                return Some(CommandUsage::new(
+                    first_match.text(),
+                    span.0,
+                    span.1,
+                    parameters,
+                ));
             }
         }
         None
@@ -240,7 +287,7 @@ where
     pub(crate) fn find_waiter_function_with_args(
         &self,
         function_name: &str,
-    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
+    ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Try patterns with and without await keyword using explicit two-argument pattern
@@ -251,7 +298,7 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(position) = Self::get_first_match_position(&matches) {
+                if let Some(span) = Self::get_first_match_span(&matches) {
                     let first_match = matches.first().unwrap();
                     let env = first_match.get_env();
 
@@ -259,7 +306,12 @@ where
                     let second_arg = env.get_match("ARG2");
                     let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                    return Some((position, parameters));
+                    return Some(CommandUsage::new(
+                        first_match.text(),
+                        span.0,
+                        span.1,
+                        parameters,
+                    ));
                 }
             }
         }
@@ -270,7 +322,7 @@ where
     pub(crate) fn find_command_input_usage_position(
         &self,
         type_name: &str,
-    ) -> Option<(usize, usize)> {
+    ) -> Option<CommandUsage<'_>> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
             format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
@@ -280,8 +332,11 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(position) = Self::get_first_match_position(&matches) {
-                    return Some(position);
+                if let Some(span) = Self::get_first_match_span(&matches) {
+                    let expr_text = matches.first().unwrap().text();
+                    // TODO: Extract from variable assignments
+                    let parameters = vec![];
+                    return Some(CommandUsage::new(expr_text, span.0, span.1, parameters));
                 }
             }
         }
@@ -293,19 +348,18 @@ where
         let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
 
         let matches = self.find_all_matches(pattern)?;
-        Self::process_import_matches(matches, &mut sublibrary_data, true)?;
+        Self::process_import_matches(matches, &mut sublibrary_data)?;
 
         Ok(sublibrary_data.into_values().collect())
     }
 
     /// Generic processing for import/require matches - works for both JavaScript and TypeScript
     fn process_import_matches<U>(
-        matches: Vec<ast_grep_core::NodeMatch<U>>,
+        matches: Vec<NodeMatch<U>>,
         sublibrary_data: &mut HashMap<String, SublibraryInfo>,
-        include_line_numbers: bool,
     ) -> Result<(), String>
     where
-        U: ast_grep_core::Doc + std::clone::Clone,
+        U: Doc + std::clone::Clone,
     {
         for node_match in matches {
             let env = node_match.get_env();
@@ -331,13 +385,24 @@ where
                     .entry(sublibrary.clone())
                     .or_insert_with(|| SublibraryInfo::new(sublibrary));
 
-                if include_line_numbers {
-                    // Get line number from AST node
-                    let line = node_match.get_node().start_pos().line() + 1;
-                    parse_and_add_imports_with_line(imports_text_str, sublibrary_info, line);
-                } else {
-                    parse_and_add_imports_with_line(imports_text_str, sublibrary_info, 1);
-                }
+                let start_position = {
+                    let pos = node_match.get_node().start_pos();
+                    let line = pos.line() + 1;
+                    let column = pos.column(imports_node) + 1;
+                    (line, column)
+                };
+                let end_position = {
+                    let pos = node_match.get_node().end_pos();
+                    let line = pos.line() + 1;
+                    let column = pos.column(imports_node) + 1;
+                    (line, column)
+                };
+                parse_and_add_imports_with_span(
+                    imports_text_str,
+                    sublibrary_info,
+                    start_position,
+                    end_position,
+                );
             }
         }
         Ok(())
@@ -448,14 +513,14 @@ where
 
     /// Generic processing for client instantiation matches - works for both JavaScript and TypeScript
     fn process_client_instantiation_matches<U>(
-        matches: Vec<ast_grep_core::NodeMatch<U>>,
+        matches: Vec<NodeMatch<U>>,
         valid_client_types: &[String],
         client_name_mappings: &HashMap<String, String>,
         client_sublibrary_mappings: &HashMap<String, String>,
         results: &mut Vec<ClientInstantiation>,
     ) -> Result<(), String>
     where
-        U: ast_grep_core::Doc + std::clone::Clone,
+        U: Doc + std::clone::Clone,
     {
         for node_match in matches {
             let env = node_match.get_env();
@@ -506,13 +571,14 @@ where
 
     /// Generic processing for method call matches - works for both JavaScript and TypeScript
     fn process_method_call_matches<U>(
-        matches: Vec<ast_grep_core::NodeMatch<U>>,
+        &self,
+        matches: Vec<NodeMatch<U>>,
         client_variables: &[String],
         client_info_map: &HashMap<String, (String, String, String)>,
         results: &mut Vec<MethodCall>,
     ) -> Result<(), String>
     where
-        U: ast_grep_core::Doc + std::clone::Clone,
+        U: Doc + std::clone::Clone,
     {
         for node_match in matches {
             let env = node_match.get_env();
@@ -538,17 +604,26 @@ where
                         HashMap::new()
                     };
 
-                    // Get line number
-                    let line = node_match.get_node().start_pos().line() + 1;
+                    let start_position = {
+                        let pos = node_match.get_node().start_pos();
+                        (pos.line() + 1, pos.column(node_match.get_node()) + 1)
+                    };
+                    let end_position = {
+                        let pos = node_match.get_node().end_pos();
+                        (pos.line() + 1, pos.column(node_match.get_node()) + 1)
+                    };
 
                     results.push(MethodCall {
                         client_variable: variable_name,
                         client_type: client_type.clone(),
                         original_client_type: original_client_type.clone(),
                         client_sublibrary: client_sublibrary.clone(),
+                        expr: node_match.text().to_string(),
+                        file_path: self.ast_grep.source_file.path.clone(),
                         method_name,
                         arguments,
-                        line,
+                        start_position,
+                        end_position,
                     });
                 }
             }
@@ -585,7 +660,7 @@ where
 
         // Single pattern to match method calls (covers both awaited and non-awaited)
         let matches = self.find_all_matches("$VAR.$METHOD($ARGS)")?;
-        Self::process_method_call_matches(
+        self.process_method_call_matches(
             matches,
             &client_variables,
             &client_info_map,
@@ -614,20 +689,25 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::SourceFile;
+
     use super::*;
-    use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::{JavaScript, TypeScript};
+    use tree_sitter::LanguageExt;
 
     #[test]
     fn test_parse_import_item() {
         // Test regular import
-        let import_info = parse_import_item_with_line("S3Client", 1).unwrap();
+        let import_info = parse_import_item_with_span("S3Client", (1, 1), (1, 1)).unwrap();
         assert_eq!(import_info.original_name, "S3Client");
         assert_eq!(import_info.local_name, "S3Client");
         assert!(!import_info.is_renamed);
 
         // Test renamed import
-        let import_info = parse_import_item_with_line("S3Client as MyS3Client", 1).unwrap();
+        let import_info =
+            parse_import_item_with_span("S3Client as MyS3Client", (1, 1), (1, 1)).unwrap();
         assert_eq!(import_info.original_name, "S3Client");
         assert_eq!(import_info.local_name, "MyS3Client");
         assert!(import_info.is_renamed);
@@ -644,6 +724,16 @@ mod tests {
         assert!(result.is_empty());
     }
 
+    fn create_js_ast(source_code: &str) -> AstWithSourceFile<JavaScript> {
+        let source_file = SourceFile::with_language(
+            PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::JavaScript,
+        );
+        let ast_grep = JavaScript.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file.clone())
+    }
+
     #[test]
     fn test_import_require_scanning_comprehensive() {
         // Create comprehensive test case with multiple sublibrary patterns
@@ -655,7 +745,7 @@ const { LambdaClient, InvokeCommand } = require("@aws-sdk/client-lambda");
 const { SESClient } = require("@aws-sdk/client-ses");
         "#;
 
-        let ast = JavaScript.ast_grep(source);
+        let ast = create_js_ast(source);
         let mut scanner = ASTScanner::new(ast, JavaScript.into());
         let (imports, requires) = scanner.scan_all_aws_imports().unwrap();
 
@@ -837,7 +927,7 @@ async function uploadFile() {
 }
         "#;
 
-        let ast = JavaScript.ast_grep(source_with_usage);
+        let ast = create_js_ast(source_with_usage);
         let scanner = ASTScanner::new(ast, JavaScript.into());
 
         // Should find CreateBucketCommand instantiation at line ~6
@@ -888,7 +978,7 @@ async function listAllTables() {
 }
         "#;
 
-        let ast = JavaScript.ast_grep(source_with_usage);
+        let ast = create_js_ast(source_with_usage);
         let scanner = ASTScanner::new(ast, JavaScript.into());
 
         // Should find paginateQuery call at line ~7
@@ -907,6 +997,16 @@ async function listAllTables() {
         );
 
         println!("✅ Paginate function position heuristics working correctly");
+    }
+
+    fn create_ts_ast(source_code: &str) -> AstWithSourceFile<TypeScript> {
+        let source_file = SourceFile::with_language(
+            PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::TypeScript,
+        );
+        let ast_grep = TypeScript.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file.clone())
     }
 
     #[test]
@@ -933,24 +1033,26 @@ function createListParams(): ListTablesInput {
 }
         "#;
 
-        let ast = TypeScript.ast_grep(typescript_source);
+        let ast = create_ts_ast(typescript_source);
         let scanner = ASTScanner::new(ast, TypeScript.into());
 
-        let query_input_pos = scanner.find_command_input_usage_position("QueryCommandInput");
-        assert!(
-            query_input_pos.is_some(),
-            "Should find QueryCommandInput usage"
-        );
-        let (line, _col) = query_input_pos.unwrap();
-        assert_eq!(line, 9, "QueryCommandInput should be at line 9");
+        if let Some(result) = scanner.find_command_input_usage_position("QueryCommandInput") {
+            assert_eq!(
+                result.start_position.0, 9,
+                "QueryCommandInput should be at line 9"
+            );
+        } else {
+            panic!("Should find QueryCommandInput usage");
+        }
 
-        let list_input_pos = scanner.find_command_input_usage_position("ListTablesInput");
-        assert!(
-            list_input_pos.is_some(),
-            "Should find ListTablesInput usage"
-        );
-        let (line, _col) = list_input_pos.unwrap();
-        assert_eq!(line, 15, "ListTablesInput should be at line 15");
+        if let Some(result) = scanner.find_command_input_usage_position("ListTablesInput") {
+            assert_eq!(
+                result.start_position.0, 15,
+                "ListTablesInput should be at line 15"
+            );
+        } else {
+            panic!("Should find ListTablesInput usage");
+        }
 
         // Should return None for type that wasn't used
         let missing_type_pos = scanner.find_command_input_usage_position("PutItemInput");
@@ -971,7 +1073,7 @@ const { CreateBucketCommand } = require("@aws-sdk/client-s3");
 const command = new CreateBucketCommand({ Bucket: "test" });
         "#;
 
-        let ast = JavaScript.ast_grep(javascript_source);
+        let ast = create_js_ast(javascript_source);
         let scanner = ASTScanner::new(ast, JavaScript.into());
 
         // JavaScript should find command instantiation
@@ -1010,7 +1112,7 @@ let dynamoSdk = require("@aws-sdk/lib-dynamodb");
 var ec2Sdk = require("@aws-sdk/client-ec2");
         "#;
 
-        let ast = JavaScript.ast_grep(source_with_mixed_requires);
+        let ast = create_js_ast(source_with_mixed_requires);
         let mut scanner = ASTScanner::new(ast, JavaScript.into());
         let (imports, requires) = scanner.scan_all_aws_imports().unwrap();
 
@@ -1159,7 +1261,7 @@ async function testOperations() {
 }
         "#;
 
-        let ast = TypeScript.ast_grep(typescript_source);
+        let ast = create_ts_ast(typescript_source);
         let mut scanner = ASTScanner::new(ast, TypeScript.into());
         let scan_results = scanner.scan_all().unwrap();
 
@@ -1282,7 +1384,7 @@ async function uploadLargeFile() {
 }
         "#;
 
-        let ast = TypeScript.ast_grep(typescript_source);
+        let ast = create_ts_ast(typescript_source);
         let mut scanner = ASTScanner::new(ast, TypeScript.into());
         let scan_results = scanner.scan_all().unwrap();
 
