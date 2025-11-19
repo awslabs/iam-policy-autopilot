@@ -1,0 +1,187 @@
+name: Build and Publish Multi-Target Wheels
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build_wheels:
+    name: Build ${{ matrix.target }} wheel
+    # Define the matrix for runners and Rust targets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux Targets (Built on x86_64 runner, cross-compilation via maturin-action)
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            use-zig: true
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            use-zig: true
+
+          # Windows Targets (Build on Windows runner)
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: windows-latest
+            target: aarch64-pc-windows-msvc
+
+          # macOS Targets (Build on macOS runner)
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: macos-latest
+            target: aarch64-apple-darwin
+
+    # Set the appropriate runner
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    # --- Build using maturin-action ---
+    - name: Build wheel with maturin
+      uses: PyO3/maturin-action@v1
+      with:
+        # The command will automatically build the wheel
+        command: build
+        args: --release --target ${{ matrix.target }} ${{ matrix.use-zig == true && '--zig' || '' }}
+        manylinux: auto
+        # The action intelligently handles manylinux, cross-compilation, and platform-specific logic (cargo-xwin/zig)
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: wheels-${{ matrix.target }}
+        # maturin-action places wheels in a target directory
+        path: target/wheels/*.whl
+
+  test_wheels:
+    name: Test ${{ matrix.target }} wheel
+    needs: build_wheels
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            use-qemu: true
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          # - os: windows-arm64
+          #   target: aarch64-pc-windows-msvc
+          - os: macos-15-intel  # Intel x86_64
+            target: x86_64-apple-darwin
+          - os: macos-latest  # ARM64 (M1/M2)
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Download wheel
+      uses: actions/download-artifact@v4
+      with:
+        name: wheels-${{ matrix.target }}
+        path: wheels/
+
+    - name: Set up QEMU for aarch64
+      if: matrix.use-qemu == true
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: linux/arm64
+
+    - name: Test wheel installation and functionality
+      shell: bash
+      run: |
+        if [[ "${{ matrix.use-qemu }}" == "true" ]]; then
+          # Test aarch64 wheel in Docker with QEMU
+          docker run --rm --platform linux/arm64 \
+            -v $(pwd)/wheels:/wheels \
+            -v $(pwd)/iam-policy-autopilot-cli/tests/resources:/test-resources \
+            -e EXPECTED_VERSION='${{ github.event.release.tag_name }}' \
+            python:3.11-slim bash -c "
+              set -e
+              pip install /wheels/*.whl
+              echo '=== Testing generate-policy ==='
+              iam-policy-autopilot generate-policy /test-resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
+              echo '=== Testing fix-access-denied ==='
+              echo 'N' | iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'
+              echo '=== Testing mcp-server stdio ==='
+              (sleep 1; echo) | timeout 2 iam-policy-autopilot mcp-server 2>&1 | head -1 && echo 'MCP server stdio started successfully'
+              echo '=== Testing mcp-server http ==='
+              timeout 2 iam-policy-autopilot mcp-server --transport http || [ \$? -eq 124 ] && echo 'MCP server http started and stopped successfully'
+              echo '=== Verifying version matches release tag ==='
+              VERSION=\$(iam-policy-autopilot --version | awk '{print \$2}')
+              echo \"Binary version: \$VERSION\"
+              echo \"Expected version: \$EXPECTED_VERSION\"
+              if [[ \"\$VERSION\" != \"\$EXPECTED_VERSION\" ]]; then
+                echo \"ERROR: Version mismatch!\"
+                exit 1
+              fi
+              echo '=== All tests passed ==='
+            "
+        else
+          # Test natively
+          set -e
+          pip install wheels/*.whl
+          echo '=== Testing generate-policy ==='
+          iam-policy-autopilot generate-policy iam-policy-autopilot-cli/tests/resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
+          echo '=== Testing fix-access-denied ==='
+          echo 'N' | iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'
+          echo '=== Testing mcp-server stdio ==='
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS: use perl for timeout
+            (sleep 1; echo) | perl -e 'alarm shift; exec @ARGV' 2 iam-policy-autopilot mcp-server 2>&1 | head -1 && echo 'MCP server stdio started successfully'
+          else
+            # Linux/Windows: use timeout
+            (sleep 1; echo) | timeout 2 iam-policy-autopilot mcp-server 2>&1 | head -1 && echo 'MCP server stdio started successfully'
+          fi
+          echo '=== Testing mcp-server http ==='
+          if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS: use perl for timeout
+            perl -e 'alarm shift; exec @ARGV' 2 iam-policy-autopilot mcp-server --transport http 2>&1 || [ $? -eq 142 ] && echo 'MCP server http started and stopped successfully'
+          else
+            # Linux/Windows: use timeout
+            timeout 2 iam-policy-autopilot mcp-server --transport http 2>&1 || [ $? -eq 124 ] && echo 'MCP server http started and stopped successfully'
+          fi
+          echo '=== Verifying version matches release tag ==='
+          VERSION=$(iam-policy-autopilot --version | awk '{print $2}')
+          EXPECTED_VERSION='${{ github.event.release.tag_name }}'
+          echo "Binary version: $VERSION"
+          echo "Expected version: $EXPECTED_VERSION"
+          if [[ "$VERSION" != "$EXPECTED_VERSION" ]]; then
+            echo "ERROR: Version mismatch!"
+            exit 1
+          fi
+          echo '=== All tests passed ==='
+        fi
+
+  pypi_publish:
+    name: Publish distribution 📦 to TestPyPI
+    needs: test_wheels # Only publish if tests pass
+    runs-on: ubuntu-latest
+    environment: Release
+    permissions:
+      id-token: write  # Required for trusted publishing
+
+    steps:
+    - name: Download all wheels
+      uses: actions/download-artifact@v4
+      with:
+        # Download all artifacts into a common directory
+        path: dist/
+
+    - name: Flatten wheel directory structure
+      run: |
+        mkdir -p dist-flat
+        find dist -name '*.whl' -exec cp {} dist-flat/ \;
+
+    - name: Publish to TestPyPI
+      uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        packages-dir: dist-flat/
+        repository-url: https://test.pypi.org/legacy/
