@@ -180,6 +180,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -201,6 +202,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 80),
                 receiver: Some("apigateway_client".to_string()),
@@ -222,6 +224,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -232,6 +235,7 @@ mod tests {
                     // Missing required Stage and ApiId parameters
                 ],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 40),
                 receiver: Some("apigateway_client".to_string()),
@@ -251,6 +255,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -278,6 +283,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 100),
                 receiver: Some("apigateway_client".to_string()),
@@ -297,11 +303,13 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![Parameter::DictionarySplat {
                     expression: "**params".to_string(),
                     position: 0,
                 }],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 50),
                 receiver: Some("apigateway_client".to_string()),
@@ -328,6 +336,7 @@ mod tests {
             name: "custom_method".to_string(), // Not an AWS SDK method
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "custom_method".to_string(),
                 parameters: vec![Parameter::Keyword {
                     name: "custom_param".to_string(),
                     value: ParameterValue::Resolved("value".to_string()),
@@ -335,6 +344,7 @@ mod tests {
                     type_annotation: None,
                 }],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 30),
                 receiver: Some("custom_client".to_string()),
@@ -356,6 +366,7 @@ mod tests {
                 name: "get_object".to_string(),
                 possible_services: Vec::new(),
                 metadata: Some(SdkMethodCallMetadata {
+                    expr: "get_object".to_string(),
                     parameters: vec![
                         Parameter::Keyword {
                             name: "Bucket".to_string(),
@@ -371,6 +382,7 @@ mod tests {
                         },
                     ],
                     return_type: None,
+                    file_path: PathBuf::new(),
                     start_position: (1, 1),
                     end_position: (1, 50),
                     receiver: Some("s3_client".to_string()),
@@ -381,6 +393,7 @@ mod tests {
                 name: "get_object".to_string(),
                 possible_services: Vec::new(),
                 metadata: Some(SdkMethodCallMetadata {
+                    expr: "get_object".to_string(),
                     parameters: vec![Parameter::Keyword {
                         name: "custom_param".to_string(), // Invalid parameter for AWS S3
                         value: ParameterValue::Resolved("value".to_string()),
@@ -388,6 +401,7 @@ mod tests {
                         type_annotation: None,
                     }],
                     return_type: None,
+                    file_path: PathBuf::new(),
                     start_position: (2, 1),
                     end_position: (2, 30),
                     receiver: Some("custom_client".to_string()),
@@ -398,6 +412,7 @@ mod tests {
                 name: "custom_method".to_string(),
                 possible_services: Vec::new(),
                 metadata: Some(SdkMethodCallMetadata {
+                    expr: "custom_method".to_string(),
                     parameters: vec![Parameter::Keyword {
                         name: "param".to_string(),
                         value: ParameterValue::Resolved("value".to_string()),
@@ -405,6 +420,7 @@ mod tests {
                         type_annotation: None,
                     }],
                     return_type: None,
+                    file_path: PathBuf::new(),
                     start_position: (3, 1),
                     end_position: (3, 25),
                     receiver: Some("custom_client".to_string()),
@@ -463,7 +479,7 @@ def example():
         let extractor = PythonExtractor::new();
 
         // Extract method calls using tree-sitter
-        let mut result = vec![extractor.parse(&source.content).await];
+        let mut result = vec![extractor.parse(&source).await];
         assert_eq!(result.first().unwrap().method_calls_ref().len(), 7);
 
         // Apply disambiguation
@@ -510,6 +526,7 @@ def example():
             name: "get_object".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "get_object".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "Bucket".to_string(),
@@ -540,6 +557,7 @@ def example():
                     },
                 ],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 80),
                 receiver: Some("s3_client".to_string()),
@@ -568,6 +586,7 @@ def example():
             name: "get_object".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "get_object".to_string(),
                 parameters: vec![
                     // Valid required parameters
                     Parameter::Keyword {
@@ -591,6 +610,7 @@ def example():
                     },
                 ],
                 return_type: None,
+                file_path: PathBuf::new(),
                 start_position: (1, 1),
                 end_position: (1, 60),
                 receiver: Some("s3_client".to_string()),

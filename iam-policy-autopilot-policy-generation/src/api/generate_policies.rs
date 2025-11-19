@@ -4,16 +4,17 @@ use std::time::Instant;
 use log::{debug, info, trace};
 
 use crate::{
-    api::{common::process_source_files, model::GeneratePolicyConfig},
+    api::{
+        common::process_source_files,
+        model::{GeneratePoliciesResult, GeneratePolicyConfig},
+    },
     extraction::SdkMethodCall,
-    policy_generation::{merge::PolicyMergerConfig, MethodActionMapping, PolicyWithMetadata},
+    policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, PolicyGenerationEngine,
 };
 
-/// Generate polcies for source files
-pub async fn generate_policies(
-    config: &GeneratePolicyConfig,
-) -> Result<(Vec<PolicyWithMetadata>, Vec<MethodActionMapping>)> {
+/// Generate policies for source files
+pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
     let pipeline_start = Instant::now();
 
     debug!(
@@ -55,7 +56,10 @@ pub async fn generate_policies(
     // Handle empty method lists gracefully
     if extracted_methods.is_empty() {
         info!("No methods found to process, returning empty policy list");
-        return Ok((vec![], vec![]));
+        return Ok(GeneratePoliciesResult {
+            policies: vec![],
+            explanations: None,
+        });
     }
 
     let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
@@ -85,7 +89,7 @@ pub async fn generate_policies(
         "Generating IAM policies from {} enriched method calls",
         enriched_results.len()
     );
-    let policies = policy_engine
+    let result = policy_engine
         .generate_policies(&enriched_results)
         .context("Failed to generate IAM policies")?;
 
@@ -93,10 +97,15 @@ pub async fn generate_policies(
     debug!(
         "Policy generation completed in {:?}, generated {} policies",
         total_duration,
-        policies.len()
+        result.policies.len()
     );
 
-    let mut final_policies = policies;
+    let mut final_policies = result.policies;
+    let explanations = if config.generate_explanations {
+        result.explanations
+    } else {
+        None
+    };
 
     if !config.individual_policies {
         final_policies = policy_engine
@@ -104,24 +113,8 @@ pub async fn generate_policies(
             .context("Failed to merge IAM policies")?;
     }
 
-    // Handle policy output based on configuration
-    if config.generate_action_mappings {
-        // Extract method to action mappings using the core method
-        debug!(
-            "Extracting method to action mappings from {} enriched method calls",
-            enriched_results.len()
-        );
-        let method_action_mappings = policy_engine
-            .extract_action_mappings(&enriched_results)
-            .context("Failed to extract method to action mappings")?;
-
-        debug!(
-            "Extracted {} method to action mappings",
-            method_action_mappings.len()
-        );
-
-        return Ok((final_policies, method_action_mappings));
-    }
-
-    Ok((final_policies, vec![]))
+    Ok(GeneratePoliciesResult {
+        policies: final_policies,
+        explanations,
+    })
 }

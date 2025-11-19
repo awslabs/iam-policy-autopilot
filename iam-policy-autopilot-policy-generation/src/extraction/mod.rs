@@ -27,9 +27,29 @@ pub use self::{core::*, output::*};
 
 /// Core data structures for source file parsing and method extraction
 pub mod core {
+    use std::sync::Arc;
+
     use crate::Language;
 
     use super::{Deserialize, Path, PathBuf, Serialize};
+
+    #[derive(Clone)]
+    pub(crate) struct AstWithSourceFile<T: ast_grep_language::LanguageExt> {
+        pub(crate) ast: Arc<ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>>,
+        pub(crate) source_file: Arc<SourceFile>,
+    }
+
+    impl<T: ast_grep_language::LanguageExt> AstWithSourceFile<T> {
+        pub(crate) fn new(
+            ast: ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>,
+            source_file: SourceFile,
+        ) -> Self {
+            Self {
+                ast: Arc::new(ast),
+                source_file: Arc::new(source_file),
+            }
+        }
+    }
 
     /// Represents a source file being analyzed
     ///
@@ -90,7 +110,12 @@ pub mod core {
         /// Return type annotation if available
         pub(crate) return_type: Option<String>,
 
+        /// The matched expression
+        pub(crate) expr: String,
+
         // Position information
+        /// File path
+        pub(crate) file_path: PathBuf,
         /// Starting position (line, column) - both 1-based
         pub(crate) start_position: (usize, usize),
         /// Ending position (line, column) - both 1-based
@@ -334,6 +359,8 @@ mod tests {
                     type_annotation: Some("str".to_string()),
                 }],
                 return_type: Some("bool".to_string()),
+                expr: "test_method".to_string(),
+                file_path: PathBuf::new(),
                 start_position: (10, 1),
                 end_position: (10, 25),
                 receiver: None,
@@ -359,6 +386,8 @@ mod tests {
                     type_annotation: Some("str".to_string()),
                 }],
                 return_type: Some("Dict[str, Any]".to_string()),
+                expr: "get_object".to_string(),
+                file_path: PathBuf::new(),
                 start_position: (15, 5),
                 end_position: (15, 45),
                 receiver: Some("s3_client".to_string()),
@@ -424,6 +453,8 @@ mod tests {
         let metadata = SdkMethodCallMetadata {
             parameters: vec![],
             return_type: Some("Dict[str, Any]".to_string()),
+            expr: "s3_client.foo_bar".to_string(),
+            file_path: PathBuf::new(),
             start_position: (10, 5),
             end_position: (10, 30),
             receiver: Some("s3_client".to_string()),

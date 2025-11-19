@@ -1,8 +1,6 @@
 use anyhow::{Context, Result};
 use iam_policy_autopilot_access_denied::{DenialType, PlanResult};
-use iam_policy_autopilot_policy_generation::policy_generation::{
-    MethodActionMapping, PolicyWithMetadata,
-};
+use iam_policy_autopilot_policy_generation::{policy_generation::PolicyWithMetadata, Explanation};
 use iam_policy_autopilot_tools::BatchUploadResponse;
 use log::debug;
 use std::io::{self, Write};
@@ -164,62 +162,18 @@ pub(crate) fn print_unsupported_denial(denial_type: &DenialType, reason: &str) {
 struct PolicyOutput {
     /// The generated policies with type information
     policies: Vec<PolicyWithMetadata>,
+    /// Explanations for why actions were added
+    #[serde(skip_serializing_if = "Option::is_none")]
+    explanations: Option<Vec<Explanation>>,
     /// Upload results (only present when --upload-policies is used)
     #[serde(skip_serializing_if = "Option::is_none")]
     upload_result: Option<BatchUploadResponse>,
-}
-
-/// Combined output structure when showing action mappings alongside policies
-#[derive(Debug, Clone, serde::Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct CombinedPolicyOutput {
-    /// Method to action mappings
-    method_action_mappings: Vec<MethodActionMapping>,
-    /// The generated policies with type information
-    policies: Vec<PolicyWithMetadata>,
-    /// Upload results (only present when --upload-policies is used)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    upload_result: Option<BatchUploadResponse>,
-}
-
-/// Output combined policy and mappings as JSON to stdout
-pub(crate) fn output_combined_policy_mappings(
-    method_action_mappings: Vec<MethodActionMapping>,
-    policies: Vec<PolicyWithMetadata>,
-    pretty: bool,
-) -> Result<()> {
-    debug!(
-        "Formatting combined policy and mappings output as JSON (pretty: {})",
-        pretty
-    );
-
-    let combined_output = CombinedPolicyOutput {
-        method_action_mappings,
-        policies,
-        upload_result: None,
-    };
-
-    let json_output = if pretty {
-        iam_policy_autopilot_policy_generation::JsonProvider::stringify_pretty(&combined_output)
-            .context("Failed to serialize combined output to pretty JSON")?
-    } else {
-        iam_policy_autopilot_policy_generation::JsonProvider::stringify(&combined_output)
-            .context("Failed to serialize combined output to JSON")?
-    };
-
-    // Output to stdout (not using println! to avoid extra newline in compact mode)
-    print!("{}", json_output);
-    if pretty {
-        println!(); // Add newline for pretty output
-    }
-
-    debug!("Combined policy and mappings JSON output written to stdout");
-    Ok(())
 }
 
 /// Output IAM policies as JSON to stdout
 pub(crate) fn output_iam_policies(
     policies: Vec<PolicyWithMetadata>,
+    explanations: Option<Vec<Explanation>>,
     upload_result: Option<BatchUploadResponse>,
     pretty: bool,
 ) -> Result<()> {
@@ -230,6 +184,7 @@ pub(crate) fn output_iam_policies(
 
     let policy_output = PolicyOutput {
         policies,
+        explanations,
         upload_result,
     };
 

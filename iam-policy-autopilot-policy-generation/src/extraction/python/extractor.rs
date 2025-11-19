@@ -6,8 +6,8 @@ use crate::extraction::python::disambiguation::MethodDisambiguator;
 use crate::extraction::python::paginator_extractor::PaginatorExtractor;
 use crate::extraction::python::resource_direct_calls_extractor::ResourceDirectCallsExtractor;
 use crate::extraction::python::waiters_extractor::WaitersExtractor;
-use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata};
-use crate::ServiceModelIndex;
+use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
+use crate::{ServiceModelIndex, SourceFile};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Python;
 use async_trait::async_trait;
@@ -24,6 +24,7 @@ impl PythonExtractor {
     fn parse_method_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        source_file: &SourceFile,
     ) -> Option<SdkMethodCall> {
         let env = node_match.get_env();
 
@@ -54,6 +55,8 @@ impl PythonExtractor {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
+                expr: node_match.text().to_string(),
+                file_path: source_file.path.clone(),
                 start_position: (start.line() + 1, start.column(node) + 1),
                 end_position: (end.line() + 1, end.column(node) + 1),
                 receiver,
@@ -73,9 +76,13 @@ impl Default for PythonExtractor {
 
 #[async_trait]
 impl Extractor for PythonExtractor {
-    async fn parse(&self, source_code: &str) -> crate::extraction::extractor::ExtractorResult {
-        let ast_grep = Python.ast_grep(source_code);
-        let root = ast_grep.root();
+    async fn parse(
+        &self,
+        source_file: &SourceFile,
+    ) -> crate::extraction::extractor::ExtractorResult {
+        let ast_grep = Python.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
+        let root = ast.ast.root();
 
         let mut method_calls = Vec::new();
 
@@ -83,12 +90,12 @@ impl Extractor for PythonExtractor {
 
         // Find all method calls with attribute access: obj.method(args)
         for node_match in root.find_all(pattern) {
-            if let Some(method_call) = self.parse_method_call(&node_match) {
+            if let Some(method_call) = self.parse_method_call(&node_match, source_file) {
                 method_calls.push(method_call);
             }
         }
 
-        ExtractorResult::Python(ast_grep, method_calls)
+        ExtractorResult::Python(ast, method_calls)
     }
 
     fn filter_map(
@@ -148,15 +155,25 @@ impl Extractor for PythonExtractor {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
-    use crate::extraction::{Parameter, ParameterValue};
+    use crate::{
+        extraction::{Parameter, ParameterValue},
+        Language,
+    };
 
     #[tokio::test]
     async fn test_basic_method_call_extraction() {
         let extractor = PythonExtractor::new();
         let source_code = "s3_client.get_object(Bucket='my-bucket', Key='my-key')";
 
-        let result = extractor.parse(source_code).await;
+        let source_file = SourceFile::with_language(
+            std::path::PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::Python,
+        );
+        let result = extractor.parse(&source_file).await;
         assert_eq!(result.method_calls_ref().len(), 1);
         assert_eq!(result.method_calls_ref()[0].name, "get_object");
     }
@@ -177,8 +194,9 @@ cloudwatch_client.put_metric_alarm(
     Threshold=0.0
 )
 "#;
-
-        let result = extractor.parse(source_code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), source_code.to_string(), Language::Python);
+        let result = extractor.parse(&source_file).await;
 
         // Verify exactly one method call is extracted
         assert_eq!(result.method_calls_ref().len(), 1);

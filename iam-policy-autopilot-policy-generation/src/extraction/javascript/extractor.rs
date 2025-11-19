@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::javascript::scanner::ASTScanner;
 use crate::extraction::javascript::shared::ExtractionUtils;
-use crate::ServiceModelIndex;
+use crate::extraction::AstWithSourceFile;
+use crate::{ServiceModelIndex, SourceFile};
 
 /// JavaScript extractor for AWS SDK method calls
 pub(crate) struct JavaScriptExtractor;
@@ -30,9 +31,10 @@ impl Default for JavaScriptExtractor {
 
 #[async_trait]
 impl Extractor for JavaScriptExtractor {
-    async fn parse(&self, source_code: &str) -> ExtractorResult {
+    async fn parse(&self, source_file: &SourceFile) -> ExtractorResult {
         // Create AST once and reuse it
-        let ast = JavaScript.ast_grep(source_code);
+        let ast_grep = JavaScript.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
 
         // Create scanner with the pre-built AST
         let mut scanner = ASTScanner::new(ast.clone(), JavaScript.into());
@@ -209,6 +211,14 @@ mod tests {
         }
     }
 
+    fn create_source_file(source_code: &str) -> SourceFile {
+        SourceFile::with_language(
+            std::path::PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::JavaScript,
+        )
+    }
+
     #[tokio::test]
     async fn test_parse_import_via_require() {
         let extractor = JavaScriptExtractor::new();
@@ -228,7 +238,7 @@ async function createMyBucket() {
 createMyBucket();
         "#;
 
-        let result = extractor.parse(source_code).await;
+        let result = extractor.parse(&create_source_file(source_code)).await;
         let method_calls = result.method_calls_ref();
 
         // Should infer CreateBucket operation from CreateBucketCommand import
@@ -300,7 +310,7 @@ async function getAllDynamoDBTables() {
 getAllDynamoDBTables();
         "#;
 
-        let result = extractor.parse(source_code).await;
+        let result = extractor.parse(&create_source_file(source_code)).await;
         let method_calls = result.method_calls_ref();
 
         // Should infer ListTables operation from paginateListTables import
@@ -353,7 +363,7 @@ const bodyAsString = await bodyStream.transformToString();
 const __error__ = await bodyStream.transformToString();
         "#;
 
-        let result = extractor.parse(source_code).await;
+        let result = extractor.parse(&create_source_file(source_code)).await;
         let method_calls = result.method_calls_ref();
 
         // Should find GetObject operation from direct client method call
@@ -398,7 +408,7 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         "#;
 
         // Parse the code
-        let mut results = vec![extractor.parse(javascript_code).await];
+        let mut results = vec![extractor.parse(&create_source_file(javascript_code)).await];
 
         // Build service index with all services for testing
         let service_index = ServiceDiscovery::load_service_index(Language::JavaScript)
@@ -470,7 +480,7 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         "#;
 
         // Parse the code
-        let mut results = vec![extractor.parse(code).await];
+        let mut results = vec![extractor.parse(&create_source_file(code)).await];
 
         // Load service index
         let service_index = ServiceDiscovery::load_service_index(Language::JavaScript)

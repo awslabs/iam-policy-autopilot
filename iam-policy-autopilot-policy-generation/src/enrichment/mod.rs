@@ -8,9 +8,67 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
+use std::path::PathBuf;
+
 use crate::SdkMethodCall;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+
+/// Represents a location in a source file
+///
+/// This struct stores file path and position information and serializes
+/// to the GNU coding standard (https://www.gnu.org/prep/standards/html_node/Errors.html)
+/// format: `filename:startLine.startCol-endLine.endCol`
+#[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
+#[schemars(
+    description = "File location in GNU coding standard format: filename:startLine.startCol-endLine.endCol"
+)]
+pub struct Location {
+    /// File path
+    pub file_path: PathBuf,
+    /// Starting position (line, column) - both 1-based
+    pub start_position: (usize, usize),
+    /// Ending position (line, column) - both 1-based
+    pub end_position: (usize, usize),
+}
+
+impl Location {
+    /// Create a new Location
+    #[must_use]
+    pub fn new(
+        file_path: PathBuf,
+        start_position: (usize, usize),
+        end_position: (usize, usize),
+    ) -> Self {
+        Self {
+            file_path,
+            start_position,
+            end_position,
+        }
+    }
+
+    /// Format as GNU coding standard: `filename:startLine.startCol-endLine.endCol`
+    #[must_use]
+    pub fn to_gnu_format(&self) -> String {
+        let path_str = self.file_path.display();
+        let (start_line, start_col) = self.start_position;
+        let (end_line, end_col) = self.end_position;
+
+        format!(
+            "{}:{}.{}-{}.{}",
+            path_str, start_line, start_col, end_line, end_col
+        )
+    }
+}
+
+impl Serialize for Location {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_gnu_format())
+    }
+}
 
 pub(crate) mod engine;
 pub(crate) mod operation_fas_map;
@@ -21,6 +79,95 @@ pub use engine::Engine;
 pub(crate) use operation_fas_map::load_operation_fas_map;
 pub(crate) use resource_matcher::ResourceMatcher;
 pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
+
+/// Represents Forward Access Session (FAS) expansion information
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub struct FasInfo {
+    /// Explanation URL for Forward Access Sessions
+    pub explanation: String,
+    /// The chain of operations in the FAS expansion
+    pub expansion: Vec<String>,
+}
+
+impl FasInfo {
+    /// Create a new FasInfo with the standard AWS documentation URL
+    #[must_use]
+    pub fn new(expansion: Vec<String>) -> Self {
+        Self {
+            explanation: "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html".to_string(),
+            expansion,
+        }
+    }
+}
+
+/// Represents the reason why an action was added to a policy
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub struct Reason {
+    /// The original operation that was extracted
+    pub operation: OperationView,
+    /// FAS (Forward Access Sessions) expansion information if this action came from FAS expansion
+    #[serde(rename = "FAS", skip_serializing_if = "Option::is_none")]
+    pub fas: Option<FasInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+#[serde(untagged)]
+pub enum OperationView {
+    /// Operation extracted from source files
+    #[serde(rename_all = "PascalCase")]
+    Extracted {
+        /// Extracted name
+        name: String,
+        /// Detected service containing this operation
+        service: String,
+        /// Extracted expr
+        expr: String,
+        /// Location in source file
+        location: Location,
+    },
+    /// Operation provided (no metadata available)
+    #[serde(rename_all = "PascalCase")]
+    Provided {
+        /// Provided name
+        name: String,
+        /// Provided service
+        service: String,
+    },
+}
+
+impl OperationView {
+    pub(crate) fn from_call(call: &SdkMethodCall, service: &str) -> Self {
+        match &call.metadata {
+            None => Self::Provided {
+                name: call.name.clone(),
+                service: service.to_string(),
+            },
+            Some(metadata) => Self::Extracted {
+                name: call.name.clone(),
+                service: service.to_string(),
+                expr: metadata.expr.clone(),
+                location: Location::new(
+                    metadata.file_path.clone(),
+                    metadata.start_position,
+                    metadata.end_position,
+                ),
+            },
+        }
+    }
+}
+
+/// Represents an explanation for why an action was added to a policy
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
+pub struct Explanation {
+    /// The action that was added (authorized action from service reference)
+    pub action: String,
+    /// The reasons this action was added (can have multiple reasons for the same action)
+    pub reasons: Vec<Reason>,
+}
 
 /// Represents an enriched method call with actions that need permissions
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -34,6 +181,8 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) actions: Vec<Action>,
     /// The initial SDK method call
     pub(crate) sdk_method_call: &'a SdkMethodCall,
+    /// Explanations for why each action was added
+    pub(crate) explanations: Vec<Explanation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
@@ -360,5 +509,102 @@ pub(crate) mod mock_remote_service_reference {
             .with_mapping_url(mock_server_url);
 
         (mock_server, loader)
+    }
+}
+
+#[cfg(test)]
+mod location_tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_location_to_gnu_string() {
+        let location = Location::new(PathBuf::from("src/main.rs"), (10, 5), (10, 79));
+
+        assert_eq!(location.to_gnu_format(), "src/main.rs:10.5-10.79");
+    }
+
+    #[test]
+    fn test_location_to_gnu_string_multiline() {
+        let location = Location::new(PathBuf::from("src/lib.rs"), (10, 5), (15, 20));
+
+        assert_eq!(location.to_gnu_format(), "src/lib.rs:10.5-15.20");
+    }
+
+    #[test]
+    fn test_location_serialization() {
+        let location = Location::new(PathBuf::from("test.py"), (42, 15), (42, 80));
+
+        let json = serde_json::to_string(&location).unwrap();
+        assert_eq!(json, "\"test.py:42.15-42.80\"");
+    }
+
+    #[test]
+    fn test_location_serialization_multiline() {
+        let location = Location::new(PathBuf::from("example.go"), (100, 1), (105, 50));
+
+        let json = serde_json::to_string(&location).unwrap();
+        assert_eq!(json, "\"example.go:100.1-105.50\"");
+    }
+
+    #[test]
+    fn test_operation_view_extracted_with_location() {
+        use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata};
+
+        let call = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["s3".to_string()],
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![],
+                return_type: None,
+                expr: "s3.get_object(Bucket='my-bucket')".to_string(),
+                file_path: PathBuf::from("test.py"),
+                start_position: (10, 5),
+                end_position: (10, 79),
+                receiver: Some("s3".to_string()),
+            }),
+        };
+
+        let operation_view = OperationView::from_call(&call, "s3");
+
+        match operation_view {
+            OperationView::Extracted {
+                name,
+                service,
+                expr,
+                location,
+            } => {
+                assert_eq!(name, "get_object");
+                assert_eq!(service, "s3");
+                assert_eq!(expr, "s3.get_object(Bucket='my-bucket')");
+                assert_eq!(location.to_gnu_format(), "test.py:10.5-10.79");
+            }
+            _ => panic!("Expected Extracted variant"),
+        }
+    }
+
+    #[test]
+    fn test_operation_view_extracted_serialization() {
+        use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata};
+
+        let call = SdkMethodCall {
+            name: "list_buckets".to_string(),
+            possible_services: vec!["s3".to_string()],
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![],
+                return_type: None,
+                expr: "s3.list_buckets()".to_string(),
+                file_path: PathBuf::from("app.py"),
+                start_position: (5, 1),
+                end_position: (5, 20),
+                receiver: Some("s3".to_string()),
+            }),
+        };
+
+        let operation_view = OperationView::from_call(&call, "s3");
+        let json = serde_json::to_string(&operation_view).unwrap();
+
+        // Verify the location is serialized as a string in GNU format
+        assert!(json.contains("\"Location\":\"app.py:5.1-5.20\""));
     }
 }

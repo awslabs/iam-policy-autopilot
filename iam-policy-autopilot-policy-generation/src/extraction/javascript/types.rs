@@ -1,30 +1,42 @@
 //! JavaScript/TypeScript specific data types for AWS SDK extraction
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 /// Information about a single import with rename support
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ImportInfo {
     /// Original name in the AWS SDK (e.g., "S3Client", "PutObjectCommand")
     pub(crate) original_name: String,
+    /// Import statement
+    pub(crate) statement: String,
     /// Local name used in the code (e.g., "MyS3Client", "PutObject")
     pub(crate) local_name: String,
     /// Whether this import was renamed (original_name != local_name)
     pub(crate) is_renamed: bool,
-    /// Line number where this import appears
-    pub(crate) line: usize,
+    /// Start position of the import
+    pub(crate) start_position: (usize, usize),
+    /// End position of the import
+    pub(crate) end_position: (usize, usize),
 }
 
 impl ImportInfo {
     /// Create a new ImportInfo with the given names and line position
-    pub(crate) fn new(original_name: String, local_name: String, line: usize) -> Self {
+    pub(crate) fn new(
+        original_name: String,
+        local_name: String,
+        statement: &str,
+        start_position: (usize, usize),
+        end_position: (usize, usize),
+    ) -> Self {
         let is_renamed = original_name != local_name;
         Self {
             original_name,
+            statement: statement.to_string(),
             local_name,
             is_renamed,
-            line,
+            start_position,
+            end_position,
         }
     }
 }
@@ -123,8 +135,14 @@ pub(crate) struct MethodCall {
     pub(crate) method_name: String,
     /// Method arguments
     pub(crate) arguments: HashMap<String, String>,
-    /// Line number where call occurs
-    pub(crate) line: usize,
+    /// Matched expression
+    pub(crate) expr: String,
+    /// File where the method call was found
+    pub(crate) file_path: PathBuf,
+    /// Start position where call occurs
+    pub(crate) start_position: (usize, usize),
+    /// End position where call occurs
+    pub(crate) end_position: (usize, usize),
 }
 
 /// Combined results from all scanning operations

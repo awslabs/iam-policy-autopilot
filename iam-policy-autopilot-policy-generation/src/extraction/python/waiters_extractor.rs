@@ -4,8 +4,12 @@
 //! two-phase operations: creating a waiter from a client, then calling wait()
 //! on the waiter with operation arguments.
 
+use std::path::{Path, PathBuf};
+
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
-use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::{
+    AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
+};
 use crate::ServiceModelIndex;
 use ast_grep_language::Python;
 
@@ -18,8 +22,14 @@ pub(crate) struct WaiterInfo {
     pub waiter_name: String,
     /// Client receiver variable name (e.g., "client", "ec2_client")
     pub client_receiver: String,
-    /// Line number where get_waiter was called
-    pub get_waiter_line: usize,
+    /// Matched expression
+    pub expr: String,
+    /// File where we found the waiter
+    pub file_path: PathBuf,
+    /// Start position where get_waiter was called
+    pub start_position: (usize, usize),
+    /// End position where get_waiter was called
+    pub end_position: (usize, usize),
 }
 
 // TODO: This should be refactored at a higher level, so this type can be removed.
@@ -37,6 +47,38 @@ impl<'a> CallInfo<'a> {
             Self::Chained(waiter_call_info) => &waiter_call_info.waiter_name,
         }
     }
+
+    fn expr(&self) -> &'a str {
+        match self {
+            CallInfo::None(waiter_info) => &waiter_info.expr,
+            CallInfo::Simple(_, wait_call_info) => &wait_call_info.expr,
+            CallInfo::Chained(chained_waiter_call_info) => &chained_waiter_call_info.expr,
+        }
+    }
+
+    fn file_path(&self) -> &'a PathBuf {
+        match self {
+            CallInfo::None(waiter_info) => &waiter_info.file_path,
+            CallInfo::Simple(_, wait_call_info) => &wait_call_info.file_path,
+            CallInfo::Chained(chained_waiter_call_info) => &chained_waiter_call_info.file_path,
+        }
+    }
+
+    fn start_position(&self) -> (usize, usize) {
+        match self {
+            CallInfo::None(waiter_info) => waiter_info.start_position,
+            CallInfo::Simple(_, wait_call_info) => wait_call_info.start_position,
+            CallInfo::Chained(chained_waiter_call_info) => chained_waiter_call_info.start_position,
+        }
+    }
+
+    fn end_position(&self) -> (usize, usize) {
+        match self {
+            CallInfo::None(waiter_info) => waiter_info.end_position,
+            CallInfo::Simple(_, wait_call_info) => wait_call_info.end_position,
+            CallInfo::Chained(chained_waiter_call_info) => chained_waiter_call_info.end_position,
+        }
+    }
 }
 
 /// Information about a wait method call
@@ -46,8 +88,10 @@ pub(crate) struct WaitCallInfo {
     pub waiter_var: String,
     /// Extracted arguments (including WaiterConfig)
     pub arguments: Vec<Parameter>,
-    /// Line number where wait was called
-    pub wait_line: usize,
+    /// Matched expression
+    pub expr: String,
+    /// File where we found the waiter
+    pub file_path: PathBuf,
     /// Start position of the wait call node
     pub start_position: (usize, usize),
     /// End position of the wait call node
@@ -66,6 +110,10 @@ pub(crate) struct ChainedWaiterCallInfo {
     /// Line number where chained call was made
     #[allow(dead_code)]
     pub line: usize,
+    /// Matched expression
+    pub expr: String,
+    /// File we found the chained waiter call in
+    pub file_path: PathBuf,
     /// Start position of the chained call node
     pub start_position: (usize, usize),
     /// End position of the chained call node
@@ -107,7 +155,7 @@ impl<'a> WaitersExtractor<'a> {
     /// 3. Unmatched wait: Ignored (no waiter context)
     pub(crate) fn extract_waiter_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all get_waiter calls
         let waiters = self.find_get_waiter_calls(ast);
@@ -150,18 +198,17 @@ impl<'a> WaitersExtractor<'a> {
     }
 
     /// Find all get_waiter calls in the AST
-    fn find_get_waiter_calls(
-        &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-    ) -> Vec<WaiterInfo> {
-        let root = ast.root();
+    fn find_get_waiter_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<WaiterInfo> {
+        let root = ast.ast.root();
         let mut waiters = Vec::new();
 
         // Pattern: $WAITER = $CLIENT.get_waiter($NAME $$$ARGS)
         let get_waiter_pattern = "$WAITER = $CLIENT.get_waiter($NAME $$$ARGS)";
 
         for node_match in root.find_all(get_waiter_pattern) {
-            if let Some(waiter_info) = self.parse_get_waiter_call(&node_match) {
+            if let Some(waiter_info) =
+                self.parse_get_waiter_call(&node_match, &ast.source_file.path)
+            {
                 waiters.push(waiter_info);
             }
         }
@@ -170,11 +217,8 @@ impl<'a> WaitersExtractor<'a> {
     }
 
     /// Find all wait calls in the AST
-    fn find_wait_calls(
-        &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-    ) -> Vec<WaitCallInfo> {
-        let root = ast.root();
+    fn find_wait_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<WaitCallInfo> {
+        let root = ast.ast.root();
         let mut wait_calls = Vec::new();
 
         // Pattern: $WAITER.wait($$$ARGS)
@@ -182,7 +226,7 @@ impl<'a> WaitersExtractor<'a> {
         let wait_pattern = "$WAITER.wait($$$ARGS)";
 
         for node_match in root.find_all(wait_pattern) {
-            if let Some(wait_info) = self.parse_wait_call(&node_match) {
+            if let Some(wait_info) = self.parse_wait_call(&node_match, &ast.source_file.path) {
                 wait_calls.push(wait_info);
             }
         }
@@ -193,16 +237,18 @@ impl<'a> WaitersExtractor<'a> {
     /// Find all chained waiter calls in the AST
     fn find_chained_waiter_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<ChainedWaiterCallInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut chained_calls = Vec::new();
 
         // Pattern: $CLIENT.get_waiter($NAME $$$WAITER_ARGS).wait($$$WAIT_ARGS)
         let chained_pattern = "$CLIENT.get_waiter($NAME $$$WAITER_ARGS).wait($$$WAIT_ARGS)";
 
         for node_match in root.find_all(chained_pattern) {
-            if let Some(chained_info) = self.parse_chained_waiter_call(&node_match) {
+            if let Some(chained_info) =
+                self.parse_chained_waiter_call(&node_match, &ast.source_file.path)
+            {
                 chained_calls.push(chained_info);
             }
         }
@@ -214,6 +260,7 @@ impl<'a> WaitersExtractor<'a> {
     fn parse_get_waiter_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<WaiterInfo> {
         let env = node_match.get_env();
 
@@ -228,14 +275,18 @@ impl<'a> WaitersExtractor<'a> {
         let name_text = name_node.text();
         let waiter_name = self.extract_quoted_string(&name_text)?;
 
-        // Get line number
-        let get_waiter_line = node_match.get_node().start_pos().line() + 1;
+        let node = node_match.get_node();
+        let start = node.start_pos();
+        let end = node.end_pos();
 
         Some(WaiterInfo {
             variable_name,
             waiter_name,
             client_receiver,
-            get_waiter_line,
+            expr: node_match.text().to_string(),
+            file_path: file_path.to_path_buf(),
+            start_position: (start.line() + 1, start.column(node) + 1),
+            end_position: (end.line() + 1, end.column(node) + 1),
         })
     }
 
@@ -243,6 +294,7 @@ impl<'a> WaitersExtractor<'a> {
     fn parse_wait_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<WaitCallInfo> {
         let env = node_match.get_env();
 
@@ -261,7 +313,8 @@ impl<'a> WaitersExtractor<'a> {
         Some(WaitCallInfo {
             waiter_var,
             arguments,
-            wait_line: start.line() + 1,
+            expr: node_match.text().to_string(),
+            file_path: file_path.to_path_buf(),
             start_position: (start.line() + 1, start.column(node) + 1),
             end_position: (end.line() + 1, end.column(node) + 1),
         })
@@ -271,6 +324,7 @@ impl<'a> WaitersExtractor<'a> {
     fn parse_chained_waiter_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<ChainedWaiterCallInfo> {
         let env = node_match.get_env();
 
@@ -296,6 +350,8 @@ impl<'a> WaitersExtractor<'a> {
             waiter_name,
             arguments,
             line: start.line() + 1,
+            expr: node_match.text().to_string(),
+            file_path: file_path.to_path_buf(),
             start_position: (start.line() + 1, start.column(node) + 1),
             end_position: (end.line() + 1, end.column(node) + 1),
         })
@@ -316,8 +372,8 @@ impl<'a> WaitersExtractor<'a> {
         for (idx, waiter) in waiters.iter().enumerate() {
             if waiter.variable_name == wait_call.waiter_var {
                 // Only consider waiters that come before the wait call
-                if waiter.get_waiter_line < wait_call.wait_line {
-                    let distance = wait_call.wait_line - waiter.get_waiter_line;
+                if waiter.start_position.0 < wait_call.start_position.0 {
+                    let distance = wait_call.start_position.0 - waiter.start_position.0;
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(waiter);
@@ -346,36 +402,22 @@ impl<'a> WaitersExtractor<'a> {
             .get(wait_call.waiter_name())
         {
             for service_method in service_defs {
-                let (parameters, start_position, end_position) = match wait_call {
+                let parameters = match wait_call {
                     CallInfo::Simple(_, wait_call) => {
                         // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                        (
-                            ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone()),
-                            wait_call.start_position,
-                            wait_call.end_position,
-                        )
+                        ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone())
                     }
                     CallInfo::Chained(chained_wait_call) => {
                         // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                        (
-                            ParameterFilter::filter_waiter_parameters(
-                                chained_wait_call.arguments.clone(),
-                            ),
-                            // Use wait call position (most specific)
-                            chained_wait_call.start_position,
-                            chained_wait_call.end_position,
+                        ParameterFilter::filter_waiter_parameters(
+                            chained_wait_call.arguments.clone(),
                         )
                     }
-                    CallInfo::None(waiter_info) => {
-                        let fallback_start_pos = (waiter_info.get_waiter_line, 1);
-                        let fallback_end_pos = (waiter_info.get_waiter_line, 1);
-                        let parameters = self.get_required_parameters(
-                            &service_method.service_name,
-                            &service_method.operation_name,
-                            self.service_index,
-                        );
-                        (parameters, fallback_start_pos, fallback_end_pos)
-                    }
+                    CallInfo::None(_) => self.get_required_parameters(
+                        &service_method.service_name,
+                        &service_method.operation_name,
+                        self.service_index,
+                    ),
                 };
 
                 // Create synthetic call with filtered wait() arguments
@@ -385,8 +427,10 @@ impl<'a> WaitersExtractor<'a> {
                     metadata: Some(SdkMethodCallMetadata {
                         parameters,
                         return_type: None,
-                        start_position,
-                        end_position,
+                        expr: wait_call.expr().to_string(),
+                        file_path: wait_call.file_path().clone(),
+                        start_position: wait_call.start_position(),
+                        end_position: wait_call.end_position(),
                         // Use client receiver from get_waiter call
                         receiver: receiver.clone(),
                     }),
@@ -471,16 +515,21 @@ impl<'a> WaitersExtractor<'a> {
 #[cfg(test)]
 mod tests {
     use crate::extraction::sdk_model::ServiceMethodRef;
+    use crate::SourceFile;
 
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Python;
     use std::collections::HashMap;
 
-    fn create_test_ast(
-        source_code: &str,
-    ) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>> {
-        Python.ast_grep(source_code)
+    fn create_test_ast(source_code: &str) -> AstWithSourceFile<Python> {
+        let source_file = SourceFile::with_language(
+            PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::Python,
+        );
+        let ast_grep = Python.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file.clone())
     }
 
     fn create_test_service_index() -> ServiceModelIndex {
@@ -638,7 +687,7 @@ waiter = ec2_client.get_waiter('instance_terminated')
         assert_eq!(waiters[0].variable_name, "waiter");
         assert_eq!(waiters[0].waiter_name, "instance_terminated");
         assert_eq!(waiters[0].client_receiver, "ec2_client");
-        assert_eq!(waiters[0].get_waiter_line, 4);
+        assert_eq!(waiters[0].start_position.0, 4);
     }
 
     #[test]

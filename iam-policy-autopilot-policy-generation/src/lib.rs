@@ -33,11 +33,10 @@ pub mod api;
 
 use std::fmt::Display;
 
-pub use enrichment::Engine as EnrichmentEngine;
+pub use enrichment::{Engine as EnrichmentEngine, Explanation, Location};
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
 pub use policy_generation::{
-    Effect, Engine as PolicyGenerationEngine, IamPolicy, MethodActionMapping, PolicyType,
-    PolicyWithMetadata, Statement,
+    Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
 };
 
 // Re-export commonly used types for convenience
