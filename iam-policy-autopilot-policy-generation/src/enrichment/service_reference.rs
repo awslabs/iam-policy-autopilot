@@ -4,10 +4,10 @@
 //! from the filesystem with exact service name matching and caching for
 //! performance optimization.
 
+use crate::enrichment::Context;
 use crate::errors::ExtractorError;
 use crate::providers::JsonProvider;
 use reqwest::{Client, Url};
-use serde::Serialize;
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::{
@@ -71,9 +71,11 @@ impl<'de> Deserialize<'de> for ServiceReference {
             for operation in &mut operations {
                 operation.name = format!("{}:{}", temp.name.to_lowercase(), operation.name);
                 if operation.authorized_actions.is_empty() {
+                    // Fallback which uses the operation as the action, when there are no AuthorizedActions
                     let authorized_action = AuthorizedAction {
                         name: operation.name.clone(),
                         service: temp.name.clone(),
+                        context: None,
                     };
                     operation.authorized_actions.insert(0, authorized_action);
                 } else {
@@ -120,23 +122,54 @@ pub(crate) struct Action {
     pub(crate) condition_keys: Vec<String>,
 }
 
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct ServiceReferenceContext {
+    pub(crate) key: String,
+    pub(crate) values: Vec<String>,
+}
+
+impl Context for ServiceReferenceContext {
+    fn key(&self) -> &str {
+        &self.key
+    }
+
+    fn values(&self) -> &[String] {
+        &self.values
+    }
+}
+
+fn deserialize_context<'de, D>(deserializer: D) -> Result<Option<ServiceReferenceContext>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let map: HashMap<String, Vec<String>> = HashMap::deserialize(deserializer)?;
+
+    // Take the first key-value pair from the map
+    // Context should have exactly one key-value pair
+    if let Some((key, values)) = map.into_iter().next() {
+        Ok(Some(ServiceReferenceContext { key, values }))
+    } else {
+        // If empty map, return None
+        Ok(None)
+    }
+}
+
 // Tracks actions each operation may authorize
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct AuthorizedAction {
-    #[serde(rename = "Name")]
     pub(crate) name: String,
-    #[serde(rename = "Service")]
     pub(crate) service: String,
+    #[serde(default, deserialize_with = "deserialize_context")]
+    pub(crate) context: Option<ServiceReferenceContext>,
 }
 
 // Part of construct in the operation to authorized action map
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct SdkMethod {
-    #[serde(rename = "Name")]
     pub(crate) name: String,
-    #[serde(rename = "Method")]
     pub(crate) method: String,
-    #[serde(rename = "Package")]
     pub(crate) package: String,
 }
 
@@ -715,5 +748,123 @@ mod tests {
         assert_eq!(operation.name, "s3:GetObject");
         // Ensure the default authorized action is populated
         assert_eq!(operation.authorized_actions[0].name, "s3:GetObject");
+    }
+
+    #[tokio::test]
+    async fn test_context_deserialization() {
+        let json = r#"{"Context": {
+            "iam:PassedToService": ["access-analyzer.amazonaws.com"]
+        }}"#;
+
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "deserialize_context")]
+            #[serde(rename = "Context")]
+            context: Option<ServiceReferenceContext>,
+        }
+
+        let result: TestStruct = serde_json::from_str(json).unwrap();
+        assert!(result.context.is_some());
+        let context = result.context.unwrap();
+        assert_eq!(context.key, "iam:PassedToService");
+        assert_eq!(context.values, vec!["access-analyzer.amazonaws.com"]);
+    }
+
+    #[tokio::test]
+    async fn test_context_deserialization_multiple_values() {
+        let json = r#"{"Context": {
+            "iam:PassedToService": ["service1.amazonaws.com", "service2.amazonaws.com"]
+        }}"#;
+
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "deserialize_context")]
+            #[serde(rename = "Context")]
+            context: Option<ServiceReferenceContext>,
+        }
+
+        let result: TestStruct = serde_json::from_str(json).unwrap();
+        assert!(result.context.is_some());
+        let context = result.context.unwrap();
+        assert_eq!(context.key, "iam:PassedToService");
+        assert_eq!(
+            context.values,
+            vec!["service1.amazonaws.com", "service2.amazonaws.com"]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_deserialization_empty() {
+        let json = r#"{"Context": {}}"#;
+
+        #[derive(Deserialize)]
+        struct TestStruct {
+            #[serde(default, deserialize_with = "deserialize_context")]
+            #[serde(rename = "Context")]
+            context: Option<ServiceReferenceContext>,
+        }
+
+        let result: TestStruct = serde_json::from_str(json).unwrap();
+        assert!(result.context.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_authorized_action_with_context() {
+        let json = r#"{
+            "Name": "access-analyzer",
+            "Actions": [],
+            "Resources": [],
+            "Operations": [
+                {
+                    "Name": "StartPolicyGeneration",
+                    "AuthorizedActions": [
+                        {
+                            "Name": "PassRole",
+                            "Service": "iam",
+                            "Context": {
+                                "iam:PassedToService": ["access-analyzer.amazonaws.com"]
+                            }
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
+        let operations = service_ref.operation_to_authorized_actions.unwrap();
+        let operation = &operations["access-analyzer:StartPolicyGeneration"];
+        let authorized_action = &operation.authorized_actions[0];
+
+        assert!(authorized_action.context.is_some());
+        let context = authorized_action.context.as_ref().unwrap();
+        assert_eq!(context.key, "iam:PassedToService");
+        assert_eq!(context.values, vec!["access-analyzer.amazonaws.com"]);
+    }
+
+    #[tokio::test]
+    async fn test_authorized_action_without_context() {
+        let json = r#"{
+            "Name": "s3",
+            "Actions": [],
+            "Resources": [],
+            "Operations": [
+                {
+                    "Name": "GetObject",
+                    "AuthorizedActions": [
+                        {
+                            "Name": "GetObject",
+                            "Service": "s3"
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
+        let operations = service_ref.operation_to_authorized_actions.unwrap();
+        let operation = &operations["s3:GetObject"];
+        let authorized_action = &operation.authorized_actions[0];
+
+        assert!(authorized_action.context.is_none());
     }
 }

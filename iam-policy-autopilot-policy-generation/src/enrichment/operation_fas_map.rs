@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Deserializer};
 
+use crate::enrichment::Context;
 use crate::service_configuration::ServiceConfiguration;
 
 type ServiceName = String;
@@ -45,42 +46,65 @@ pub(crate) struct OperationFasMap {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct Context {
+pub(crate) struct FasContext {
     pub(crate) key: String,
-    pub(crate) value: String,
+    pub(crate) values: Vec<String>,
 }
 
-impl Context {
-    pub(crate) fn new(key: String, value: String) -> Self {
-        Self { key, value }
+impl FasContext {
+    pub(crate) fn new(key: String, values: Vec<String>) -> Self {
+        Self { key, values }
+    }
+}
+
+impl Context for FasContext {
+    fn key(&self) -> &str {
+        &self.key
+    }
+
+    fn values(&self) -> &[String] {
+        &self.values
     }
 }
 
 // Custom deserializer for Context that handles HashMap-like JSON objects
-fn deserialize_context_map<'de, D>(deserializer: D) -> Result<Vec<Context>, D::Error>
+// Supports both single string values and arrays of strings
+fn deserialize_context_map<'de, D>(deserializer: D) -> Result<Vec<FasContext>, D::Error>
 where
     D: Deserializer<'de>,
 {
     use serde::de::{MapAccess, Visitor};
+    use serde_json::Value;
     use std::fmt;
 
     struct ContextMapVisitor;
 
     impl<'de> Visitor<'de> for ContextMapVisitor {
-        type Value = Vec<Context>;
+        type Value = Vec<FasContext>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-            formatter.write_str("a map of key-value pairs")
+            formatter.write_str("a map of key-value pairs where values can be strings or arrays")
         }
 
-        fn visit_map<V>(self, mut map: V) -> Result<Vec<Context>, V::Error>
+        fn visit_map<V>(self, mut map: V) -> Result<Vec<FasContext>, V::Error>
         where
             V: MapAccess<'de>,
         {
             let mut contexts = Vec::new();
 
-            while let Some((key, value)) = map.next_entry::<String, String>()? {
-                contexts.push(Context::new(key, value));
+            while let Some((key, value)) = map.next_entry::<String, Value>()? {
+                let values = match value {
+                    Value::String(s) => vec![s],
+                    Value::Array(arr) => arr
+                        .into_iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect(),
+                    _ => continue, // Skip non-string/non-array values
+                };
+
+                if !values.is_empty() {
+                    contexts.push(FasContext::new(key, values));
+                }
             }
 
             Ok(contexts)
@@ -97,11 +121,11 @@ pub(crate) struct FasOperation {
     #[serde(rename = "Service")]
     service: String,
     #[serde(rename = "Context", deserialize_with = "deserialize_context_map")]
-    pub(crate) context: Vec<Context>,
+    pub(crate) context: Vec<FasContext>,
 }
 
 impl FasOperation {
-    pub(crate) fn new(operation: String, service: String, context: Vec<Context>) -> Self {
+    pub(crate) fn new(operation: String, service: String, context: Vec<FasContext>) -> Self {
         FasOperation {
             operation,
             service,
@@ -283,9 +307,9 @@ mod tests {
 
         let service_cfg = load_service_configuration().unwrap();
 
-        let context = vec![Context::new(
+        let context = vec![FasContext::new(
             "kms:ViaService".to_string(),
-            "ssm.${region}.amazonaws.com".to_string(),
+            vec!["ssm.${region}.amazonaws.com".to_string()],
         )];
 
         let fas_op = FasOperation::new("Decrypt".to_string(), "kms".to_string(), context);
@@ -339,7 +363,10 @@ mod tests {
         assert_eq!(fas_op.context.len(), 1);
         let context_item = &fas_op.context[0];
         assert_eq!(context_item.key, "kms:ViaService");
-        assert_eq!(context_item.value, "test-service.${region}.amazonaws.com");
+        assert_eq!(
+            context_item.values,
+            vec!["test-service.${region}.amazonaws.com"]
+        );
     }
 
     #[test]
