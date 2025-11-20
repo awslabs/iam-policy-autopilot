@@ -8,7 +8,7 @@ use convert_case::{Case, Casing};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{Action, EnrichedSdkMethodCall, Resource};
+use super::{Action, Context, EnrichedSdkMethodCall, Resource};
 use crate::enrichment::operation_fas_map::{FasOperation, OperationFasMap, OperationFasMaps};
 use crate::enrichment::service_reference::ServiceReference;
 use crate::enrichment::{Condition, ServiceReferenceLoader};
@@ -155,13 +155,13 @@ impl ResourceMatcher {
         Ok(operations_vec)
     }
 
-    fn make_condition(context: &[crate::enrichment::operation_fas_map::Context]) -> Vec<Condition> {
+    fn make_condition<T: Context>(context: &[T]) -> Vec<Condition> {
         let mut result = vec![];
         for ctx in context {
             result.push(Condition {
                 operator: crate::enrichment::Operator::StringEquals,
-                key: ctx.key.clone(),
-                values: vec![ctx.value.clone()],
+                key: ctx.key().to_string(),
+                values: ctx.values().to_vec(),
             })
         }
         result
@@ -222,7 +222,16 @@ impl ResourceMatcher {
                                         &action.name,
                                         &service_reference,
                                     )?;
-                                let conditions = Self::make_condition(&operation.context);
+
+                                // Combine conditions from FAS operation context and AuthorizedAction context
+                                let mut conditions = Self::make_condition(&operation.context);
+
+                                // Add conditions from AuthorizedAction context if present
+                                if let Some(auth_context) = &action.context {
+                                    conditions.extend(Self::make_condition(std::slice::from_ref(
+                                        auth_context,
+                                    )));
+                                }
 
                                 let enriched_action = Action::new(
                                     action.name.clone(),
@@ -356,7 +365,7 @@ impl ResourceMatcher {
 mod tests {
     use super::*;
     use crate::enrichment::mock_remote_service_reference;
-    use crate::enrichment::operation_fas_map::{Context, FasOperation, OperationFasMap};
+    use crate::enrichment::operation_fas_map::{FasContext, FasOperation, OperationFasMap};
 
     fn create_test_parsed_method_call() -> SdkMethodCall {
         SdkMethodCall {
@@ -905,7 +914,10 @@ mod tests {
             vec![FasOperation::new(
                 "Decrypt".to_string(),
                 "service-b".to_string(),
-                vec![Context::new("test".to_string(), "value".to_string())],
+                vec![FasContext::new(
+                    "test".to_string(),
+                    vec!["value".to_string()],
+                )],
             )],
         );
 
@@ -916,7 +928,10 @@ mod tests {
             vec![FasOperation::new(
                 "Log".to_string(),
                 "service-c".to_string(),
-                vec![Context::new("test2".to_string(), "value2".to_string())],
+                vec![FasContext::new(
+                    "test2".to_string(),
+                    vec!["value2".to_string()],
+                )],
             )],
         );
 
@@ -998,7 +1013,10 @@ mod tests {
             vec![FasOperation::new(
                 "Decrypt".to_string(),
                 "service-b".to_string(),
-                vec![Context::new("test".to_string(), "value".to_string())],
+                vec![FasContext::new(
+                    "test".to_string(),
+                    vec!["value".to_string()],
+                )],
             )],
         );
 
@@ -1009,7 +1027,10 @@ mod tests {
             vec![FasOperation::new(
                 "GetObject".to_string(),
                 "service-a".to_string(),
-                vec![Context::new("test2".to_string(), "value2".to_string())],
+                vec![FasContext::new(
+                    "test2".to_string(),
+                    vec!["value2".to_string()],
+                )],
             )],
         );
 
@@ -1088,7 +1109,10 @@ mod tests {
                 vec![FasOperation::new(
                     to_op.to_string(),
                     to_service.to_string(),
-                    vec![Context::new("cycle".to_string(), "test".to_string())],
+                    vec![FasContext::new(
+                        "cycle".to_string(),
+                        vec!["test".to_string()],
+                    )],
                 )],
             );
 

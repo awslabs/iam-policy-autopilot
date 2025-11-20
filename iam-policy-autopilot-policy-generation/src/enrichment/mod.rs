@@ -57,6 +57,12 @@ pub(crate) struct Condition {
     pub values: Vec<String>,
 }
 
+/// Trait for context types that can be converted to conditions
+pub(crate) trait Context {
+    fn key(&self) -> &str;
+    fn values(&self) -> &[String];
+}
+
 /// Represents an IAM action enriched with resource and condition information
 ///
 /// This structure combines OperationAction action data with Service Reference resource information to provide
