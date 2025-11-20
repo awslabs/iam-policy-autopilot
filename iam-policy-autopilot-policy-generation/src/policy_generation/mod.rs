@@ -44,6 +44,7 @@ where
 
 /// Represents a single IAM action with its associated resources
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub(crate) struct ActionMapping {
     /// The IAM action name (e.g., "s3:GetObject")
     pub(crate) action_name: String,
@@ -53,6 +54,7 @@ pub(crate) struct ActionMapping {
 
 /// Represents the mapping between a method call and its required IAM actions
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
 #[non_exhaustive]
 pub struct MethodActionMapping {
     /// The method call name
@@ -279,5 +281,63 @@ mod tests {
 
         // Verify the condition is serialized with StringLike operator
         assert!(json.contains("\"Condition\":{\"StringLike\":{\"s3:ExistingObjectTag/Environment\":[\"production-*\",\"staging-*\"]}}"));
+    }
+
+    #[test]
+    fn test_method_action_mapping_serialization() {
+        let action_mapping = ActionMapping {
+            action_name: "s3:GetObject".to_string(),
+            resources: vec!["arn:aws:s3:::*/*".to_string()],
+        };
+
+        let method_mapping = MethodActionMapping {
+            method_call: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![action_mapping],
+        };
+
+        let json = serde_json::to_string(&method_mapping).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"MethodCall\":\"get_object\""));
+        assert!(json.contains("\"Service\":\"s3\""));
+        assert!(json.contains("\"Actions\":"));
+        assert!(json.contains("\"ActionName\":\"s3:GetObject\""));
+        assert!(json.contains("\"Resources\":"));
+    }
+
+    #[test]
+    fn test_action_mapping_serialization() {
+        let action_mapping = ActionMapping {
+            action_name: "events:PutRule".to_string(),
+            resources: vec!["arn:aws:events:us-east-1:123456789012:rule/*".to_string()],
+        };
+
+        let json = serde_json::to_string(&action_mapping).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"ActionName\":\"events:PutRule\""));
+        assert!(json.contains("\"Resources\":[\"arn:aws:events:us-east-1:123456789012:rule/*\"]"));
+    }
+
+    #[test]
+    fn test_policy_with_metadata_serialization() {
+        let mut policy = IamPolicy::new();
+        policy.add_statement(Statement::allow(
+            vec!["s3:GetObject".to_string()],
+            vec!["arn:aws:s3:::bucket/*".to_string()],
+        ));
+
+        let policy_with_metadata = PolicyWithMetadata {
+            policy,
+            policy_type: PolicyType::Identity,
+        };
+
+        let json = serde_json::to_string(&policy_with_metadata).unwrap();
+
+        // Verify PascalCase field names and PolicyType serialization
+        assert!(json.contains("\"Policy\":"));
+        assert!(json.contains("\"PolicyType\":\"Identity\""));
+        assert!(json.contains("\"Version\":\"2012-10-17\""));
     }
 }
