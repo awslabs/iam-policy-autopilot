@@ -99,7 +99,11 @@ where
                         .into_iter()
                         .filter_map(|v| v.as_str().map(|s| s.to_string()))
                         .collect(),
-                    _ => continue, // Skip non-string/non-array values
+                    _ => {
+                        return Err(serde::de::Error::custom(
+                            format!("Expected String or String array in FAS context values for key '{}', got: {:?}", key, value)
+                        ));
+                    }
                 };
 
                 if !values.is_empty() {
