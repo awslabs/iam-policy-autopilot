@@ -6,6 +6,8 @@ use async_trait::async_trait;
 use crate::extraction::go::types::GoImportInfo;
 use crate::{SdkMethodCall, ServiceModelIndex};
 
+use std::fmt::Debug;
+
 /// Enum to handle different AST types from different languages
 #[derive(Clone)]
 pub(crate) enum ExtractorResult {
@@ -26,6 +28,17 @@ pub(crate) enum ExtractorResult {
         AstGrep<ast_grep_core::tree_sitter::StrDoc<TypeScript>>,
         Vec<SdkMethodCall>,
     ),
+}
+
+impl Debug for ExtractorResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Python(_arg0, arg1) => f.debug_tuple("Python").field(arg1).finish(),
+            Self::Go(_arg0, arg1, arg2) => f.debug_tuple("Go").field(arg1).field(arg2).finish(),
+            Self::JavaScript(_arg0, arg1) => f.debug_tuple("JavaScript").field(arg1).finish(),
+            Self::TypeScript(_arg0, arg1) => f.debug_tuple("TypeScript").field(arg1).finish(),
+        }
+    }
 }
 
 impl ExtractorResult {

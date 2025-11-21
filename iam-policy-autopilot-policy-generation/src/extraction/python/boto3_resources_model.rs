@@ -253,8 +253,14 @@ impl Boto3ResourcesRegistry {
             }
         };
 
+        // Build service versions map once for all services
+        let service_versions = EmbeddedBoto3Data::build_service_versions_map();
+
         for service_name in common_services {
-            match Boto3ResourcesModel::load_with_utilities_from_embedded(&service_name) {
+            match Boto3ResourcesModel::load_with_utilities_from_embedded_with_versions(
+                &service_name,
+                &service_versions,
+            ) {
                 Ok(model) => {
                     // Index all resource types this service provides
                     for resource_type in model.get_all_resource_types() {
@@ -297,13 +303,13 @@ impl Boto3ResourcesRegistry {
 }
 
 impl Boto3ResourcesModel {
-    /// Load unified boto3 model for a service from embedded data
+    /// Load unified boto3 model for a service from embedded data with pre-built service versions map
     ///
-    /// Loads resource specifications from embedded boto3 data
-    pub fn load_from_embedded(service_name: &str) -> Result<Self, String> {
-        // Get service versions from embedded data
-        let service_versions = EmbeddedBoto3Data::build_service_versions_map();
-
+    /// Loads resource specifications from embedded boto3 data using a pre-built service versions map
+    fn load_from_embedded_with_versions(
+        service_name: &str,
+        service_versions: &HashMap<String, Vec<String>>,
+    ) -> Result<Self, String> {
         // Find the service and get its latest version
         let versions = service_versions.get(service_name).ok_or_else(|| {
             format!(
@@ -332,12 +338,15 @@ impl Boto3ResourcesModel {
         Self::parse_resources_content(service_name, content)
     }
 
-    /// Load unified boto3 model with utility methods from embedded data
+    /// Load unified boto3 model with utility methods from embedded data with pre-built service versions map
     ///
-    /// Loads resource specifications and merges with utility methods from embedded mapping
-    pub fn load_with_utilities_from_embedded(service_name: &str) -> Result<Self, String> {
+    /// Loads resource specifications and merges with utility methods from embedded mapping using a pre-built service versions map
+    fn load_with_utilities_from_embedded_with_versions(
+        service_name: &str,
+        service_versions: &HashMap<String, Vec<String>>,
+    ) -> Result<Self, String> {
         // Load base resource model from embedded data
-        let mut model = Self::load_from_embedded(service_name)?;
+        let mut model = Self::load_from_embedded_with_versions(service_name, service_versions)?;
 
         // Load and merge utility methods from embedded data
         Self::merge_utility_methods_from_embedded(&mut model)?;
@@ -717,54 +726,6 @@ mod tests {
         assert_eq!("PutItem".to_case(Case::Snake), "put_item");
         assert_eq!("DeleteObject".to_case(Case::Snake), "delete_object");
         assert_eq!("CreateBucket".to_case(Case::Snake), "create_bucket");
-    }
-
-    #[test]
-    fn test_load_dynamodb_model_from_embedded() {
-        let result = Boto3ResourcesModel::load_from_embedded("dynamodb");
-
-        // This test will only pass if embedded data is available
-        if result.is_ok() {
-            let model = result.unwrap();
-            assert_eq!(model.service_name, "dynamodb");
-
-            // Check that Table constructor exists
-            assert!(model.get_constructor_spec("Table").is_some());
-
-            // Check that Table resource type exists
-            assert!(model.get_resource_definition("Table").is_some());
-
-            // Check that GetItem action exists for Table
-            let table_def = model.get_resource_definition("Table").unwrap();
-            assert!(
-                table_def.actions.contains_key("GetItem")
-                    || table_def.actions.contains_key("get_item")
-            );
-        }
-    }
-
-    #[test]
-    fn test_load_s3_model_from_embedded() {
-        let result = Boto3ResourcesModel::load_from_embedded("s3");
-
-        // This test will only pass if embedded data is available
-        if result.is_ok() {
-            let model = result.unwrap();
-            assert_eq!(model.service_name, "s3");
-
-            // Check that Bucket constructor exists
-            assert!(model.get_constructor_spec("Bucket").is_some());
-
-            // Check that Bucket resource type exists
-            assert!(model.get_resource_definition("Bucket").is_some());
-
-            // Check that Delete action exists for Bucket
-            let bucket_def = model.get_resource_definition("Bucket").unwrap();
-            assert!(
-                bucket_def.actions.contains_key("Delete")
-                    || bucket_def.actions.contains_key("delete")
-            );
-        }
     }
 
     #[test]

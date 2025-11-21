@@ -40,6 +40,7 @@ use crate::extraction::python::boto3_resources_model::{
 use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
+use ast_grep_config::from_yaml_string;
 use ast_grep_language::Python;
 use convert_case::{Case, Casing};
 use std::collections::{HashMap, HashSet};
@@ -101,6 +102,7 @@ enum SyntheticEvidenceSource {
     UnmatchedMethod(ResourceMethodCallInfo),
 }
 
+#[derive(Debug)]
 /// Extractor for boto3 resource direct call patterns
 pub(crate) struct ResourceDirectCallsExtractor<'a> {
     registry: Boto3ResourcesRegistry,
@@ -818,61 +820,67 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let root = ast.root();
         let mut synthetic_calls = Vec::new();
 
-        // Pattern: $VAR = $RESOURCE_VAR.$ATTR_NAME (with optional assignment)
-        // We'll use two patterns to catch both cases
-        let patterns = vec![
-            "$VAR = $RESOURCE_VAR.$ATTR_NAME", // With assignment
-            "$RESOURCE_VAR.$ATTR_NAME",        // Without assignment (direct usage)
-        ];
+        // Use ast-grep YAML config for optimized pattern matching
+        let collection_access_config = r#"
+id: collection_access_tier2
+language: Python
+rule:
+  any:
+    - pattern: $VAR = $RESOURCE_VAR.$ATTR_NAME
+    - pattern: $RESOURCE_VAR.$ATTR_NAME
+"#;
 
-        for pattern in patterns {
-            for node_match in root.find_all(pattern) {
-                let env = node_match.get_env();
+        let globals = ast_grep_config::GlobalRules::default();
+        let config = &from_yaml_string::<Python>(collection_access_config, &globals)
+            .expect("collection access rule should parse")[0];
 
-                // Extract resource variable name
-                let resource_var = match env.get_match("RESOURCE_VAR") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+        // Single traversal for all patterns
+        for node_match in root.find_all(&config.matcher) {
+            let env = node_match.get_env();
 
-                // Extract attribute name
-                let attr_name = match env.get_match("ATTR_NAME") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+            // Extract resource variable name
+            let resource_var = match env.get_match("RESOURCE_VAR") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Find the constructor for this resource variable
-                let constructor = match constructors
-                    .iter()
-                    .find(|c| c.variable_name == resource_var)
-                {
-                    Some(c) => c,
-                    None => continue,
-                };
+            // Extract attribute name
+            let attr_name = match env.get_match("ATTR_NAME") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Get boto3 model for this service
-                let boto3_model = match self.registry.get_model(&constructor.service_name) {
-                    Some(model) => model,
-                    None => continue,
-                };
+            // Find the constructor for this resource variable
+            let constructor = match constructors
+                .iter()
+                .find(|c| c.variable_name == resource_var)
+            {
+                Some(c) => c,
+                None => continue,
+            };
 
-                // Check if this attribute matches a hasMany collection (in snake_case)
-                if let Some(has_many_spec) =
-                    boto3_model.get_has_many_spec(&constructor.resource_type, &attr_name)
-                {
-                    // Generate synthetic call for the collection's operation
-                    let node = node_match.get_node();
-                    let start = node.start_pos();
-                    let end = node.end_pos();
+            // Get boto3 model for this service
+            let boto3_model = match self.registry.get_model(&constructor.service_name) {
+                Some(model) => model,
+                None => continue,
+            };
 
-                    if let Some(synthetic_call) = self.generate_synthetic_for_collection(
-                        constructor,
-                        has_many_spec,
-                        (start.line() + 1, start.column(node) + 1),
-                        (end.line() + 1, end.column(node) + 1),
-                    ) {
-                        synthetic_calls.push(synthetic_call);
-                    }
+            // Check if this attribute matches a hasMany collection (in snake_case)
+            if let Some(has_many_spec) =
+                boto3_model.get_has_many_spec(&constructor.resource_type, &attr_name)
+            {
+                // Generate synthetic call for the collection's operation
+                let node = node_match.get_node();
+                let start = node.start_pos();
+                let end = node.end_pos();
+
+                if let Some(synthetic_call) = self.generate_synthetic_for_collection(
+                    constructor,
+                    has_many_spec,
+                    (start.line() + 1, start.column(node) + 1),
+                    (end.line() + 1, end.column(node) + 1),
+                ) {
+                    synthetic_calls.push(synthetic_call);
                 }
             }
         }
@@ -957,56 +965,83 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let root = ast.root();
         let mut calls = Vec::new();
 
-        // Pattern for method calls
-        let patterns = vec!["$RESULT = $VAR.$METHOD($$$ARGS)", "$VAR.$METHOD($$$ARGS)"];
+        // Use ast-grep YAML config for optimized pattern matching
+        let utility_method_config = r#"
+id: utility_method_tier3
+language: Python
+rule:
+  any:
+    - pattern: $RESULT = $VAR.$METHOD($$$ARGS)
+    - pattern: $VAR.$METHOD($$$ARGS)
+"#;
 
-        for pattern in patterns {
-            for node_match in root.find_all(pattern) {
-                let env = node_match.get_env();
+        let globals = ast_grep_config::GlobalRules::default();
+        let config = &from_yaml_string::<Python>(utility_method_config, &globals)
+            .expect("utility method rule should parse")[0];
 
-                // Extract receiver variable name
-                let receiver_var = match env.get_match("VAR") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+        // Single traversal for all patterns
+        for node_match in root.find_all(&config.matcher) {
+            let env = node_match.get_env();
 
-                // Extract method name
-                let method_name = match env.get_match("METHOD") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+            // Extract receiver variable name
+            let receiver_var = match env.get_match("VAR") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+            // Extract method name
+            let method_name = match env.get_match("METHOD") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
-                    continue;
+            // Get position
+            let node = node_match.get_node();
+            let start = node.start_pos();
+            let position = MatchedPosition {
+                line: start.line() + 1,
+                column: start.column(node) + 1,
+            };
+
+            // Skip if already matched in Tier 1/2
+            if matched_positions.contains(&position) {
+                continue;
+            }
+
+            // Extract arguments
+            let args_nodes = env.get_multiple_matches("ARGS");
+            let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
+
+            // Search for this method name across all services
+            for (service_name, boto3_model) in self.registry.models() {
+                // Check client utility methods with parameter count filtering
+                if let Some(client_method) = boto3_model.get_client_utility_method(&method_name) {
+                    // Generate synthetic for each operation
+                    for operation in &client_method.operations {
+                        // Filter: Skip if call site has fewer args than required
+                        // Client methods show all parameters at call site (unlike resource methods
+                        // where constructor parameters are hidden)
+                        if arguments.len() < operation.required_params.len() {
+                            continue; // Not enough arguments to satisfy this operation
+                        }
+
+                        calls.push(self.generate_tier3_utility_synthetic(
+                            service_name,
+                            &operation.operation,
+                            &arguments,
+                            &operation.required_params,
+                            (start.line() + 1, start.column(node) + 1),
+                            (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
+                            &receiver_var, // Use actual receiver from code
+                        ));
+                    }
                 }
 
-                // Extract arguments
-                let args_nodes = env.get_multiple_matches("ARGS");
-                let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
-
-                // Search for this method name across all services
-                for (service_name, boto3_model) in self.registry.models() {
-                    // Check client utility methods with parameter count filtering
-                    if let Some(client_method) = boto3_model.get_client_utility_method(&method_name)
-                    {
+                // Check resource utility methods across all resource types
+                for resource_methods in boto3_model.get_all_resource_utility_methods().values() {
+                    if let Some(resource_method) = resource_methods.methods.get(&method_name) {
                         // Generate synthetic for each operation
-                        for operation in &client_method.operations {
-                            // Filter: Skip if call site has fewer args than required
-                            // Client methods show all parameters at call site (unlike resource methods
-                            // where constructor parameters are hidden)
-                            if arguments.len() < operation.required_params.len() {
-                                continue; // Not enough arguments to satisfy this operation
-                            }
-
+                        for operation in &resource_method.operations {
                             calls.push(self.generate_tier3_utility_synthetic(
                                 service_name,
                                 &operation.operation,
@@ -1016,25 +1051,6 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                 (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
                                 &receiver_var, // Use actual receiver from code
                             ));
-                        }
-                    }
-
-                    // Check resource utility methods across all resource types
-                    for resource_methods in boto3_model.get_all_resource_utility_methods().values()
-                    {
-                        if let Some(resource_method) = resource_methods.methods.get(&method_name) {
-                            // Generate synthetic for each operation
-                            for operation in &resource_method.operations {
-                                calls.push(self.generate_tier3_utility_synthetic(
-                                    service_name,
-                                    &operation.operation,
-                                    &arguments,
-                                    &operation.required_params,
-                                    (start.line() + 1, start.column(node) + 1),
-                                    (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
-                                    &receiver_var, // Use actual receiver from code
-                                ));
-                            }
                         }
                     }
                 }
@@ -1053,80 +1069,63 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let root = ast.root();
         let mut calls = Vec::new();
 
-        // Patterns for attribute access (including chained method calls)
-        let patterns = vec![
-            "$VAR = $RESOURCE_VAR.$ATTR_NAME", // Simple: var = resource.collection
-            "$RESOURCE_VAR.$ATTR_NAME",        // Direct: resource.collection
-            "$VAR = $RESOURCE_VAR.$ATTR_NAME.$$$REST", // Chained: var = resource.collection.method(...)
-            "$RESOURCE_VAR.$ATTR_NAME.$$$REST", // Direct chained: resource.collection.method(...)
-        ];
+        // Use ast-grep YAML config for optimized pattern matching
+        let collection_access_tier3_config = r#"
+id: collection_access_tier3
+language: Python
+rule:
+  any:
+    - pattern: $VAR = $RESOURCE_VAR.$ATTR_NAME
+    - pattern: $RESOURCE_VAR.$ATTR_NAME
+    - pattern: $VAR = $RESOURCE_VAR.$ATTR_NAME.$$$REST
+    - pattern: $RESOURCE_VAR.$ATTR_NAME.$$$REST
+"#;
 
-        for pattern in patterns {
-            for node_match in root.find_all(pattern) {
-                let env = node_match.get_env();
+        let globals = ast_grep_config::GlobalRules::default();
+        let config = &from_yaml_string::<Python>(collection_access_tier3_config, &globals)
+            .expect("collection access tier3 rule should parse")[0];
 
-                // Extract receiver variable name
-                let receiver_var = match env.get_match("RESOURCE_VAR") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+        // Single traversal for all patterns
+        for node_match in root.find_all(&config.matcher) {
+            let env = node_match.get_env();
 
-                // Extract attribute name
-                let attr_name = match env.get_match("ATTR_NAME") {
-                    Some(node) => node.text().to_string(),
-                    None => continue,
-                };
+            // Extract receiver variable name
+            let receiver_var = match env.get_match("RESOURCE_VAR") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+            // Extract attribute name
+            let attr_name = match env.get_match("ATTR_NAME") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
 
-                // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
-                    continue;
-                }
+            // Get position
+            let node = node_match.get_node();
+            let start = node.start_pos();
+            let position = MatchedPosition {
+                line: start.line() + 1,
+                column: start.column(node) + 1,
+            };
 
-                // Search for this collection name across all services
-                for (service_name, boto3_model) in self.registry.models() {
-                    // Check all resource types for hasMany collections (resource-level)
-                    for resource_def in boto3_model.get_all_resource_definitions().values() {
-                        if let Some(has_many_spec) = resource_def.has_many.get(&attr_name) {
-                            // Generate synthetic with all-synthetic parameters
-                            calls.push(SdkMethodCall {
-                                name: has_many_spec.operation.to_case(Case::Snake),
-                                possible_services: vec![service_name.clone()],
-                                metadata: Some(SdkMethodCallMetadata {
-                                    parameters: self.generate_synthetic_parameters(
-                                        &has_many_spec.identifier_params,
-                                    ),
-                                    return_type: None,
-                                    start_position: (start.line() + 1, start.column(node) + 1),
-                                    end_position: (
-                                        node.end_pos().line() + 1,
-                                        node.end_pos().column(node) + 1,
-                                    ),
-                                    receiver: Some(receiver_var.clone()), // Use actual receiver from code
-                                }),
-                            });
-                        }
-                    }
+            // Skip if already matched in Tier 1/2
+            if matched_positions.contains(&position) {
+                continue;
+            }
 
-                    // Check service-level hasMany collections
-                    if let Some(service_has_many_spec) = boto3_model
-                        .get_service_has_many_collections()
-                        .get(&attr_name)
-                    {
-                        // Generate synthetic with all-synthetic parameters (service-level collections typically have no identifier params)
+            // Search for this collection name across all services
+            for (service_name, boto3_model) in self.registry.models() {
+                // Check all resource types for hasMany collections (resource-level)
+                for resource_def in boto3_model.get_all_resource_definitions().values() {
+                    if let Some(has_many_spec) = resource_def.has_many.get(&attr_name) {
+                        // Generate synthetic with all-synthetic parameters
                         calls.push(SdkMethodCall {
-                            name: service_has_many_spec.operation.to_case(Case::Snake),
+                            name: has_many_spec.operation.to_case(Case::Snake),
                             possible_services: vec![service_name.clone()],
                             metadata: Some(SdkMethodCallMetadata {
                                 parameters: self.generate_synthetic_parameters(
-                                    &service_has_many_spec.identifier_params,
+                                    &has_many_spec.identifier_params,
                                 ),
                                 return_type: None,
                                 start_position: (start.line() + 1, start.column(node) + 1),
@@ -1138,6 +1137,30 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                             }),
                         });
                     }
+                }
+
+                // Check service-level hasMany collections
+                if let Some(service_has_many_spec) = boto3_model
+                    .get_service_has_many_collections()
+                    .get(&attr_name)
+                {
+                    // Generate synthetic with all-synthetic parameters (service-level collections typically have no identifier params)
+                    calls.push(SdkMethodCall {
+                        name: service_has_many_spec.operation.to_case(Case::Snake),
+                        possible_services: vec![service_name.clone()],
+                        metadata: Some(SdkMethodCallMetadata {
+                            parameters: self.generate_synthetic_parameters(
+                                &service_has_many_spec.identifier_params,
+                            ),
+                            return_type: None,
+                            start_position: (start.line() + 1, start.column(node) + 1),
+                            end_position: (
+                                node.end_pos().line() + 1,
+                                node.end_pos().column(node) + 1,
+                            ),
+                            receiver: Some(receiver_var.clone()), // Use actual receiver from code
+                        }),
+                    });
                 }
             }
         }

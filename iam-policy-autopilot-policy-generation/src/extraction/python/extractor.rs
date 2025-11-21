@@ -59,8 +59,6 @@ impl PythonExtractor {
                 receiver,
             }),
         };
-        log::debug!("Found method call: {:?}", method_call);
-
         Some(method_call)
     }
 }
@@ -97,29 +95,69 @@ impl Extractor for PythonExtractor {
         service_index: &ServiceModelIndex,
     ) {
         let method_disambiguator = MethodDisambiguator::new(service_index);
+        let resource_extractor = ResourceDirectCallsExtractor::new(service_index);
 
-        for extractor_result in extractor_results.iter_mut() {
+        let total_files = extractor_results.len();
+        for (idx, extractor_result) in extractor_results.iter_mut().enumerate() {
             match extractor_result {
                 ExtractorResult::Python(ast, method_calls) => {
+                    let initial_count = method_calls.len();
+                    log::debug!(
+                        "Processing Python file {}/{}: {} initial method calls",
+                        idx + 1,
+                        total_files,
+                        initial_count
+                    );
+
                     // Extract resource direct calls (with ServiceModelIndex access)
-                    let resource_extractor = ResourceDirectCallsExtractor::new(service_index);
+                    let start = std::time::Instant::now();
                     let resource_calls = resource_extractor.extract_resource_method_calls(ast);
+                    let resource_count = resource_calls.len();
                     method_calls.extend(resource_calls);
+                    log::debug!(
+                        "  Resource extraction: {} calls in {:?}",
+                        resource_count,
+                        start.elapsed()
+                    );
 
                     // Add waiters to extracted methods using the service model index directly
+                    let start = std::time::Instant::now();
                     let waiters_extractor = WaitersExtractor::new(service_index);
                     let waiter_calls =
                         waiters_extractor.extract_waiter_method_calls(ast, service_index);
+                    let waiter_count = waiter_calls.len();
                     method_calls.extend(waiter_calls);
+                    log::debug!(
+                        "  Waiter extraction: {} calls in {:?}",
+                        waiter_count,
+                        start.elapsed()
+                    );
 
                     // Add paginators to extracted methods using the service model index directly
+                    let start = std::time::Instant::now();
                     let paginator_extractor = PaginatorExtractor::new(service_index);
                     let paginator_calls = paginator_extractor.extract_paginate_method_calls(ast);
+                    let paginator_count = paginator_calls.len();
                     method_calls.extend(paginator_calls);
+                    log::debug!(
+                        "  Paginator extraction: {} calls in {:?}",
+                        paginator_count,
+                        start.elapsed()
+                    );
 
                     // Clone the method calls to pass to disambiguate_method_calls
+                    let start = std::time::Instant::now();
+                    let total_before_disambiguation = method_calls.len();
                     let filtered_and_mapped =
                         method_disambiguator.disambiguate_method_calls(method_calls.clone());
+                    let final_count = filtered_and_mapped.len();
+                    log::debug!(
+                        "  Disambiguation: {} -> {} calls in {:?}",
+                        total_before_disambiguation,
+                        final_count,
+                        start.elapsed()
+                    );
+
                     // Replace the method calls in place
                     *method_calls = filtered_and_mapped;
                 }
