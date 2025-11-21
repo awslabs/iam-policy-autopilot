@@ -60,6 +60,7 @@ pub struct PolicyUploader {
 
 /// Response from uploading a policy
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct UploadResponse {
     /// The name of the uploaded policy
     pub policy_name: String,
@@ -71,6 +72,7 @@ pub struct UploadResponse {
 
 /// Response from uploading multiple policies
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct BatchUploadResponse {
     /// Successfully uploaded policies
     pub successful: Vec<UploadResponse>,
@@ -490,5 +492,12 @@ mod tests {
         assert_eq!(response.successful[0].policy_name, "TestPolicy1");
         assert_eq!(response.failed[0].0, 0);
         assert_eq!(response.failed[0].1, "Test error message");
+
+        let json = serde_json::to_string(&response).unwrap();
+        assert!(json.contains("\"Successful\":"));
+        assert!(json.contains("\"Failed\":"));
+        assert!(json.contains("\"PolicyName\":\"TestPolicy1\""));
+        assert!(json.contains("\"PolicyArn\":"));
+        assert!(json.contains("\"PolicyId\":"));
     }
 }
