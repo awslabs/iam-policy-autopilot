@@ -2,10 +2,15 @@
 //!
 //! Parses boto3 resources JSON specifications and utility mappings for resource-based AWS SDK patterns.
 
-use crate::embedded_data::EmbeddedBoto3Data;
+use crate::embedded_data::{
+    ActionSpec, Boto3ResourcesJson, EmbeddedBoto3Data, HasManySpecJson, ResourceIdentifier,
+    ResourceSpec, ServiceSpec,
+};
 use convert_case::{Case, Casing};
-use serde::Deserialize;
 use std::collections::HashMap;
+
+// Re-export ParamMapping for public use
+pub use crate::embedded_data::ParamMapping;
 
 /// Type of operation a resource action maps to
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -22,38 +27,27 @@ pub enum OperationType {
 
 /// Extract service names from embedded boto3 utilities mapping
 fn extract_services_from_embedded_utilities_mapping() -> Result<Vec<String>, String> {
-    let content_bytes = EmbeddedBoto3Data::get_utilities_mapping()
+    let mapping = EmbeddedBoto3Data::get_utilities_mapping()
         .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
-
-    let content = std::str::from_utf8(&content_bytes)
-        .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {}", e))?;
-
-    let mapping: UtilityMappingJson = serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse utilities mapping: {}", e))?;
 
     Ok(mapping.services.keys().cloned().collect())
 }
 
 /// Unified boto3 specifications model containing resources and utility methods
-#[derive(Debug, Clone, Deserialize)]
-pub struct Boto3ResourcesModel {
-    pub service_name: String,
-    #[serde(skip)]
+#[derive(Debug, Clone)]
+pub(crate) struct Boto3ResourcesModel {
+    pub(crate) service_name: String,
     service_constructors: HashMap<String, ServiceConstructorSpec>,
-    #[serde(skip)]
     resource_types: HashMap<String, ResourceDefinition>,
-    #[serde(skip)]
     client_utility_methods: HashMap<String, ClientUtilityMethod>,
-    #[serde(skip)]
     resource_utility_methods: HashMap<String, ResourceUtilityMethods>,
-    #[serde(skip)]
     service_has_many: HashMap<String, HasManySpec>, // Key: snake_case collection name
 }
 
 /// Client-level utility method specification
 #[derive(Debug, Clone)]
 pub struct ClientUtilityMethod {
-    pub(crate) operations: Vec<ServiceOperation>,
+    pub(crate) operations: Vec<crate::embedded_data::ServiceOperation>,
 }
 
 /// Resource-level utility methods for a specific resource type
@@ -65,23 +59,9 @@ pub struct ResourceUtilityMethods {
 /// Resource utility method specification
 #[derive(Debug, Clone)]
 pub struct ResourceUtilityMethod {
-    pub(crate) operations: Vec<ServiceOperation>,
+    pub(crate) operations: Vec<crate::embedded_data::ServiceOperation>,
     pub(crate) accepted_params: Vec<String>,
-    pub(crate) identifier_mappings: Vec<IdentifierMapping>,
-}
-
-/// Maps constructor arguments to operation parameters
-#[derive(Debug, Clone, Deserialize)]
-pub struct IdentifierMapping {
-    pub target_param: String,
-    pub constructor_arg_index: usize,
-}
-
-/// Service operation with required parameters (shared by resources and utilities)
-#[derive(Debug, Clone, Deserialize)]
-pub struct ServiceOperation {
-    pub operation: String,
-    pub required_params: Vec<String>,
+    pub(crate) identifier_mappings: Vec<crate::embedded_data::IdentifierMapping>,
 }
 
 /// Resource constructor specification from service.has
@@ -99,12 +79,6 @@ pub struct ResourceDefinition {
     pub(crate) has_many: HashMap<String, HasManySpec>, // Key: snake_case collection name
 }
 
-/// Resource identifier mapping
-#[derive(Debug, Clone, Deserialize)]
-pub struct ResourceIdentifier {
-    pub name: String,
-}
-
 /// Action mapping from resource method to SDK operation
 #[derive(Debug, Clone)]
 pub struct ActionMapping {
@@ -112,114 +86,11 @@ pub struct ActionMapping {
     pub(crate) identifier_params: Vec<ParamMapping>,
 }
 
-/// Parameter mapping for identifier injection (used in resource actions)
-#[derive(Debug, Clone, Deserialize)]
-pub struct ParamMapping {
-    pub(crate) target: String,
-    pub(crate) source: String,
-    #[serde(default)]
-    pub(crate) name: Option<String>,
-}
-
 /// HasMany collection specification for resource collections
 #[derive(Debug, Clone)]
 pub struct HasManySpec {
     pub(crate) operation: String, // Operation name (e.g., "ListObjects")
     pub(crate) identifier_params: Vec<ParamMapping>,
-}
-
-/// JSON structures for parsing boto3_utilities_mapping.json
-#[derive(Debug, Deserialize)]
-struct UtilityMappingJson {
-    services: HashMap<String, ServiceUtilityMethodsJson>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceUtilityMethodsJson {
-    client_methods: HashMap<String, UtilityMethodJson>,
-    resource_methods: HashMap<String, ResourceTypeUtilityMethodsJson>,
-}
-
-type ResourceTypeUtilityMethodsJson = HashMap<String, UtilityMethodJson>;
-
-#[derive(Debug, Deserialize)]
-struct UtilityMethodJson {
-    operations: Vec<ServiceOperation>,
-    accepted_params: Vec<String>,
-    #[serde(default)]
-    identifier_mappings: Vec<IdentifierMapping>,
-}
-
-/// Raw JSON structure for parsing boto3 resources files
-#[derive(Debug, Deserialize)]
-struct Boto3ResourcesJson {
-    service: Option<ServiceSpec>,
-    resources: Option<HashMap<String, ResourceSpec>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceSpec {
-    has: Option<HashMap<String, HasSpec>>,
-    // TODO: Add support
-    #[allow(dead_code)]
-    #[serde(rename = "hasMany")]
-    has_many: Option<HashMap<String, HasManySpecJson>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct HasSpec {
-    resource: ResourceRef,
-}
-
-#[derive(Debug, Deserialize)]
-struct ResourceRef {
-    #[serde(rename = "type")]
-    resource_type: String,
-    #[serde(default)]
-    identifiers: Option<serde_json::Value>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ResourceSpec {
-    identifiers: Option<Vec<ResourceIdentifier>>,
-    actions: Option<HashMap<String, ActionSpec>>,
-    // Special operations
-    load: Option<LoadSpec>,
-    waiters: Option<HashMap<String, WaiterSpec>>,
-    #[serde(rename = "hasMany")]
-    has_many: Option<HashMap<String, HasManySpecJson>>,
-}
-
-/// JSON structure for parsing hasMany collections from specs
-#[derive(Debug, Clone, Deserialize)]
-struct HasManySpecJson {
-    request: RequestSpec,
-}
-
-/// Load operation specification
-#[derive(Debug, Clone, Deserialize)]
-struct LoadSpec {
-    request: RequestSpec,
-}
-
-/// Waiter specification for resource waiters
-#[derive(Debug, Clone, Deserialize)]
-struct WaiterSpec {
-    #[serde(rename = "waiterName")]
-    waiter_name: String,
-    #[serde(default)]
-    params: Option<Vec<ParamMapping>>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct ActionSpec {
-    request: RequestSpec,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-struct RequestSpec {
-    operation: String,
-    params: Option<Vec<ParamMapping>>,
 }
 
 /// Registry for multiple boto3 services with reverse lookup capabilities
@@ -254,7 +125,7 @@ impl Boto3ResourcesRegistry {
         };
 
         for service_name in common_services {
-            match Boto3ResourcesModel::load_with_utilities_from_embedded(&service_name) {
+            match Boto3ResourcesModel::load(&service_name) {
                 Ok(model) => {
                     // Index all resource types this service provides
                     for resource_type in model.get_all_resource_types() {
@@ -297,11 +168,11 @@ impl Boto3ResourcesRegistry {
 }
 
 impl Boto3ResourcesModel {
-    /// Load unified boto3 model for a service from embedded data
+    /// Load base boto3 model for a service from embedded data
     ///
-    /// Loads resource specifications from embedded boto3 data
-    pub fn load_from_embedded(service_name: &str) -> Result<Self, String> {
-        // Get service versions from embedded data
+    /// Loads resource specifications from embedded boto3 data without utility methods
+    fn load_base(service_name: &str) -> Result<Self, String> {
+        // Get service versions from embedded data (cached)
         let service_versions = EmbeddedBoto3Data::build_service_versions_map();
 
         // Find the service and get its latest version
@@ -316,28 +187,27 @@ impl Boto3ResourcesModel {
             .last()
             .ok_or_else(|| format!("No versions found for service '{}'", service_name))?;
 
-        // Get the resources data
-        let resources_data = EmbeddedBoto3Data::get_resources_raw(service_name, latest_version)
-            .ok_or_else(|| {
-                format!(
-                    "Resources data not found for {}/{}",
-                    service_name, latest_version
-                )
-            })?;
+        // Get the deserialized resources data
+        let resources_json =
+            EmbeddedBoto3Data::get_resources_definition(service_name, latest_version).ok_or_else(
+                || {
+                    format!(
+                        "Resources data not found for {}/{}",
+                        service_name, latest_version
+                    )
+                },
+            )?;
 
-        // Parse the resource specification
-        let content = std::str::from_utf8(&resources_data)
-            .map_err(|e| format!("Invalid UTF-8 in embedded boto3 data: {}", e))?;
-
-        Self::parse_resources_content(service_name, content)
+        // Build model from parsed JSON
+        Self::build_model_from_json(service_name, resources_json)
     }
 
     /// Load unified boto3 model with utility methods from embedded data
     ///
     /// Loads resource specifications and merges with utility methods from embedded mapping
-    pub fn load_with_utilities_from_embedded(service_name: &str) -> Result<Self, String> {
+    pub(crate) fn load(service_name: &str) -> Result<Self, String> {
         // Load base resource model from embedded data
-        let mut model = Self::load_from_embedded(service_name)?;
+        let mut model = Self::load_base(service_name)?;
 
         // Load and merge utility methods from embedded data
         Self::merge_utility_methods_from_embedded(&mut model)?;
@@ -347,14 +217,8 @@ impl Boto3ResourcesModel {
 
     /// Merge utility methods from embedded mapping into model
     fn merge_utility_methods_from_embedded(model: &mut Boto3ResourcesModel) -> Result<(), String> {
-        let content_bytes = EmbeddedBoto3Data::get_utilities_mapping()
+        let mapping = EmbeddedBoto3Data::get_utilities_mapping()
             .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
-
-        let content = std::str::from_utf8(&content_bytes)
-            .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {}", e))?;
-
-        let mapping: UtilityMappingJson = serde_json::from_str(content)
-            .map_err(|e| format!("Failed to parse utilities mapping: {}", e))?;
 
         if let Some(service_utilities) = mapping.services.get(&model.service_name) {
             // Parse client utility methods
@@ -414,14 +278,6 @@ impl Boto3ResourcesModel {
         }
 
         Ok(())
-    }
-
-    /// Parse boto3 resources JSON content
-    fn parse_resources_content(service_name: &str, content: &str) -> Result<Self, String> {
-        let json: Boto3ResourcesJson =
-            serde_json::from_str(content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
-
-        Self::build_model_from_json(service_name, json)
     }
 
     /// Build model from parsed JSON
@@ -721,7 +577,7 @@ mod tests {
 
     #[test]
     fn test_load_dynamodb_model_from_embedded() {
-        let result = Boto3ResourcesModel::load_from_embedded("dynamodb");
+        let result = Boto3ResourcesModel::load("dynamodb");
 
         // This test will only pass if embedded data is available
         if result.is_ok() {
@@ -745,7 +601,7 @@ mod tests {
 
     #[test]
     fn test_load_s3_model_from_embedded() {
-        let result = Boto3ResourcesModel::load_from_embedded("s3");
+        let result = Boto3ResourcesModel::load("s3");
 
         // This test will only pass if embedded data is available
         if result.is_ok() {

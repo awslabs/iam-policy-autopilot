@@ -166,14 +166,13 @@ impl ServiceDiscovery {
         let start_time = std::time::Instant::now();
         log::debug!("Starting optimized service discovery...");
 
-        // Use the optimized single-iteration approach
         let service_versions_map = EmbeddedServiceData::build_service_versions_map();
 
         let mut services = Vec::new();
         for (service_name, api_versions) in service_versions_map {
             // Since build.rs only processes the latest version, there should be exactly one version
             if let Some(api_version) = api_versions.first() {
-                services.push(SdkModel::new(service_name, api_version.clone()));
+                services.push(SdkModel::new(service_name.clone(), api_version.clone()));
             }
         }
 
