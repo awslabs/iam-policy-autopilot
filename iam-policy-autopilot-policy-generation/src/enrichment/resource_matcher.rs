@@ -27,6 +27,9 @@ pub(crate) struct ResourceMatcher {
     fas_maps: OperationFasMaps,
 }
 
+// TODO: Make this configurable: https://github.com/awslabs/iam-policy-autopilot/issues/19
+const RESOURCE_CUTOFF: usize = 5;
+
 impl ResourceMatcher {
     /// Create a new ResourceMatcher instance
     #[must_use]
@@ -222,6 +225,12 @@ impl ResourceMatcher {
                                         &action.name,
                                         &service_reference,
                                     )?;
+                                let enriched_resources =
+                                    if RESOURCE_CUTOFF <= enriched_resources.len() {
+                                        vec![Resource::new("*".to_string(), None)]
+                                    } else {
+                                        enriched_resources
+                                    };
 
                                 // Combine conditions from FAS operation context and AuthorizedAction context
                                 let mut conditions = Self::make_condition(&operation.context);
