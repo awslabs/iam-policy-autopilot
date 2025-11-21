@@ -48,7 +48,6 @@ jobs:
         command: build
         args: --release --target ${{ matrix.target }} ${{ matrix.use-zig == true && '--zig' || '' }}
         manylinux: auto
-        # The action intelligently handles manylinux, cross-compilation, and platform-specific logic (cargo-xwin/zig)
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -71,6 +70,7 @@ jobs:
             use-qemu: true
           - os: windows-latest
             target: x86_64-pc-windows-msvc
+          # TODO: after repo is changed to public
           # - os: windows-arm64
           #   target: aarch64-pc-windows-msvc
           - os: macos-15-intel  # Intel x86_64

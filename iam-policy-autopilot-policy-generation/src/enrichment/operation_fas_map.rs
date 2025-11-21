@@ -10,6 +10,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Deserializer};
 
+use crate::enrichment::Context;
 use crate::service_configuration::ServiceConfiguration;
 
 type ServiceName = String;
@@ -44,22 +45,87 @@ pub(crate) struct OperationFasMap {
     pub(crate) fas_operations: HashMap<OperationName, Vec<FasOperation>>,
 }
 
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct FasContext {
+    pub(crate) key: String,
+    pub(crate) values: Vec<String>,
+}
+
+impl FasContext {
+    pub(crate) fn new(key: String, values: Vec<String>) -> Self {
+        Self { key, values }
+    }
+}
+
+impl Context for FasContext {
+    fn key(&self) -> &str {
+        &self.key
+    }
+
+    fn values(&self) -> &[String] {
+        &self.values
+    }
+}
+
+// Custom deserializer for Context that handles HashMap-like JSON objects
+// Supports both single string values and arrays of strings
+fn deserialize_context_map<'de, D>(deserializer: D) -> Result<Vec<FasContext>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::{MapAccess, Visitor};
+    use serde_json::Value;
+    use std::fmt;
+
+    struct ContextMapVisitor;
+
+    impl<'de> Visitor<'de> for ContextMapVisitor {
+        type Value = Vec<FasContext>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a map of key-value pairs where values can be strings or arrays")
+        }
+
+        fn visit_map<V>(self, mut map: V) -> Result<Vec<FasContext>, V::Error>
+        where
+            V: MapAccess<'de>,
+        {
+            let mut contexts = Vec::new();
+
+            while let Some((key, value)) = map.next_entry::<String, Value>()? {
+                let values = match value {
+                    Value::String(s) => vec![s],
+                    Value::Array(arr) => arr
+                        .into_iter()
+                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .collect(),
+                    _ => continue, // Skip non-string/non-array values
+                };
+
+                if !values.is_empty() {
+                    contexts.push(FasContext::new(key, values));
+                }
+            }
+
+            Ok(contexts)
+        }
+    }
+
+    deserializer.deserialize_map(ContextMapVisitor)
+}
+
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct FasOperation {
     #[serde(rename = "Operation")]
     operation: String,
     #[serde(rename = "Service")]
     service: String,
-    #[serde(rename = "Context")]
-    pub(crate) context: HashMap<String, String>,
+    #[serde(rename = "Context", deserialize_with = "deserialize_context_map")]
+    pub(crate) context: Vec<FasContext>,
 }
 
 impl FasOperation {
-    pub(crate) fn new(
-        operation: String,
-        service: String,
-        context: HashMap<String, String>,
-    ) -> Self {
+    pub(crate) fn new(operation: String, service: String, context: Vec<FasContext>) -> Self {
         FasOperation {
             operation,
             service,
@@ -67,7 +133,7 @@ impl FasOperation {
         }
     }
 
-    // TODO: I think this should be removed once we use Bookkeeper
+    // TODO: I think this should be removed once we use the service reference API
     //       The Operation -> Action map uses this format, so map lookups
     //       need to convert to it.
     pub(crate) fn service_operation_name(&self, service_cfg: &ServiceConfiguration) -> String {
@@ -241,17 +307,12 @@ mod tests {
 
         let service_cfg = load_service_configuration().unwrap();
 
-        let fas_op = FasOperation::new(
-            "Decrypt".to_string(),
-            "kms".to_string(),
-            [(
-                "kms:ViaService".to_string(),
-                "ssm.${region}.amazonaws.com".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
-        );
+        let context = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["ssm.${region}.amazonaws.com".to_string()],
+        )];
+
+        let fas_op = FasOperation::new("Decrypt".to_string(), "kms".to_string(), context);
 
         // Test service method
         assert_eq!(fas_op.service(&service_cfg), "kms");
@@ -297,10 +358,63 @@ mod tests {
         let fas_op = &fas_ops[0];
         assert_eq!(fas_op.operation, "Decrypt");
         assert_eq!(fas_op.service, "kms");
+
+        // Check that context contains the expected key-value pair
+        assert_eq!(fas_op.context.len(), 1);
+        let context_item = &fas_op.context[0];
+        assert_eq!(context_item.key, "kms:ViaService");
         assert_eq!(
-            fas_op.context.get("kms:ViaService"),
-            Some(&"test-service.${region}.amazonaws.com".to_string())
+            context_item.values,
+            vec!["test-service.${region}.amazonaws.com"]
         );
+    }
+
+    #[test]
+    fn test_operation_fas_map_deserialization_multiple_context_entries() {
+        let json_content = r#"{
+            "Name": "test-service",
+            "Operations": [
+                {
+                    "Name": "TestOperation",
+                    "FasOperations": [
+                        {
+                            "Operation": "Decrypt",
+                            "Service": "kms",
+                            "Context": {
+                                "kms:ViaService": "test-service.${region}.amazonaws.com",
+                                "kms:EncryptionContext:SecretARN": "${aws:RequestedRegion}",
+                                "aws:RequestedRegion": "us-east-1"
+                            }
+                        }
+                    ]
+                }
+            ]
+        }"#;
+
+        let operation_fas_map: OperationFasMap = serde_json::from_str(json_content).unwrap();
+
+        // Verify the deserialized structure
+        assert_eq!(operation_fas_map.fas_operations.len(), 1);
+
+        let key = "test-service:TestOperation";
+        assert!(operation_fas_map.fas_operations.contains_key(key));
+
+        let fas_ops = &operation_fas_map.fas_operations[key];
+        assert_eq!(fas_ops.len(), 1);
+
+        let fas_op = &fas_ops[0];
+        assert_eq!(fas_op.operation, "Decrypt");
+        assert_eq!(fas_op.service, "kms");
+
+        // Check that context contains all expected key-value pairs
+        assert_eq!(fas_op.context.len(), 3);
+
+        // Verify all context keys are present
+        let keys: std::collections::HashSet<_> =
+            fas_op.context.iter().map(|ctx| &ctx.key).collect();
+        assert!(keys.contains(&"kms:ViaService".to_string()));
+        assert!(keys.contains(&"kms:EncryptionContext:SecretARN".to_string()));
+        assert!(keys.contains(&"aws:RequestedRegion".to_string()));
     }
 
     #[test]

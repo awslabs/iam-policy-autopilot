@@ -387,3 +387,138 @@ async fn test_provider_integration() {
 
     assert_eq!(parsed_value, reparsed);
 }
+
+#[tokio::test]
+async fn test_access_analyzer_start_policy_generation_with_passrole_condition() {
+    // Test that access-analyzer:StartPolicyGeneration includes iam:PassRole with the correct condition
+    let python_source = r#"
+import boto3
+
+def start_policy_generation():
+    """Function that starts policy generation in Access Analyzer."""
+    client = boto3.client('accessanalyzer')
+    
+    response = client.start_policy_generation(
+        policyGenerationDetails={
+            'principalArn': 'arn:aws:iam::123456789012:role/MyRole'
+        },
+        cloudTrailDetails={
+            'trails': [
+                {
+                    'cloudTrailArn': 'arn:aws:cloudtrail:us-east-1:123456789012:trail/my-trail',
+                    'regions': ['us-east-1']
+                }
+            ],
+            'accessRole': 'arn:aws:iam::123456789012:role/AccessAnalyzerRole',
+            'startTime': '2024-01-01T00:00:00Z'
+        }
+    )
+    
+    return response
+"#;
+
+    let temp_file = create_test_python_file(python_source);
+    let temp_path = temp_file.path().to_path_buf();
+
+    // Extract SDK calls
+    let extraction_engine = ExtractionEngine::new();
+    let source_file =
+        SourceFile::with_language(temp_path, python_source.to_string(), Language::Python);
+
+    let extracted = extraction_engine
+        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .await
+        .expect("Extraction should succeed");
+
+    assert!(!extracted.methods.is_empty(), "Should extract methods");
+
+    // Enrich the methods
+    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let enriched = enrichment_engine
+        .enrich_methods(&extracted.methods)
+        .await
+        .expect("Enrichment should succeed");
+
+    assert!(!enriched.is_empty(), "Should have enriched methods");
+
+    // Generate policies
+    let policy_engine = PolicyGenerationEngine::new("aws", "us-east-1", "123456789012");
+    let policies = policy_engine
+        .generate_policies(&enriched)
+        .expect("Policy generation should succeed");
+
+    assert!(!policies.is_empty(), "Should generate policies");
+
+    // Serialize to JSON to inspect the policy structure
+    let policy_json = serde_json::to_value(&policies[0]).expect("Should serialize policy");
+
+    // Debug: Print the policy structure
+    println!(
+        "Generated policy: {}",
+        serde_json::to_string_pretty(&policy_json).unwrap()
+    );
+
+    // Verify the policy contains the expected actions
+    // Note: The Statement is nested under "Policy"
+    let statements = policy_json["Policy"]["Statement"]
+        .as_array()
+        .expect("Should have Statement array");
+
+    // Find the statement containing iam:PassRole
+    let passrole_statement = statements
+        .iter()
+        .find(|stmt| {
+            if let Some(actions) = stmt["Action"].as_array() {
+                actions
+                    .iter()
+                    .any(|action| action.as_str().map_or(false, |s| s == "iam:PassRole"))
+            } else if let Some(action) = stmt["Action"].as_str() {
+                action == "iam:PassRole"
+            } else {
+                false
+            }
+        })
+        .expect("Should have a statement with iam:PassRole action");
+
+    // Verify the condition is present
+    assert!(
+        passrole_statement.get("Condition").is_some(),
+        "iam:PassRole statement should have a Condition"
+    );
+
+    let condition = &passrole_statement["Condition"];
+
+    // Verify the condition has StringEquals operator
+    assert!(
+        condition.get("StringEquals").is_some(),
+        "Condition should have StringEquals operator"
+    );
+
+    let string_equals = &condition["StringEquals"];
+
+    // Verify the iam:PassedToService condition key is present
+    assert!(
+        string_equals.get("iam:PassedToService").is_some(),
+        "Condition should have iam:PassedToService key"
+    );
+
+    // Verify the value is access-analyzer.amazonaws.com
+    let passed_to_service = &string_equals["iam:PassedToService"];
+    if let Some(value_str) = passed_to_service.as_str() {
+        assert_eq!(
+            value_str, "access-analyzer.amazonaws.com",
+            "iam:PassedToService should be access-analyzer.amazonaws.com"
+        );
+    } else if let Some(values_array) = passed_to_service.as_array() {
+        assert!(
+            values_array
+                .iter()
+                .any(|v| v.as_str() == Some("access-analyzer.amazonaws.com")),
+            "iam:PassedToService should contain access-analyzer.amazonaws.com"
+        );
+    } else {
+        panic!("iam:PassedToService should be a string or array");
+    }
+
+    println!("✓ Test passed: iam:PassRole has correct iam:PassedToService condition");
+}
