@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 
 // Input struct matching the updated schema
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for generating policies for AccessDenied exceptions")]
 pub struct GeneratePolicyForAccessDeniedInput {
     #[schemars(description = "AccessDenied exception message")]
@@ -14,6 +15,7 @@ pub struct GeneratePolicyForAccessDeniedInput {
 
 // Output struct for the generated IAM policy
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Output containing the generated IAM policy.")]
 pub struct GeneratePolicyForAccessDeniedOutput {
     #[schemars(description = "Proposed policy for AccessDenied fix")]
@@ -116,5 +118,28 @@ mod tests {
 
         // Should succeed since PolicyDocument is serializable
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_generate_policy_for_access_denied_input_serialization() {
+        let input = GeneratePolicyForAccessDeniedInput {
+            error_message: "User: arn:aws:iam::123456789012:user/test is not authorized to perform: s3:GetObject".to_string(),
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+
+        assert!(json.contains("\"ErrorMessage\":"));
+    }
+
+    #[test]
+    fn test_generate_policy_for_access_denied_output_serialization() {
+        let output = GeneratePolicyForAccessDeniedOutput {
+            policy: "{\"Version\":\"2012-10-17\",\"Statement\":[]}".to_string(),
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+
+        assert!(json.contains("\"Policy\":"));
+        assert!(json.contains("Version"));
     }
 }
