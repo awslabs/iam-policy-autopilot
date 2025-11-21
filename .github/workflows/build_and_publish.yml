@@ -161,7 +161,7 @@ jobs:
         fi
 
   pypi_publish:
-    name: Publish distribution 📦 to TestPyPI
+    name: Publish distribution 📦 to PyPI
     needs: test_wheels # Only publish if tests pass
     runs-on: ubuntu-latest
     environment: Release
@@ -180,8 +180,7 @@ jobs:
         mkdir -p dist-flat
         find dist -name '*.whl' -exec cp {} dist-flat/ \;
 
-    - name: Publish to TestPyPI
+    - name: Publish to PyPI
       uses: pypa/gh-action-pypi-publish@release/v1
       with:
         packages-dir: dist-flat/
-        repository-url: https://test.pypi.org/legacy/
