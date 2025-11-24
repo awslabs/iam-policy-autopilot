@@ -14,6 +14,7 @@ mod api {
 
 // Input struct matching the updated schema
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for generating IAM policies from source code.")]
 pub struct GeneratePoliciesInput {
     #[schemars(description = "Absolute paths to source files to generate IAM Policies for")]
@@ -153,5 +154,35 @@ mod tests {
         let result = generate_application_policies(input).await;
 
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_generate_policies_input_serialization() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["/path/to/file.py".to_string()],
+            region: Some("us-west-2".to_string()),
+            account: Some("987654321098".to_string()),
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+
+        assert!(json.contains("\"SourceFiles\":"));
+        assert!(json.contains("\"Region\":\"us-west-2\""));
+        assert!(json.contains("\"Account\":\"987654321098\""));
+    }
+
+    #[test]
+    fn test_generate_policies_output_serialization() {
+        let output = GeneratePoliciesOutput {
+            policies: vec![
+                "{\"Version\":\"2012-10-17\"}".to_string(),
+                "{\"Version\":\"2012-10-17\"}".to_string(),
+            ],
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+
+        assert!(json.contains("\"Policies\":"));
+        assert!(json.contains("[\"{"));
     }
 }

@@ -135,10 +135,9 @@ async fn test_stdio_generate_policy() {
         .call_tool(CallToolRequestParam {
             name: "generate_application_policies".into(),
             arguments: json!({
-                "source_files": [test_file],
-                "partition": "aws",
-                "region": "us-east-1",
-                "account": "123456789012"
+                "SourceFiles": [test_file],
+                "Region": "us-east-1",
+                "Account": "123456789012"
             })
             .as_object()
             .cloned(),
@@ -156,10 +155,7 @@ async fn test_stdio_generate_policy_for_access_denied() {
         .call_tool(CallToolRequestParam {
             name: "generate_policy_for_access_denied".into(),
             arguments: json!({
-                "error_message": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt",
-                "partition": "aws",
-                "region": "us-east-1",
-                "account": "123456789012"
+                "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
             })
             .as_object()
             .cloned(),
@@ -218,10 +214,9 @@ async fn test_http_generate_policy() {
         .call_tool(CallToolRequestParam {
             name: "generate_application_policies".into(),
             arguments: json!({
-                "source_files": [test_file],
-                "partition": "aws",
-                "region": "us-east-1",
-                "account": "123456789012"
+                "SourceFiles": [test_file],
+                "Region": "us-east-1",
+                "Account": "123456789012"
             })
             .as_object()
             .cloned(),
@@ -243,10 +238,7 @@ async fn test_http_generate_policy_for_access_denied() {
         .call_tool(CallToolRequestParam {
             name: "generate_policy_for_access_denied".into(),
             arguments: json!({
-                "error_message": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt",
-                "partition": "aws",
-                "region": "us-east-1",
-                "account": "123456789012"
+                "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
             })
             .as_object()
             .cloned(),

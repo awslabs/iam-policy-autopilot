@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 // It's the exact same struct as ApplyResult
 // But we temporarily create a copy to derive some traits
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Result of applying an IAM policy fix")]
 pub struct FixResult {
     #[schemars(description = "Whether the policy was successfully applied")]
@@ -48,6 +49,7 @@ impl From<ApplyResult> for FixResult {
 
 // Input struct matching the updated schema
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for fixing access denied issues")]
 pub struct FixAccessDeniedInput {
     #[schemars(
@@ -62,6 +64,7 @@ pub struct FixAccessDeniedInput {
 
 // Output struct for the generated IAM policy
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "PascalCase")]
 #[schemars(description = "Output containing the result for fixing access denied issue")]
 pub struct FixAccessDeniedOutput {
     #[schemars(description = "Applied policy")]
@@ -241,6 +244,48 @@ mod tests {
         assert_eq!(fix_result.is_new_policy, apply_result.is_new_policy);
         assert_eq!(fix_result.statement_count, apply_result.statement_count);
         assert_eq!(fix_result.error, apply_result.error);
+    }
+
+    #[test]
+    fn test_fix_access_denied_input_serialization() {
+        let input = FixAccessDeniedInput {
+            access_denied_fix_policy: "{\"Version\":\"2012-10-17\"}".to_string(),
+            error_message: "User: arn:aws:iam::123456789012:user/test is not authorized"
+                .to_string(),
+        };
+
+        let json = serde_json::to_string(&input).unwrap();
+
+        assert!(json.contains("\"AccessDeniedFixPolicy\":"));
+        assert!(json.contains("\"ErrorMessage\":"));
+    }
+
+    #[test]
+    fn test_fix_access_denied_output_serialization() {
+        let fix_result = FixResult {
+            success: true,
+            policy_name: "TestPolicy".to_string(),
+            principal_kind: "User".to_string(),
+            principal_name: "testuser".to_string(),
+            is_new_policy: true,
+            statement_count: 1,
+            error: None,
+        };
+
+        let output = FixAccessDeniedOutput {
+            fix_result: Some(fix_result),
+            policy: "{\"Version\":\"2012-10-17\"}".to_string(),
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+
+        assert!(json.contains("\"FixResult\":"));
+        assert!(json.contains("\"Policy\":"));
+        assert!(json.contains("\"Success\":true"));
+        assert!(json.contains("\"PolicyName\":\"TestPolicy\""));
+        assert!(json.contains("\"PrincipalKind\":\"User\""));
+        assert!(json.contains("\"IsNewPolicy\":true"));
+        assert!(json.contains("\"StatementCount\":1"));
     }
 
     // Test helper function to create a minimal plan for testing
