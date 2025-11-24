@@ -10,8 +10,7 @@ use ast_grep_core::MatchStrictness;
 
 use std::collections::HashMap;
 
-/// Parse import item with line number
-pub(crate) fn parse_import_item_with_line(import_item: &str, line: usize) -> Option<ImportInfo> {
+fn parse_import_item_with_line(import_item: &str, line: usize) -> Option<ImportInfo> {
     let import_item = import_item.trim();
     if import_item.is_empty() {
         return None;
@@ -29,8 +28,7 @@ pub(crate) fn parse_import_item_with_line(import_item: &str, line: usize) -> Opt
     }
 }
 
-/// Parse object literal
-pub(crate) fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
+fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
 
     if obj_text.trim().is_empty() {
@@ -94,7 +92,6 @@ pub(crate) fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     result
 }
 
-/// Parse key-value pair
 fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     if let Some(colon_pos) = pair.find(':') {
         let key = pair[..colon_pos]
@@ -117,7 +114,6 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     }
 }
 
-/// Parse and add imports from import text with line number
 fn parse_and_add_imports_with_line(
     imports_text: &str,
     sublibrary_info: &mut SublibraryInfo,
@@ -164,8 +160,7 @@ where
         Self { ast_grep, language }
     }
 
-    /// Execute a pattern match against the AST - now generic for both JavaScript and TypeScript
-    /// Uses relaxed strictness to handle inline comments between arguments
+    /// Execute a pattern match against the AST using relaxed strictness to handle inline comments
     fn find_all_matches(
         &self,
         pattern: &str,
@@ -179,19 +174,30 @@ where
         Ok(root.find_all(pattern_obj).collect())
     }
 
+    /// Extract 1-based (line, column) position from the first match
+    fn get_first_match_position(matches: &[ast_grep_core::NodeMatch<T>]) -> Option<(usize, usize)> {
+        matches.first().map(|first_match| {
+            let node = first_match.get_node();
+            let pos = node.start_pos();
+            let line = pos.line() + 1;
+            let column = pos.column(node) + 1;
+            (line, column)
+        })
+    }
+
     /// Find Command instantiation and extract its arguments
-    /// Returns (line_number, parameters) tuple
+    /// Returns ((line_number, column_number), parameters) tuple
     pub(crate) fn find_command_instantiation_with_args(
         &self,
         command_name: &str,
-    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         let pattern = format!("new {}($ARGS)", command_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(first_match) = matches.first() {
-                let line = first_match.get_node().start_pos().line() + 1;
+            if let Some(position) = Self::get_first_match_position(&matches) {
+                let first_match = matches.first().unwrap();
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -199,44 +205,42 @@ where
                 let args_node = env.get_match("ARGS");
                 let parameters = ArgumentExtractor::extract_object_parameters(args_node);
 
-                return Some((line, parameters));
+                return Some((position, parameters));
             }
         }
         None
     }
 
     /// Find paginate function call and extract operation parameters (2nd argument)
-    /// Returns (line_number, parameters) tuple
     pub(crate) fn find_paginate_function_with_args(
         &self,
         function_name: &str,
-    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Use explicit two-argument pattern
         let pattern = format!("{}($ARG1, $ARG2)", function_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(first_match) = matches.first() {
-                let line = first_match.get_node().start_pos().line() + 1;
+            if let Some(position) = Self::get_first_match_position(&matches) {
+                let first_match = matches.first().unwrap();
                 let env = first_match.get_env();
 
                 // Extract parameters from second argument (ARG2 = operation params)
                 let second_arg = env.get_match("ARG2");
                 let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                return Some((line, parameters));
+                return Some((position, parameters));
             }
         }
         None
     }
 
     /// Find waiter function call and extract operation parameters (2nd argument)
-    /// Returns (line_number, parameters) tuple
     pub(crate) fn find_waiter_function_with_args(
         &self,
         function_name: &str,
-    ) -> Option<(usize, Vec<crate::extraction::Parameter>)> {
+    ) -> Option<((usize, usize), Vec<crate::extraction::Parameter>)> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Try patterns with and without await keyword using explicit two-argument pattern
@@ -247,24 +251,26 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(first_match) = matches.first() {
-                    let line = first_match.get_node().start_pos().line() + 1;
+                if let Some(position) = Self::get_first_match_position(&matches) {
+                    let first_match = matches.first().unwrap();
                     let env = first_match.get_env();
 
                     // Extract parameters from second argument (ARG2 = operation params)
                     let second_arg = env.get_match("ARG2");
                     let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                    return Some((line, parameters));
+                    return Some((position, parameters));
                 }
             }
         }
         None
     }
 
-    /// Find the position of CommandInput type usage (TypeScript-specific)
-    /// Searches for patterns like `const params: QueryCommandInput = {...}` and returns the line number
-    pub(crate) fn find_command_input_usage_position(&self, type_name: &str) -> Option<usize> {
+    /// Find CommandInput type usage position (TypeScript-specific)
+    pub(crate) fn find_command_input_usage_position(
+        &self,
+        type_name: &str,
+    ) -> Option<(usize, usize)> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
             format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
@@ -274,8 +280,8 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(first_match) = matches.first() {
-                    return Some(first_match.get_node().start_pos().line() + 1);
+                if let Some(position) = Self::get_first_match_position(&matches) {
+                    return Some(position);
                 }
             }
         }
@@ -930,27 +936,21 @@ function createListParams(): ListTablesInput {
         let ast = TypeScript.ast_grep(typescript_source);
         let scanner = ASTScanner::new(ast, TypeScript.into());
 
-        // Should find QueryCommandInput usage at line ~8
         let query_input_pos = scanner.find_command_input_usage_position("QueryCommandInput");
         assert!(
             query_input_pos.is_some(),
             "Should find QueryCommandInput usage"
         );
-        assert!(
-            query_input_pos.unwrap() > 7 && query_input_pos.unwrap() < 11,
-            "QueryCommandInput should be around line 8-9"
-        );
+        let (line, _col) = query_input_pos.unwrap();
+        assert_eq!(line, 9, "QueryCommandInput should be at line 9");
 
-        // Should find ListTablesInput usage at line ~15
         let list_input_pos = scanner.find_command_input_usage_position("ListTablesInput");
         assert!(
             list_input_pos.is_some(),
             "Should find ListTablesInput usage"
         );
-        assert!(
-            list_input_pos.unwrap() > 14 && list_input_pos.unwrap() < 18,
-            "ListTablesInput should be around line 15-16"
-        );
+        let (line, _col) = list_input_pos.unwrap();
+        assert_eq!(line, 15, "ListTablesInput should be at line 15");
 
         // Should return None for type that wasn't used
         let missing_type_pos = scanner.find_command_input_usage_position("PutItemInput");
@@ -980,6 +980,15 @@ const command = new CreateBucketCommand({ Bucket: "test" });
             command_pos.is_some(),
             "Should find command instantiation in JavaScript"
         );
+
+        // JavaScript should return None for TypeScript-specific CommandInput usage
+        let type_pos = scanner.find_command_input_usage_position("QueryCommandInput");
+        assert!(
+            type_pos.is_none(),
+            "Should return None for CommandInput in JavaScript"
+        );
+
+        println!("✅ JavaScript fallback behavior working correctly");
     }
 
     #[test]
@@ -1105,5 +1114,247 @@ var ec2Sdk = require("@aws-sdk/client-ec2");
                 sublibrary.imports.len()
             );
         }
+    }
+
+    #[test]
+    fn test_dynamodb_library_expansions() {
+        use crate::extraction::javascript::shared::ExtractionUtils;
+
+        // Test DynamoDB lib-dynamodb expansions from JSON configuration
+        let typescript_source = r#"
+import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import { 
+    PutCommand, 
+    GetCommand, 
+    paginateQuery, 
+    paginateScan 
+} from "@aws-sdk/lib-dynamodb";
+
+const client = new DynamoDBClient({ region: "us-west-2" });
+
+async function testOperations() {
+    // Test PutCommand expansion (should expand to PutItemCommand -> PutItem operation)
+    const putCmd = new PutCommand({
+        TableName: "Users",
+        Item: { id: "123", name: "John" }
+    });
+    
+    // Test GetCommand expansion (should expand to GetItemCommand -> GetItem operation)
+    const getCmd = new GetCommand({
+        TableName: "Users",
+        Key: { id: "123" }
+    });
+    
+    // Test paginateQuery expansion (should expand to QueryCommand -> Query operation)
+    const queryPaginator = paginateQuery(
+        { client },
+        { TableName: "Users", KeyConditionExpression: "pk = :pk" }
+    );
+    
+    // Test paginateScan expansion (should expand to ScanCommand -> Scan operation)
+    const scanPaginator = paginateScan(
+        { client },
+        { TableName: "Users" }
+    );
+}
+        "#;
+
+        let ast = TypeScript.ast_grep(typescript_source);
+        let mut scanner = ASTScanner::new(ast, TypeScript.into());
+        let scan_results = scanner.scan_all().unwrap();
+
+        // Extract operations using the full pipeline
+        let operations =
+            ExtractionUtils::extract_operations_from_imports(&scan_results, &mut scanner);
+
+        // Verify we found all 4 expected operations
+        assert!(
+            operations.len() >= 4,
+            "Should find at least 4 operations from DynamoDB lib-dynamodb expansions"
+        );
+
+        // Verify PutCommand expanded to PutItem
+        let put_item = operations.iter().find(|op| op.name == "PutItem");
+        assert!(
+            put_item.is_some(),
+            "Should find PutItem operation from PutCommand expansion"
+        );
+        if let Some(op) = put_item {
+            assert_eq!(op.possible_services, vec!["dynamodb".to_string()]);
+            // Verify parameters were extracted
+            assert!(op.metadata.is_some());
+            if let Some(metadata) = &op.metadata {
+                assert!(
+                    !metadata.parameters.is_empty(),
+                    "PutItem should have parameters"
+                );
+            }
+        }
+
+        // Verify GetCommand expanded to GetItem
+        let get_item = operations.iter().find(|op| op.name == "GetItem");
+        assert!(
+            get_item.is_some(),
+            "Should find GetItem operation from GetCommand expansion"
+        );
+        if let Some(op) = get_item {
+            assert_eq!(op.possible_services, vec!["dynamodb".to_string()]);
+            assert!(op.metadata.is_some());
+            if let Some(metadata) = &op.metadata {
+                assert!(
+                    !metadata.parameters.is_empty(),
+                    "GetItem should have parameters"
+                );
+            }
+        }
+
+        // Verify paginateQuery expanded to Query
+        let query = operations.iter().find(|op| op.name == "Query");
+        assert!(
+            query.is_some(),
+            "Should find Query operation from paginateQuery expansion"
+        );
+        if let Some(op) = query {
+            assert_eq!(op.possible_services, vec!["dynamodb".to_string()]);
+            assert!(op.metadata.is_some());
+            if let Some(metadata) = &op.metadata {
+                assert!(
+                    !metadata.parameters.is_empty(),
+                    "Query should have parameters from 2nd argument"
+                );
+            }
+        }
+
+        // Verify paginateScan expanded to Scan
+        let scan = operations.iter().find(|op| op.name == "Scan");
+        assert!(
+            scan.is_some(),
+            "Should find Scan operation from paginateScan expansion"
+        );
+        if let Some(op) = scan {
+            assert_eq!(op.possible_services, vec!["dynamodb".to_string()]);
+            assert!(op.metadata.is_some());
+            if let Some(metadata) = &op.metadata {
+                assert!(
+                    !metadata.parameters.is_empty(),
+                    "Scan should have parameters from 2nd argument"
+                );
+            }
+        }
+
+        println!("✅ DynamoDB lib-dynamodb expansion test passed!");
+        println!("   ✓ PutCommand → PutItem");
+        println!("   ✓ GetCommand → GetItem");
+        println!("   ✓ paginateQuery → Query");
+        println!("   ✓ paginateScan → Scan");
+        println!("   📊 Total operations extracted: {}", operations.len());
+    }
+
+    #[test]
+    fn test_s3_storage_library_expansions() {
+        use crate::extraction::javascript::shared::ExtractionUtils;
+
+        // Test S3 lib-storage Upload expansion from JSON configuration
+        let typescript_source = r#"
+import { S3Client } from "@aws-sdk/client-s3";
+import { Upload } from "@aws-sdk/lib-storage";
+
+const s3Client = new S3Client({ region: "us-west-2" });
+
+async function uploadLargeFile() {
+    // Test Upload class expansion (should expand to 6 S3 operations)
+    const upload = new Upload({
+        client: s3Client,
+        params: {
+            Bucket: "my-bucket",
+            Key: "uploads/large-file.dat",
+            Body: "file-content"
+        },
+        tags: [
+            { Key: "Environment", Value: "Production" }
+        ],
+        queueSize: 4,
+        partSize: 5242880
+    });
+
+    const result = await upload.done();
+    console.log("Upload completed:", result.Location);
+}
+        "#;
+
+        let ast = TypeScript.ast_grep(typescript_source);
+        let mut scanner = ASTScanner::new(ast, TypeScript.into());
+        let scan_results = scanner.scan_all().unwrap();
+
+        // Extract operations using the full pipeline
+        let operations =
+            ExtractionUtils::extract_operations_from_imports(&scan_results, &mut scanner);
+
+        // According to js_v3_libraries.json, Upload should expand to 6 commands:
+        // 1. PutObjectCommand → PutObject
+        // 2. CreateMultipartUploadCommand → CreateMultipartUpload
+        // 3. UploadPartCommand → UploadPart
+        // 4. CompleteMultipartUploadCommand → CompleteMultipartUpload
+        // 5. AbortMultipartUploadCommand → AbortMultipartUpload
+        // 6. PutObjectTaggingCommand → PutObjectTagging
+
+        let expected_operations = vec![
+            "PutObject",
+            "CreateMultipartUpload",
+            "UploadPart",
+            "CompleteMultipartUpload",
+            "AbortMultipartUpload",
+            "PutObjectTagging",
+        ];
+
+        assert!(
+            operations.len() >= 6,
+            "Should find at least 6 operations from Upload expansion, found {}",
+            operations.len()
+        );
+
+        // Verify each expected operation is present
+        for expected_op in &expected_operations {
+            let op = operations.iter().find(|o| &o.name == expected_op);
+            assert!(
+                op.is_some(),
+                "Should find {} operation from Upload expansion",
+                expected_op
+            );
+
+            if let Some(op) = op {
+                assert_eq!(
+                    op.possible_services,
+                    vec!["storage".to_string()],
+                    "{} should be mapped to 'storage' service",
+                    expected_op
+                );
+
+                // Verify metadata is present
+                assert!(
+                    op.metadata.is_some(),
+                    "{} should have metadata",
+                    expected_op
+                );
+
+                // Verify parameters were extracted from Upload constructor
+                if let Some(metadata) = &op.metadata {
+                    assert!(
+                        !metadata.parameters.is_empty(),
+                        "{} should have parameters extracted from Upload constructor",
+                        expected_op
+                    );
+                }
+            }
+        }
+
+        println!("✅ S3 lib-storage Upload expansion test passed!");
+        println!("   ✓ Upload → PutObject");
+        println!("   ✓ Upload → CreateMultipartUpload");
+        println!("   ✓ Upload → UploadPart");
+        println!("   ✓ Upload → CompleteMultipartUpload");
+        println!("   ✓ Upload → AbortMultipartUpload");
+        println!("   ✓ Upload → PutObjectTagging");
+        println!("   📊 Total operations extracted: {}", operations.len());
     }
 }

@@ -1,0 +1,29 @@
+{
+  "dynamodb": {
+    "PutCommand": ["PutItemCommand"],
+    "GetCommand": ["GetItemCommand"],
+    "BatchGetCommand": ["BatchGetItemCommand"],
+    "BatchWriteCommand": ["BatchWriteItemCommand"],
+    "DeleteCommand": ["DeleteItemCommand"],
+    "QueryCommand": ["QueryCommand"],
+    "ScanCommand": ["ScanCommand"],
+    "UpdateCommand": ["UpdateItemCommand"],
+    "TransactGetCommand": ["TransactGetItemsCommand"],
+    "TransactWriteCommand": ["TransactWriteItemsCommand"],
+    "BatchExecuteStatementCommand": ["BatchExecuteStatementCommand"],
+    "ExecuteStatementCommand": ["ExecuteStatementCommand"],
+    "ExecuteTransactionCommand": ["ExecuteTransactionCommand"],
+    "paginateQuery": ["QueryCommand"],
+    "paginateScan": ["ScanCommand"]
+  },
+  "storage": {
+    "Upload": [
+      "PutObjectCommand",
+      "CreateMultipartUploadCommand",
+      "UploadPartCommand",
+      "CompleteMultipartUploadCommand",
+      "AbortMultipartUploadCommand",
+      "PutObjectTaggingCommand"
+    ]
+  }
+}
