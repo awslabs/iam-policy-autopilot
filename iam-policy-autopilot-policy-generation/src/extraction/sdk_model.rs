@@ -8,8 +8,9 @@
 //! All SDK-related functionality is consolidated here for better cohesion and maintainability.
 
 use std::collections::HashMap;
+use std::sync::{Arc, OnceLock};
 
-use tokio::sync::Semaphore;
+use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinSet;
 
 use convert_case::{Case, Casing};
@@ -156,13 +157,18 @@ pub(crate) struct ServiceMethodRef {
 /// and build comprehensive service indexes for method validation.
 pub(crate) struct ServiceDiscovery;
 
+/// Global cache for service model indexes by language
+/// Uses OnceLock for thread-safe lazy initialization
+static SERVICE_INDEX_CACHE: OnceLock<RwLock<HashMap<String, Arc<ServiceModelIndex>>>> =
+    OnceLock::new();
+
 impl ServiceDiscovery {
     /// Discover all available services from embedded data
     ///
     /// Gets all available AWS services from the embedded service definitions.
     /// Each service includes its name and API version. Since build.rs only processes
     /// the latest version for each service, there's exactly one version per service.
-    pub(crate) fn discover_services() -> Result<Vec<SdkModel>> {
+    fn discover_services() -> Result<Vec<SdkModel>> {
         let start_time = std::time::Instant::now();
         log::debug!("Starting optimized service discovery...");
 
@@ -191,12 +197,34 @@ impl ServiceDiscovery {
 
     /// Load all services into a comprehensive service model index
     ///
-    /// Loads all provided services and builds a comprehensive index that includes
+    /// Discovers all available services and builds a comprehensive index that includes
     /// method lookup tables for efficient validation of extracted method calls.
-    pub(crate) async fn load_service_index(
-        language: Language,
-        services: Vec<SdkModel>,
-    ) -> Result<ServiceModelIndex> {
+    ///
+    /// This function uses a cache to avoid reloading the same service index multiple times
+    /// for the same language. The cache is thread-safe and shared across all calls.
+    pub(crate) async fn load_service_index(language: Language) -> Result<Arc<ServiceModelIndex>> {
+        let language_key = language.to_string();
+
+        // Initialize cache if needed
+        let cache = SERVICE_INDEX_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
+
+        // Check if we already have this index cached
+        {
+            let read_guard = cache.read().await;
+            if let Some(cached_index) = read_guard.get(&language_key) {
+                log::debug!("Using cached service index for language '{}'", language);
+                return Ok(Arc::clone(cached_index));
+            }
+        }
+
+        // Not in cache, need to load it
+        log::debug!(
+            "Loading service index for language '{}' (not cached)",
+            language
+        );
+
+        // Discover all available services
+        let services = Self::discover_services()?;
         let mut service_models = HashMap::new();
         let mut method_lookup = HashMap::new();
         let mut load_errors = Vec::new();
@@ -246,11 +274,19 @@ impl ServiceDiscovery {
             }
         }
 
-        Ok(ServiceModelIndex {
+        let index = Arc::new(ServiceModelIndex {
             services: service_models,
             method_lookup,
             waiter_to_services,
-        })
+        });
+
+        // Cache the index for future use
+        {
+            let mut write_guard = cache.write().await;
+            write_guard.insert(language_key, Arc::clone(&index));
+        }
+
+        Ok(index)
     }
 
     /// Load services in parallel using embedded data
@@ -578,45 +614,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_service_index_building() {
-        match ServiceDiscovery::discover_services() {
-            Ok(services) => {
-                // Take just a few services to avoid overwhelming the test
-                let limited_services: Vec<_> = services.into_iter().take(3).collect();
+        match ServiceDiscovery::load_service_index(Language::Python).await {
+            Ok(index) => {
+                println!("✓ Successfully built service index");
+                println!("Services loaded: {}", index.services.len());
+                println!("Method lookup entries: {}", index.method_lookup.len());
 
-                println!(
-                    "Building service index for {} embedded services...",
-                    limited_services.len()
-                );
-
-                match ServiceDiscovery::load_service_index(Language::Python, limited_services).await
-                {
-                    Ok(index) => {
-                        println!("✓ Successfully built service index");
-                        println!("Services loaded: {}", index.services.len());
-                        println!("Method lookup entries: {}", index.method_lookup.len());
-
-                        // Print some method lookup examples
-                        for (method_name, refs) in index.method_lookup.iter().take(5) {
-                            println!(
-                                "Method '{}' found in {} service(s)",
-                                method_name,
-                                refs.len()
-                            );
-                            for service_ref in refs {
-                                println!(
-                                    "  - {}.{}",
-                                    service_ref.service_name, service_ref.operation_name,
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        panic!("Failed to build service index: {}", e);
+                // Print some method lookup examples
+                for (method_name, refs) in index.method_lookup.iter().take(5) {
+                    println!(
+                        "Method '{}' found in {} service(s)",
+                        method_name,
+                        refs.len()
+                    );
+                    for service_ref in refs {
+                        println!(
+                            "  - {}.{}",
+                            service_ref.service_name, service_ref.operation_name,
+                        );
                     }
                 }
             }
             Err(e) => {
-                panic!("Failed to discover embedded services: {}", e);
+                panic!("Failed to build service index: {}", e);
             }
         }
     }
@@ -656,5 +676,20 @@ mod tests {
         );
 
         println!("✓ Method name conversion tests passed");
+    }
+
+    #[tokio::test]
+    async fn test_service_index_caching() {
+        let index1 = ServiceDiscovery::load_service_index(Language::Python)
+            .await
+            .expect("Failed to load service index");
+
+        let index2 = ServiceDiscovery::load_service_index(Language::Python)
+            .await
+            .expect("Failed to load service index from cache");
+
+        // Verify all indexes have the same content
+        assert_eq!(index1.services.len(), index2.services.len());
+        assert_eq!(index1.method_lookup.len(), index2.method_lookup.len());
     }
 }

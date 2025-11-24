@@ -50,6 +50,8 @@ struct SharedConfig {
     language: Option<String>,
     /// Output full ExtractedMethods instead of simplified operations (extract-sdk-calls only)
     full_output: bool,
+    /// Optional service hints for filtering
+    service_hints: Option<Vec<String>>,
 }
 
 impl SharedConfig {
@@ -96,6 +98,12 @@ impl GeneratePolicyCliConfig {
         self.shared.validate()
     }
 }
+
+const SERVICE_HINTS_LONG_HELP: &str =
+    "Space-separated list of AWS service names to filter extracted SDK calls. \
+Filters the result of source code analysis, an action from a service not provided as a hint \
+may still be included in the final policy, if IAM Policy Autopilot determines the action may \
+be required for the SDK call.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -205,6 +213,14 @@ extract-sdk-calls outputs a simplified list of operations with their possible se
 This flag has no effect on the generate-policy subcommand."
         )]
         full_output: bool,
+
+        /// Filter extracted SDK calls to specific AWS services
+        #[arg(
+            long = "service-hints",
+            num_args = 1..,
+            long_help = SERVICE_HINTS_LONG_HELP,
+        )]
+        service_hints: Option<Vec<String>>,
     },
 
     /// Generates complete IAM policy documents from source files
@@ -300,6 +316,14 @@ By default, service reference data is cached in the system temp directory for 6 
 Use this flag to force fresh data retrieval on every run."
         )]
         disable_cache: bool,
+
+        /// Filter extracted SDK calls to specific AWS services
+        #[arg(
+            long = "service-hints",
+            num_args = 1..,
+            long_help = SERVICE_HINTS_LONG_HELP,
+        )]
+        service_hints: Option<Vec<String>>,
     },
 
     /// Start MCP server
@@ -352,9 +376,16 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
         .validate()
         .context("Configuration validation failed")?;
 
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
+
+    let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
+        service_names: names.clone(),
+    });
+
     let results = extract_sdk_calls(&ExtractSdkCallsConfig {
         source_files: config.source_files.to_owned(),
         language: config.language.to_owned(),
+        service_hints,
     })
     .await?;
 
@@ -381,10 +412,21 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         .validate()
         .context("Configuration validation failed")?;
 
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
+
+    let service_hints = config
+        .shared
+        .service_hints
+        .as_ref()
+        .map(|names| ServiceHints {
+            service_names: names.clone(),
+        });
+
     let (policies, method_action_mappings) = generate_policies(&GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: config.shared.source_files.to_owned(),
             language: config.shared.language.to_owned(),
+            service_hints,
         },
         aws_context: AwsContext::new(config.region.clone(), config.account.clone()),
         generate_action_mappings: config.show_action_mappings,
@@ -485,6 +527,7 @@ async fn main() {
             pretty,
             language,
             full_output,
+            service_hints,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -497,6 +540,7 @@ async fn main() {
                 pretty,
                 language,
                 full_output,
+                service_hints,
             };
 
             match handle_extract_sdk_calls(&config).await {
@@ -521,6 +565,7 @@ async fn main() {
             upload_policies,
             minimal_policy_size,
             disable_cache,
+            service_hints,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -534,6 +579,7 @@ async fn main() {
                     pretty,
                     language,
                     full_output,
+                    service_hints,
                 },
                 region,
                 account,

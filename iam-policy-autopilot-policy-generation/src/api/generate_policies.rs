@@ -29,6 +29,7 @@ pub async fn generate_policies(
         &extractor,
         &config.extract_sdk_calls_config.source_files,
         config.extract_sdk_calls_config.language.as_deref(),
+        config.extract_sdk_calls_config.service_hints.clone(),
     )
     .await
     .context("Failed to process source files")?;
