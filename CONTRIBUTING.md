@@ -32,9 +32,52 @@ To send us a pull request, please:
 1. Fork the repository.
 2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
 3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages.
+4. Commit to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+
+### Commit Message Guidelines
+
+We follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. This helps with automated changelog generation and makes the commit history more readable.
+
+**Format:**
+```
+<type>: <description>
+
+[optional body]
+
+[optional footer]
+```
+
+**Types:**
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `chore:` - Maintenance tasks, dependency updates
+- `test:` - Adding or updating tests
+- `refactor:` - Code refactoring without changing functionality
+- `perf:` - Performance improvements
+- `ci:` - CI/CD configuration changes
+
+**Breaking Changes:**
+
+For breaking changes, append `!` after the type or add `BREAKING CHANGE:` in the footer:
+
+```bash
+feat!: change CLI argument format for generate-policy command
+
+BREAKING CHANGE: --region flag is now required instead of optional
+```
+
+**Examples:**
+```bash
+feat: add support for CloudFormation policy generation
+fix: resolve parsing error for multi-line AccessDenied messages
+docs: update installation instructions in README
+chore: bump aws-sdk-iam to version 1.90.0
+test: add integration tests for MCP server
+feat!: remove deprecated --legacy-format flag
+```
 
 GitHub provides additional document on [forking a repository](https://help.github.com/articles/fork-a-repo/) and
 [creating a pull request](https://help.github.com/articles/creating-a-pull-request/).
