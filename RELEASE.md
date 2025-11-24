@@ -6,7 +6,8 @@ This document outlines the steps to create a new release.
 
 - Write access to the repository
 - Git configured with your credentials
-- [git-cliff](https://github.com/orhun/git-cliff) installed for changelog generation (optional but recommended)
+- Review our [contributing guideline](https://github.com/awslabs/iam-policy-autopilot/blob/main/CONTRIBUTING.md)
+- [git-cliff](https://github.com/orhun/git-cliff) installed for changelog generation
 
 ## Quick Reference
 
@@ -39,7 +40,7 @@ If you need to include only specific commits instead of all changes from `main`:
 
 ```bash
 # Create release branch from a specific base (e.g., last release tag)
-git checkout -b release/X.Y.Z v0.1.0
+git checkout -b release/X.Y.Z 0.1.0
 
 # Cherry-pick specific commits
 git cherry-pick <commit-hash-1>
@@ -58,7 +59,7 @@ git cherry-pick --abort
 **Finding commits to cherry-pick:**
 ```bash
 # View commits since last release
-git log v0.1.0..main --oneline
+git log 0.1.0..main --oneline
 
 # View commits by author
 git log --author="username" --oneline
@@ -67,20 +68,18 @@ git log --author="username" --oneline
 git log --grep="^fix:" --oneline
 ```
 
-### 2. Update Version in Cargo.toml
+### 2. Update Version
 
-Update the version in the workspace `Cargo.toml`:
+Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in both `Cargo.toml` and `pyproject.toml`:
 
 ```bash
-# Edit Cargo.toml and update the version field under [workspace.package]
+# Edit Cargo.toml - update version field under [workspace.package]
 # Change: version = "0.1.0"
 # To:     version = "X.Y.Z"
-```
 
-Then update the lock file:
-
-```bash
-cargo update -w
+# Edit pyproject.toml - update version field under [project]
+# Change: version = "0.1.0"
+# To:     version = "X.Y.Z"
 ```
 
 Verify the version is correct:
@@ -92,7 +91,7 @@ cargo build
 
 ### 3. Generate/Update Changelog
 
-#### Option A: Using git-cliff (Recommended)
+#### Using git-cliff
 
 If you have [git-cliff](https://github.com/orhun/git-cliff) installed:
 
@@ -101,10 +100,11 @@ If you have [git-cliff](https://github.com/orhun/git-cliff) installed:
 git cliff --tag X.Y.Z --unreleased -o CHANGELOG.md
 
 # For subsequent releases (prepend to existing CHANGELOG.md)
-git cliff --tag X.Y.Z --prepend CHANGELOG.md
+# Replace PREV_TAG with the previous release tag (e.g., 0.1.0)
+git cliff PREV_TAG..HEAD --tag X.Y.Z --prepend CHANGELOG.md
 
 # Preview without writing to file
-git cliff --tag X.Y.Z --unreleased
+git cliff PREV_TAG..HEAD --tag X.Y.Z
 ```
 
 **Important:** 
@@ -112,37 +112,13 @@ git cliff --tag X.Y.Z --unreleased
 - Use `--prepend` for subsequent releases (adds new release at top, keeps old releases)
 - git-cliff requires conventional commit messages (feat:, fix:, etc.) to generate meaningful changelogs
 
-#### Option B: Manual Update
-
-Create or update `CHANGELOG.md` with the following structure:
-
-```markdown
-# Changelog
-
-## [X.Y.Z] - YYYY-MM-DD
-
-### Added
-- New features
-
-### Changed
-- Changes in existing functionality
-
-### Fixed
-- Bug fixes
-
-### Removed
-- Removed features
-```
-
-Review and edit the changelog to ensure accuracy and completeness.
-
 ### 4. Commit and Push Changes
 
 Commit the version and changelog updates:
 
 ```bash
 # Stage changes
-git add Cargo.toml Cargo.lock CHANGELOG.md
+git add Cargo.toml pyproject.toml CHANGELOG.md
 
 # Commit with descriptive message
 git commit -m "chore: bump version to X.Y.Z"
@@ -166,7 +142,7 @@ gh pr create --base main --head release/X.Y.Z \
 - Updated CHANGELOG.md
 
 ## Checklist
-- [ ] Version updated in Cargo.toml
+- [ ] Version updated in Cargo.toml and pyproject.toml
 - [ ] Changelog updated
 - [ ] All tests passing
 - [ ] Ready for release"
@@ -182,6 +158,7 @@ After PR approval and merge:
    ```bash
    # Checkout main and pull latest
    git checkout main
+   git status # confirm your local changes
    git pull origin main
 
    # Create annotated tag
@@ -207,7 +184,7 @@ After PR approval and merge:
    - Set release title: `Release X.Y.Z`
    - Copy relevant section from CHANGELOG.md to release notes
    - Check "Set as the latest release"
-   - Click "Publish release"
+   - Click "Publish release" ***One-way Door decision, make sure to review all the details***
 
 3. **Automated Build and Publish:**
    
@@ -223,7 +200,6 @@ After PR approval and merge:
 
 1. Verify the release on PyPI: `https://pypi.org/project/iam-policy-autopilot/`
 2. Test installation: `pip install iam-policy-autopilot==X.Y.Z`
-3. Announce the release (if applicable)
 
 ## Troubleshooting
 
@@ -232,7 +208,7 @@ After PR approval and merge:
 If the automated build fails:
 - Check the GitHub Actions logs
 - Ensure all tests pass locally: `cargo test --workspace`
-- Verify version consistency across all Cargo.toml files
+- Verify version consistency in Cargo.toml and pyproject.toml
 
 ### PyPI Publishing Issues
 
@@ -244,8 +220,7 @@ If PyPI publishing fails:
 ### Version Mismatch
 
 If version verification fails:
-- Ensure `Cargo.toml` version matches the git tag exactly
-- Run `cargo update -w` to update lock file
+- Ensure both `Cargo.toml` and `pyproject.toml` versions match the git tag exactly
 - Rebuild and verify: `cargo build && ./target/debug/iam-policy-autopilot --version`
 
 ### Empty Changelog from git-cliff
