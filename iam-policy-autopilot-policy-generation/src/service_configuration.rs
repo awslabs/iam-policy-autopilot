@@ -29,6 +29,8 @@ pub(crate) struct ServiceConfiguration {
     pub(crate) rename_services_operation_action_map: HashMap<String, String>,
     /// Service renames
     pub(crate) rename_services_service_reference: HashMap<String, String>,
+    /// Smithy to Botocore model: service renames
+    pub(crate) smithy_botocore_service_name_mapping: HashMap<String, String>,
     /// Operation renames
     pub(crate) rename_operations: HashMap<String, OperationRename>,
     /// Resource overrides
@@ -142,6 +144,7 @@ mod tests {
             .cloned()
             .collect(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: [(
                 "old:Operation".to_string(),
                 OperationRename {

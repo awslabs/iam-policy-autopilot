@@ -191,6 +191,13 @@ pub enum ExtractorError {
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
+
+    /// Invalid service hints with suggestions
+    #[error("Provided service hints do not exist:\n{suggestions}")]
+    InvalidServiceHints {
+        /// Formatted list of invalid services with suggestions
+        suggestions: String,
+    },
 }
 
 impl ExtractorError {
@@ -279,6 +286,13 @@ impl ExtractorError {
         Self::PolicyGeneration {
             message: message.into(),
             source: None,
+        }
+    }
+
+    /// Create an invalid service hints error
+    pub(crate) fn invalid_service_hints(suggestions: impl Into<String>) -> Self {
+        Self::InvalidServiceHints {
+            suggestions: suggestions.into(),
         }
     }
 }

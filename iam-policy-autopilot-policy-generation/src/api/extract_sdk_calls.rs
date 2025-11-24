@@ -14,7 +14,12 @@ pub async fn extract_sdk_calls(config: &ExtractSdkCallsConfig) -> Result<Extract
     let extractor = crate::ExtractionEngine::new();
 
     // Process source files
-    process_source_files(&extractor, &config.source_files, config.language.as_deref())
-        .await
-        .context("Failed to process source files")
+    process_source_files(
+        &extractor,
+        &config.source_files,
+        config.language.as_deref(),
+        config.service_hints.clone(),
+    )
+    .await
+    .context("Failed to process source files")
 }

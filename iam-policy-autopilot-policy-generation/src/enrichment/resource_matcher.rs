@@ -396,6 +396,7 @@ mod tests {
                 "NoServiceReference": [],
                 "RenameServicesOperationActionMap": {},
                 "RenameServicesServiceReference": {},
+                "SmithyBotocoreServiceNameMapping": {},
                 "RenameOperations": {},
                 "ResourceOverrides": {}
             }"#;
@@ -471,6 +472,7 @@ mod tests {
             .iter()
             .cloned()
             .collect(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: [(
                 "s3:ListObjectsV2".to_string(),
                 crate::service_configuration::OperationRename {
@@ -551,6 +553,7 @@ mod tests {
         let service_cfg = ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         };
@@ -614,6 +617,7 @@ mod tests {
             .iter()
             .cloned()
             .collect(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         };
@@ -723,6 +727,7 @@ mod tests {
         let service_cfg = ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides,
         };
@@ -836,6 +841,7 @@ mod tests {
         let service_cfg = ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides,
         };
@@ -909,6 +915,7 @@ mod tests {
         let service_cfg = Arc::new(ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         });
@@ -1008,6 +1015,7 @@ mod tests {
         let service_cfg = Arc::new(ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         });
@@ -1097,6 +1105,7 @@ mod tests {
         let service_cfg = Arc::new(ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         });
@@ -1162,6 +1171,7 @@ mod tests {
         let service_cfg = Arc::new(ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         });
@@ -1199,6 +1209,7 @@ mod tests {
         let service_cfg = Arc::new(ServiceConfiguration {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
             rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         });

@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
 };
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -25,6 +25,11 @@ pub struct GeneratePoliciesInput {
 
     #[schemars(description = "AWS Account Id")]
     pub account: Option<String>,
+
+    #[schemars(
+        description = "List of AWS service names to filter SDK calls by (e.g., ['s3', 'dynamodb']). When provided, the result of source code analysis will be restricted to the provided services. The generated policy may still contain actions from a service not provided as a hint, if IAM Policy Autopilot determines that the action may be needed for the SDK call."
+    )]
+    pub service_hints: Option<Vec<String>>,
 }
 
 // Output struct for the generated IAM policy
@@ -42,12 +47,18 @@ pub async fn generate_application_policies(
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
 
+    // Convert service_hints from Vec<String> to ServiceHints if provided
+    let service_hints = input.service_hints.map(|hints| ServiceHints {
+        service_names: hints,
+    });
+
     let (policies, _) = api::generate_policies(&GeneratePolicyConfig {
         individual_policies: false,
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: input.source_files.into_iter().map(|f| f.into()).collect(),
             // Maybe we should let the llm figure out the language
             language: None,
+            service_hints,
         },
         aws_context: AwsContext::new(region, account),
         generate_action_mappings: false,
@@ -114,6 +125,7 @@ mod tests {
             source_files: vec!["path/to/source/file".to_string()],
             region: Some("us-east-1".to_string()),
             account: Some("123456789012".to_string()),
+            service_hints: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -148,6 +160,7 @@ mod tests {
             source_files: vec!["path/to/source/file".to_string()],
             region: Some("us-east-1".to_string()),
             account: Some("123456789012".to_string()),
+            service_hints: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -162,6 +175,7 @@ mod tests {
             source_files: vec!["/path/to/file.py".to_string()],
             region: Some("us-west-2".to_string()),
             account: Some("987654321098".to_string()),
+            service_hints: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -184,5 +198,37 @@ mod tests {
 
         assert!(json.contains("\"Policies\":"));
         assert!(json.contains("[\"{"));
+    }
+
+    #[tokio::test]
+    async fn test_generate_application_policies_with_service_hints() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: Some("us-east-1".to_string()),
+            account: Some("123456789012".to_string()),
+            service_hints: Some(vec!["s3".to_string(), "dynamodb".to_string()]),
+        };
+
+        let expected_output = include_str!("../testdata/test_generate_application_policy");
+
+        let mut iam_policy = IamPolicy::new();
+        iam_policy.add_statement(Statement::new(
+            iam_policy_autopilot_policy_generation::Effect::Allow,
+            vec!["s3:ListBucket".to_string()],
+            vec!["resource".to_string()],
+        ));
+
+        let policy = PolicyWithMetadata {
+            policy: iam_policy,
+            policy_type: PolicyType::Identity,
+        };
+
+        api::set_mock_return(Ok((vec![policy], vec![])));
+        let result = generate_application_policies(input).await;
+
+        assert!(result.is_ok());
+
+        let output = serde_json::to_string_pretty(&result.unwrap()).unwrap();
+        assert_eq!(output, expected_output);
     }
 }
