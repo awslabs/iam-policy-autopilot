@@ -175,6 +175,9 @@ pub async fn begin_http_transport(
     );
 
     info!("Listening on {}/mcp", bind_address);
+
+    // Fine to print with http
+    println!("Listening on {}/mcp", bind_address);
     let router = axum::Router::new().nest_service("/mcp", service);
     let tcp_listener = tokio::net::TcpListener::bind(bind_address).await?;
 
