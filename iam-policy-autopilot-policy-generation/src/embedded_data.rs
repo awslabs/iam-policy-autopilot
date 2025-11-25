@@ -40,8 +40,24 @@ pub struct Boto3Utilities;
 
 impl Boto3Utilities {
     /// Get the boto3 utilities mapping configuration
-    pub fn get_utilities_mapping() -> Option<Vec<u8>> {
-        Self::get("boto3_utilities_mapping.json").map(|file| file.data.to_vec())
+    pub fn get_utilities_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
+        Self::get("boto3_utilities_mapping.json").map(|file| file.data)
+    }
+}
+
+/// Embedded JavaScript SDK v3 libraries mapping
+///
+/// This struct provides access to the JavaScript SDK v3 libraries mapping configuration
+/// that defines how lib-* submodule commands map to client-* commands.
+#[derive(RustEmbed)]
+#[folder = "resources/config/sdks"]
+#[include = "js_v3_libraries.json"]
+pub(crate) struct JsV3Libraries;
+
+impl JsV3Libraries {
+    /// Get the JavaScript SDK v3 libraries mapping configuration
+    pub fn get_libraries_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
+        Self::get("js_v3_libraries.json").map(|file| file.data)
     }
 }
 
@@ -226,7 +242,7 @@ impl EmbeddedBoto3Data {
     }
 
     /// Get the boto3 utilities mapping configuration from embedded data
-    pub(crate) fn get_utilities_mapping() -> Option<Vec<u8>> {
+    pub(crate) fn get_utilities_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
         Boto3Utilities::get_utilities_mapping()
     }
 }
