@@ -522,3 +522,187 @@ def start_policy_generation():
 
     println!("✓ Test passed: iam:PassRole has correct iam:PassedToService condition");
 }
+
+#[tokio::test]
+async fn test_utility_method_parameter_validation_comprehensive() {
+    // Comprehensive test for utility method parameter count validation
+    //
+    // This test validates that the parameter count validation correctly:
+    // 1. ACCEPTS valid AWS SDK utility method calls with correct parameter counts
+    // 2. REJECTS non-AWS method calls that happen to have similar names but wrong parameter counts
+    // 3. REJECTS method calls with too many parameters for the utility method spec
+    //
+    // This prevents false positives like json.load("something") being matched to S3 Bucket.load()
+
+    let python_source = r#"
+import boto3
+import json
+
+def comprehensive_test_function():
+    """Test function with various valid and invalid method calls."""
+    
+    # ===== POSITIVE CASES (should be extracted) =====
+    
+    # 1. Valid S3 resource utility method with correct parameter count
+    s3 = boto3.resource('s3')
+    bucket = s3.Bucket('my-bucket')
+    bucket.upload_file('/tmp/test.txt', 'my-key')  # Valid: upload_file accepts 2+ params
+    
+    # 2. Valid S3 resource action with no parameters
+    bucket.delete()  # Valid: resource action
+    
+    # 3. Valid S3 client method call
+    s3_client = boto3.client('s3')
+    s3_client.list_buckets()  # Valid: SDK operation
+    
+    # 4. Valid S3 get_object with keyword args
+    s3_client.get_object(Bucket='bucket', Key='key')  # Valid: SDK operation
+    
+    
+    # ===== NEGATIVE CASES (should NOT be extracted) =====
+    
+    # 5. Non-AWS json.load with wrong parameter count
+    # S3 Bucket.load() accepts 0 params, but this call has 1 param
+    data = json.load("something")  # INVALID: too many params for load()
+    
+    # 6. Unknown object with list_applications and positional param
+    # Even though list_applications is a valid AWS SDK name, positional params are invalid
+    some_adapter = SomeClass()
+    result = some_adapter.list_applications("request")  # INVALID: positional param
+    
+    # 7. Unknown object with too many parameters for upload_file
+    # upload_file accepts max 6 params, this has 8
+    unknown_var = get_unknown_object()
+    unknown_var.upload_file('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h')  # INVALID: too many params
+    
+    # 8. Random object with load and too many params
+    # load() accepts 0 params according to boto3 specs
+    random_obj = RandomClass()
+    random_obj.load('arg1', 'arg2')  # INVALID: too many params for load
+    
+    # 9. Another non-AWS method that happens to match utility method name
+    # download_file accepts max 6 params (or 5 for resource method), this has 7
+    file_handler = FileHandler()
+    file_handler.download_file('a', 'b', 'c', 'd', 'e', 'f', 'g')  # INVALID: too many params
+    
+    return data
+
+class SomeClass:
+    def list_applications(self, request):
+        return []
+
+class RandomClass:
+    def load(self, *args):
+        return None
+
+class FileHandler:
+    def download_file(self, *args):
+        pass
+
+def get_unknown_object():
+    return None
+"#;
+
+    let temp_file = create_test_python_file(python_source);
+    let temp_path = temp_file.path().to_path_buf();
+
+    // Extract SDK method calls
+    let extraction_engine = ExtractionEngine::new();
+    let source_file =
+        SourceFile::with_language(temp_path, python_source.to_string(), Language::Python);
+
+    let extracted = extraction_engine
+        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .await
+        .expect("Extraction should succeed");
+
+    println!("\n=== Comprehensive Parameter Validation Test ===");
+    println!("Total methods extracted: {}", extracted.methods.len());
+
+    // Convert to JSON values to inspect what was extracted
+    let methods: Vec<serde_json::Value> = extracted
+        .methods
+        .iter()
+        .map(|m| serde_json::to_value(m).expect("Should serialize method"))
+        .collect();
+
+    // Collect all method names (note: field is "Name" with capital N in the JSON)
+    let mut method_names: Vec<String> = methods
+        .iter()
+        .filter_map(|m| m.get("Name").and_then(|n| n.as_str()).map(String::from))
+        .collect();
+    method_names.sort();
+    method_names.dedup();
+
+    println!("\nExtracted method names:");
+    for name in &method_names {
+        println!("  - {}", name);
+    }
+
+    // Verify the extracted methods match exactly the expected set
+    // (regression test to catch any changes in extraction behavior)
+    let expected_methods: std::collections::HashSet<&str> = [
+        "complete_multipart_upload",
+        "create_multipart_upload",
+        "delete_bucket",
+        "get_object",
+        "list_buckets",
+        "put_object",
+        "upload_part",
+    ]
+    .iter()
+    .cloned()
+    .collect();
+
+    let actual_methods: std::collections::HashSet<&str> =
+        method_names.iter().map(|s| s.as_str()).collect();
+
+    assert_eq!(
+        actual_methods,
+        expected_methods,
+        "Extracted methods should match exactly. Missing: {:?}, Unexpected: {:?}",
+        expected_methods
+            .difference(&actual_methods)
+            .collect::<Vec<_>>(),
+        actual_methods
+            .difference(&expected_methods)
+            .collect::<Vec<_>>()
+    );
+
+    // Verify NEGATIVE cases are NOT present
+    // These would indicate false positives if found
+    let invalid_indicators = vec![
+        "json",
+        "load",
+        "file_handler",
+        "random",
+        "unknown",
+        "some_adapter",
+        "download_file",
+        "list_applications",
+    ];
+
+    for method in &methods {
+        if let Some(receiver) = method
+            .get("Metadata")
+            .and_then(|m| m.get("Receiver"))
+            .and_then(|r| r.as_str())
+        {
+            for invalid in &invalid_indicators {
+                assert!(
+                    !receiver.to_lowercase().contains(invalid),
+                    "Found false positive: method with receiver containing '{}': {:?}",
+                    invalid,
+                    method
+                );
+            }
+        }
+    }
+
+    println!("\n✓ All validations passed:");
+    println!("  ✓ Valid AWS SDK calls were extracted");
+    println!("  ✓ json.load('something') was correctly rejected");
+    println!("  ✓ list_applications with positional param was correctly rejected");
+    println!("  ✓ Methods with too many parameters were correctly rejected");
+    println!("  ✓ No false positives detected");
+}

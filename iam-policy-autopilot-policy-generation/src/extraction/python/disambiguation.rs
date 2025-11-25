@@ -135,9 +135,10 @@ impl<'a> MethodDisambiguator<'a> {
     /// Validate method call parameters against an AWS service input shape.
     ///
     /// This method checks that:
-    /// 1. All required parameters are present (unless unpacking is used)
-    /// 2. All provided parameters are valid (exist in the shape)
-    /// 3. No invalid parameters are provided
+    /// 1. No positional parameters are present (AWS SDK operations only accept keyword arguments)
+    /// 2. All required parameters are present (unless unpacking is used)
+    /// 3. All provided parameters are valid (exist in the shape)
+    /// 4. No invalid parameters are provided
     ///
     /// # Arguments
     /// * `parameters` - The explicit parameters provided in the method call
@@ -149,6 +150,15 @@ impl<'a> MethodDisambiguator<'a> {
         shape: &Shape,
         has_unpacking: bool,
     ) -> bool {
+        // Check for positional parameters - AWS SDK operations don't accept them
+        let has_positional = parameters
+            .iter()
+            .any(|p| matches!(p, Parameter::Positional { .. }));
+        if has_positional {
+            log::debug!("Rejecting call with positional parameters - AWS SDK operations only accept keyword arguments");
+            return false;
+        }
+
         // Extract parameter names from the method call, filtering by parameter type instead of name prefix
         let provided_params: HashSet<String> = parameters
             .iter()

@@ -293,6 +293,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             None => return Vec::new(),
         };
 
+        // Validate parameter count: reject if call has more arguments than accepted
+        if method_call.arguments.len() > utility_method.accepted_params.len() {
+            return Vec::new();
+        }
+
         let mut expanded_calls = Vec::new();
 
         // Expand into each operation
@@ -998,6 +1003,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     // Check client utility methods with parameter count filtering
                     if let Some(client_method) = boto3_model.get_client_utility_method(&method_name)
                     {
+                        // Validate parameter count: reject if call has more arguments than accepted
+                        if arguments.len() > client_method.accepted_params.len() {
+                            continue;
+                        }
+
                         // Generate synthetic for each operation
                         for operation in &client_method.operations {
                             // Filter: Skip if call site has fewer args than required
@@ -1023,6 +1033,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     for resource_methods in boto3_model.get_all_resource_utility_methods().values()
                     {
                         if let Some(resource_method) = resource_methods.methods.get(&method_name) {
+                            // Validate parameter count: reject if call has more arguments than accepted
+                            if arguments.len() > resource_method.accepted_params.len() {
+                                continue;
+                            }
+
                             // Generate synthetic for each operation
                             for operation in &resource_method.operations {
                                 calls.push(self.generate_tier3_utility_synthetic(

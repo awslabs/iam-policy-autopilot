@@ -54,6 +54,7 @@ pub struct Boto3ResourcesModel {
 #[derive(Debug, Clone)]
 pub struct ClientUtilityMethod {
     pub(crate) operations: Vec<ServiceOperation>,
+    pub(crate) accepted_params: Vec<String>,
 }
 
 /// Resource-level utility methods for a specific resource type
@@ -363,6 +364,7 @@ impl Boto3ResourcesModel {
                     method_name.clone(),
                     ClientUtilityMethod {
                         operations: method_spec.operations.clone(),
+                        accepted_params: method_spec.accepted_params.clone(),
                     },
                 );
             }

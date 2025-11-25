@@ -101,27 +101,27 @@ impl Extractor for PythonExtractor {
         for extractor_result in extractor_results.iter_mut() {
             match extractor_result {
                 ExtractorResult::Python(ast, method_calls) => {
-                    // Extract resource direct calls (with ServiceModelIndex access)
+                    // STEP 1: Disambiguate direct client method calls first
+                    // This applies validation to direct SDK calls (including checking the required arguments are passed by keyword, not positionally)
+                    let filtered_and_mapped =
+                        method_disambiguator.disambiguate_method_calls(method_calls.clone());
+                    *method_calls = filtered_and_mapped;
+
+                    // STEP 2: Add resource direct calls (which can have positional params)
+                    // These are added AFTER disambiguation so they bypass the positional param check
                     let resource_extractor = ResourceDirectCallsExtractor::new(service_index);
                     let resource_calls = resource_extractor.extract_resource_method_calls(ast);
                     method_calls.extend(resource_calls);
 
-                    // Add waiters to extracted methods using the service model index directly
+                    // STEP 3: Add waiters and paginators (also added after disambiguation)
                     let waiters_extractor = WaitersExtractor::new(service_index);
                     let waiter_calls =
                         waiters_extractor.extract_waiter_method_calls(ast, service_index);
                     method_calls.extend(waiter_calls);
 
-                    // Add paginators to extracted methods using the service model index directly
                     let paginator_extractor = PaginatorExtractor::new(service_index);
                     let paginator_calls = paginator_extractor.extract_paginate_method_calls(ast);
                     method_calls.extend(paginator_calls);
-
-                    // Clone the method calls to pass to disambiguate_method_calls
-                    let filtered_and_mapped =
-                        method_disambiguator.disambiguate_method_calls(method_calls.clone());
-                    // Replace the method calls in place
-                    *method_calls = filtered_and_mapped;
                 }
                 ExtractorResult::Go(_, _, _) => {
                     // This shouldn't happen in Python extractor, but handle gracefully
@@ -155,6 +155,28 @@ mod tests {
     async fn test_basic_method_call_extraction() {
         let extractor = PythonExtractor::new();
         let source_code = "s3_client.get_object(Bucket='my-bucket', Key='my-key')";
+
+        let result = extractor.parse(source_code).await;
+        assert_eq!(result.method_calls_ref().len(), 1);
+        assert_eq!(result.method_calls_ref()[0].name, "get_object");
+    }
+
+    #[tokio::test]
+    async fn test_basic_method_call_extraction_with_dict_splat() {
+        let extractor = PythonExtractor::new();
+        let source_code = "s3_client.get_object(**{Bucket='my-bucket', Key='my-key'})";
+
+        let result = extractor.parse(source_code).await;
+        assert_eq!(result.method_calls_ref().len(), 1);
+        assert_eq!(result.method_calls_ref()[0].name, "get_object");
+    }
+
+    #[tokio::test]
+    async fn test_basic_method_call_extraction_with_dict_splat2() {
+        let extractor = PythonExtractor::new();
+        let source_code = "
+        args = {Bucket='my-bucket', Key='my-key'}
+        s3_client.get_object(**args)";
 
         let result = extractor.parse(source_code).await;
         assert_eq!(result.method_calls_ref().len(), 1);

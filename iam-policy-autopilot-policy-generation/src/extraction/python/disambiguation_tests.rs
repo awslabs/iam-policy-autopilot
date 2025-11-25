@@ -560,8 +560,8 @@ def example():
 
     #[tokio::test]
     async fn test_parameter_type_filtering_logic() {
-        // This test specifically validates that the disambiguation logic correctly filters
-        // by parameter_type instead of name prefix
+        // This test validates that the disambiguation logic correctly rejects calls with positional parameters.
+        // AWS SDK operations (boto3/botocore) only accept keyword arguments, never positional arguments.
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
@@ -583,7 +583,7 @@ def example():
                         position: 1,
                         type_annotation: None,
                     },
-                    // Positional argument with arg_ prefix - should be ignored in validation
+                    // Positional argument - AWS SDK operations don't accept these
                     Parameter::Positional {
                         value: ParameterValue::Resolved("positional_value".to_string()),
                         position: 2,
@@ -599,11 +599,8 @@ def example():
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
 
-        // This should be valid because:
-        // 1. Required keyword parameters (Bucket, Key) are provided
-        // 2. Positional parameter is correctly ignored during validation (filtered by parameter_type)
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].name, "get_object");
-        assert_eq!(result[0].possible_services, vec!["s3"]);
+        // The call should be filtered out because AWS SDK operations don't accept positional parameters,
+        // even though all required keyword parameters are present.
+        assert_eq!(result.len(), 0);
     }
 }
