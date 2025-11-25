@@ -1,6 +1,6 @@
 [package]
 name = "iam-policy-autopilot-access-denied"
-version = "0.1.0"
+version.workspace = true
 edition = "2021"
 description = "Core library for AWS IAM Policy Autopilot: parsing AccessDenied errors, synthesizing IAM policies, principal resolution, and guarded IAM operations."
 

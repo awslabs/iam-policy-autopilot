@@ -160,19 +160,95 @@ jobs:
           echo '=== All tests passed ==='
         fi
 
-  pypi_publish:
-    name: Publish distribution 📦 to PyPI
-    needs: test_wheels # Only publish if tests pass
+  upload_binaries:
+    name: Upload Binaries to Release
+    needs: test_wheels
     runs-on: ubuntu-latest
-    environment: Release
     permissions:
-      id-token: write  # Required for trusted publishing
+      contents: write
 
     steps:
     - name: Download all wheels
       uses: actions/download-artifact@v4
       with:
-        # Download all artifacts into a common directory
+        pattern: wheels-*
+        path: wheels/
+
+    - name: Extract and package binaries
+      shell: bash
+      run: |
+        mkdir -p binaries
+        
+        for wheel in wheels/**/*.whl; do
+          echo "Processing wheel: $wheel"
+          
+          # Determine target and extensions from wheel filename
+          if [[ "$wheel" == *"win_amd64"* ]]; then
+            simple_target="x86_64-pc-windows-msvc"
+            binary_ext=".exe"
+          elif [[ "$wheel" == *"win_arm64"* ]]; then
+            simple_target="aarch64-pc-windows-msvc"
+            binary_ext=".exe"
+          elif [[ "$wheel" == *"manylinux"*"x86_64"* ]]; then
+            simple_target="x86_64-unknown-linux-gnu"
+            binary_ext=""
+          elif [[ "$wheel" == *"manylinux"*"aarch64"* ]]; then
+            simple_target="aarch64-unknown-linux-gnu"
+            binary_ext=""
+          elif [[ "$wheel" == *"macosx"*"x86_64"* ]]; then
+            simple_target="x86_64-apple-darwin"
+            binary_ext=""
+          elif [[ "$wheel" == *"macosx"*"arm64"* ]]; then
+            simple_target="aarch64-apple-darwin"
+            binary_ext=""
+          else
+            echo "WARNING: Unknown platform for $wheel"
+            continue
+          fi
+          
+          # Extract binary from wheel
+          python -m zipfile -e "$wheel" extracted/
+          BINARY_NAME="iam-policy-autopilot${binary_ext}"
+          find extracted -name "${BINARY_NAME}" -exec cp {} binaries/ \;
+          
+          # Package binary
+          cd binaries
+          ARCHIVE_NAME="iam-policy-autopilot-${{ github.event.release.tag_name }}-${simple_target}"
+          
+          if [[ "$binary_ext" == ".exe" ]]; then
+            zip "${ARCHIVE_NAME}.zip" "${BINARY_NAME}"
+            rm "${BINARY_NAME}"
+          else
+            tar czf "${ARCHIVE_NAME}.tar.gz" "${BINARY_NAME}"
+            rm "${BINARY_NAME}"
+          fi
+          cd ..
+          
+          echo "Created: binaries/${ARCHIVE_NAME}"
+        done
+        
+        echo "Final binaries:"
+        ls -lh binaries/
+
+    - name: Upload to release
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: ${{ github.event.release.tag_name }}
+        files: binaries/*
+
+  pypi_publish:
+    name: Publish distribution 📦 to PyPI
+    needs: test_wheels
+    runs-on: ubuntu-latest
+    environment: Release
+    permissions:
+      id-token: write
+
+    steps:
+    - name: Download all wheels
+      uses: actions/download-artifact@v4
+      with:
+        pattern: wheels-*
         path: dist/
 
     - name: Flatten wheel directory structure
