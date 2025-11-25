@@ -34,6 +34,7 @@ pub mod core {
     /// Contains the file path, content, and detected programming language.
     /// This is the primary input structure for the extraction process.
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
     #[non_exhaustive]
     pub struct SourceFile {
         /// File system path to the source file
@@ -80,6 +81,7 @@ pub mod core {
     /// position information, and parsing context. This is optional metadata
     /// that can be omitted when only basic method identification is needed.
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
     pub struct SdkMethodCallMetadata {
         /// List of method parameters with their metadata
         pub(crate) parameters: Vec<Parameter>,
@@ -112,6 +114,7 @@ pub mod core {
     /// Contains the essential method identification information with optional
     /// detailed metadata. This is the core output of the parsing process.
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
     #[non_exhaustive]
     pub struct SdkMethodCall {
         /// Method name as it appears in source code
@@ -125,6 +128,7 @@ pub mod core {
     }
 
     #[derive(Serialize)]
+    #[serde(rename_all = "PascalCase")]
     struct SimpleView<'a> {
         name: &'a str,
         possible_services: &'a Vec<String>,
@@ -225,6 +229,7 @@ pub mod output {
     /// about the extraction process. This is the primary output structure
     /// of the extraction system.
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
     #[non_exhaustive]
     pub struct ExtractedMethods {
         /// List of all extracted methods
@@ -238,6 +243,7 @@ pub mod output {
     /// Provides information about when the extraction was performed,
     /// what files were processed, and any warnings or issues encountered.
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[serde(rename_all = "PascalCase")]
     #[non_exhaustive]
     pub struct ExtractionMetadata {
         /// ISO 8601 timestamp of when extraction was performed
@@ -372,4 +378,82 @@ mod tests {
         assert_eq!(metadata.total_methods, 0);
         assert_eq!(metadata.warnings.len(), 0);
     }
+
+    #[test]
+    fn test_source_file_serialization() {
+        let source_file = SourceFile {
+            path: PathBuf::from("test.py"),
+            content: "def test(): pass".to_string(),
+            language: Language::Python,
+            size: 16,
+        };
+
+        let json = serde_json::to_string(&source_file).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"Path\""));
+        assert!(json.contains("\"Language\""));
+    }
+
+    #[test]
+    fn test_sdk_method_call_serialization() {
+        let method = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["s3".to_string()],
+            metadata: None,
+        };
+
+        let json = serde_json::to_string(&method).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"Name\""));
+        assert!(json.contains("\"PossibleServices\""));
+    }
+
+    #[test]
+    fn test_sdk_method_call_metadata_serialization() {
+        let metadata = SdkMethodCallMetadata {
+            parameters: vec![],
+            return_type: Some("Dict[str, Any]".to_string()),
+            start_position: (10, 5),
+            end_position: (10, 30),
+            receiver: Some("s3_client".to_string()),
+        };
+
+        let json = serde_json::to_string(&metadata).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"Parameters\""));
+        assert!(json.contains("\"ReturnType\""));
+        assert!(json.contains("\"StartPosition\""));
+        assert!(json.contains("\"EndPosition\""));
+        assert!(json.contains("\"Receiver\""));
+    }
+}
+
+#[test]
+fn test_extracted_methods_serialization() {
+    let extracted = ExtractedMethods {
+        methods: vec![],
+        metadata: ExtractionMetadata::new(vec![], vec![]),
+    };
+
+    let json = serde_json::to_string(&extracted).unwrap();
+
+    // Verify PascalCase field names
+    assert!(json.contains("\"Methods\""));
+    assert!(json.contains("\"Metadata\""));
+}
+
+#[test]
+fn test_extraction_metadata_serialization() {
+    let metadata = ExtractionMetadata::new(vec![], vec!["warning1".to_string()]);
+
+    let json = serde_json::to_string(&metadata).unwrap();
+
+    // Verify PascalCase field names
+    assert!(json.contains("\"ExtractionTime\""));
+    assert!(json.contains("\"SourceFiles\""));
+    assert!(json.contains("\"TotalMethods\""));
+    assert!(json.contains("\"Warnings\""));
 }
