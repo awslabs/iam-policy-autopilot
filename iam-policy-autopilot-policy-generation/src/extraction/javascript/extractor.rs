@@ -391,17 +391,10 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         // Parse the code
         let mut results = vec![extractor.parse(javascript_code).await];
 
-        // Build a minimal service index with real services for testing
-        let services = ServiceDiscovery::discover_services().expect("Failed to discover services");
-        let limited_services: Vec<_> = services
-            .into_iter()
-            .filter(|s| s.name == "s3" || s.name == "glacier")
-            .collect();
-
-        let service_index =
-            ServiceDiscovery::load_service_index(Language::JavaScript, limited_services)
-                .await
-                .expect("Failed to load service index");
+        // Build service index with all services for testing
+        let service_index = ServiceDiscovery::load_service_index(Language::JavaScript)
+            .await
+            .expect("Failed to load service index");
 
         // Apply filter_map which should trigger the fallback
         extractor.filter_map(&mut results, &service_index);

@@ -13,12 +13,14 @@ pub(crate) mod go;
 pub(crate) mod javascript;
 pub(crate) mod python;
 pub(crate) mod sdk_model;
+pub(crate) mod service_hints;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
 // Re-export main types for convenience
 pub use engine::Engine;
 pub(crate) use sdk_model::ServiceModelIndex;
+pub(crate) use service_hints::ServiceHintsProcessor;
 
 // Re-export all core and output types for convenience
 pub use self::{core::*, output::*};

@@ -153,7 +153,7 @@ impl Engine {
 
 #[cfg(test)]
 mod tests {
-    use crate::Language;
+    use crate::{extraction::sdk_model::ServiceDiscovery, Language};
 
     use super::*;
 
@@ -182,7 +182,7 @@ mod tests {
 
         let start_time = Instant::now();
 
-        let (_services, service_index) = match discover_all_services().await {
+        let service_index = match ServiceDiscovery::load_service_index(Language::Python).await {
             Ok(result) => result,
             Err(e) => {
                 panic!("Failed to discover services: {}", e);
@@ -242,30 +242,6 @@ mod tests {
 
         let total_duration = start_time.elapsed();
         println!("\nTest completed in {:?}", total_duration);
-    }
-
-    /// Discover all available AWS services and build service index
-    async fn discover_all_services() -> std::result::Result<
-        (
-            Vec<crate::extraction::sdk_model::SdkModel>,
-            crate::extraction::sdk_model::ServiceModelIndex,
-        ),
-        Box<dyn std::error::Error>,
-    > {
-        use crate::extraction::sdk_model::ServiceDiscovery;
-
-        // Discover all services
-        let services = ServiceDiscovery::discover_services()?;
-
-        if services.is_empty() {
-            return Err("No services discovered - botocore data may not be available".into());
-        }
-
-        println!("Building service index (this may take a moment)...");
-        let service_index =
-            ServiceDiscovery::load_service_index(Language::Python, services.clone()).await?;
-
-        Ok((services, service_index))
     }
 
     /// Create SdkMethodCall objects from the service index
@@ -346,25 +322,5 @@ mod tests {
                 total_actions as f64 / enriched_calls.len() as f64
             }
         );
-    }
-
-    #[tokio::test]
-    async fn test_service_discovery_basic() {
-        use crate::extraction::sdk_model::ServiceDiscovery;
-
-        println!("Testing basic service discovery functionality...");
-
-        match ServiceDiscovery::discover_services() {
-            Ok(services) => {
-                println!("Discovered {} services", services.len());
-                assert!(
-                    !services.is_empty(),
-                    "Should discover at least some services"
-                );
-            }
-            Err(e) => {
-                panic!("Service discovery failed: {}", e);
-            }
-        }
     }
 }

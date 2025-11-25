@@ -71,6 +71,7 @@ aws-sdk-sts = "1.86.0"
 aws-config = "1.8.6"
 base64 = "0.22"
 convert_case = "0.8"
+strsim = "0.11"
 
 # Additional workspace configuration
 [workspace.lints.rust]

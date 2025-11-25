@@ -12,7 +12,7 @@ use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
-use crate::extraction::sdk_model::{ServiceDiscovery, ServiceModelIndex};
+use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{self, ExtractedMethods, ExtractionMetadata, SourceFile};
 use crate::Language;
 
@@ -62,7 +62,7 @@ impl Engine {
         // Load SDK service index for validation
         log::debug!("Loading AWS SDK service definitions for validation (language: {language})...");
         let sdk_load_start = Instant::now();
-        let service_index = self.load_service_index(language).await?;
+        let service_index = ServiceDiscovery::load_service_index(language).await?;
         let sdk_load_duration = sdk_load_start.elapsed();
 
         log::debug!(
@@ -181,18 +181,6 @@ impl Engine {
 
         // Return the single detected language
         Ok(detected_languages.into_iter().next().unwrap())
-    }
-
-    /// Load the AWS SDK service index for method validation.
-    ///
-    /// This method discovers and loads all AWS SDK service definitions to build
-    /// a comprehensive index for validating extracted method calls.
-    async fn load_service_index(&self, language: Language) -> Result<ServiceModelIndex> {
-        // Discover all available services
-        let services = ServiceDiscovery::discover_services()?;
-
-        // Load the service index
-        ServiceDiscovery::load_service_index(language, services).await
     }
 }
 
