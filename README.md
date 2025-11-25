@@ -1,147 +1,372 @@
 # IAM Policy Autopilot
 
-IAM Policy Autopilot is an MCP server that helps AI coding assistants analyze application code and quickly create baseline identity-based policies that enable your application to work from day one, giving you a starting point to refine as your application evolves.
+An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time.
 
 ## Who is IAM Policy Autopilot for?
 
-IAM Policy Autopilot is for Builders on AWS using AI coding assistants, including developers, product managers, technical experimenters, and business leaders.
+IAM Policy Autopilot is for any builders on AWS using AI coding assistants, including developers, product managers, technical experimenters, and business leaders.
 
-## How would IAM Policy Autopilot benefit you? 
+## How IAM Policy Autopilot is helpful?
 
-### Accelerates initial development by generating identity-based IAM policies to help you get started
-Your AI coding assistant can call IAM Policy Autopilot to analyze AWS SDK calls within your application. IAM Policy Autopilot then automatically creates the necessary  IAM permissions for your application roles. If your application hits permission errors, IAM Policy Autopilot adjusts the identity-based permissions until errors are resolved. This eliminates manual policy writing, saving you time and providing you necessary permissions to start with.
+IAM Policy Autopilot is:
 
-### Creates valid IAM policies to reduce troubleshooting
-IAM Policy Autopilot’s deterministic code analysis helps create reliable and valid IAM policies that reduce policy troubleshooting. By using valid policies created with the MCP server, builders reduce time spent on policy-related debugging and accelerate application deployment by avoiding permission-related delays. The generated policies provide a starting point that builders should review and scope down to implement least privilege permissions.
+### Fast
 
-### Maintains up to date IAM policies for applications
-IAM Policy Autopilot helps keep your application role's permissions current with AWS's evolving capabilities. As AWS releases new services and features, IAM Policy Autopilot's knowledge base gets updated with the latest IAM actions, cross-service dependencies, and permission requirements. When developers modify application code - whether adding new AWS service integrations or updating existing ones – IAM Policy Autopilot analyzes these changes and suggests updated identity-based permissions accordingly. This eliminates the need to manually research and update permissions for new AWS features, ensuring your applications maintain the necessary permissions. 
+IAM Policy Autopilot accelerates development by generating baseline identity-based IAM policies. Your AI coding assistant can call IAM Policy Autopilot to analyze AWS SDK calls within your application. IAM Policy Autopilot then automatically creates the baseline IAM permissions for your application roles.
 
-## How to get started? 
+### Reliable
 
-### MCP Server Setup (please move the MCP server setup here) 
+IAM Policy Autopilot's deterministic code analysis helps create reliable and valid IAM policies that reduce policy troubleshooting. By using valid policies created with the MCP server, you reduce time spent on policy-related debugging and accelerate application deployment by avoiding permission-related delays.
 
+### Up-to-date
 
-### CLI Tool Setup 
-This workspace contains the `iam-policy-autopilot` CLI tool, which provides three main commands:
+IAM Policy Autopilot stays up to date with the latest AWS services and features so that builders and coding assistants have access to the latest AWS IAM permissions knowledge. It helps keep your application role's permissions current with AWS's evolving capabilities.
 
-1. **extract-sdk-calls** - Extract AWS SDK method calls from source code files for analysis
-2. **generate-policy** - Generate complete IAM policies from source code with enrichment and validation
-3. **fix-access-denied** - Parse and fix AccessDenied errors by analyzing error messages and synthesizing IAM policy changes
+## Getting Started
+
+### Prerequisites
+
+**Installation Requirements**
+
+Python 3.8+ is supported.
+
+### Installation
+
+#### Option 1: Using uv (Recommended)
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) from Astral or [Github ReadMe](https://github.com/astral-sh/uv#installation).
+
+No additional installation needed - you can run IAM Policy Autopilot directly using `uvx iam-policy-autopilot`.
+
+#### Option 2: Using pip
+
+```bash
+pip install iam-policy-autopilot
+```
+
+### AWS Configuration
+
+IAM Policy Autopilot requires AWS credentials to apply policy fixes and upload policies. You can configure AWS credentials using one of the following methods:
+
+#### Option 1: AWS CLI Configuration (Recommended)
+
+Install and configure the AWS CLI:
+
+```bash
+# Install AWS CLI (if not already installed)
+# macOS
+brew install awscli
+
+# Linux
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+
+# Configure AWS credentials
+aws configure
+```
+
+This will prompt you for:
+- AWS Access Key ID
+- AWS Secret Access Key
+- Default region name (e.g., `us-east-1`)
+- Default output format (e.g., `json`)
+
+#### Option 2: AWS Profiles
+
+If you have multiple AWS accounts, you can use named profiles:
+
+```bash
+# Configure a named profile
+aws configure --profile my-profile
+
+# Use the profile in MCP configuration (see below)
+```
+
+For more information on AWS credential configuration, see the [AWS CLI Configuration Guide](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
+
+### MCP Server Configuration
+
+Configure the MCP server in your MCP client configuration to enable your AI coding assistant to generate IAM policies.
+
+#### For Kiro
+
+**If using uv/uvx:**
+
+Add the following configuration to your project-level `.kiro/settings/mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "uvx",
+      "args": ["iam-policy-autopilot", "mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+**If using pip:**
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "iam-policy-autopilot",
+      "args": ["mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+```
+
+#### For Amazon Q Developer CLI
+
+**If using uv/uvx:**
+
+Add the MCP client configuration to your agent file at `~/.aws/amazonq/cli-agents/default.json`:
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "uvx",
+      "args": ["iam-policy-autopilot", "mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  },
+  "tools": [
+    "@iam-policy-autopilot"
+  ]
+}
+```
+
+**If using pip:**
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "iam-policy-autopilot",
+      "args": ["mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      },
+      "disabled": false,
+      "autoApprove": []
+    }
+  },
+  "tools": [
+    "@iam-policy-autopilot"
+  ]
+}
+```
+
+#### For Claude Desktop
+
+Add to your Claude Desktop configuration file:
+
+**macOS**: `~/Library/Application Support/Claude/claude_desktop_config.json`
+
+**Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
+
+**If using uv/uvx:**
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "uvx",
+      "args": ["iam-policy-autopilot", "mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}
+```
+
+**If using pip:**
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "iam-policy-autopilot",
+      "args": ["mcp-server"],
+      "env": {
+        "AWS_PROFILE": "your-profile-name",
+        "AWS_REGION": "us-east-1"
+      }
+    }
+  }
+}
+```
+
+## CLI Usage
+
+The `iam-policy-autopilot` CLI tool provides three main commands:
+
+### Commands
+
+**generate-policy** - Generates complete IAM policy documents from source files
+
+```bash
+iam-policy-autopilot generate-policy <source_files> [OPTIONS]
+```
+
+Example:
+
+```bash
+iam-policy-autopilot generate-policy \
+  ./src/app.py \
+  --region us-east-1 \
+  --account 123456789012 \
+  --pretty
+```
+
+Options:
+- `--region <REGION>` - AWS region for resource ARNs
+- `--account <ACCOUNT>` - AWS account ID for resource ARNs
+- `--upload-policies <PREFIX>` - Upload generated policies to AWS IAM with the specified prefix
+- `--pretty` - Pretty-print JSON output
+
+**fix-access-denied** - Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
+
+```bash
+iam-policy-autopilot fix-access-denied <access-denied-error-message> [OPTIONS]
+```
+
+Example:
+
+```bash
+iam-policy-autopilot fix-access-denied \
+  "User: arn:aws:iam::123456789012:user/test is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/file.txt"
+```
+
+Options:
+- `--yes` - Auto-apply policy changes without confirmation
+
+**mcp-server** - Start MCP server locally
+
+```bash
+iam-policy-autopilot mcp-server [OPTIONS]
+```
+
+Options:
+- `--transport <TRANSPORT>` - Transport type: `stdio` (default) or `http`
+
+Example with HTTP transport:
+
+```bash
+# Start server at http://127.0.0.1:8001/mcp
+iam-policy-autopilot mcp-server --transport http
+```
+
+**help** - Print help information
+
+```bash
+iam-policy-autopilot help [COMMAND]
+```
+
+### Global Options
+
+- `-h, --help` - Print help information
+- `-V, --version` - Print version
+
+## Best Practices and Considerations
+
+### Review and refine policies generated by IAM Policy Autopilot
+
+IAM Policy Autopilot generates policies to provide a starting point that you can refine as your application matures. Review the generated policies so that they align with your security requirements before deploying them.
+
+### Understand the IAM Policy Autopilot scope
+
+IAM Policy Autopilot analyzes your application code to generate baseline IAM policies. It provides identity-based policies that grant permissions for AWS SDK operations detected in your code. Always review and scope down generated policies to implement least privilege access.
 
 ## Build Instructions
 
 ### Prerequisites
-- Rust (latest stable version)
+
+- [Rust](https://rustup.rs/) (latest stable version)
 - Git
 
 ### Setup
-1. Clone the repository with submodules:
-   ```bash
-   git clone --recurse-submodules <repository-url>
-   ```
 
-2. If already cloned, initialize submodules:
-   ```bash
-   git submodule init
-   git submodule update
-   ```
-
-3. Build the project:
-   ```bash
-   cargo build
-   ```
-
-## Usage
-
-### Extract SDK Calls from Source Code
-
-Extract AWS SDK method calls from Python, JavaScript, TypeScript, or Go files:
+Clone the repository with submodules:
 
 ```bash
-cargo run -- extract-sdk-calls \
-  iam-policy-autopilot/tests/resources/test_sample.py \
-  --pretty --full-output
+git clone --recurse-submodules https://github.com/awslabs/iam-policy-autopilot.git
+cd iam-policy-autopilot
 ```
 
-Example:
-```bash
-cargo run -- extract-sdk-calls \
-  iam-policy-autopilot/tests/resources/test_sample.py \
-  --language python --pretty
-```
-
-### Generate IAM Policies from Source Code
-
-Generate necessary identity-based IAM policies using static code analysis:
+If already cloned, initialize submodules:
 
 ```bash
-cargo run -- generate-policy \
-  iam-policy-autopilot/tests/resources/test_sample.py \
-  --region us-east-1 \
-  --account 123456789012 \
-  --pretty
+git submodule init
+git submodule update
 ```
 
-Example with policy upload:
-```bash
-cargo run -- generate-policy \
-  iam-policy-autopilot/tests/resources/test_sample.py \
-  --region us-east-1 \
-  --account 123456789012 \
-  --upload-policies CustomPolicyPrefix \
-  --pretty
-```
-
-### Fix AccessDenied Errors
-
-Parse and fix AWS AccessDenied errors by analyzing error messages if you still run into AccessDenied errors with the generated policy:
+Build the project:
 
 ```bash
-# From command line argument
-cargo run -- fix-access-denied \
-  "User: arn:aws:iam::123456789012:user/test is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/file.txt"
-
-# From stdin
-echo "error message" | cargo run -- fix-access-denied
-
-# Auto-apply without confirmation
-cargo run -- fix-access-denied "error message" --yes
+cargo build --release
 ```
 
-### Running the MCP Server
-The MCP server is exposed through the subcommand `mcp-server`. 
+The compiled binary will be located at `target/release/iam-policy-autopilot`.
 
-#### Running with STDIO Transport 
-For integrating the mcp binary with mcp clients using STDIO transport the binary needs to be available in the shell environment, for this we move our binary to `/usr/local/bin`
+### Using the Built Binary with MCP
 
+If you build from source, you can configure MCP clients to use the compiled binary:
+
+```json
+{
+  "mcpServers": {
+    "iam-policy-autopilot": {
+      "command": "/path/to/iam-policy-autopilot",
+      "args": ["mcp-server"]
+    }
+  }
+}
 ```
-# Move the binary to /usr/local/bin
-sudo cp ./target/debug/iam-policy-autopilot /usr/local/bin/iam-policy-autopilot
-# If using MacOS, we need to sign the binary to run it under /usr/local/bin
+
+To make the binary available system-wide:
+
+```bash
+# Copy the binary to /usr/local/bin
+sudo cp ./target/release/iam-policy-autopilot /usr/local/bin/iam-policy-autopilot
+
+# On macOS, sign the binary
 sudo codesign -s - /usr/local/bin/iam-policy-autopilot
-```
-
-#### Running MCP with HTTP Transport
-
-```
-# Following command will start the server at `http://127.0.0.1:8001/mcp`
-cargo run -- mcp-server --transport http
 ```
 
 ## Workspace Structure
 
 This workspace contains several crates that work together:
 
-- **`iam-policy-autopilot-policy-generation/`** - IAM Policy Autopilot core library providing SDK extraction and enrichment capabilities
+- **`iam-policy-autopilot-policy-generation/`** - Core library providing SDK extraction and enrichment capabilities
 - **`iam-policy-autopilot-access-denied/`** - Core library for parsing AccessDenied errors and synthesizing IAM policies
 - **`iam-policy-autopilot-tools/`** - Policy upload utilities and AWS integration tools
-- **`iam-policy-autopilot-cli/`** - Unified CLI tool providing all three commands (fix-access-denied, extract-sdk-calls, generate-policy)
+- **`iam-policy-autopilot-cli/`** - Unified CLI tool providing all commands
 - **`iam-policy-autopilot-mcp-server/`** - MCP server integration for IDE and tool integration
-
-## Documentation
-
-For detailed documentation, see the [Quick Start Guide](iam-policy-autopilot/README.md).
 
 ## Development
 
