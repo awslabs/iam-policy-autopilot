@@ -225,6 +225,22 @@ Add to your Claude Desktop configuration file:
 
 The `iam-policy-autopilot` CLI tool provides three main commands:
 
+```
+Generate IAM policies from source code and fix AccessDenied errors
+
+Usage: iam-policy-autopilot <COMMAND>
+
+Commands:
+  fix-access-denied  Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
+  generate-policy    Generates complete IAM policy documents from source files
+  mcp-server         Start MCP server
+  help               Print this message or the help of the given subcommand(s)
+
+Options:
+  -h, --help     Print help (see more with '--help')
+  -V, --version  Print version
+```
+
 ### Commands
 
 **generate-policy** - Generates complete IAM policy documents from source files
