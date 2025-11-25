@@ -1,0 +1,40 @@
+{
+    "Services": {
+        "s3": {
+            "Upload": {
+                "MethodName": "Upload",
+                "Import": "github.com/aws/aws-sdk-go-v2/feature/s3/manager",
+                "Receiver": {
+                    "Name": "Uploader",
+                    "Constructor": "func NewUploader(client UploadAPIClient, options ...func(*Uploader)) *Uploader"
+                },
+                "Operations": [
+                    "s3:PutObject",
+                    "s3:CreateMultipartUpload",
+                    "s3:UploadPart",
+                    "s3:CompleteMultipartUpload",
+                    "s3:AbortMultipartUpload"
+                ],
+                "Signature": "func (u Uploader) Upload(ctx context.Context, input *s3.PutObjectInput, opts ...func(*Uploader))",
+                "MinArguments": 2,
+                "MaxArguments": 3,
+                "RequiredNamedParameters": ["Bucket", "Key"]
+            },
+            "Download": {
+                "MethodName": "Download",
+                "Import": "github.com/aws/aws-sdk-go-v2/feature/s3/manager",
+                "Receiver": {
+                    "Name": "Downloader",
+                    "Constructor": "func NewDownloader(c DownloadAPIClient, options ...func(*Downloader)) *Downloader"
+                },
+                "Operations": [
+                    "s3:GetObject"
+                ],
+                "Signature": "func (d Downloader) Download(ctx context.Context, w io.WriterAt, input *s3.GetObjectInput, options ...func(*Downloader)) (n int64, err error)",
+                "MinArguments": 3,
+                "MaxArguments": 4,
+                "RequiredNamedParameters": ["Bucket", "Key"]
+            }
+        }
+    }
+}
