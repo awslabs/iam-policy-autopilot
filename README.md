@@ -46,11 +46,9 @@ pip install iam-policy-autopilot
 
 ### AWS Configuration
 
-IAM Policy Autopilot requires AWS credentials to apply policy fixes and upload policies. You can configure AWS credentials using one of the following methods:
+IAM Policy Autopilot requires AWS credentials to apply policy fixes and upload policies.
 
-#### Option 1: AWS CLI Configuration (Recommended)
-
-Install and configure the AWS CLI:
+#### Install and Configure AWS CLI
 
 ```bash
 # Install AWS CLI (if not already installed)
@@ -72,7 +70,7 @@ This will prompt you for:
 - Default region name (e.g., `us-east-1`)
 - Default output format (e.g., `json`)
 
-#### Option 2: AWS Profiles
+#### Using AWS Profiles
 
 If you have multiple AWS accounts, you can use named profiles:
 
