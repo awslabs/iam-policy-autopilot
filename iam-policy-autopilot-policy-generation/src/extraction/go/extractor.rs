@@ -2,6 +2,7 @@
 
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::go::disambiguation::GoMethodDisambiguator;
+use crate::extraction::go::features_extractor::GoFeaturesExtractor;
 use crate::extraction::go::paginator_extractor::GoPaginatorExtractor;
 use crate::extraction::go::types::{GoImportInfo, ImportInfo};
 use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
@@ -356,9 +357,22 @@ rule:
                     let paginator_calls = paginator_extractor.extract_paginator_method_calls(ast);
                     method_calls.extend(paginator_calls);
 
+                    // Add feature method calls
+                    match GoFeaturesExtractor::new() {
+                        Ok(features_extractor) => {
+                            let feature_calls =
+                                features_extractor.extract_feature_method_calls(ast, import_info);
+                            method_calls.extend(feature_calls);
+                        }
+                        Err(e) => {
+                            log::debug!("Failed to create GoFeaturesExtractor: {}", e);
+                        }
+                    }
+
                     // Clone the method calls to pass to disambiguate_method_calls
                     let filtered_and_mapped = method_disambiguator
                         .disambiguate_method_calls(method_calls.clone(), Some(import_info));
+
                     // Replace the method calls in place
                     *method_calls = filtered_and_mapped;
                 }
