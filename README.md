@@ -202,7 +202,7 @@ Usage: iam-policy-autopilot <COMMAND>
 
 Commands:
   fix-access-denied  Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
-  generate-policy    Generates complete IAM policy documents from source files
+  generate-policies    Generates complete IAM policy documents from source files
   mcp-server         Start MCP server
   help               Print this message or the help of the given subcommand(s)
 
@@ -213,16 +213,16 @@ Options:
 
 ### Commands
 
-**generate-policy** - Generates complete IAM policy documents from source files
+**generate-policies** - Generates complete IAM policy documents from source files
 
 ```bash
-iam-policy-autopilot generate-policy <source_files> [OPTIONS]
+iam-policy-autopilot generate-policies <source_files> [OPTIONS]
 ```
 
 Example:
 
 ```bash
-iam-policy-autopilot generate-policy \
+iam-policy-autopilot generate-policies \
   ./src/app.py \
   --region us-east-1 \
   --account 123456789012 \

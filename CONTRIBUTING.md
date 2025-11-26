@@ -64,7 +64,7 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) for commi
 For breaking changes, append `!` after the type or add `BREAKING CHANGE:` in the footer:
 
 ```bash
-feat!: change CLI argument format for generate-policy command
+feat!: change CLI argument format for generate-policies command
 
 BREAKING CHANGE: --region flag is now required instead of optional
 ```
