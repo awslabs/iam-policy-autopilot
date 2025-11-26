@@ -22,7 +22,7 @@ type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
 // Cache files for 6 hours.
 // We can allow cache duration override in future.
-const DEFAULT_FILE_SYSTEM_CACHE_DURATION_IN_SECONDS: u64 = 21600;
+const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 21600;
 pub(crate) type OperationToAuthorizedActionMap = HashMap<OperationName, Operation>;
 /// Service Reference data structure
 ///
@@ -288,7 +288,7 @@ fn deserialize_service_reference_mapping(
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
-    service_cache: RwLock<HashMap<String, ServiceReference>>,
+    service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
     mapping_url: String,
     disable_file_system_cache: bool,
 }
@@ -399,8 +399,7 @@ impl RemoteServiceReferenceLoader {
         if let Ok(metadata) = fs::metadata(path).await {
             if let Ok(modified) = metadata.modified() {
                 if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                    return elapsed
-                        < Duration::from_secs(DEFAULT_FILE_SYSTEM_CACHE_DURATION_IN_SECONDS);
+                    return elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS);
                 }
             }
         }
@@ -411,8 +410,12 @@ impl RemoteServiceReferenceLoader {
         &self,
         service_name: &str,
     ) -> crate::errors::Result<Option<ServiceReference>> {
-        if let Some(cached) = self.service_cache.read().await.get(service_name) {
-            return Ok(Some(cached.clone()));
+        if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
+            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
+                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                    return Ok(Some(cached.clone()));
+                }
+            }
         }
 
         // check temp file
@@ -420,10 +423,10 @@ impl RemoteServiceReferenceLoader {
         if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
             if let Ok(content) = fs::read_to_string(&cache_path).await {
                 if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await {
-                    self.service_cache
-                        .write()
-                        .await
-                        .insert(service_name.to_string(), service_ref.clone());
+                    self.service_cache.write().await.insert(
+                        service_name.to_string(),
+                        (service_ref.clone(), SystemTime::now()),
+                    );
                     return Ok(Some(service_ref));
                 }
             }
@@ -472,10 +475,10 @@ impl RemoteServiceReferenceLoader {
                 if !self.disable_file_system_cache {
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
-                self.service_cache
-                    .write()
-                    .await
-                    .insert(service_name.to_string(), service_ref.clone());
+                self.service_cache.write().await.insert(
+                    service_name.to_string(),
+                    (service_ref.clone(), SystemTime::now()),
+                );
                 Ok(Option::Some(service_ref))
             }
             None => Ok(None),
@@ -540,10 +543,37 @@ mod tests {
         // Verify cache is populated
         let cached = loader.service_cache.read().await.get("s3").cloned();
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().service_name, "s3");
+        assert_eq!(cached.unwrap().0.service_name, "s3");
 
         // Verify cache is unique
         assert_eq!(loader.service_cache.read().await.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_memory_cache_expiry() {
+        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
+
+        // Load and cache s3
+        let result = loader.load("s3").await;
+        assert!(result.is_ok());
+
+        // Manually expire the cache by setting old timestamp
+        let expired_time =
+            SystemTime::now() - Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS + 1);
+        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
+            entry.1 = expired_time;
+        }
+
+        // Load again - should fetch fresh data, not use expired cache
+        let result = loader.load("s3").await;
+        assert!(result.is_ok());
+
+        // Verify cache has fresh timestamp
+        let cached = loader.service_cache.read().await.get("s3").cloned();
+        assert!(cached.is_some());
+        let (_, timestamp) = cached.unwrap();
+        let elapsed = SystemTime::now().duration_since(timestamp).unwrap();
+        assert!(elapsed < Duration::from_secs(10));
     }
 
     // Integration test - requires network access
