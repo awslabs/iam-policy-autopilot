@@ -43,7 +43,7 @@ IAM Policy Autopilot generates policies to provide a starting point that you can
 
 ### Understand the IAM Policy Autopilot scope
 
-IAM Policy Autopilot produces IAM identity-based policies, but doesn't support resource-based policies such as S3 bucket policies or KMS key policies, Resource Control Policies (RCPs), and permission boundaries. These are the limitations that you need to keep in mind. For example, if your code calls `s3.getObject(bucketName)` where `bucketName` is determined at runtime, IAM Policy Autopilot currently doesn't predict which bucket will be accessed.
+IAM Policy Autopilot produces IAM identity-based policies, but doesn't support resource-based policies such as S3 bucket policies or KMS key policies, Resource Control Policies (RCPs), Service Control Policies (SCPs), and permission boundaries. These are the limitations that you need to keep in mind. For example, if your code calls `s3.getObject(bucketName)` where `bucketName` is determined at runtime, IAM Policy Autopilot currently doesn't predict which bucket will be accessed.
 
 ### Understand the boundary between IAM Policy Autopilot and your coding assistant
 
@@ -80,6 +80,8 @@ For more information on AWS credential configuration, see the [AWS CLI Configura
 Configure the MCP server in your MCP client configuration to enable your AI coding assistant to generate IAM policies.
 
 #### For Kiro
+
+Get Kiro from [https://kiro.dev/](https://kiro.dev/)
 
 **If using uv/uvx:**
 
@@ -121,52 +123,28 @@ Add the following configuration to your project-level `.kiro/settings/mcp.json`:
 }
 ```
 
-#### For Amazon Q Developer CLI
+#### For Kiro CLI
+
+Get Kiro CLI from [https://kiro.dev/cli](https://kiro.dev/cli)
+
+Kiro Cli uses the same configuration as Kiro mentioned above, additionally, MCPs for Kiro CLI can also be setup via:
 
 **If using uv/uvx:**
 
-Add the MCP client configuration to your agent file at `~/.aws/amazonq/cli-agents/default.json`:
-
-```json
-{
-  "mcpServers": {
-    "iam-policy-autopilot": {
-      "command": "uvx",
-      "args": ["iam-policy-autopilot", "mcp-server"],
-      "env": {
-        "AWS_PROFILE": "your-profile-name",
-        "AWS_REGION": "us-east-1"
-      },
-      "disabled": false,
-      "autoApprove": []
-    }
-  },
-  "tools": [
-    "@iam-policy-autopilot"
-  ]
-}
+```
+kiro-cli mcp add \
+  --name iam-policy-autopilot \
+  --command "uvx" \
+  --args "iam-policy-autopilot","mcp-server"
 ```
 
 **If using pip:**
 
-```json
-{
-  "mcpServers": {
-    "iam-policy-autopilot": {
-      "command": "iam-policy-autopilot",
-      "args": ["mcp-server"],
-      "env": {
-        "AWS_PROFILE": "your-profile-name",
-        "AWS_REGION": "us-east-1"
-      },
-      "disabled": false,
-      "autoApprove": []
-    }
-  },
-  "tools": [
-    "@iam-policy-autopilot"
-  ]
-}
+```
+kiro-cli mcp add \
+  --name iam-policy-autopilot \
+  --command "iam-policy-autopilot" \
+  --args "mcp-server"
 ```
 
 #### For Claude Desktop
