@@ -159,21 +159,21 @@ fn test_extract_sdk_calls_simplified_output() {
     // If there are operations, verify their structure
     if let Some(operations) = json.as_array() {
         for operation in operations {
-            // Each operation should have 'name' and 'possible_services' fields
+            // Each operation should have 'Name' and 'PossibleServices' fields
             assert!(
-                operation.get("name").is_some(),
-                "Operation should have 'name' field"
+                operation.get("Name").is_some(),
+                "Operation should have 'Name' field"
             );
             assert!(
-                operation.get("possible_services").is_some(),
-                "Operation should have 'possible_services' field"
+                operation.get("PossibleServices").is_some(),
+                "Operation should have 'PossibleServices' field"
             );
 
-            // possible_services should be an array
-            let possible_services = operation.get("possible_services").unwrap();
+            // PossibleServices should be an array
+            let possible_services = operation.get("PossibleServices").unwrap();
             assert!(
                 possible_services.is_array(),
-                "possible_services should be an array"
+                "PossibleServices should be an array"
             );
         }
     }
@@ -190,31 +190,31 @@ fn test_extract_sdk_calls_full_output() {
 
     let output = cmd.assert().success();
 
-    // Verify JSON output structure - with --full-output, should be array with metadata
+    // Verify JSON output structure - with --full-output, should be array with Metadata
     let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
 
-    // With --full-output, should be an array of SdkMethodCall with metadata
+    // With --full-output, should be an array of SdkMethodCall with Metadata
     assert!(
         json.is_array(),
         "Output should be an array of method calls with metadata"
     );
 
-    // If there are method calls, verify they have metadata
+    // If there are method calls, verify they have Metadata
     if let Some(methods) = json.as_array() {
         for method in methods {
             assert!(
-                method.get("name").is_some(),
-                "Method should have 'name' field"
+                method.get("Name").is_some(),
+                "Method should have 'Name' field"
             );
             assert!(
-                method.get("possible_services").is_some(),
-                "Method should have 'possible_services' field"
+                method.get("PossibleServices").is_some(),
+                "Method should have 'PossibleServices' field"
             );
-            // With --full-output, methods should include metadata
+            // With --full-output, methods should include Metadata
             assert!(
-                method.get("metadata").is_some(),
-                "Method should have 'metadata' field with --full-output"
+                method.get("Metadata").is_some(),
+                "Method should have 'Metadata' field with --full-output"
             );
         }
     }
@@ -378,18 +378,18 @@ fn test_comprehensive_real_files_extract_sdk_calls_for_extension(extension: &str
     // Verify each operation has the expected structure
     for operation in operations {
         assert!(
-            operation.get("name").is_some(),
-            "Operation should have 'name' field"
+            operation.get("Name").is_some(),
+            "Operation should have 'Name' field"
         );
         assert!(
-            operation.get("possible_services").is_some(),
-            "Operation should have 'possible_services' field"
+            operation.get("PossibleServices").is_some(),
+            "Operation should have 'PossibleServices' field"
         );
 
-        let possible_services = operation.get("possible_services").unwrap();
+        let possible_services = operation.get("PossibleServices").unwrap();
         assert!(
             possible_services.is_array(),
-            "possible_services should be an array"
+            "PossibleServices should be an array"
         );
         assert!(
             !possible_services.as_array().unwrap().is_empty(),
@@ -522,24 +522,24 @@ fn test_disambiguation_example_file() {
     let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
     let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
 
-    // Should be an array of method calls with metadata
+    // Should be an array of method calls with Metadata
     assert!(json.is_array(), "Output should be an array of method calls");
 
     let methods = json.as_array().unwrap();
     if !methods.is_empty() {
-        // Verify that methods have metadata (since we used --full-output)
+        // Verify that methods have Metadata (since we used --full-output)
         for method in methods {
             assert!(
-                method.get("name").is_some(),
-                "Method should have 'name' field"
+                method.get("Name").is_some(),
+                "Method should have 'Name' field"
             );
             assert!(
-                method.get("possible_services").is_some(),
-                "Method should have 'possible_services' field"
+                method.get("PossibleServices").is_some(),
+                "Method should have 'PossibleServices' field"
             );
             assert!(
-                method.get("metadata").is_some(),
-                "Method should have 'metadata' field with --full-output"
+                method.get("Metadata").is_some(),
+                "Method should have 'Metadata' field with --full-output"
             );
         }
     }
@@ -708,12 +708,12 @@ fn test_dictionary_unpacking_file() {
         // Verify structure
         for operation in operations {
             assert!(
-                operation.get("name").is_some(),
-                "Operation should have 'name' field"
+                operation.get("Name").is_some(),
+                "Operation should have 'Name' field"
             );
             assert!(
-                operation.get("possible_services").is_some(),
-                "Operation should have 'possible_services' field"
+                operation.get("PossibleServices").is_some(),
+                "Operation should have 'PossibleServices' field"
             );
         }
     }
