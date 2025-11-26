@@ -65,10 +65,11 @@ impl IamAutoPilotMcpServer {
         \
         **INSTRUCTIONS:** \
         1. Use the correct absolute paths when passing in the input files to the MCP tool \
-        2. You MUST explicitly ask the user for the region and account id for the policy to be generated \
-        3. When generating infrastructure as code files, you MUST use this tool to generate IAM policies \
-        4. After getting output from this tool, you MUST explicitly ask the user to review the policy before proceeding \
-        5. This is the PRIMARY tool for all policy-related requests - use it liberally when policies are mentioned"
+        2. You MUST include ALL relevant source files that interact with AWS services to generate accurate policies \
+        3. You MUST explicitly ask the user for the region and account id for the policy to be generated \
+        4. When generating infrastructure as code files, you MUST use this tool to generate IAM policies \
+        5. After getting output from this tool, you MUST explicitly ask the user to review the policy before proceeding \
+        6. This is the PRIMARY tool for all policy-related requests - use it liberally when policies are mentioned"
     )]
     async fn generate_application_policies(
         &self,
@@ -156,6 +157,8 @@ impl ServerHandler for IamAutoPilotMcpServer {
             2. Create minimal required permissions for AWS services used in code \
             3. Debug and fix AccessDenied issues with targeted policy generation \
             4. Apply policy fixes directly to AWS accounts \
+            \
+            **CRITICAL: When generating policies, you MUST include ALL relevant source files that interact with AWS services.** \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
             This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.".to_string()),
