@@ -150,6 +150,7 @@ impl Extractor for PythonExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::extraction::{Parameter, ParameterValue};
 
     #[tokio::test]
     async fn test_basic_method_call_extraction() {
@@ -159,5 +160,92 @@ mod tests {
         let result = extractor.parse(source_code).await;
         assert_eq!(result.method_calls_ref().len(), 1);
         assert_eq!(result.method_calls_ref()[0].name, "get_object");
+    }
+
+    #[tokio::test]
+    async fn test_method_call_with_comments() {
+        let extractor = PythonExtractor::new();
+        // Test case with inline comments in arguments
+        let source_code = r#"
+cloudwatch_client.put_metric_alarm(
+    AlarmName='test-alarm',
+    # This is a comment that should be ignored
+    ComparisonOperator='GreaterThanThreshold',
+    EvaluationPeriods=1 # This comment should be ignored too
+    ,
+    # Another comment
+    MetricName='Errors',
+    Threshold=0.0
+)
+"#;
+
+        let result = extractor.parse(source_code).await;
+
+        // Verify exactly one method call is extracted
+        assert_eq!(result.method_calls_ref().len(), 1);
+
+        let method_call = &result.method_calls_ref()[0];
+        assert_eq!(method_call.name, "put_metric_alarm");
+
+        // Verify the metadata contains the correct number of parameters
+        // Comments should NOT be counted as parameters
+        if let Some(metadata) = &method_call.metadata {
+            let param_count = metadata.parameters.len();
+            // Should have 5 parameters (i.e., the 2 line comments and the comment
+            // appended after the argument EvaluationPeriods should not affect extraction)
+            assert_eq!(
+                param_count, 5,
+                "Expected 5 parameters (excluding comments), but got {}",
+                param_count
+            );
+
+            // Verify all parameters are keyword arguments (not comments)
+            for param in &metadata.parameters {
+                match param {
+                    Parameter::Keyword { name, .. } => {
+                        // Ensure parameter names are actual parameter names, not comments
+                        assert!(
+                            !name.starts_with('#'),
+                            "Parameter name should not start with #: {}",
+                            name
+                        );
+                    }
+                    _ => {
+                        // All parameters in this test should be keyword arguments
+                        panic!("Expected all parameters to be Keyword arguments");
+                    }
+                }
+            }
+
+            // Specifically verify that EvaluationPeriods doesn't include the trailing comment
+            let eval_periods_param = metadata.parameters.iter().find(
+                |p| matches!(p, Parameter::Keyword { name, .. } if name == "EvaluationPeriods"),
+            );
+
+            assert!(
+                eval_periods_param.is_some(),
+                "Expected to find EvaluationPeriods parameter"
+            );
+
+            if let Some(Parameter::Keyword { name: _, value, .. }) = eval_periods_param {
+                match value {
+                    ParameterValue::Unresolved(val) => {
+                        assert_eq!(
+                            val, "1",
+                            "EvaluationPeriods value should be '1', not '{}'",
+                            val
+                        );
+                        assert!(
+                            !val.contains('#'),
+                            "Parameter value '{}' should not contain comment character",
+                            val
+                        );
+                    }
+                    _ => panic!("Expected EvaluationPeriods to have an Unresolved value"),
+                }
+            }
+        } else {
+            panic!("Expected metadata to be present");
+        }
     }
 }
