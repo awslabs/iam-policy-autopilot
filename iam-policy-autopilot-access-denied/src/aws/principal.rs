@@ -9,6 +9,7 @@ pub enum PrincipalKind {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub struct PrincipalInfo {
     pub kind: PrincipalKind,
     pub name: String,
@@ -184,5 +185,16 @@ mod tests {
         let result = resolve_principal(arn);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err(), "federated users are not supported");
+    }
+
+    #[test]
+    fn test_principal_info_serialization() {
+        let principal_info = PrincipalInfo::new(PrincipalKind::Role, "MyRole");
+
+        let json = serde_json::to_string(&principal_info).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"Kind\""));
+        assert!(json.contains("\"Name\""));
     }
 }

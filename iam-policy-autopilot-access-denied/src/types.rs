@@ -14,6 +14,7 @@ pub enum DenialType {
 
 /// Parsed denial tuple extracted from an AccessDenied message
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
 pub struct ParsedDenial {
     pub principal_arn: String,
     pub action: String,
@@ -309,5 +310,23 @@ mod tests {
 
         let err = ApplyError::MultiActionError(2);
         assert!(err.to_string().contains("Expected exactly 1"));
+    }
+
+    #[test]
+    fn test_parsed_denial_serialization() {
+        let parsed_denial = ParsedDenial::new(
+            "arn:aws:iam::123456789012:user/testuser".to_string(),
+            "s3:GetObject".to_string(),
+            "arn:aws:s3:::my-bucket/my-key".to_string(),
+            DenialType::ImplicitIdentity,
+        );
+
+        let json = serde_json::to_string(&parsed_denial).unwrap();
+
+        // Verify PascalCase field names
+        assert!(json.contains("\"PrincipalArn\""));
+        assert!(json.contains("\"Action\""));
+        assert!(json.contains("\"Resource\""));
+        assert!(json.contains("\"DenialType\""));
     }
 }
