@@ -1,0 +1,8 @@
+{
+    "Name": "logs",
+    "Operations": [
+         {
+            "Name" : "CreateLogGroup"
+        }
+    ]
+}

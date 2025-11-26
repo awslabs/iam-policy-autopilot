@@ -1,0 +1,24 @@
+[package]
+name = "iam-policy-autopilot-access-denied"
+version.workspace = true
+edition = "2021"
+description = "Core library for AWS IAM Policy Autopilot: parsing AccessDenied errors, synthesizing IAM policies, principal resolution, and guarded IAM operations."
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+percent-encoding = { workspace = true }
+aws-sdk-iam = { workspace = true }
+aws-sdk-sts = { workspace = true }
+aws-config = { workspace = true }
+tokio = { workspace = true }
+convert_case = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

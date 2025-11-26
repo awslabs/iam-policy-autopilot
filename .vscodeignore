@@ -1,0 +1,23 @@
+.vscode/**
+.vscode-test/**
+out/**
+node_modules/**
+src/**
+.gitignore
+.yarnrc
+webpack.config.js
+vsc-extension-quickstart.md
+**/tsconfig.json
+**/eslint.config.mjs
+**/*.map
+**/*.ts
+**/.vscode-test.*
+
+# Include configuration files needed by the extension
+!config/**
+!assets/**
+
+# Exclude development and test files from config
+config/**/*.backup
+config/**/*.test.*
+config/**/*.spec.*

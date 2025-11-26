@@ -1,0 +1,29 @@
+[package]
+name = "iam-policy-autopilot-cli"
+version.workspace = true
+edition = "2021"
+description = "Standalone CLI for AWS IAM Policy Autopilot: analyzes AccessDenied errors and applies IAM policy fixes."
+
+[dependencies]
+iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-denied" }
+iam-policy-autopilot-mcp-server = { path = "../iam-policy-autopilot-mcp-server" }
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
+iam-policy-autopilot-tools = { path = "../iam-policy-autopilot-tools" }
+
+anyhow = { workspace = true }
+clap = { workspace = true }
+atty = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"
+tempfile = "3.8"
+
+[[bin]]
+name = "iam-policy-autopilot"
+path = "src/main.rs"

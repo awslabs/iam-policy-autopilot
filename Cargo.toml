@@ -1,0 +1,109 @@
+[workspace]
+members = [
+    "iam-policy-autopilot-policy-generation",
+    "iam-policy-autopilot-tools",
+    "iam-policy-autopilot-mcp-server",
+    "iam-policy-autopilot-access-denied",
+    "iam-policy-autopilot-cli"
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/awslabs/iam-policy-autopilot"
+description = "VS Code extension for AWS IAM permission analysis and management"
+
+# Shared dependency versions across workspace
+[workspace.dependencies]
+# Core serialization and utilities
+serde = { version = "1.0", features = ["derive"] }
+futures = "0.3"
+thiserror = "1.0"
+anyhow = "1.0"
+ast-grep-language = "0.39"
+ast-grep-config = "0.39"
+ast-grep-core = "0.39"
+schemars = { version = "^1", features = ["derive"] }
+rust-embed = { version = "8.9", features = ["compression", "include-exclude"] }
+reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false }
+
+# Native async runtime and parallel processing
+tokio = { version = "1.0", features = ["fs", "rt", "rt-multi-thread", "macros", "signal"] }
+rayon = "1.8"
+async-trait = "0.1"
+tokio-util = { version = "0.7", features = ["compat"] }
+
+# JSON processing
+serde_json = "1.0"
+
+# Development and testing
+tokio-test = "0.4"
+tempfile = "3.10"
+criterion = "0.5"
+proptest = "1.0"
+
+# CLI-specific dependencies
+clap = { version = "4.5", features = ["derive", "env"] }
+env_logger = "0.11"
+log = "0.4"
+walkdir = "2.0"
+glob = "0.3"
+colored = "2.0"
+indicatif = "0.17"
+regex = "1.10"
+
+# Testing utilities
+assert_cmd = "2.0"
+predicates = "3.0"
+serial_test = "3.0"
+
+# IAM Policy Autopilot specific dependencies
+atty = "0.2"
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.8", features = ["v4"] }
+sha2 = "0.10"
+url = "2.5"
+percent-encoding = "2.3"
+aws-sdk-iam = "1.89.0"
+aws-sdk-sts = "1.86.0"
+aws-config = "1.8.6"
+base64 = "0.22"
+convert_case = "0.8"
+strsim = "0.11"
+
+# Additional workspace configuration
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+enum_glob_use = "deny"
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+
+# Workspace-level profiles
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.test]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+# Benchmark profile
+[profile.bench]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = false

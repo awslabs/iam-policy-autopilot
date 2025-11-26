@@ -1,0 +1,414 @@
+{
+  "services": {
+    "s3": {
+      "client_methods": {
+        "upload_file": {
+          "operations": [
+            {
+              "operation": "PutObject",
+              "required_params": ["Bucket", "Key"]
+            },
+            {
+              "operation": "CreateMultipartUpload",
+              "required_params": ["Bucket", "Key"]
+            },
+            {
+              "operation": "UploadPart",
+              "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+            },
+            {
+              "operation": "CompleteMultipartUpload",
+              "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+            }
+          ],
+          "accepted_params": ["Filename", "Bucket", "Key", "ExtraArgs", "Callback", "Config"]
+        },
+        "download_file": {
+          "operations": [
+            {
+              "operation": "GetObject",
+              "required_params": ["Bucket", "Key"]
+            }
+          ],
+          "accepted_params": ["Bucket", "Key", "Filename", "ExtraArgs", "Callback", "Config"]
+        },
+        "copy": {
+          "operations": [
+            {
+              "operation": "CopyObject",
+              "required_params": ["Bucket", "CopySource", "Key"]
+            },
+            {
+              "operation": "CreateMultipartUpload",
+              "required_params": ["Bucket", "Key"]
+            },
+            {
+              "operation": "UploadPartCopy",
+              "required_params": ["Bucket", "Key", "UploadId", "PartNumber", "CopySource"]
+            },
+            {
+              "operation": "CompleteMultipartUpload",
+              "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+            }
+          ],
+          "accepted_params": ["CopySource", "Bucket", "Key", "ExtraArgs", "Callback", "SourceClient", "Config"]
+        },
+        "upload_fileobj": {
+          "operations": [
+            {
+              "operation": "PutObject",
+              "required_params": ["Bucket", "Key"]
+            },
+            {
+              "operation": "CreateMultipartUpload",
+              "required_params": ["Bucket", "Key"]
+            },
+            {
+              "operation": "UploadPart",
+              "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+            },
+            {
+              "operation": "CompleteMultipartUpload",
+              "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+            }
+          ],
+          "accepted_params": ["Fileobj", "Bucket", "Key", "ExtraArgs", "Callback", "Config"]
+        },
+        "download_fileobj": {
+          "operations": [
+            {
+              "operation": "GetObject",
+              "required_params": ["Bucket", "Key"]
+            }
+          ],
+          "accepted_params": ["Bucket", "Key", "Fileobj", "ExtraArgs", "Callback", "Config"]
+        }
+      },
+      "resource_methods": {
+        "Bucket": {
+          "load": {
+            "operations": [
+              {
+                "operation": "ListBuckets",
+                "required_params": []
+              }
+            ],
+            "accepted_params": [],
+            "identifier_mappings": []
+          },
+          "upload_file": {
+            "operations": [
+              {
+                "operation": "PutObject",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPart",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["Filename", "Key", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              }
+            ]
+          },
+          "download_file": {
+            "operations": [
+              {
+                "operation": "GetObject",
+                "required_params": ["Bucket", "Key"]
+              }
+            ],
+            "accepted_params": ["Key", "Filename", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              }
+            ]
+          },
+          "copy": {
+            "operations": [
+              {
+                "operation": "CopyObject",
+                "required_params": ["Bucket", "CopySource", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPartCopy",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber", "CopySource"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["CopySource", "Key", "ExtraArgs", "Callback", "SourceClient", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              }
+            ]
+          },
+          "upload_fileobj": {
+            "operations": [
+              {
+                "operation": "PutObject",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPart",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["Fileobj", "Key", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              }
+            ]
+          },
+          "download_fileobj": {
+            "operations": [
+              {
+                "operation": "GetObject",
+                "required_params": ["Bucket", "Key"]
+              }
+            ],
+            "accepted_params": ["Key", "Fileobj", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              }
+            ]
+          }
+        },
+        "Object": {
+          "upload_file": {
+            "operations": [
+              {
+                "operation": "PutObject",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPart",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["Filename", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          },
+          "download_file": {
+            "operations": [
+              {
+                "operation": "GetObject",
+                "required_params": ["Bucket", "Key"]
+              }
+            ],
+            "accepted_params": ["Filename", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          },
+          "copy": {
+            "operations": [
+              {
+                "operation": "CopyObject",
+                "required_params": ["Bucket", "CopySource", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPartCopy",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber", "CopySource"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["CopySource", "ExtraArgs", "Callback", "SourceClient", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          },
+          "upload_fileobj": {
+            "operations": [
+              {
+                "operation": "PutObject",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "CreateMultipartUpload",
+                "required_params": ["Bucket", "Key"]
+              },
+              {
+                "operation": "UploadPart",
+                "required_params": ["Bucket", "Key", "UploadId", "PartNumber"]
+              },
+              {
+                "operation": "CompleteMultipartUpload",
+                "required_params": ["Bucket", "Key", "UploadId", "MultipartUpload"]
+              }
+            ],
+            "accepted_params": ["Fileobj", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          },
+          "download_fileobj": {
+            "operations": [
+              {
+                "operation": "GetObject",
+                "required_params": ["Bucket", "Key"]
+              }
+            ],
+            "accepted_params": ["Fileobj", "ExtraArgs", "Callback", "Config"],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          }
+        },
+        "ObjectSummary": {
+          "load": {
+            "operations": [
+              {
+                "operation": "HeadObject",
+                "required_params": ["Bucket", "Key"]
+              }
+            ],
+            "accepted_params": [],
+            "identifier_mappings": [
+              {
+                "target_param": "Bucket",
+                "constructor_arg_index": 0
+              },
+              {
+                "target_param": "Key",
+                "constructor_arg_index": 1
+              }
+            ]
+          }
+        }
+      }
+    },
+    "ec2": {
+      "client_methods": {},
+      "resource_methods": {
+        "ServiceResource": {
+          "create_tags": {
+            "operations": [
+              {
+                "operation": "CreateTags",
+                "required_params": ["Resources", "Tags"]
+              }
+            ],
+            "accepted_params": ["Resources", "Tags"],
+            "identifier_mappings": []
+          }
+        },
+        "Tag": {
+          "delete": {
+            "operations": [
+              {
+                "operation": "DeleteTags",
+                "required_params": ["Resources"]
+              }
+            ],
+            "accepted_params": ["Resources", "Tags"],
+            "identifier_mappings": []
+          }
+        }
+      }
+    },
+    "dynamodb": {
+      "client_methods": {},
+      "resource_methods": {
+        "Table": {
+          "batch_writer": {
+            "operations": [
+              {
+                "operation": "BatchWriteItem",
+                "required_params": ["RequestItems"]
+              }
+            ],
+            "accepted_params": ["overwrite_by_pkeys"],
+            "identifier_mappings": []
+          }
+        }
+      }
+    }
+  }
+}

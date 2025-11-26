@@ -1,0 +1,29 @@
+[package]
+name = "iam-policy-autopilot-tools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "IAM tools for AWS IAM policies"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
+
+serde.workspace = true
+thiserror.workspace = true
+log.workspace = true
+serde_json.workspace = true
+regex.workspace = true
+
+# AWS SDK dependencies
+aws-config = "1.1.7"
+aws-sdk-iam = "1.17.0"
+aws-smithy-runtime-api = "1.9.0"
+
+# Documentation configuration
+[package.metadata.docs.rs]
+all-features = true
+targets = ["x86_64-unknown-linux-gnu"]

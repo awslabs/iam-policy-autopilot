@@ -1,0 +1,11 @@
+{
+    "Name": "ecr",
+    "Operations": [
+         {
+            "Name" : "BatchGetImage"
+        },
+        {
+            "Name": "GetDownloadUrlForLayer"
+        }
+    ]
+}
