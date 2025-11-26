@@ -2,6 +2,19 @@
 
 An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time.
 
+## Table of Contents
+
+- [Who is IAM Policy Autopilot for?](#who-is-iam-policy-autopilot-for)
+- [How IAM Policy Autopilot is helpful?](#how-iam-policy-autopilot-is-helpful)
+- [Getting Started](#getting-started)
+- [CLI Usage](#cli-usage)
+- [Best Practices and Considerations](#best-practices-and-considerations)
+- [Build Instructions](#build-instructions)
+- [Workspace Structure](#workspace-structure)
+- [Development](#development)
+- [Security](#security)
+- [License](#license)
+
 ## Who is IAM Policy Autopilot for?
 
 IAM Policy Autopilot is for any builders on AWS using AI coding assistants, including developers, product managers, technical experimenters, and business leaders.
