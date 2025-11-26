@@ -19,6 +19,11 @@ impl ArgumentExtractor {
         let mut parameter_position = 0; // Track actual parameter position (excluding commas)
 
         for arg_node in args_nodes {
+            // Filter out comment nodes
+            if arg_node.kind() == "comment" {
+                continue;
+            }
+
             let arg_text = arg_node.text().to_string();
 
             // Filter out comma nodes - ast-grep captures commas as separate nodes
