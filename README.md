@@ -5,7 +5,7 @@ An open source Model Context Protocol (MCP) server and command-line tool that he
 ## Table of Contents
 
 - [Who is IAM Policy Autopilot for?](#who-is-iam-policy-autopilot-for)
-- [How IAM Policy Autopilot is helpful?](#how-iam-policy-autopilot-is-helpful)
+- [How IAM is Policy Autopilot helpful?](#how-is-iam-policy-autopilot-helpful)
 - [Best Practices and Considerations](#best-practices-and-considerations)
 - [Getting Started](#getting-started)
 - [CLI Usage](#cli-usage)
