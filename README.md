@@ -295,7 +295,7 @@ iam-policy-autopilot mcp-server --transport http
 
 - [Rust](https://rustup.rs/) (latest stable version)
 - Git
-- [CMake](https://cmake.org/) (Linux only)
+- [CMake](https://cmake.org/) (Windows only)
 
 ### Setup
 
@@ -327,16 +327,6 @@ If you build from source, you can configure MCP clients to use the compiled bina
     }
   }
 }
-```
-
-To make the binary available system-wide:
-
-```bash
-# Copy the binary to /usr/local/bin
-sudo cp ./target/release/iam-policy-autopilot /usr/local/bin/iam-policy-autopilot
-
-# On macOS, sign the binary
-sudo codesign -s - /usr/local/bin/iam-policy-autopilot
 ```
 
 ## Workspace Structure
