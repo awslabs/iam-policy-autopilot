@@ -18,6 +18,13 @@ pub struct GeneratePolicyConfig {
     pub disable_file_system_cache: bool,
 }
 
+/// Service hints for filtering SDK method calls
+#[derive(Debug, Clone)]
+pub struct ServiceHints {
+    /// List of AWS service names to filter by
+    pub service_names: Vec<String>,
+}
+
 /// Configuration for extract_sdk_calls Api
 #[derive(Debug, Clone)]
 pub struct ExtractSdkCallsConfig {
@@ -25,6 +32,8 @@ pub struct ExtractSdkCallsConfig {
     pub source_files: Vec<PathBuf>,
     /// Override programming language detection
     pub language: Option<String>,
+    /// Optional service hints for filtering
+    pub service_hints: Option<ServiceHints>,
 }
 
 // Todo: Find a better place for this or refactor rest of the code to use model

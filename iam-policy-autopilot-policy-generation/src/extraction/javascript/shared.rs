@@ -5,7 +5,31 @@
 
 use crate::extraction::javascript::types::JavaScriptScanResults;
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use serde::Deserialize;
 use std::collections::HashMap;
+
+/// JSON structure for JS v3 libraries mapping
+///
+/// The AWS SDK fro Javascript defines in aws-sdk-js-v3/lib
+/// some auxiliary libraries that export common utility operations
+/// such as Upload. Behind the scenes, these utilities may call different
+/// SDK methods. This map associate to each library name a map from
+/// a utility operation to a list of SDK methods the utility operation
+/// may invoke.
+#[derive(Debug, Deserialize)]
+struct JsV3LibrariesMapping {
+    #[serde(flatten)]
+    library_operation_expansions: HashMap<String, HashMap<String, Vec<String>>>,
+}
+
+/// Load JS v3 libraries mapping from embedded data
+fn load_libraries_mapping() -> Option<JsV3LibrariesMapping> {
+    let content_bytes = crate::embedded_data::JsV3Libraries::get_libraries_mapping()?;
+
+    let content = std::str::from_utf8(&content_bytes).ok()?;
+
+    serde_json::from_str(content).ok()
+}
 
 /// Shared extraction utilities for JavaScript/TypeScript AWS SDK method calls
 pub(crate) struct ExtractionUtils;
@@ -21,11 +45,22 @@ impl ExtractionUtils {
     {
         let mut method_calls = Vec::new();
 
+        // Load library mappings once for reuse across all extraction functions
+        let lib_mappings = load_libraries_mapping();
+
         // Extract operations from Command imports (e.g., PutObjectCommand -> PutObject operation)
-        method_calls.extend(Self::extract_command_operations(scan_results, scanner));
+        method_calls.extend(Self::extract_command_operations(
+            scan_results,
+            scanner,
+            lib_mappings.as_ref(),
+        ));
 
         // Extract operations from paginate function imports (e.g., paginateQuery -> Query operation)
-        method_calls.extend(Self::extract_paginate_operations(scan_results, scanner));
+        method_calls.extend(Self::extract_paginate_operations(
+            scan_results,
+            scanner,
+            lib_mappings.as_ref(),
+        ));
 
         // Extract operations from waiter function imports (e.g., waitUntilBucketExists -> BucketExists waiter)
         method_calls.extend(Self::extract_waiter_operations(scan_results, scanner));
@@ -36,13 +71,21 @@ impl ExtractionUtils {
             scanner,
         ));
 
+        // Extract operations from generic lib-* class imports (e.g., Upload -> multiple S3 commands)
+        method_calls.extend(Self::extract_library_class_operations(
+            scan_results,
+            scanner,
+            lib_mappings.as_ref(),
+        ));
+
         method_calls
     }
 
     /// Extract operations from Command type imports and their constructor usage
-    pub(crate) fn extract_command_operations<T>(
+    fn extract_command_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
+        lib_mappings: Option<&JsV3LibrariesMapping>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
@@ -62,30 +105,53 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a Command type (ends with "Command")
                     if import_info.original_name.ends_with("Command") {
-                        // Extract operation name by removing "Command" suffix
-                        if let Some(operation_name) =
-                            import_info.original_name.strip_suffix("Command")
-                        {
-                            // Try to find the actual constructor instantiation with arguments
-                            // Use the local name for the search (handles renames)
-                            let (usage_position, parameters) = scanner
-                                .find_command_instantiation_with_args(&import_info.local_name)
-                                .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
+                        // Try to find the actual constructor instantiation with arguments
+                        // Use the local name for the search (handles renames)
+                        let (usage_position, parameters) = scanner
+                            .find_command_instantiation_with_args(&import_info.local_name)
+                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
 
-                            // Keep PascalCase operation name to match service index
-                            // e.g., "CreateBucket" stays "CreateBucket"
-                            let method_call = SdkMethodCall {
-                                name: operation_name.to_string(),
-                                possible_services: vec![service.clone()],
-                                metadata: Some(SdkMethodCallMetadata {
-                                    parameters,
-                                    return_type: None,
-                                    start_position: (usage_position, 1),
-                                    end_position: (usage_position, 1),
-                                    receiver: None, // Commands are typically standalone
-                                }),
+                        // Check if this needs library expansion (lib-* sublibraries)
+                        let expanded_command_names =
+                            if sublibrary_info.sublibrary.starts_with("lib-") {
+                                // lib-* sublibrary - try to expand using mappings
+                                lib_mappings
+                                    .and_then(|m| m.library_operation_expansions.get(&service))
+                                    .and_then(|lib| lib.get(&import_info.original_name))
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        // No mapping found - use original name as fallback
+                                        log::debug!(
+                                            "No mapping found for {}/{}, using original name",
+                                            service,
+                                            import_info.original_name
+                                        );
+                                        vec![import_info.original_name.clone()]
+                                    })
+                            } else {
+                                // client-* sublibrary - no expansion needed
+                                vec![import_info.original_name.clone()]
                             };
-                            operations.push(method_call);
+
+                        // Create operations for each expanded command name
+                        for command_name in expanded_command_names {
+                            // Extract operation name by removing "Command" suffix
+                            if let Some(operation_name) = command_name.strip_suffix("Command") {
+                                // Keep PascalCase operation name to match service index
+                                // e.g., "PutItem" from "PutItemCommand"
+                                let method_call = SdkMethodCall {
+                                    name: operation_name.to_string(),
+                                    possible_services: vec![service.clone()],
+                                    metadata: Some(SdkMethodCallMetadata {
+                                        parameters: parameters.clone(),
+                                        return_type: None,
+                                        start_position: usage_position,
+                                        end_position: usage_position,
+                                        receiver: None, // Commands are typically standalone
+                                    }),
+                                };
+                                operations.push(method_call);
+                            }
                         }
                     }
                 }
@@ -96,9 +162,10 @@ impl ExtractionUtils {
     }
 
     /// Extract operations from paginate function imports
-    pub(crate) fn extract_paginate_operations<T>(
+    fn extract_paginate_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
+        lib_mappings: Option<&JsV3LibrariesMapping>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_core::Doc + Clone,
@@ -118,26 +185,57 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a paginate function (starts with "paginate")
                     if import_info.original_name.starts_with("paginate") {
-                        // Extract operation name by removing "paginate" prefix
-                        if let Some(operation_name) =
-                            import_info.original_name.strip_prefix("paginate")
-                        {
-                            // Try to find the actual paginate function call with arguments
-                            // Use the local name for the search (handles renames)
-                            let (usage_position, parameters) = scanner
-                                .find_paginate_function_with_args(&import_info.local_name)
-                                .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
+                        // Try to find the actual paginate function call with arguments
+                        // Use the local name for the search (handles renames)
+                        let (usage_position, parameters) = scanner
+                            .find_paginate_function_with_args(&import_info.local_name)
+                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
+
+                        // Check if this needs library expansion (lib-* sublibraries)
+                        let expanded_paginator_names =
+                            if sublibrary_info.sublibrary.starts_with("lib-") {
+                                // lib-* sublibrary - try to expand using mappings
+                                lib_mappings
+                                    .and_then(|m| m.library_operation_expansions.get(&service))
+                                    .and_then(|lib| lib.get(&import_info.original_name))
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        // No mapping found - use original name as fallback
+                                        log::debug!(
+                                            "No mapping found for {}/{}, using original name",
+                                            service,
+                                            import_info.original_name
+                                        );
+                                        vec![import_info.original_name.clone()]
+                                    })
+                            } else {
+                                // client-* sublibrary - no expansion needed
+                                vec![import_info.original_name.clone()]
+                            };
+
+                        // Create operations for each expanded paginator
+                        for paginator_name in expanded_paginator_names {
+                            // Extract operation name from expanded name
+                            // Could be "QueryCommand" -> "Query" or "paginateQuery" -> "Query"
+                            let operation_name = if let Some(cmd_name) =
+                                paginator_name.strip_suffix("Command")
+                            {
+                                cmd_name.to_string()
+                            } else if let Some(op_name) = paginator_name.strip_prefix("paginate") {
+                                op_name.to_string()
+                            } else {
+                                paginator_name.clone()
+                            };
 
                             // Keep PascalCase operation name to match service index
-                            // e.g., "ListTables" stays "ListTables"
                             let method_call = SdkMethodCall {
-                                name: operation_name.to_string(),
+                                name: operation_name,
                                 possible_services: vec![service.clone()],
                                 metadata: Some(SdkMethodCallMetadata {
-                                    parameters, // extracted from 2nd argument!
+                                    parameters: parameters.clone(), // extracted from 2nd argument!
                                     return_type: None,
-                                    start_position: (usage_position, 1),
-                                    end_position: (usage_position, 1),
+                                    start_position: usage_position,
+                                    end_position: usage_position,
                                     receiver: None,
                                 }),
                             };
@@ -184,7 +282,7 @@ impl ExtractionUtils {
                             // Use the local name for the search (handles renames)
                             let (usage_position, parameters) = scanner
                                 .find_waiter_function_with_args(&import_info.local_name)
-                                .unwrap_or_else(|| (import_info.line, Vec::new())); // Fallback to import position with no params
+                                .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
 
                             // Keep PascalCase waiter name
                             // e.g., "BucketExists" from "waitUntilBucketExists"
@@ -195,8 +293,8 @@ impl ExtractionUtils {
                                 metadata: Some(SdkMethodCallMetadata {
                                     parameters, // Extracted from 2nd argument (operation params)
                                     return_type: None,
-                                    start_position: (usage_position, 1),
-                                    end_position: (usage_position, 1),
+                                    start_position: usage_position,
+                                    end_position: usage_position,
                                     receiver: None, // Waiter functions are standalone
                                 }),
                             };
@@ -244,7 +342,7 @@ impl ExtractionUtils {
                         // Use the local name for the search (handles renames)
                         let usage_position = scanner
                             .find_command_input_usage_position(&import_info.local_name)
-                            .unwrap_or(import_info.line); // Fallback to import position
+                            .unwrap_or((import_info.line, 1)); // Fallback to import position
 
                         // Keep PascalCase operation name to match service index
                         // e.g., "Query" stays "Query"
@@ -254,12 +352,86 @@ impl ExtractionUtils {
                             metadata: Some(SdkMethodCallMetadata {
                                 parameters: Vec::new(), // TODO: Extract from variable assignments
                                 return_type: None,
-                                start_position: (usage_position, 1), // Using enhanced position tracking
-                                end_position: (usage_position, 1), // Using enhanced position tracking
+                                start_position: usage_position, // Using enhanced position tracking
+                                end_position: usage_position,   // Using enhanced position tracking
                                 receiver: None,
                             }),
                         };
                         operations.push(method_call);
+                    }
+                }
+            }
+        }
+
+        operations
+    }
+
+    /// Extract operations from generic lib-* class imports (e.g., Upload -> multiple S3 commands)
+    /// This handles library classes that don't match Command/paginate/waitUntil/CommandInput patterns
+    fn extract_library_class_operations<T>(
+        scan_results: &JavaScriptScanResults,
+        scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
+        lib_mappings: Option<&JsV3LibrariesMapping>,
+    ) -> Vec<SdkMethodCall>
+    where
+        T: ast_grep_core::Doc + Clone,
+    {
+        let mut operations = Vec::new();
+
+        // Early return if no library mappings available
+        let Some(lib_mappings) = lib_mappings else {
+            return operations;
+        };
+
+        // Process both imports and requires to find generic lib-* classes
+        for import_source in [&scan_results.imports, &scan_results.requires] {
+            for sublibrary_info in import_source {
+                // Only process lib-* sublibraries
+                if !sublibrary_info.sublibrary.starts_with("lib-") {
+                    continue;
+                }
+
+                let Some(service) =
+                    Self::extract_service_from_sublibrary(&sublibrary_info.sublibrary)
+                else {
+                    continue;
+                };
+
+                for import_info in &sublibrary_info.imports {
+                    // Skip if already handled by other extractors
+                    if Self::is_command_name_pattern(&import_info.original_name) {
+                        continue;
+                    }
+
+                    // Check if this class has a mapping
+                    if let Some(expanded_commands) = lib_mappings
+                        .library_operation_expansions
+                        .get(&service)
+                        .and_then(|lib| lib.get(&import_info.original_name))
+                    {
+                        // Try to find class instantiation, fallback to import position
+                        let (usage_position, parameters) = scanner
+                            .find_command_instantiation_with_args(&import_info.local_name)
+                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new()));
+
+                        // Create operations for each expanded command
+                        for command_name in expanded_commands {
+                            // Extract operation name by removing "Command" suffix
+                            if let Some(operation_name) = command_name.strip_suffix("Command") {
+                                let method_call = SdkMethodCall {
+                                    name: operation_name.to_string(),
+                                    possible_services: vec![service.clone()],
+                                    metadata: Some(SdkMethodCallMetadata {
+                                        parameters: parameters.clone(),
+                                        return_type: None,
+                                        start_position: usage_position,
+                                        end_position: usage_position,
+                                        receiver: None,
+                                    }),
+                                };
+                                operations.push(method_call);
+                            }
+                        }
                     }
                 }
             }
@@ -361,6 +533,15 @@ impl ExtractionUtils {
         }
 
         parameters
+    }
+
+    /// Check if a name matches any of the known AWS SDK Command/paginate/waiter/Input patterns
+    /// that are handled by other extractors
+    fn is_command_name_pattern(name: &str) -> bool {
+        name.ends_with("Command")
+            || name.starts_with("paginate")
+            || name.starts_with("waitUntil")
+            || name.ends_with("CommandInput")
     }
 }
 
