@@ -71,7 +71,7 @@ impl SharedConfig {
     }
 }
 
-/// Configuration specific to generate-policy subcommand
+/// Configuration specific to generate-policies subcommand
 #[derive(Debug, Clone)]
 struct GeneratePolicyCliConfig {
     /// Shared configuration
@@ -114,12 +114,12 @@ be required for the SDK call.";
     long_about = "Unified tool that combines IAM policy generation from source code analysis \
 with automatic AccessDenied error fixing. Supports three main operations:\n\n\
 • fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
-• generate-policy: Complete pipeline with enrichment for policy generation\n\
+• generate-policies: Complete pipeline with enrichment for policy generation\n\
 • mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
 Examples:\n  \
 iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
-iam-policy-autopilot generate-policy tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot generate-policy tests/resources/test_example.py --region cn-north-1 --account 123456789012\n  \
+iam-policy-autopilot generate-policies tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
+iam-policy-autopilot generate-policies tests/resources/test_example.py --region cn-north-1 --account 123456789012\n  \
 iam-policy-autopilot mcp-server\n  \
 iam-policy-autopilot mcp-server --transport http --port 8001"
 )]
@@ -210,7 +210,7 @@ go, rust, java, cpp, c, csharp. When not specified, all source files must have t
             long_help = "When enabled, outputs the complete ExtractedMethods \
 structure including metadata about extraction time, source files, and warnings. By default, \
 extract-sdk-calls outputs a simplified list of operations with their possible services. \
-This flag has no effect on the generate-policy subcommand."
+This flag has no effect on the generate-policies subcommand."
         )]
         full_output: bool,
 
@@ -228,7 +228,7 @@ This flag has no effect on the generate-policy subcommand."
 Generates complete IAM policy documents from source files. By default, all \
 policies are merged into a single optimized policy document. \
 Optionally takes AWS context (region and account) for accurate ARN generation.")]
-    GeneratePolicy {
+    GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
         source_files: Vec<PathBuf>,
@@ -403,9 +403,9 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
     Ok(())
 }
 
-/// Handle the generate-policy subcommand
+/// Handle the generate-policies subcommand
 async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
-    info!("Running generate-policy command");
+    info!("Running generate-policies command");
 
     // Validate configuration
     config
@@ -552,7 +552,7 @@ async fn main() {
             }
         }
 
-        Commands::GeneratePolicy {
+        Commands::GeneratePolicies {
             source_files,
             debug,
             pretty,
@@ -594,7 +594,7 @@ async fn main() {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);
-                    ExitCode::Duplicate // Exit code 1 for generate-policy errors
+                    ExitCode::Duplicate // Exit code 1 for generate-policies errors
                 }
             }
         }

@@ -53,10 +53,10 @@ fn extract_sdk_calls_command() -> Command {
     cmd
 }
 
-/// Helper function to get the CLI binary command with generate-policy subcommand
+/// Helper function to get the CLI binary command with generate-policies subcommand
 fn generate_policy_command() -> Command {
     let mut cmd = cli_command();
-    cmd.arg("generate-policy");
+    cmd.arg("generate-policies");
     cmd
 }
 
@@ -70,7 +70,7 @@ fn test_cli_help() {
             "Unified tool that combines IAM policy generation",
         ))
         .stdout(predicate::str::contains("fix-access-denied"))
-        .stdout(predicate::str::contains("generate-policy"));
+        .stdout(predicate::str::contains("generate-policies"));
 }
 
 #[test]
@@ -427,7 +427,7 @@ fn test_comprehensive_real_files_generate_policy_for_extension(extension: &str) 
         return;
     }
 
-    // Test generate-policy with multiple real files
+    // Test generate-policies with multiple real files
     let mut cmd = generate_policy_command();
     cmd.arg("--region")
         .arg("us-east-1")

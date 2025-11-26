@@ -106,8 +106,8 @@ jobs:
             python:3.11-slim bash -c "
               set -e
               pip install /wheels/*.whl
-              echo '=== Testing generate-policy ==='
-              iam-policy-autopilot generate-policy /test-resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
+              echo '=== Testing generate-policies ==='
+              iam-policy-autopilot generate-policies /test-resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
               echo '=== Testing fix-access-denied ==='
               echo 'N' | iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'
               echo '=== Testing mcp-server stdio ==='
@@ -128,8 +128,8 @@ jobs:
           # Test natively
           set -e
           pip install wheels/*.whl
-          echo '=== Testing generate-policy ==='
-          iam-policy-autopilot generate-policy iam-policy-autopilot-cli/tests/resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
+          echo '=== Testing generate-policies ==='
+          iam-policy-autopilot generate-policies iam-policy-autopilot-cli/tests/resources/test_sample.py --region us-east-1 --account 123456789012 --pretty
           echo '=== Testing fix-access-denied ==='
           echo 'N' | iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'
           echo '=== Testing mcp-server stdio ==='
