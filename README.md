@@ -202,7 +202,7 @@ Usage: iam-policy-autopilot <COMMAND>
 
 Commands:
   fix-access-denied  Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
-  generate-policies    Generates complete IAM policy documents from source files
+  generate-policies  Generates complete IAM policy documents from source files
   mcp-server         Start MCP server
   help               Print this message or the help of the given subcommand(s)
 
