@@ -13,7 +13,7 @@ version = "0.1.1"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/awslabs/iam-policy-autopilot"
-description = "VS Code extension for AWS IAM permission analysis and management"
+description = "An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster."
 
 # Shared dependency versions across workspace
 [workspace.dependencies]
