@@ -70,6 +70,16 @@ Install [pip](https://pip.pypa.io/en/stable/installation/).
 pip install iam-policy-autopilot
 ```
 
+#### Option 3: Direct installation (MacOS/Linux only)
+
+To install the latest release directly, run the following script to download and install as a system utility.
+
+```bash
+curl -sS https://github.com/awslabs/iam-policy-autopilot/raw/refs/heads/main/install.sh | sudo sh
+```
+
+This will install the latest release directly to `/usr/local/bin/iam-policy-autopilot`.
+
 ### AWS Configuration
 
 IAM Policy Autopilot requires AWS credentials to apply policy fixes and upload policies for AccessDenied debugging.
