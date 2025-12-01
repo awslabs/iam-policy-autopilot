@@ -340,6 +340,7 @@ impl<'a> GoWaiterExtractor<'a> {
                                     value: ParameterValue::Unresolved(param_name.clone()),
                                     position,
                                     type_annotation: None,
+                                    struct_fields: None,
                                 });
                             }
                         }

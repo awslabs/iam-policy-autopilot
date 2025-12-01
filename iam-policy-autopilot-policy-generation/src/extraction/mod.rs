@@ -199,6 +199,9 @@ pub mod core {
             position: usize,
             /// Type annotation if available (e.g., "str", "int")
             type_annotation: Option<String>,
+            /// For Go struct literals: extracted top-level field names (not nested)
+            #[serde(skip_serializing_if = "Option::is_none")]
+            struct_fields: Option<Vec<String>>,
         },
         /// Named keyword argument (e.g., Bucket='my-bucket')
         Keyword {

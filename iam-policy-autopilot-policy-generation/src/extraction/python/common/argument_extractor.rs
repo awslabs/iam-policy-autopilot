@@ -52,6 +52,7 @@ impl ArgumentExtractor {
                     value: Self::extract_parameter_value(&arg_text),
                     position: parameter_position,
                     type_annotation: None,
+                    struct_fields: None,
                 });
                 parameter_position += 1;
             }
