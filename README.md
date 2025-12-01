@@ -75,7 +75,7 @@ pip install iam-policy-autopilot
 To install the latest release directly, run the following script to download and install as a system utility.
 
 ```bash
-curl -sS https://github.com/awslabs/iam-policy-autopilot/raw/refs/heads/main/install.sh | sudo sh
+curl -sSL https://github.com/awslabs/iam-policy-autopilot/raw/refs/heads/main/install.sh | sudo sh
 ```
 
 This will install the latest release directly to `/usr/local/bin/iam-policy-autopilot`.
