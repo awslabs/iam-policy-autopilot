@@ -1051,7 +1051,6 @@ func main() {
                 },
                 operations: s3_operations,
                 shapes: s3_shapes,
-                waiters: HashMap::new(),
             },
         );
 
@@ -1112,7 +1111,6 @@ func main() {
                 },
                 operations: s3control_operations,
                 shapes: s3control_shapes,
-                waiters: HashMap::new(),
             },
         );
 
@@ -1141,7 +1139,7 @@ func main() {
         let service_index = ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         };
 
         // Test Go code with S3 import but GetObject call that exists in both s3 and s3control

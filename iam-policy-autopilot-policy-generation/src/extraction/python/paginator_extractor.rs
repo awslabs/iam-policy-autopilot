@@ -522,7 +522,6 @@ mod tests {
                 },
                 operations: s3_operations,
                 shapes: s3_shapes,
-                waiters: HashMap::new(),
             },
         );
 
@@ -538,7 +537,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 

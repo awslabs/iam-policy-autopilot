@@ -702,22 +702,25 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let resolved_operation = match &action_mapping.operation {
             OperationType::Waiter { waiter_name } => {
                 // Resolve actual operation via ServiceModelIndex
-                if let Some(service_def) =
-                    self.service_index.services.get(&constructor.service_name)
-                {
-                    if let Some(operation) = service_def.waiters.get(waiter_name) {
-                        operation.name.to_case(Case::Snake)
-                    } else {
-                        log::debug!(
-                            "Waiter '{}' not found in service '{}' waiters",
-                            waiter_name,
-                            constructor.service_name
-                        );
-                        return None;
+                if let Some(service_methods) = self.service_index.waiter_lookup.get(waiter_name) {
+                    let service_methods_filtered = service_methods
+                        .iter()
+                        .filter(|x| x.service_name == constructor.service_name)
+                        .collect::<Vec<_>>();
+                    match service_methods_filtered.first() {
+                        None => {
+                            log::debug!(
+                                "Service '{}' not found in ServiceModelIndex",
+                                constructor.service_name
+                            );
+                            return None;
+                        }
+                        Some(service_method) => service_method.operation_name.to_case(Case::Snake),
                     }
                 } else {
                     log::debug!(
-                        "Service '{}' not found in ServiceModelIndex",
+                        "Waiter '{}' not found in service '{}' waiters",
+                        waiter_name,
                         constructor.service_name
                     );
                     return None;

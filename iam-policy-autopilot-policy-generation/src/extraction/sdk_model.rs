@@ -60,11 +60,6 @@ pub(crate) struct SdkServiceDefinition {
     pub(crate) operations: HashMap<String, Operation>,
     /// Map of shape name to shape definition
     pub(crate) shapes: HashMap<String, Shape>,
-    /// Map of waiter name (PascalCase) to underlying operation definition
-    /// Example: "InstanceTerminated" -> Operation { name: "DescribeInstances", ... }
-    /// Provides direct access to operation details without secondary HashMap lookup
-    #[serde(default, skip_deserializing)]
-    pub(crate) waiters: HashMap<String, Operation>,
 }
 
 /// Service metadata from AWS service definitions
@@ -134,7 +129,7 @@ pub(crate) struct ServiceModelIndex {
     pub(crate) method_lookup: HashMap<String, Vec<ServiceMethodRef>>,
     /// Reverse index: waiter name (PascalCase) to list of services that provide it
     /// Example: "InstanceTerminated" -> ["ec2"], "BucketExists" -> ["s3"]
-    pub(crate) waiter_to_services: HashMap<String, Vec<String>>,
+    pub(crate) waiter_lookup: HashMap<String, Vec<ServiceMethodRef>>,
 }
 
 /// Reference to a service method for lookup purposes
@@ -229,6 +224,7 @@ impl ServiceDiscovery {
         let services = Self::discover_services()?;
         let mut service_models = HashMap::new();
         let mut method_lookup = HashMap::new();
+        let mut waiter_lookup = HashMap::new();
         let mut load_errors = Vec::new();
 
         log::debug!(
@@ -240,6 +236,7 @@ impl ServiceDiscovery {
             services,
             &mut service_models,
             &mut method_lookup,
+            &mut waiter_lookup,
             &mut load_errors,
             language,
         )
@@ -265,21 +262,10 @@ impl ServiceDiscovery {
             )));
         }
 
-        // Build waiter-to-services reverse index
-        let mut waiter_to_services = HashMap::new();
-        for (service_name, service_def) in &service_models {
-            for waiter_name in service_def.waiters.keys() {
-                waiter_to_services
-                    .entry(waiter_name.clone())
-                    .or_insert_with(Vec::new)
-                    .push(service_name.clone());
-            }
-        }
-
         let index = Arc::new(ServiceModelIndex {
             services: service_models,
             method_lookup,
-            waiter_to_services,
+            waiter_lookup,
         });
 
         // Cache the index for future use
@@ -296,6 +282,7 @@ impl ServiceDiscovery {
         services: Vec<SdkModel>,
         service_models: &mut HashMap<String, SdkServiceDefinition>,
         method_lookup: &mut HashMap<String, Vec<ServiceMethodRef>>,
+        waiter_lookup: &mut HashMap<String, Vec<ServiceMethodRef>>,
         load_errors: &mut Vec<String>,
         language: Language,
     ) -> Result<()> {
@@ -360,7 +347,7 @@ impl ServiceDiscovery {
         // Collect results from parallel tasks
         while let Some(result) = join_set.join_next().await {
             match result {
-                Ok(Ok((service_info, mut service_model, waiters))) => {
+                Ok(Ok((service_info, service_model, waiters))) => {
                     let service_name = service_info.name;
                     // Build method lookup index for this service
                     for operation_name in service_model.operations.keys() {
@@ -374,24 +361,17 @@ impl ServiceDiscovery {
                         );
                     }
 
-                    // Populate waiters directly in service definition in canonical PascalCase
                     if let Some(waiters) = waiters {
-                        // Add waiters to the service definition with full Operation structs
-                        for (waiter_name_pascal, waiter_entry) in &waiters {
-                            if let Some(operation) =
-                                service_model.operations.get(&waiter_entry.operation)
-                            {
-                                service_model
-                                    .waiters
-                                    .insert(waiter_name_pascal.clone(), operation.clone());
-                            } else {
-                                log::debug!(
-                                    "Waiter '{}' references unknown operation '{}' in service '{}'",
-                                    waiter_name_pascal,
-                                    waiter_entry.operation,
-                                    service_name
-                                );
-                            }
+                        for (waiter_name, waiter_entry) in waiters {
+                            let method_name =
+                                Self::operation_to_method_name(&waiter_name, language);
+
+                            waiter_lookup.entry(method_name.clone()).or_default().push(
+                                ServiceMethodRef {
+                                    service_name: service_name.clone(),
+                                    operation_name: waiter_entry.operation.clone(),
+                                },
+                            );
                         }
                     }
 
@@ -555,7 +535,6 @@ mod tests {
             },
             operations: HashMap::new(),
             shapes: HashMap::new(),
-            waiters: HashMap::new(),
         };
 
         assert_eq!(service.version, Some("2.0".to_string()));

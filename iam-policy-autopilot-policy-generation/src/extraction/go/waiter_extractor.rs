@@ -230,98 +230,71 @@ impl<'a> GoWaiterExtractor<'a> {
         best_match.map(|w| (w, best_idx))
     }
 
-    /// Create synthetic SdkMethodCall objects from a matched waiter + wait
-    fn create_synthetic_call(
+    fn create_synthetic_call_internal(
         &self,
-        wait_call: &WaitCallInfo,
+        wait_call: Option<&WaitCallInfo>,
         waiter_info: &WaiterInfo,
     ) -> Vec<SdkMethodCall> {
-        let waiter_name = &waiter_info.waiter_type;
-
-        // Look up all services that provide this waiter
-        let candidate_services = self
-            .service_index
-            .waiter_to_services
-            .get(waiter_name)
-            .cloned()
-            .unwrap_or_default();
-
-        if candidate_services.is_empty() {
-            return Vec::new();
-        }
-
         let mut synthetic_calls = Vec::new();
 
-        // Create one call per service
-        for service_name in candidate_services {
-            if let Some(service_def) = self.service_index.services.get(&service_name) {
-                if let Some(operation) = service_def.waiters.get(waiter_name) {
-                    // Filter out waiter-specific parameters
-                    let filtered_params =
-                        self.filter_waiter_parameters(wait_call.arguments.clone());
+        // waiter_type already contains the clean waiter name (e.g., "InstanceTerminated")
+        if let Some(service_defs) = self
+            .service_index
+            .waiter_lookup
+            .get(&waiter_info.waiter_type)
+        {
+            // Create one call per service
+            for service_def in service_defs {
+                let service_name = &service_def.service_name;
+                let operation_name = &service_def.operation_name;
 
-                    synthetic_calls.push(SdkMethodCall {
-                        name: operation.name.clone(),
-                        possible_services: vec![service_name.clone()], // Single service per call
-                        metadata: Some(SdkMethodCallMetadata {
-                            parameters: filtered_params,
-                            return_type: None,
-                            start_position: wait_call.start_position,
-                            end_position: wait_call.end_position,
-                            receiver: Some(waiter_info.client_receiver.clone()),
-                        }),
-                    });
-                }
+                let (parameters, start_position, end_position) = match wait_call {
+                    Some(wait_call) => (
+                        self.filter_waiter_parameters(wait_call.arguments.clone()),
+                        wait_call.start_position,
+                        wait_call.end_position,
+                    ),
+                    None => {
+                        // Fallback:
+                        (
+                            // Get required parameters for this operation
+                            self.get_required_parameters(service_name, operation_name),
+                            (waiter_info.creation_line, 1),
+                            (waiter_info.creation_line, 1),
+                        )
+                    }
+                };
+
+                synthetic_calls.push(SdkMethodCall {
+                    name: operation_name.clone(),
+                    possible_services: vec![service_name.clone()], // Single service per call
+                    metadata: Some(SdkMethodCallMetadata {
+                        parameters,
+                        return_type: None,
+                        start_position,
+                        end_position,
+                        receiver: Some(waiter_info.client_receiver.clone()),
+                    }),
+                });
             }
         }
 
         synthetic_calls
     }
 
+    /// Create synthetic SdkMethodCall objects from a matched waiter + wait
+    fn create_synthetic_call(
+        &self,
+        wait_call: &WaitCallInfo,
+        waiter_info: &WaiterInfo,
+    ) -> Vec<SdkMethodCall> {
+        self.create_synthetic_call_internal(Some(wait_call), waiter_info)
+    }
+
     /// Create fallback synthetic calls for unmatched waiter creation
     /// Returns one call per service that has the waiter, matching Python behavior
     fn create_fallback_synthetic_call(&self, waiter_info: &WaiterInfo) -> Vec<SdkMethodCall> {
-        // waiter_type already contains the clean waiter name (e.g., "InstanceTerminated")
-        let waiter_name = &waiter_info.waiter_type;
-
-        // Look up all services that provide this waiter
-        let candidate_services = self
-            .service_index
-            .waiter_to_services
-            .get(waiter_name)
-            .cloned()
-            .unwrap_or_default();
-
-        if candidate_services.is_empty() {
-            return Vec::new();
-        }
-
-        let mut synthetic_calls = Vec::new();
-
-        // Create one call per service
-        for service_name in candidate_services {
-            if let Some(service_def) = self.service_index.services.get(&service_name) {
-                if let Some(operation) = service_def.waiters.get(waiter_name) {
-                    // Get required parameters for this operation
-                    let required_params =
-                        self.get_required_parameters(&service_name, &operation.name);
-
-                    synthetic_calls.push(SdkMethodCall {
-                        name: operation.name.clone(),
-                        possible_services: vec![service_name.clone()], // Single service per call
-                        metadata: Some(SdkMethodCallMetadata {
-                            parameters: required_params,
-                            return_type: None,
-                            start_position: (waiter_info.creation_line, 1),
-                            end_position: (waiter_info.creation_line, 1),
-                            receiver: Some(waiter_info.client_receiver.clone()),
-                        }),
-                    });
-                }
-            }
-        }
-
-        synthetic_calls
+        self.create_synthetic_call_internal(None, waiter_info)
     }
 
     /// Get required parameters for an operation from the service index
@@ -362,6 +335,8 @@ impl<'a> GoWaiterExtractor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::extraction::sdk_model::ServiceMethodRef;
+
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Go;
@@ -379,7 +354,7 @@ mod tests {
         };
 
         let mut services = HashMap::new();
-        let mut waiter_to_services = HashMap::new();
+        let mut waiter_lookup = HashMap::new();
 
         // Create EC2 service with DescribeInstances operation
         let mut ec2_operations = HashMap::new();
@@ -431,18 +406,29 @@ mod tests {
                 },
                 operations: ec2_operations,
                 shapes: ec2_shapes,
-                waiters: ec2_waiters,
             },
         );
 
         // Use PascalCase for waiter_to_services index
-        waiter_to_services.insert("InstanceTerminated".to_string(), vec!["ec2".to_string()]);
-        waiter_to_services.insert("InstanceRunning".to_string(), vec!["ec2".to_string()]);
+        waiter_lookup.insert(
+            "InstanceTerminated".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "ec2".to_string(),
+                operation_name: "DescribeInstances".to_string(),
+            }],
+        );
+        waiter_lookup.insert(
+            "InstanceRunning".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "ec2".to_string(),
+                operation_name: "DescribeInstances".to_string(),
+            }],
+        );
 
         ServiceModelIndex {
             services,
             method_lookup: HashMap::new(),
-            waiter_to_services,
+            waiter_lookup,
         }
     }
 

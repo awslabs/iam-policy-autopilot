@@ -268,7 +268,6 @@ mod tests {
             },
             operations,
             shapes,
-            waiters: HashMap::new(),
         };
 
         services.insert("apigatewayv2".to_string(), service_def);
@@ -285,7 +284,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 
