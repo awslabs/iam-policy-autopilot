@@ -1,0 +1,25 @@
+name: Slack Notifier
+
+on:
+  issues:
+  issue_comment:
+  pull_request:
+  pull_request_review:
+  pull_request_review_comment:
+  discussion:
+  discussion_comment:
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Send Event Notification
+        uses: rtCamp/action-slack-notify@cdf0a2130cbcdfd82ba5fcac8e076370bf381b36
+        env:
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_TITLE: '${{ github.event_name }}: ${{ github.event.repository.name }}'
+          SLACK_FOOTER: ''
+          MSG_MINIMAL: true
+          SLACK_MESSAGE: 'By ${{ github.event.sender.login }} - ${{ github.event.issue.html_url || github.event.pull_request.html_url || github.event.discussion.html_url || github.event.comment.html_url }}'
