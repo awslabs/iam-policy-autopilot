@@ -1,0 +1,116 @@
+{
+    "Name": "dynamodb",
+    "Operations": [
+        {
+            "Name" : "BatchGetItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "BatchWriteItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "CreateTable",
+            "FasOperations": [{
+                "Operation": "DescribeKey",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            },
+            {
+                "Operation": "CreateGrant",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "DeleteItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "GetItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        }, 
+        {
+            "Name" : "GetRecords",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+         {
+            "Name" : "GetShardIterator"
+        },
+        {
+            "Name" : "PutItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "Query",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "Scan",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "kms:ViaService": "dynamodb.${region}.amazonaws.com"
+                }
+            }]
+        },
+        {
+            "Name" : "UpdateItem",
+            "FasOperations": [{
+                "Operation": "Decrypt",
+                "Service": "kms",
+                "Context": {
+                    "explanation": "foo: 2 is invalid, because only String or String array is allowed",
+                    "foo": 2
+                }
+            }]
+        }
+    ]
+}
