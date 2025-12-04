@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 
-use crate::embedded_data::EmbeddedServiceData;
+use crate::embedded_data::BotocoreData;
 use crate::errors::{ExtractorError, Result};
 use crate::Language;
 
@@ -173,7 +173,7 @@ impl ServiceDiscovery {
         log::debug!("Starting optimized service discovery...");
 
         // Use the optimized single-iteration approach
-        let service_versions_map = EmbeddedServiceData::build_service_versions_map();
+        let service_versions_map = BotocoreData::build_service_versions_map();
 
         let mut services = Vec::new();
         for (service_name, api_versions) in service_versions_map {
@@ -326,26 +326,14 @@ impl ServiceDiscovery {
                 })?;
 
                 // Load service definition from embedded data
-                let service_definition = EmbeddedServiceData::get_service_definition(
+                let service_definition = BotocoreData::get_service_definition(
                     &service_info.name,
                     &service_info.api_version,
-                )
-                .await
-                .map_err(|e| {
-                    ExtractorError::sdk_processing_with_source(
-                        &service_info.name,
-                        "Failed to load embedded service definition",
-                        e,
-                    )
-                })?;
+                )?;
 
                 // Load waiters from embedded data
                 let waiters =
-                    crate::extraction::waiter_model::WaitersRegistry::load_waiters_from_embedded(
-                        &service_info.name,
-                        &service_info.api_version,
-                    )
-                    .await;
+                    BotocoreData::get_waiters(&service_info.name, &service_info.api_version);
 
                 let service_time = service_start.elapsed();
                 if service_time.as_millis() > 100 {
