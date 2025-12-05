@@ -185,6 +185,7 @@ mod tests {
 
     fn sample_policy() -> PolicyDocument {
         PolicyDocument {
+            id: Some("IamPolicyAutopilot".to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![Statement {
                 sid: "Test".into(),

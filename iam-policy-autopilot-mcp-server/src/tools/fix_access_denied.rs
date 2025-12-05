@@ -303,6 +303,7 @@ mod tests {
             ),
             actions: vec!["s3:GetObject".to_string()],
             policy: PolicyDocument {
+                id: Some("IamPolicyAutopilot".to_string()),
                 version: "2012-10-17".to_string(),
                 statement: vec![],
             },

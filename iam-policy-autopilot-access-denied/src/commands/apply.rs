@@ -82,6 +82,7 @@ impl super::service::IamPolicyAutopilotService {
             sort_statements(&mut merged_statements);
 
             let policy_doc = crate::types::PolicyDocument {
+                id: Some("IamPolicyAutopilot".to_string()),
                 version: "2012-10-17".to_string(),
                 statement: merged_statements,
             };
@@ -92,6 +93,7 @@ impl super::service::IamPolicyAutopilotService {
             let stmt = build_single_statement(action.clone(), plan.diagnosis.resource.clone(), sid);
 
             let policy_doc = crate::types::PolicyDocument {
+                id: Some("IamPolicyAutopilot".to_string()),
                 version: "2012-10-17".to_string(),
                 statement: vec![stmt],
             };

@@ -50,6 +50,7 @@ mod tests {
         };
 
         let sample_policy = PolicyDocument {
+            id: Some("IamPolicyAutopilot".to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![],
         };
@@ -98,6 +99,7 @@ mod tests {
         };
 
         let sample_policy = PolicyDocument {
+            id: Some("IamPolicyAutopilot".to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![],
         };
