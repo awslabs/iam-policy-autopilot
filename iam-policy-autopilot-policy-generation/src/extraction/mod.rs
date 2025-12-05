@@ -189,6 +189,9 @@ pub mod core {
     /// This enum eliminates the conceptual confusion of the previous struct design
     /// where unpacked parameters had a "name" field containing expressions.
     /// Each variant contains only the fields that make sense for that parameter type.
+    ///
+    /// TODO: Refactor enum variant fields into separate structs to enable Default trait
+    /// implementation and improve ergonomics. See: https://github.com/awslabs/iam-policy-autopilot/issues/61
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub(crate) enum Parameter {
         /// Positional argument (e.g., first, second argument in call)

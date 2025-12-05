@@ -241,6 +241,8 @@ impl<'a> GoMethodDisambiguator<'a> {
 
         // Get all valid parameters from the shape (lowercase for case-insensitive comparison)
         // AWS models are inconsistent - some use PascalCase, some use camelCase
+        // TODO: Canonicalize casing during deserialization instead of at comparison time
+        // See: https://github.com/awslabs/iam-policy-autopilot/issues/57
         let valid_params_lower: HashSet<String> =
             shape.members.keys().map(|k| k.to_lowercase()).collect();
         log::debug!(

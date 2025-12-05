@@ -3,6 +3,7 @@
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::go::disambiguation::GoMethodDisambiguator;
 use crate::extraction::go::features_extractor::GoFeaturesExtractor;
+use crate::extraction::go::node_kinds;
 use crate::extraction::go::paginator_extractor::GoPaginatorExtractor;
 use crate::extraction::go::types::{GoImportInfo, ImportInfo};
 use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
@@ -167,7 +168,9 @@ rule:
                 .filter(|child| {
                     // Filter out parentheses and commas, keep only actual argument nodes
                     let kind = child.kind();
-                    kind != "(" && kind != ")" && kind != ","
+                    kind != node_kinds::LEFT_PAREN
+                        && kind != node_kinds::RIGHT_PAREN
+                        && kind != node_kinds::COMMA
                 })
                 .collect();
 
@@ -279,7 +282,7 @@ rule:
         );
 
         // Check if this node is directly a composite_literal
-        if node.kind() == "composite_literal" {
+        if node.kind() == node_kinds::COMPOSITE_LITERAL {
             log::debug!("Node is directly a composite_literal");
             return self.extract_fields_from_composite_literal(node);
         }
@@ -287,16 +290,16 @@ rule:
         // Check immediate children for unary_expression (for &Type{...} pattern)
         for child in node.children() {
             log::debug!("Checking child node: kind={}", child.kind());
-            if child.kind() == "unary_expression" {
+            if child.kind() == node_kinds::UNARY_EXPRESSION {
                 // Check the unary_expression's children for composite_literal
                 for unary_child in child.children() {
                     log::debug!("Checking unary child: kind={}", unary_child.kind());
-                    if unary_child.kind() == "composite_literal" {
+                    if unary_child.kind() == node_kinds::COMPOSITE_LITERAL {
                         log::debug!("Found composite_literal under unary_expression");
                         return self.extract_fields_from_composite_literal(&unary_child);
                     }
                 }
-            } else if child.kind() == "composite_literal" {
+            } else if child.kind() == node_kinds::COMPOSITE_LITERAL {
                 log::debug!("Found composite_literal as direct child");
                 return self.extract_fields_from_composite_literal(&child);
             }
@@ -352,14 +355,14 @@ rule:
         // A composite_literal has exactly one literal_value child in the AST.
         let literal_value = composite_literal
             .children()
-            .find(|child| child.kind() == "literal_value");
+            .find(|child| child.kind() == node_kinds::LITERAL_VALUE);
 
         if let Some(literal_value) = literal_value {
             log::debug!("Found literal_value, extracting keyed_elements...");
             // Extract field names from keyed_element nodes
             for element in literal_value.children() {
                 log::debug!("Literal_value child: kind={}", element.kind());
-                if element.kind() == "keyed_element" {
+                if element.kind() == node_kinds::KEYED_ELEMENT {
                     // Get the first child, which is the field name (literal_element)
                     if let Some(field_name_node) = element.children().next() {
                         log::debug!(
@@ -367,7 +370,7 @@ rule:
                             field_name_node.kind(),
                             field_name_node.text()
                         );
-                        if field_name_node.kind() == "literal_element" {
+                        if field_name_node.kind() == node_kinds::LITERAL_ELEMENT {
                             field_names.push(field_name_node.text().to_string());
                         }
                     }

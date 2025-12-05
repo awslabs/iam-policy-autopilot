@@ -104,6 +104,8 @@ pub(crate) struct Shape {
     #[serde(rename = "type")]
     pub(crate) type_name: String,
     /// Map of member name to shape reference for structure types
+    /// TODO: Canonicalize member keys to lowercase during deserialization to handle
+    /// inconsistent casing in AWS models. See: https://github.com/awslabs/iam-policy-autopilot/issues/57
     #[serde(default)]
     pub(crate) members: HashMap<String, ShapeReference>,
     /// Required parameters
