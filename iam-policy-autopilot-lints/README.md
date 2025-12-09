@@ -57,11 +57,20 @@ cd iam-policy-autopilot-lints
 cargo test
 ```
 
+### Update test expectations
+
+If you modify a lint's output, update the expected stderr file manually:
+
+1. Run `cargo test` to see the diff
+2. Update the corresponding `.stderr` file in `ui/` directory
+3. Run `cargo test` again to verify
+
 ### Add a new lint
 
 1. Create `src/my_new_lint.rs`
 2. Add `mod my_new_lint;` to `src/lib.rs`
 3. Add test cases in `ui/my_new_lint.rs`
-4. Run `cargo test` and update `.stderr` file if needed
+4. Create expected output in `ui/my_new_lint.stderr`
+5. Run `cargo test` to verify
 
 See [dylint documentation](https://github.com/trailofbits/dylint) for details on writing lints.
