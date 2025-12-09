@@ -34,7 +34,7 @@ dylint_linting::declare_late_lint! {
     /// }
     /// ```
     pub NODE_KIND_LITERAL,
-    Warn,
+    Deny,
     "use of string literals in comparisons with .kind() method calls"
 }
 

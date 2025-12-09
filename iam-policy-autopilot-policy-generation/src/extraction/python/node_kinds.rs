@@ -9,9 +9,6 @@
 //!
 //! Note: The actual values come from the Tree-sitter Python grammar and cannot be
 //! changed. We're just providing named constants to avoid magic strings.
-//!
-//! TODO: Add automated linting to enforce usage of these constants instead of
-//! string literals. See: https://github.com/awslabs/iam-policy-autopilot/issues/60
 
 /// A comment node
 pub(crate) const COMMENT: &str = "comment";

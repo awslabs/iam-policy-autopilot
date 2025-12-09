@@ -9,9 +9,6 @@
 //!
 //! Note: The actual values come from the Tree-sitter Go grammar and cannot be
 //! changed. We're just providing named constants to avoid magic strings.
-//!
-//! TODO: Add automated linting to enforce usage of these constants instead of
-//! string literals. See: https://github.com/awslabs/iam-policy-autopilot/issues/60
 
 /// A composite literal node (e.g., `Type{field: value}`)
 pub(crate) const COMPOSITE_LITERAL: &str = "composite_literal";
