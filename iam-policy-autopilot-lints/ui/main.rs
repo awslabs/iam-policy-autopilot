@@ -55,7 +55,26 @@ fn test_allowed_comparisons() {
     }
 }
 
+// Test that non-Node types with kind() methods don't trigger the lint
+struct OtherType;
+
+impl OtherType {
+    fn kind(&self) -> &str {
+        "other"
+    }
+}
+
+fn test_non_node_kind() {
+    let other = OtherType;
+
+    // This should NOT trigger a warning - not a tree-sitter Node type
+    if other.kind() == "some_string" {
+        println!("other type kind");
+    }
+}
+
 fn main() {
     test_kind_comparisons();
     test_allowed_comparisons();
+    test_non_node_kind();
 }
