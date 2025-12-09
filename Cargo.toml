@@ -6,6 +6,7 @@ members = [
     "iam-policy-autopilot-access-denied",
     "iam-policy-autopilot-cli"
 ]
+exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
 
 [workspace.package]

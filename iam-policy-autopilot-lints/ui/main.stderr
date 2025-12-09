@@ -1,0 +1,35 @@
+warning: comparing .kind() with string literal "composite_literal"
+  --> $DIR/main.rs:15:23
+   |
+LL |     if node.kind() == "composite_literal" {
+   |                       ^^^^^^^^^^^^^^^^^^^
+   |
+   = help: define and use a constant like `const COMPOSITE_LITERAL: &str = "composite_literal";` in a node_kinds module
+   = note: `#[warn(node_kind_literal)]` on by default
+
+warning: comparing .kind() with string literal "unary_expression"
+  --> $DIR/main.rs:20:8
+   |
+LL |     if "unary_expression" == node.kind() {
+   |        ^^^^^^^^^^^^^^^^^^
+   |
+   = help: define and use a constant like `const UNARY_EXPRESSION: &str = "unary_expression";` in a node_kinds module
+
+warning: comparing .kind() with string literal "literal_value"
+  --> $DIR/main.rs:25:23
+   |
+LL |     if node.kind() != "literal_value" {
+   |                       ^^^^^^^^^^^^^^^
+   |
+   = help: define and use a constant like `const LITERAL_VALUE: &str = "literal_value";` in a node_kinds module
+
+warning: comparing .kind() with string literal "some_new_node_type"
+  --> $DIR/main.rs:30:23
+   |
+LL |     if node.kind() == "some_new_node_type" {
+   |                       ^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: define and use a constant like `const SOME_NEW_NODE_TYPE: &str = "some_new_node_type";` in a node_kinds module
+
+warning: 4 warnings emitted
+

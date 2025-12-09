@@ -166,3 +166,35 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
+
+  custom-lints:
+    name: Custom Lints (dylint)
+    needs: commit-messages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustc-dev, llvm-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.dylint_drivers
+
+      - name: Install dylint
+        run: cargo install cargo-dylint dylint-link
+
+      - name: Run custom lints
+        run: cargo dylint --all --workspace
+        # Note: dylint automatically uses the nightly toolchain to build the lint library
+        # (specified in iam-policy-autopilot-lints/rust-toolchain) and stable to check the workspace

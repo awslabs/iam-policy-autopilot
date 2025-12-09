@@ -1,0 +1,20 @@
+[package]
+name = "node_kind_literal"
+version = "0.1.0"
+authors = ["IAM Policy Autopilot Contributors"]
+description = "Dylint lint to enforce usage of node_kinds constants instead of string literals"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "20ce69b9a63bcd2756cd906fe0964d1e901e042a" }
+dylint_linting = "5.0.0"
+
+[dev-dependencies]
+dylint_testing = "5.0.0"
+
+[package.metadata.rust-analyzer]
+rustc_private = true
