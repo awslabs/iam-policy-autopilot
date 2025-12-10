@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 // AWS IAM policy name character limit (128 characters)
 // Reference: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
 const MAX_POLICY_NAME_LENGTH: usize = 128;
-const POLICY_PREFIX: &str = "IamPolicyAutopilot";
+pub const POLICY_PREFIX: &str = "IamPolicyAutopilot";
 
 fn sanitize_component(component: &str) -> String {
     static SANITIZE_REGEX: OnceLock<Regex> = OnceLock::new();
@@ -59,8 +59,8 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
     let date_no_hyphens = date.replace("-", "");
 
     let base_sid = format!(
-        "IamPolicyAutopilot{}{}{}",
-        service_cap, action_cap, date_no_hyphens
+        "{}{}{}{}",
+        POLICY_PREFIX, service_cap, action_cap, date_no_hyphens
     );
 
     let mut sid = base_sid.clone();

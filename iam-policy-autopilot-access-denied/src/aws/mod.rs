@@ -1,7 +1,7 @@
 //! AWS SDK integration: IAM client wrapper, principal parsing, policy naming.
 
 pub(crate) mod iam_client;
-pub(crate) mod policy_naming;
+pub mod policy_naming;
 pub mod principal;
 pub(crate) mod sts;
 

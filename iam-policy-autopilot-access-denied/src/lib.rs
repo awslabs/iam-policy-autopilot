@@ -4,7 +4,7 @@
 //! - Principal ARN resolution and basic IAM operations (inline policies)
 //!
 
-mod aws;
+pub mod aws;
 pub mod commands;
 mod error;
 mod parsing;

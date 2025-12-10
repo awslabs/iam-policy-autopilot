@@ -27,6 +27,7 @@ pub fn build_inline_allow(actions: Vec<String>, resource: String) -> PolicyDocum
     };
 
     PolicyDocument {
+        id: Some("IamPolicyAutopilot".to_string()),
         version: "2012-10-17".to_string(),
         statement: vec![statement],
     }
@@ -90,6 +91,7 @@ mod tests {
             }
             _ => panic!("expected multiple"),
         }
+        assert_eq!(policy.id, Some("IamPolicyAutopilot".to_string()));
     }
 
     #[test]
