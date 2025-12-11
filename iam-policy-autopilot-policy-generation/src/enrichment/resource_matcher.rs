@@ -401,6 +401,8 @@ impl ResourceMatcher {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
     use crate::enrichment::mock_remote_service_reference;
     use crate::enrichment::operation_fas_map::{FasContext, FasOperation, OperationFasMap};
@@ -411,6 +413,16 @@ mod tests {
             possible_services: vec!["s3".to_string()],
             metadata: None,
         }
+    }
+
+    fn create_empty_service_config() -> Arc<ServiceConfiguration> {
+        Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
+            rename_operations: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        })
     }
 
     #[tokio::test]
@@ -579,15 +591,9 @@ mod tests {
         use std::collections::HashMap;
 
         // Service configuration without s3 in no_operation_action_map
-        let service_cfg = ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        };
+        let service_cfg = create_empty_service_config();
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(service_cfg, HashMap::new(), SdkType::Boto3);
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
@@ -941,13 +947,7 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with no cycles: A -> B -> C (linear chain)
         let mut fas_maps = HashMap::new();
@@ -1041,13 +1041,7 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with a cycle: A -> B -> A
         let mut fas_maps = HashMap::new();
@@ -1131,13 +1125,7 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         let mut fas_maps = HashMap::new();
 
@@ -1197,13 +1185,7 @@ mod tests {
     async fn test_fas_expansion_empty_initial() {
         use std::collections::HashMap;
 
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         let matcher = ResourceMatcher::new(service_cfg.clone(), HashMap::new(), SdkType::Other);
 
@@ -1235,13 +1217,7 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a FAS map where A -> A with empty context (self-referential)
         let mut fas_maps = HashMap::new();
@@ -1293,5 +1269,93 @@ mod tests {
         );
 
         println!("✓ Test passed: Self-cycle with empty context handled correctly");
+    }
+
+    /// Helper function to create RDS service reference mock with multiple DB operations
+    /// Includes operations with and without SDK method mappings to test different scenarios
+    async fn mock_rds_service_reference(mock_server: &wiremock::MockServer) {
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "rds",
+            serde_json::json!({
+                "Name": "rds",
+                "Resources": [
+                    {
+                        "Name": "database-cluster",
+                        "ARNFormats": ["arn:${Partition}:rds:${Region}:${Account}:cluster:${DatabaseClusterIdentifier}"]
+                    }
+                ],
+                "Actions": [
+                    {
+                        "Name": "ModifyDBCluster",
+                        "Resources": [{"Name": "database-cluster"}]
+                    }
+                ],
+                "Operations": [
+                    {
+                        "Name": "ModifyDBCluster",
+                        "AuthorizedActions": [{"Name": "ModifyDBCluster", "Service": "rds"}],
+                        "SDK": [{"Name": "rds", "Method": "modify_db_cluster", "Package": "Boto3"}]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_boto3_method_name_requires_lookup() {
+        // Test that boto3 methods are correctly mapped using service reference SDK mapping
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+
+        mock_rds_service_reference(&mock_server).await;
+
+        let parsed_method = SdkMethodCall {
+            name: "modify_db_cluster".to_string(),
+            possible_services: vec!["rds".to_string()],
+            metadata: None,
+        };
+
+        let result = matcher.enrich_method_call(&parsed_method, &loader).await;
+        assert!(result.is_ok());
+
+        let enriched_calls = result.unwrap();
+        assert_eq!(enriched_calls.len(), 1);
+        assert_eq!(enriched_calls[0].method_name, "modify_db_cluster");
+        assert_eq!(enriched_calls[0].service, "rds");
+        assert_eq!(enriched_calls[0].actions[0].name, "rds:ModifyDBCluster");
+    }
+
+    #[tokio::test]
+    async fn test_non_boto3_sdk_uses_extracted_name_directly() {
+        // Test that non-Boto3 SDKs (e.g., Go) use the extracted operation name directly without renaming
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Other);
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+
+        mock_rds_service_reference(&mock_server).await;
+
+        // Go SDK extracts operation names in PascalCase (e.g., CreateDBCluster)
+        let parsed_method = SdkMethodCall {
+            name: "ModifyDBCluster".to_string(),
+            possible_services: vec!["rds".to_string()],
+            metadata: None,
+        };
+
+        let result = matcher.enrich_method_call(&parsed_method, &loader).await;
+        assert!(result.is_ok());
+
+        let enriched_calls = result.unwrap();
+        assert_eq!(enriched_calls.len(), 1);
+        assert_eq!(enriched_calls[0].method_name, "ModifyDBCluster");
+        assert_eq!(enriched_calls[0].service, "rds");
+        // Should use the operation name directly without any transformation
+        assert_eq!(enriched_calls[0].actions[0].name, "rds:ModifyDBCluster");
     }
 }
