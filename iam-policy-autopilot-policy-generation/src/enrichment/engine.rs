@@ -12,7 +12,7 @@ use crate::enrichment::operation_fas_map::OperationFasMaps;
 use crate::enrichment::{load_operation_fas_map, ResourceMatcher, ServiceReferenceLoader};
 use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::{self, ServiceConfiguration};
-use crate::SdkMethodCall;
+use crate::{SdkMethodCall, SdkType};
 
 /// Core enrichment engine that orchestrates the 3-stage enrichment pipeline
 ///
@@ -42,6 +42,7 @@ impl Engine {
     pub async fn enrich_methods<'a>(
         &mut self,
         extracted_methods: &'a [SdkMethodCall],
+        sdk: SdkType,
     ) -> Result<Vec<EnrichedSdkMethodCall<'a>>> {
         let unique_services = self.get_unique_services(extracted_methods);
 
@@ -51,7 +52,7 @@ impl Engine {
             .load_fas_maps_for_services(&unique_services, &service_cfg)
             .await?;
 
-        let resource_matcher = ResourceMatcher::new(service_cfg, fas_maps);
+        let resource_matcher = ResourceMatcher::new(service_cfg, fas_maps, sdk);
         let enriched_calls = self
             .enrich_all_methods(extracted_methods, &resource_matcher)
             .await?;
@@ -182,7 +183,9 @@ mod tests {
 
         let start_time = Instant::now();
 
-        let service_index = match ServiceDiscovery::load_service_index(Language::Python).await {
+        const LANGUAGE: Language = Language::Python;
+
+        let service_index = match ServiceDiscovery::load_service_index(LANGUAGE).await {
             Ok(result) => result,
             Err(e) => {
                 panic!("Failed to discover services: {}", e);
@@ -205,7 +208,10 @@ mod tests {
         println!("\nRunning enrichment on all operations...");
         let enrichment_start = Instant::now();
 
-        match enrichment_engine.enrich_methods(&sdk_method_calls).await {
+        match enrichment_engine
+            .enrich_methods(&sdk_method_calls, LANGUAGE.sdk_type())
+            .await
+        {
             Ok(enriched_calls) => {
                 let enrichment_duration = enrichment_start.elapsed();
 

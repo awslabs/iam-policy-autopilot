@@ -23,7 +23,6 @@ const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
 // Cache files for 6 hours.
 // We can allow cache duration override in future.
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 21600;
-pub(crate) type OperationToAuthorizedActionMap = HashMap<OperationName, Operation>;
 /// Service Reference data structure
 ///
 /// Represents the complete service reference loaded from service reference endpoint.
@@ -41,6 +40,8 @@ pub(crate) struct ServiceReference {
     /// Operation to authorized action mapping
     /// Note: Only partial service and operations have this data
     pub(crate) operation_to_authorized_actions: Option<HashMap<OperationName, Operation>>,
+    /// Map from boto method names (snake_case) to operation names
+    pub(crate) boto3_method_to_operation: HashMap<String, String>,
 }
 
 impl<'de> Deserialize<'de> for ServiceReference {
@@ -90,22 +91,38 @@ impl<'de> Deserialize<'de> for ServiceReference {
             }
         }
 
-        let operation_to_authorized_actions = if operations.is_empty() {
-            None
-        } else {
-            Some(
-                operations
-                    .into_iter()
-                    .map(|operation| (operation.name.clone(), operation))
-                    .collect(),
-            )
-        };
+        let operation_to_authorized_actions: Option<HashMap<OperationName, Operation>> =
+            if operations.is_empty() {
+                None
+            } else {
+                Some(
+                    operations
+                        .into_iter()
+                        .map(|operation| (operation.name.clone(), operation))
+                        .collect(),
+                )
+            };
+
+        // Build boto3_method_to_operation map
+        let mut boto3_method_to_operation = HashMap::new();
+        if let Some(ref op_map) = operation_to_authorized_actions {
+            for (operation_name, operation) in op_map {
+                for sdk_method in &operation.sdk {
+                    // Only add entries for Boto3 package where service name matches
+                    if sdk_method.package == "Boto3" && sdk_method.name == temp.name {
+                        boto3_method_to_operation
+                            .insert(sdk_method.method.clone(), operation_name.clone());
+                    }
+                }
+            }
+        }
 
         Ok(ServiceReference {
             actions: temp.actions,
             service_name: temp.name,
             resources: temp.resources,
             operation_to_authorized_actions,
+            boto3_method_to_operation,
         })
     }
 }
@@ -483,16 +500,6 @@ impl RemoteServiceReferenceLoader {
             }
             None => Ok(None),
         }
-    }
-
-    pub(crate) async fn get_operation_to_authorized_actions(
-        &self,
-        service_name: &str,
-    ) -> crate::errors::Result<Option<OperationToAuthorizedActionMap>> {
-        Ok(self
-            .load(service_name)
-            .await?
-            .and_then(|sr| sr.operation_to_authorized_actions))
     }
 }
 
