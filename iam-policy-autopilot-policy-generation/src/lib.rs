@@ -134,6 +134,8 @@ impl From<Language> for String {
     }
 }
 
+mod deserialization_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;
