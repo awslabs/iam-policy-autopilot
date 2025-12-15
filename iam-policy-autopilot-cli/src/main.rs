@@ -229,9 +229,8 @@ This flag has no effect on the generate-policies subcommand."
 Generates complete IAM policy documents from source files. By default, all \
 policies are merged into a single optimized policy document. \
 Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
-TIP: Use --service-hints to specify only the AWS services your application uses. \
-This reduces unnecessary permissions by filtering which SDK calls are analyzed, though the final \
-policy may still include actions from other services if required for your operations.")]
+TIP: Use --service-hints to specify the particular AWS services that your application uses if you know them. \
+The final policy may still include actions from other services if required for your operations.")]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]

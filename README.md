@@ -261,7 +261,7 @@ iam-policy-autopilot generate-policies \
 Options:
 - `--region <REGION>` - AWS region for resource ARNs
 - `--account <ACCOUNT>` - AWS account ID for resource ARNs
-- `--service-hints <SERVICES>` - Filter results to specific AWS services (reduces unnecessary permissions)
+- `--service-hints <SERVICES>` - Limit analysis to only the services your application actually uses if you know them. This helps reduce unnecessary permissions.
 - `--upload-policies <PREFIX>` - Upload generated policies to AWS IAM with the specified prefix
 - `--pretty` - Pretty-print JSON output
 
