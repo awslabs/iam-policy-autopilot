@@ -100,12 +100,12 @@ impl GeneratePolicyCliConfig {
 }
 
 const SERVICE_HINTS_LONG_HELP: &str =
-    "Space-separated list of AWS service names to filter extracted SDK calls. \
+    "Space-separated list of AWS service names to filter which SDK calls are analyzed. \
 This helps reduce unnecessary permissions by limiting analysis to only the services your application actually uses. \
 For example, if your code only uses S3 and IAM services, specify '--service-hints s3 iam' to avoid \
-unrelated permissions like 'chime:ListAccounts' appearing in your policy. \
-Note: Actions from services not in your hints may still be included if IAM Policy Autopilot \
-determines they are required for the specified SDK calls.";
+analyzing unrelated method calls that might match other services like Chime. \
+Note: The final policy may still include actions from services not in your hints if they are \
+required for the operations you perform (e.g., KMS actions for S3 encryption).";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -230,8 +230,8 @@ Generates complete IAM policy documents from source files. By default, all \
 policies are merged into a single optimized policy document. \
 Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
 TIP: Use --service-hints to specify only the AWS services your application uses. \
-This reduces unnecessary permissions and generates more accurate policies by filtering out \
-unrelated permissions that might otherwise appear due to method name similarities.")]
+This reduces unnecessary permissions by filtering which SDK calls are analyzed, though the final \
+policy may still include actions from other services if required for your operations.")]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
