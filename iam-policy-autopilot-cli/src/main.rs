@@ -101,9 +101,11 @@ impl GeneratePolicyCliConfig {
 
 const SERVICE_HINTS_LONG_HELP: &str =
     "Space-separated list of AWS service names to filter extracted SDK calls. \
-Filters the result of source code analysis, an action from a service not provided as a hint \
-may still be included in the final policy, if IAM Policy Autopilot determines the action may \
-be required for the SDK call.";
+This helps reduce unnecessary permissions by limiting analysis to only the services your application actually uses. \
+For example, if your code only uses S3 and IAM services, specify '--service-hints s3 iam' to avoid \
+unrelated permissions like 'chime:ListAccounts' appearing in your policy. \
+Note: Actions from services not in your hints may still be included if IAM Policy Autopilot \
+determines they are required for the specified SDK calls.";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -116,10 +118,9 @@ with automatic AccessDenied error fixing. Supports three main operations:\n\n\
 • fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
 • generate-policies: Complete pipeline with enrichment for policy generation\n\
 • mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
-Examples:\n  \
 iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
 iam-policy-autopilot generate-policies tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --region cn-north-1 --account 123456789012\n  \
+iam-policy-autopilot generate-policies tests/resources/test_example.py --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty\n  \
 iam-policy-autopilot mcp-server\n  \
 iam-policy-autopilot mcp-server --transport http --port 8001"
 )]
@@ -227,7 +228,10 @@ This flag has no effect on the generate-policies subcommand."
     #[command(long_about = "\
 Generates complete IAM policy documents from source files. By default, all \
 policies are merged into a single optimized policy document. \
-Optionally takes AWS context (region and account) for accurate ARN generation.")]
+Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
+TIP: Use --service-hints to specify only the AWS services your application uses. \
+This reduces unnecessary permissions and generates more accurate policies by filtering out \
+unrelated permissions that might otherwise appear due to method name similarities.")]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
