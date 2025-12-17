@@ -243,6 +243,7 @@ pub mod output {
         /// List of all extracted methods
         pub methods: Vec<SdkMethodCall>,
         /// Metadata about the extraction process
+        /// INVARIANT: all source_files must have the same language
         pub metadata: ExtractionMetadata,
     }
 

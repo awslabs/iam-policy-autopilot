@@ -8,7 +8,7 @@
 //! Based on go-analysis.json which documents operations requiring IAM permissions.
 
 use iam_policy_autopilot_policy_generation::{
-    EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
+    EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SdkType, SourceFile,
 };
 use std::path::PathBuf;
 
@@ -74,7 +74,7 @@ func main() {
 
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
     let enriched = enrichment_engine
-        .enrich_methods(&extracted.methods)
+        .enrich_methods(&extracted.methods, SdkType::Other)
         .await
         .expect("Enrichment should succeed");
 
@@ -154,7 +154,7 @@ func main() {
 
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
     let enriched = enrichment_engine
-        .enrich_methods(&extracted.methods)
+        .enrich_methods(&extracted.methods, SdkType::Other)
         .await
         .expect("Enrichment should succeed");
 
