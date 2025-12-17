@@ -391,7 +391,7 @@ impl RemoteServiceReferenceLoader {
             ""
         };
 
-        let user_agent = format!("{}/{}{}", IAM_POLICY_AUTOPILOT, user_agent_suffix, env!("CARGO_PKG_VERSION"));
+        let user_agent = format!("{}{}/{}", IAM_POLICY_AUTOPILOT, user_agent_suffix, env!("CARGO_PKG_VERSION"));
         Client::builder()
             .user_agent(user_agent)
             .build()
