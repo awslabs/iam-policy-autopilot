@@ -5,7 +5,7 @@
 //! enrichment and policy generation through the public API.
 
 use iam_policy_autopilot_policy_generation::{
-    EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
+    EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SdkType, SourceFile,
 };
 use std::path::PathBuf;
 
@@ -91,7 +91,7 @@ async fn test_go_extraction_to_policy_generation_integration() {
             let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
 
             match enrichment_engine
-                .enrich_methods(&extracted_methods.methods)
+                .enrich_methods(&extracted_methods.methods, SdkType::Other)
                 .await
             {
                 Ok(enriched_calls) => {

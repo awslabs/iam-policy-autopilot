@@ -190,6 +190,7 @@ rule:
                     value: crate::extraction::ParameterValue::Unresolved("synthetic".to_string()),
                     position: i,
                     type_annotation: None,
+                    struct_fields: None,
                 })
                 .collect()
         } else {

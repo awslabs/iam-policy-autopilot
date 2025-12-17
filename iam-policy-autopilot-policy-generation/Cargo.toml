@@ -27,6 +27,10 @@ serde_json.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
+sha2.workspace = true
+git2.workspace = true
+relative-path.workspace = true
+
 
 # Build dependencies
 [build-dependencies]
@@ -39,6 +43,10 @@ tokio-util.workspace = true
 
 # JSON processing
 serde_json.workspace = true
+
+sha2.workspace = true
+git2.workspace = true
+relative-path.workspace = true
 
 [features]
 default = []

@@ -6,14 +6,15 @@ members = [
     "iam-policy-autopilot-access-denied",
     "iam-policy-autopilot-cli"
 ]
+exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.1.2"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/awslabs/iam-policy-autopilot"
-description = "VS Code extension for AWS IAM permission analysis and management"
+description = "An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster."
 
 # Shared dependency versions across workspace
 [workspace.dependencies]
@@ -45,7 +46,7 @@ criterion = "0.5"
 proptest = "1.0"
 
 # CLI-specific dependencies
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.5", features = ["derive", "env", "cargo"] }
 env_logger = "0.11"
 log = "0.4"
 walkdir = "2.0"
@@ -63,7 +64,9 @@ serial_test = "3.0"
 atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.8", features = ["v4"] }
-sha2 = "0.10"
+sha2 = "0.10.9"
+git2 = "0.20.3"
+relative-path = "2.0.1"
 url = "2.5"
 percent-encoding = "2.3"
 aws-sdk-iam = "1.89.0"

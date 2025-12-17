@@ -4,10 +4,15 @@ on:
   pull_request:
     branches: [ main, prerelease, releases/** ]
 
+permissions:
+  contents: read
+
 jobs:
   commit-messages:
     name: Validate Commit Messages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -49,6 +54,8 @@ jobs:
     name: Test Linux
     needs: commit-messages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
@@ -82,6 +89,8 @@ jobs:
     name: Test Windows
     needs: commit-messages
     runs-on: windows-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
@@ -103,6 +112,8 @@ jobs:
     name: Test macOS
     needs: commit-messages
     runs-on: macos-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
@@ -124,6 +135,8 @@ jobs:
     name: Format
     needs: commit-messages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -138,6 +151,8 @@ jobs:
     name: Clippy
     needs: commit-messages
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,3 +166,35 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
+
+  custom-lints:
+    name: Custom Lints (dylint)
+    needs: commit-messages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustc-dev, llvm-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.dylint_drivers
+
+      - name: Install dylint
+        run: cargo install cargo-dylint dylint-link
+
+      - name: Run custom lints
+        run: cargo dylint --all --workspace
+        # Note: dylint automatically uses the nightly toolchain to build the lint library
+        # (specified in iam-policy-autopilot-lints/rust-toolchain) and stable to check the workspace

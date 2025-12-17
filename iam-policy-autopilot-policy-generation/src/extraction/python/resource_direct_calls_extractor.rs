@@ -351,6 +351,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                             value: value.clone(),
                             position: parameters.len(),
                             type_annotation: type_annotation.clone(),
+                            struct_fields: None,
                         }
                     }
                 } else {
@@ -784,6 +785,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     value: value.clone(),
                     position: combined_parameters.len() + i,
                     type_annotation: type_annotation.clone(),
+                    struct_fields: None,
                 },
                 Parameter::DictionarySplat { expression, .. } => Parameter::DictionarySplat {
                     expression: expression.clone(),

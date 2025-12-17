@@ -1,7 +1,7 @@
 //! Apply logic for IAM Policy Autopilot service
 
 use crate::aws::iam_client::{find_canonical_policy, put_inline_policy};
-use crate::aws::policy_naming::{build_canonical_policy_name, build_statement_sid};
+use crate::aws::policy_naming::{build_canonical_policy_name, build_statement_sid, POLICY_PREFIX};
 use crate::aws::principal::resolve_principal;
 use crate::aws::sts::caller_account_id;
 use crate::synthesis::build_single_statement;
@@ -82,6 +82,10 @@ impl super::service::IamPolicyAutopilotService {
             sort_statements(&mut merged_statements);
 
             let policy_doc = crate::types::PolicyDocument {
+                id: existing
+                    .document
+                    .id
+                    .or_else(|| Some(POLICY_PREFIX.to_string())),
                 version: "2012-10-17".to_string(),
                 statement: merged_statements,
             };
@@ -92,6 +96,7 @@ impl super::service::IamPolicyAutopilotService {
             let stmt = build_single_statement(action.clone(), plan.diagnosis.resource.clone(), sid);
 
             let policy_doc = crate::types::PolicyDocument {
+                id: Some(POLICY_PREFIX.to_string()),
                 version: "2012-10-17".to_string(),
                 statement: vec![stmt],
             };

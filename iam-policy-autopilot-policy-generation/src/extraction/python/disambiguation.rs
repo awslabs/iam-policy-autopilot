@@ -166,6 +166,8 @@ impl<'a> MethodDisambiguator<'a> {
             .unwrap_or_default();
 
         // Get all valid parameters from the shape
+        // TODO: Make this case-insensitive like Go disambiguation to handle inconsistent
+        // AWS model casing. See: https://github.com/awslabs/iam-policy-autopilot/issues/57
         let valid_params: HashSet<String> = shape.members.keys().cloned().collect();
 
         // Check that all required parameters are provided

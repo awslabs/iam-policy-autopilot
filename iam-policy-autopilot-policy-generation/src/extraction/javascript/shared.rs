@@ -5,8 +5,25 @@
 
 use crate::extraction::javascript::types::JavaScriptScanResults;
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use rust_embed::RustEmbed;
 use serde::Deserialize;
 use std::collections::HashMap;
+
+/// Embedded JavaScript SDK v3 libraries mapping
+///
+/// This struct provides access to the JavaScript SDK v3 libraries mapping configuration
+/// that defines how lib-* submodule commands map to client-* commands.
+#[derive(RustEmbed)]
+#[folder = "resources/config/sdks"]
+#[include = "js_v3_libraries.json"]
+struct JsV3Libraries;
+
+impl JsV3Libraries {
+    /// Get the JavaScript SDK v3 libraries mapping configuration
+    fn get_libraries_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
+        Self::get("js_v3_libraries.json").map(|file| file.data)
+    }
+}
 
 /// JSON structure for JS v3 libraries mapping
 ///
@@ -24,7 +41,7 @@ struct JsV3LibrariesMapping {
 
 /// Load JS v3 libraries mapping from embedded data
 fn load_libraries_mapping() -> Option<JsV3LibrariesMapping> {
-    let content_bytes = crate::embedded_data::JsV3Libraries::get_libraries_mapping()?;
+    let content_bytes = JsV3Libraries::get_libraries_mapping()?;
 
     let content = std::str::from_utf8(&content_bytes).ok()?;
 

@@ -181,10 +181,14 @@ pub async fn find_canonical_policy(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{ActionType, Statement};
+    use crate::{
+        aws::policy_naming::POLICY_PREFIX,
+        types::{ActionType, Statement},
+    };
 
     fn sample_policy() -> PolicyDocument {
         PolicyDocument {
+            id: Some(POLICY_PREFIX.to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![Statement {
                 sid: "Test".into(),

@@ -39,6 +39,7 @@ pub async fn generate_policy_for_access_denied(
 mod tests {
     use super::*;
     use anyhow::anyhow;
+    use iam_policy_autopilot_access_denied::aws::policy_naming::POLICY_PREFIX;
     use iam_policy_autopilot_access_denied::{
         DenialType, ParsedDenial, PlanResult, PolicyDocument,
     };
@@ -50,6 +51,7 @@ mod tests {
         };
 
         let sample_policy = PolicyDocument {
+            id: Some(POLICY_PREFIX.to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![],
         };
@@ -98,6 +100,7 @@ mod tests {
         };
 
         let sample_policy = PolicyDocument {
+            id: Some(POLICY_PREFIX.to_string()),
             version: "2012-10-17".to_string(),
             statement: vec![],
         };

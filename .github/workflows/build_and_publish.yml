@@ -4,9 +4,14 @@ on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
   build_wheels:
     name: Build ${{ matrix.target }} wheel
+    permissions:
+      contents: read
     # Define the matrix for runners and Rust targets
     strategy:
       fail-fast: false
@@ -59,6 +64,8 @@ jobs:
   test_wheels:
     name: Test ${{ matrix.target }} wheel
     needs: build_wheels
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -242,6 +249,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Release
     permissions:
+      contents: read
       id-token: write
 
     steps:

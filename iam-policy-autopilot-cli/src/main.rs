@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::process;
 
 use anyhow::{Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{crate_version, Parser, Subcommand};
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
@@ -35,6 +35,8 @@ mod types;
 
 use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport};
 use types::ExitCode;
+
+use crate::commands::print_version_info;
 
 /// Default port for mcp server for Http Transport
 static MCP_HTTP_DEFAULT_PORT: u16 = 8001;
@@ -100,26 +102,28 @@ impl GeneratePolicyCliConfig {
 }
 
 const SERVICE_HINTS_LONG_HELP: &str =
-    "Space-separated list of AWS service names to filter extracted SDK calls. \
-Filters the result of source code analysis, an action from a service not provided as a hint \
-may still be included in the final policy, if IAM Policy Autopilot determines the action may \
-be required for the SDK call.";
+    "Space-separated list of AWS service names to filter which SDK calls are analyzed. \
+This helps reduce unnecessary permissions by limiting analysis to only the services your application actually uses. \
+For example, if your code only uses S3 and IAM services, specify '--service-hints s3 iam' to avoid \
+analyzing unrelated method calls that might match other services like Chime. \
+Note: The final policy may still include actions from services not in your hints if they are \
+required for the operations you perform (e.g., KMS actions for S3 encryption).";
 
 #[derive(Parser, Debug)]
 #[command(
     name = "iam-policy-autopilot",
     author,
     version,
+    disable_version_flag = true,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
     long_about = "Unified tool that combines IAM policy generation from source code analysis \
 with automatic AccessDenied error fixing. Supports three main operations:\n\n\
 • fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
 • generate-policies: Complete pipeline with enrichment for policy generation\n\
 • mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
-Examples:\n  \
 iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
 iam-policy-autopilot generate-policies tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --region cn-north-1 --account 123456789012\n  \
+iam-policy-autopilot generate-policies tests/resources/test_example.py --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty\n  \
 iam-policy-autopilot mcp-server\n  \
 iam-policy-autopilot mcp-server --transport http --port 8001"
 )]
@@ -227,7 +231,9 @@ This flag has no effect on the generate-policies subcommand."
     #[command(long_about = "\
 Generates complete IAM policy documents from source files. By default, all \
 policies are merged into a single optimized policy document. \
-Optionally takes AWS context (region and account) for accurate ARN generation.")]
+Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
+TIP: Use --service-hints to specify the particular AWS services that your application uses if you know them. \
+The final policy may still include actions from other services if required for your operations.")]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
@@ -346,6 +352,13 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
 Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
         port: u16,
     },
+
+    #[command(
+        about = "Print version information.",
+        short_flag = 'V',
+        long_flag = "version"
+    )]
+    Version {},
 }
 
 /// Initialize logging based on configuration
@@ -608,6 +621,14 @@ async fn main() {
                 }
             }
         }
+
+        Commands::Version {} => match print_version_info() {
+            Ok(()) => ExitCode::Success,
+            Err(e) => {
+                print_cli_command_error(e);
+                ExitCode::Error
+            }
+        },
     };
 
     process::exit(code.into());

@@ -5,10 +5,14 @@
 //! have been simplified to remove documentation and examples, reducing binary size
 //! while maintaining all essential functionality.
 
+use std::borrow::Cow;
+use std::collections::HashMap;
+
+use crate::api::model::GitSubmoduleMetadata;
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::sdk_model::SdkServiceDefinition;
-use crate::providers::JsonProvider;
 use rust_embed::RustEmbed;
+use serde::{Deserialize, Serialize};
 
 /// Embedded AWS service definitions with compression
 ///
@@ -18,7 +22,7 @@ use rust_embed::RustEmbed;
 #[derive(RustEmbed)]
 #[folder = "target/botocore-data-simplified"]
 #[include = "*.json"]
-pub struct Botocore;
+struct BotocoreRaw;
 
 /// Embedded AWS boto3 resource definitions
 ///
@@ -27,7 +31,12 @@ pub struct Botocore;
 #[derive(RustEmbed)]
 #[folder = "target/boto3-data-simplified"]
 #[include = "*.json"]
-pub struct Boto3Resources;
+struct Boto3ResourcesRaw;
+
+#[derive(RustEmbed)]
+#[folder = "target/submodule-version-info"]
+#[include = "*.json"]
+struct GitSubmoduleVersionInfoRaw;
 
 /// Embedded boto3 utilities mapping
 ///
@@ -36,40 +45,23 @@ pub struct Boto3Resources;
 #[derive(RustEmbed)]
 #[folder = "resources/config/sdks"]
 #[include = "boto3_utilities_mapping.json"]
-pub struct Boto3Utilities;
+struct Boto3UtilitiesRaw;
 
-impl Boto3Utilities {
+impl Boto3UtilitiesRaw {
     /// Get the boto3 utilities mapping configuration
-    pub fn get_utilities_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
+    fn get_utilities_mapping() -> Option<Cow<'static, [u8]>> {
         Self::get("boto3_utilities_mapping.json").map(|file| file.data)
     }
 }
 
-/// Embedded JavaScript SDK v3 libraries mapping
-///
-/// This struct provides access to the JavaScript SDK v3 libraries mapping configuration
-/// that defines how lib-* submodule commands map to client-* commands.
-#[derive(RustEmbed)]
-#[folder = "resources/config/sdks"]
-#[include = "js_v3_libraries.json"]
-pub(crate) struct JsV3Libraries;
-
-impl JsV3Libraries {
-    /// Get the JavaScript SDK v3 libraries mapping configuration
-    pub fn get_libraries_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
-        Self::get("js_v3_libraries.json").map(|file| file.data)
-    }
-}
-
-impl Boto3Resources {
+impl Boto3ResourcesRaw {
     /// Get a boto3 resources definition file by service name and API version
-    pub fn get_resources_definition(service: &str, api_version: &str) -> Option<Vec<u8>> {
+    fn get_resources_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
         let json_path = format!("{}/{}/resources-1.json", service, api_version);
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
-            let result = Some(file.data.to_vec());
 
             let total_time = start_time.elapsed();
             if total_time.as_millis() > 10 {
@@ -82,14 +74,14 @@ impl Boto3Resources {
                 );
             }
 
-            result
+            Some(file.data)
         } else {
             None
         }
     }
 
     /// Build a complete service-to-versions map for boto3 resources
-    pub(crate) fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
+    fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
         log::debug!("Building boto3 service versions map...");
 
         let start_time = std::time::Instant::now();
@@ -99,7 +91,7 @@ impl Boto3Resources {
         > = std::collections::HashMap::new();
         let mut file_count = 0;
 
-        for file_path in Boto3Resources::iter() {
+        for file_path in Self::iter() {
             file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {
@@ -130,15 +122,14 @@ impl Boto3Resources {
     }
 }
 
-impl Botocore {
+impl BotocoreRaw {
     /// Get a service definition file by service name and API version
-    pub fn get_service_definition(service: &str, api_version: &str) -> Option<Vec<u8>> {
+    fn get_service_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
         let json_path = format!("{}/{}/service-2.json", service, api_version);
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
-            let result = Some(file.data.to_vec());
 
             let total_time = start_time.elapsed();
             if total_time.as_millis() > 10 {
@@ -151,32 +142,26 @@ impl Botocore {
                 );
             }
 
-            result
+            Some(file.data)
         } else {
             None
         }
     }
 
     /// Get a waiters definition file by service name and API version
-    pub fn get_waiters(
-        service: &str,
-        api_version: &str,
-    ) -> Option<std::borrow::Cow<'static, [u8]>> {
+    fn get_waiters(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let path = format!("{}/{}/waiters-2.json", service, api_version);
         Self::get(&path).map(|file| file.data)
     }
 
     /// Get a paginators definition file by service name and API version
-    pub fn get_paginators(
-        service: &str,
-        api_version: &str,
-    ) -> Option<std::borrow::Cow<'static, [u8]>> {
+    fn get_paginators(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let path = format!("{}/{}/paginators-1.json", service, api_version);
         Self::get(&path).map(|file| file.data)
     }
 
     /// Build a complete service-to-versions map in a single iteration
-    pub(crate) fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
+    fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
         log::debug!("Building service versions map...");
 
         let start_time = std::time::Instant::now();
@@ -186,7 +171,7 @@ impl Botocore {
         > = std::collections::HashMap::new();
         let mut file_count = 0;
 
-        for file_path in Botocore::iter() {
+        for file_path in BotocoreRaw::iter() {
             file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {
@@ -221,9 +206,9 @@ impl Botocore {
 ///
 /// Provides convenient access to embedded boto3 resource definitions with
 /// automatic JSON parsing.
-pub(crate) struct EmbeddedBoto3Data;
+pub(crate) struct Boto3Data;
 
-impl EmbeddedBoto3Data {
+impl Boto3Data {
     /// Get raw boto3 resources data by service name and API version
     ///
     /// # Arguments
@@ -232,18 +217,21 @@ impl EmbeddedBoto3Data {
     ///
     /// # Returns
     /// Raw resources JSON data or None if not found
-    pub fn get_resources_raw(service: &str, api_version: &str) -> Option<Vec<u8>> {
-        Boto3Resources::get_resources_definition(service, api_version)
+    pub(crate) fn get_resources_raw(
+        service: &str,
+        api_version: &str,
+    ) -> Option<Cow<'static, [u8]>> {
+        Boto3ResourcesRaw::get_resources_definition(service, api_version)
     }
 
     /// Build a complete service-to-versions map for boto3 resources
     pub(crate) fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
-        Boto3Resources::build_service_versions_map()
+        Boto3ResourcesRaw::build_service_versions_map()
     }
 
     /// Get the boto3 utilities mapping configuration from embedded data
-    pub(crate) fn get_utilities_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
-        Boto3Utilities::get_utilities_mapping()
+    pub(crate) fn get_utilities_mapping() -> Option<Cow<'static, [u8]>> {
+        Boto3UtilitiesRaw::get_utilities_mapping()
     }
 }
 
@@ -251,9 +239,9 @@ impl EmbeddedBoto3Data {
 ///
 /// Provides convenient access to embedded AWS service definitions with
 /// automatic decompression and JSON parsing.
-pub(crate) struct EmbeddedServiceData;
+pub(crate) struct BotocoreData;
 
-impl EmbeddedServiceData {
+impl BotocoreData {
     /// Get a parsed service definition by service name and API version
     ///
     /// # Arguments
@@ -262,40 +250,46 @@ impl EmbeddedServiceData {
     ///
     /// # Returns
     /// Parsed service definition or error if not found or parsing fails
-    pub(crate) async fn get_service_definition(
+    pub(crate) fn get_service_definition(
         service: &str,
         api_version: &str,
     ) -> Result<SdkServiceDefinition> {
-        let data = Botocore::get_service_definition(service, api_version).ok_or_else(|| {
+        let data = BotocoreRaw::get_service_definition(service, api_version).ok_or_else(|| {
             ExtractorError::validation(format!(
                 "Service definition not found for {}/{}",
                 service, api_version
             ))
         })?;
 
-        let json_str = std::str::from_utf8(&data).map_err(|e| {
-            ExtractorError::validation(format!("Invalid UTF-8 in embedded data: {}", e))
-        })?;
-
-        JsonProvider::parse(json_str).await.map_err(|e| {
+        serde_json::from_slice(&data).map_err(|e| {
             ExtractorError::sdk_processing_with_source(
                 service,
-                "Failed to parse embedded service definition",
+                "Failed to parse service definition",
                 e,
             )
         })
     }
 
-    /// Get raw waiters data by service name and API version
+    /// Get waiters data by service name and API version
     ///
     /// # Arguments
     /// * `service` - Service name (e.g., "s3", "ec2", "lambda")
     /// * `api_version` - API version (e.g., "2006-03-01", "2016-11-15")
     ///
     /// # Returns
-    /// Raw waiters JSON data or None if not found
-    pub fn get_waiters_raw(service: &str, api_version: &str) -> Option<Vec<u8>> {
-        Botocore::get_waiters(service, api_version).map(|data| data.to_vec())
+    /// Waiters JSON data or None if not found
+    pub(crate) fn get_waiters(
+        service: &str,
+        api_version: &str,
+    ) -> Option<HashMap<String, crate::extraction::waiter_model::WaiterEntry>> {
+        let waiters_data = BotocoreRaw::get_waiters(service, api_version)?;
+
+        match serde_json::from_slice::<crate::extraction::waiter_model::WaitersDescription>(
+            &waiters_data,
+        ) {
+            Ok(waiters_desc) => Some(waiters_desc.waiters),
+            Err(_) => None,
+        }
     }
 
     /// Get raw paginators data by service name and API version
@@ -307,13 +301,45 @@ impl EmbeddedServiceData {
     /// # Returns
     /// Raw paginators JSON data or None if not found
     #[allow(dead_code)]
-    pub fn get_paginators_raw(service: &str, api_version: &str) -> Option<Vec<u8>> {
-        Botocore::get_paginators(service, api_version).map(|data| data.to_vec())
+    pub(crate) fn get_paginators_raw(service: &str, api_version: &str) -> Option<Vec<u8>> {
+        BotocoreRaw::get_paginators(service, api_version).map(|data| data.to_vec())
     }
 
     /// Build a complete service-to-versions map in a single iteration
     pub(crate) fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
-        Botocore::build_service_versions_map()
+        BotocoreRaw::build_service_versions_map()
+    }
+}
+
+/// Embedded submodule version data manager
+///
+/// Provides access to git submodule information, compiled during build.rs
+pub(crate) struct GitSubmoduleVersionInfo;
+
+impl GitSubmoduleVersionInfo {
+    pub(crate) fn get_boto3_version_info() -> Result<GitSubmoduleMetadata> {
+        let boto3_file = GitSubmoduleVersionInfoRaw::get("boto3_version.json")
+            .expect("boto3 version metadata file not found");
+
+        serde_json::from_slice(&boto3_file.data).map_err(|e| {
+            ExtractorError::sdk_processing_with_source(
+                "reading boto3_version.json",
+                "Failed to parse boto3 metadata file",
+                e,
+            )
+        })
+    }
+    pub(crate) fn get_botocore_version_info() -> Result<GitSubmoduleMetadata> {
+        let botocore_file = GitSubmoduleVersionInfoRaw::get("botocore_version.json")
+            .expect("botocore version metadata file not found");
+
+        serde_json::from_slice(&botocore_file.data).map_err(|e| {
+            ExtractorError::sdk_processing_with_source(
+                "reading botocore_version.json",
+                "Failed to parse botocore_version metadata file",
+                e,
+            )
+        })
     }
 }
 
@@ -323,25 +349,25 @@ mod tests {
 
     #[test]
     fn test_botocore_get_service_definition_returns_none_for_invalid_service() {
-        let result = Botocore::get_service_definition("nonexistent-service", "2023-01-01");
+        let result = BotocoreRaw::get_service_definition("nonexistent-service", "2023-01-01");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_botocore_get_waiters_returns_none_for_invalid_service() {
-        let result = Botocore::get_waiters("nonexistent-service", "2023-01-01");
+        let result = BotocoreRaw::get_waiters("nonexistent-service", "2023-01-01");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_botocore_get_paginators_returns_none_for_invalid_service() {
-        let result = Botocore::get_paginators("nonexistent-service", "2023-01-01");
+        let result = BotocoreRaw::get_paginators("nonexistent-service", "2023-01-01");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_build_service_versions_map_returns_hashmap() {
-        let service_versions = Botocore::build_service_versions_map();
+        let service_versions = BotocoreRaw::build_service_versions_map();
 
         // Should return a HashMap
         assert!(service_versions.is_empty() || !service_versions.is_empty());
@@ -369,8 +395,8 @@ mod tests {
     #[test]
     fn test_build_service_versions_map_consistency() {
         // Call the function twice and ensure results are consistent
-        let map1 = Botocore::build_service_versions_map();
-        let map2 = Botocore::build_service_versions_map();
+        let map1 = BotocoreRaw::build_service_versions_map();
+        let map2 = BotocoreRaw::build_service_versions_map();
 
         assert_eq!(
             map1, map2,
@@ -380,8 +406,8 @@ mod tests {
 
     #[test]
     fn test_embedded_service_data_build_service_versions_map_delegates() {
-        let embedded_result = EmbeddedServiceData::build_service_versions_map();
-        let botocore_result = Botocore::build_service_versions_map();
+        let embedded_result = BotocoreData::build_service_versions_map();
+        let botocore_result = BotocoreRaw::build_service_versions_map();
 
         assert_eq!(
             embedded_result, botocore_result,
@@ -389,10 +415,9 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn test_embedded_service_data_get_service_definition_invalid_service() {
-        let result =
-            EmbeddedServiceData::get_service_definition("nonexistent-service", "2023-01-01").await;
+    #[test]
+    fn test_embedded_service_data_get_service_definition_invalid_service() {
+        let result = BotocoreData::get_service_definition("nonexistent-service", "2023-01-01");
 
         assert!(
             result.is_err(),
@@ -411,7 +436,7 @@ mod tests {
 
     #[test]
     fn test_embedded_service_data_get_waiters_raw_invalid_service() {
-        let result = EmbeddedServiceData::get_waiters_raw("nonexistent-service", "2023-01-01");
+        let result = BotocoreData::get_waiters("nonexistent-service", "2023-01-01");
         assert!(
             result.is_none(),
             "Should return None for nonexistent service"
@@ -420,7 +445,7 @@ mod tests {
 
     #[test]
     fn test_embedded_service_data_get_paginators_raw_invalid_service() {
-        let result = EmbeddedServiceData::get_paginators_raw("nonexistent-service", "2023-01-01");
+        let result = BotocoreData::get_paginators_raw("nonexistent-service", "2023-01-01");
         assert!(
             result.is_none(),
             "Should return None for nonexistent service"
@@ -429,7 +454,7 @@ mod tests {
 
     #[test]
     fn test_service_versions_map_structure() {
-        let service_versions = Botocore::build_service_versions_map();
+        let service_versions = BotocoreRaw::build_service_versions_map();
 
         for (service, versions) in &service_versions {
             // Service names should not contain path separators
@@ -486,13 +511,13 @@ mod tests {
         // This test ensures the timing logic doesn't panic
         // We can't easily test the actual logging without setting up a logger,
         // but we can ensure the code path works
-        let result = Botocore::get_service_definition("nonexistent-service", "2023-01-01");
+        let result = BotocoreRaw::get_service_definition("nonexistent-service", "2023-01-01");
         assert!(result.is_none());
     }
 
     #[test]
     fn test_service_versions_map_no_duplicates() {
-        let service_versions = Botocore::build_service_versions_map();
+        let service_versions = BotocoreRaw::build_service_versions_map();
 
         for (service, versions) in &service_versions {
             // Check that there are no duplicate versions
@@ -512,18 +537,29 @@ mod tests {
     #[test]
     fn test_embedded_data_methods_handle_empty_strings() {
         // Test edge cases with empty strings
-        let result1 = Botocore::get_service_definition("", "");
-        let result2 = Botocore::get_waiters("", "");
-        let result3 = Botocore::get_paginators("", "");
+        let result1 = BotocoreRaw::get_service_definition("", "");
+        let result2 = BotocoreRaw::get_waiters("", "");
+        let result3 = BotocoreRaw::get_paginators("", "");
 
         assert!(result1.is_none());
         assert!(result2.is_none());
         assert!(result3.is_none());
     }
 
-    #[tokio::test]
-    async fn test_embedded_service_data_handles_empty_strings() {
-        let result = EmbeddedServiceData::get_service_definition("", "").await;
+    #[test]
+    fn test_embedded_service_data_handles_empty_strings() {
+        let result = BotocoreData::get_service_definition("", "");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_boto3_version_info_happy_path() {
+        let result = GitSubmoduleVersionInfo::get_boto3_version_info();
+        assert!(result.is_ok());
+    }
+
+    fn test_get_botocore_version_info_happy_path() {
+        let result = GitSubmoduleVersionInfo::get_botocore_version_info();
+        assert!(result.is_ok());
     }
 }

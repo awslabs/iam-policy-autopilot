@@ -152,6 +152,12 @@ impl<'a> GoMethodDisambiguator<'a> {
             None => return false, // Input shape not found
         };
 
+        log::debug!(
+            "Validating {} against service '{}' operation '{}'",
+            method_call.name,
+            service_ref.service_name,
+            service_ref.operation_name
+        );
         // Validate parameters against the input shape
         self.validate_parameters_against_shape(&metadata.parameters, input_shape, has_context)
     }
@@ -204,8 +210,8 @@ impl<'a> GoMethodDisambiguator<'a> {
             .iter()
             .filter_map(|p| match p {
                 Parameter::Positional {
-                    value,
                     type_annotation,
+                    struct_fields,
                     ..
                 } => {
                     // Skip context parameters
@@ -215,69 +221,74 @@ impl<'a> GoMethodDisambiguator<'a> {
                         }
                     }
 
-                    let value_str = value.as_string();
-                    // Extract field names from struct literals
-                    if value_str.contains('{') && value_str.contains('}') {
-                        Some(self.extract_struct_field_names(value_str))
-                    } else {
-                        None
-                    }
+                    // Use AST-extracted fields
+                    struct_fields.as_ref().cloned()
                 }
                 _ => None,
             })
             .flatten()
             .collect();
 
+        log::debug!("Extracted parameters from code: {:?}", provided_params);
+
         // Get required parameters from the shape
-        let _required_params: HashSet<String> = shape
+        let required_params: HashSet<String> = shape
             .required
             .as_ref()
             .map(|req| req.iter().cloned().collect())
             .unwrap_or_default();
+        log::debug!("Required parameters from AWS model: {:?}", required_params);
 
-        // Get all valid parameters from the shape
-        let valid_params: HashSet<String> = shape.members.keys().cloned().collect();
+        // Get all valid parameters from the shape (lowercase for case-insensitive comparison)
+        // AWS models are inconsistent - some use PascalCase, some use camelCase
+        // TODO: Canonicalize casing during deserialization instead of at comparison time
+        // See: https://github.com/awslabs/iam-policy-autopilot/issues/57
+        let valid_params_lower: HashSet<String> =
+            shape.members.keys().map(|k| k.to_lowercase()).collect();
+        log::debug!(
+            "Valid parameters from AWS model: {:?}",
+            shape.members.keys()
+        );
 
-        // For Go, we're more lenient about missing required parameters since they might be
-        // provided through struct initialization or have default values
-        // We mainly validate that provided parameters are valid
-
-        // Check that all provided parameters are valid
+        // Check that all provided parameters are valid (case-insensitive)
         for provided_param in &provided_params {
-            if !valid_params.contains(provided_param) {
+            let provided_lower = provided_param.to_lowercase();
+            if !valid_params_lower.contains(&provided_lower) {
+                log::debug!(
+                    "Rejecting: parameter '{}' not found in AWS model (case-insensitive)",
+                    provided_param
+                );
                 return false; // Invalid parameter provided
             }
         }
 
         // If we have no parameters extracted (e.g., using variables instead of struct literals),
         // we accept the method call since we can't validate variable contents
-        // This is more lenient but prevents false negatives
-        true
-    }
+        // This prevents false negatives when parameters are passed via variables
+        if provided_params.is_empty() {
+            log::debug!("Accepting: no parameters extracted (likely using variables)");
+            return true;
+        }
 
-    /// Extract field names from a struct literal string
-    fn extract_struct_field_names(&self, struct_literal: &str) -> Vec<String> {
-        let mut field_names = Vec::new();
+        // Validate that all required parameters are present (case-insensitive)
+        // Convert provided params to lowercase once for efficient lookup
+        let provided_params_lower: HashSet<String> =
+            provided_params.iter().map(|p| p.to_lowercase()).collect();
 
-        // Find the content between braces
-        if let Some(start) = struct_literal.find('{') {
-            if let Some(end) = struct_literal.rfind('}') {
-                let content = &struct_literal[start + 1..end];
-
-                // Simple parsing - split by commas and extract field names
-                for field_part in content.split(',') {
-                    let field_part = field_part.trim();
-                    if let Some(colon_pos) = field_part.find(':') {
-                        let field_name = field_part[..colon_pos].trim().to_string();
-                        if !field_name.is_empty() {
-                            field_names.push(field_name);
-                        }
-                    }
-                }
+        for required_param in &required_params {
+            let required_lower = required_param.to_lowercase();
+            if !provided_params_lower.contains(&required_lower) {
+                log::debug!(
+                    "Rejecting: missing required parameter '{}' (provided: {:?})",
+                    required_param,
+                    provided_params
+                );
+                return false; // Required parameter missing
             }
         }
 
-        field_names
+        log::debug!("Accepting: all validations passed");
+        true
     }
 
     /// Filter services based on what's actually imported in the Go file
@@ -328,6 +339,57 @@ mod tests {
     fn create_test_service_index() -> ServiceModelIndex {
         let mut services = HashMap::new();
         let mut method_lookup = HashMap::new();
+
+        // Create a test service definition for SQS
+        let mut sqs_operations = HashMap::new();
+        let mut sqs_shapes = HashMap::new();
+
+        sqs_operations.insert(
+            "CreateQueue".to_string(),
+            Operation {
+                name: "CreateQueue".to_string(),
+                input: Some(ShapeReference {
+                    shape: "CreateQueueRequest".to_string(),
+                }),
+            },
+        );
+
+        let mut create_queue_members = HashMap::new();
+        create_queue_members.insert(
+            "QueueName".to_string(),
+            ShapeReference {
+                shape: "String".to_string(),
+            },
+        );
+        create_queue_members.insert(
+            "Attributes".to_string(),
+            ShapeReference {
+                shape: "QueueAttributeMap".to_string(),
+            },
+        );
+
+        sqs_shapes.insert(
+            "CreateQueueRequest".to_string(),
+            Shape {
+                type_name: "structure".to_string(),
+                members: create_queue_members,
+                required: Some(vec!["QueueName".to_string()]),
+            },
+        );
+
+        services.insert(
+            "sqs".to_string(),
+            SdkServiceDefinition {
+                version: Some("2.0".to_string()),
+                metadata: ServiceMetadata {
+                    api_version: "2012-11-05".to_string(),
+                    service_id: "SQS".to_string(),
+                },
+                operations: sqs_operations,
+                shapes: sqs_shapes,
+                waiters: HashMap::new(),
+            },
+        );
 
         // Create a test service definition for S3
         let mut s3_operations = HashMap::new();
@@ -504,6 +566,14 @@ mod tests {
             ],
         );
 
+        method_lookup.insert(
+            "CreateQueue".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "sqs".to_string(),
+                operation_name: "CreateQueue".to_string(),
+            }],
+        );
+
         ServiceModelIndex {
             services,
             method_lookup,
@@ -525,6 +595,7 @@ mod tests {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
                         position: 0,
                         type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
                     },
                     Parameter::Positional {
                         value: ParameterValue::Unresolved(
@@ -532,7 +603,8 @@ mod tests {
                                 .to_string(),
                         ),
                         position: 1,
-                        type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
+                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string()]),
                     },
                 ],
                 return_type: None,
@@ -551,11 +623,11 @@ mod tests {
     fn test_context_parameter_detection() {
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
-
         let context_param = Parameter::Positional {
             value: ParameterValue::Unresolved("context.TODO()".to_string()),
             position: 0,
             type_annotation: Some("context.Context".to_string()),
+            struct_fields: None,
         };
 
         assert!(disambiguator.is_context_parameter(&context_param));
@@ -564,23 +636,10 @@ mod tests {
             value: ParameterValue::Unresolved("someValue".to_string()),
             position: 1,
             type_annotation: None,
+            struct_fields: None,
         };
 
         assert!(!disambiguator.is_context_parameter(&regular_param));
-    }
-
-    #[test]
-    fn test_struct_field_name_extraction() {
-        let service_index = create_test_service_index();
-        let disambiguator = GoMethodDisambiguator::new(&service_index);
-
-        let struct_literal =
-            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\"), MaxKeys: aws.Int32(10) }";
-        let field_names = disambiguator.extract_struct_field_names(struct_literal);
-
-        assert_eq!(field_names.len(), 2);
-        assert!(field_names.contains(&"Bucket".to_string()));
-        assert!(field_names.contains(&"MaxKeys".to_string()));
     }
 
     #[test]
@@ -596,6 +655,7 @@ mod tests {
                     value: ParameterValue::Unresolved("someParam".to_string()),
                     position: 0,
                     type_annotation: None,
+                    struct_fields: None,
                 }],
                 return_type: None,
                 start_position: (1, 1),
@@ -633,6 +693,7 @@ mod tests {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
                         position: 0,
                         type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
                     },
                     Parameter::Positional {
                         value: ParameterValue::Unresolved(
@@ -640,7 +701,8 @@ mod tests {
                                 .to_string(),
                         ),
                         position: 1,
-                        type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
+                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string()]),
                     },
                 ],
                 return_type: None,
@@ -674,6 +736,7 @@ mod tests {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
                         position: 0,
                         type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
                     },
                     Parameter::Positional {
                         value: ParameterValue::Unresolved(
@@ -681,7 +744,8 @@ mod tests {
                                 .to_string(),
                         ),
                         position: 1,
-                        type_annotation: Some("*s3.ListObjectsV2Input".to_string()),
+                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string()]),
                     },
                 ],
                 return_type: None,
@@ -721,6 +785,7 @@ mod tests {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
                         position: 0,
                         type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
                     },
                     Parameter::Positional {
                         value: ParameterValue::Unresolved(
@@ -728,7 +793,8 @@ mod tests {
                                 .to_string(),
                         ),
                         position: 1,
-                        type_annotation: Some("*myS3.ListObjectsV2Input".to_string()),
+                        type_annotation: Some("myS3.ListObjectsV2Input".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string()]),
                     },
                 ],
                 return_type: None,
@@ -741,5 +807,223 @@ mod tests {
         let result = disambiguator.disambiguate_method_calls(vec![method_call], Some(&import_info));
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].possible_services, vec!["s3"]);
+    }
+
+    #[test]
+    fn test_missing_required_parameters_filtered_out() {
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        // GetObject requires both Bucket and Key, but we only provide Bucket
+        let method_call = SdkMethodCall {
+            name: "GetObject".to_string(),
+            possible_services: Vec::new(),
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                        position: 0,
+                        type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
+                    },
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved(
+                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                        ),
+                        position: 1,
+                        type_annotation: Some("s3.GetObjectInput".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string()]),
+                    },
+                ],
+                return_type: None,
+                start_position: (1, 1),
+                end_position: (1, 50),
+                receiver: Some("client".to_string()),
+            }),
+        };
+
+        let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
+        // Should be filtered out because Key is required but missing
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_all_required_parameters_present() {
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        // GetObject requires both Bucket and Key, and we provide both
+        let method_call = SdkMethodCall {
+            name: "GetObject".to_string(),
+            possible_services: Vec::new(),
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                        position: 0,
+                        type_annotation: Some("context.Context".to_string()),
+                    struct_fields: None,
+                    },
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved(
+                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
+                        ),
+                        position: 1,
+                        type_annotation: Some("s3.GetObjectInput".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+                    },
+                ],
+                return_type: None,
+                start_position: (1, 1),
+                end_position: (1, 50),
+                receiver: Some("client".to_string()),
+            }),
+        };
+
+        let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
+        // Should pass because all required parameters are present
+        assert_eq!(result.len(), 1);
+        assert!(result[0].possible_services.contains(&"s3".to_string()));
+    }
+
+    #[test]
+    fn test_variable_based_parameters_accepted() {
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        // Using a variable for input - can't extract fields, so should be accepted
+        let method_call = SdkMethodCall {
+            name: "GetObject".to_string(),
+            possible_services: Vec::new(),
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                        position: 0,
+                        type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
+                    },
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("getObjectInput".to_string()),
+                        position: 1,
+                        type_annotation: Some("s3.GetObjectInput".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+                    },
+                ],
+                return_type: None,
+                start_position: (1, 1),
+                end_position: (1, 50),
+                receiver: Some("client".to_string()),
+            }),
+        };
+
+        let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
+        // Should be accepted because we can't validate variable contents
+        assert_eq!(result.len(), 1);
+        assert!(result[0].possible_services.contains(&"s3".to_string()));
+    }
+
+    #[test]
+    fn test_disambiguate_by_required_parameters() {
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        // GetObject exists in both s3 and s3control
+        // s3 requires: Bucket, Key
+        // s3control requires: AccountId, Bucket, Key
+        // If we only provide Bucket and Key, it should match s3 but not s3control
+        let method_call = SdkMethodCall {
+            name: "GetObject".to_string(),
+            possible_services: Vec::new(),
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                        position: 0,
+                        type_annotation: Some("context.Context".to_string()),
+                    struct_fields: None,
+                    },
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved(
+                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
+                        ),
+                        position: 1,
+                        type_annotation: Some("s3.GetObjectInput".to_string()),
+                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+                    },
+                ],
+                return_type: None,
+                start_position: (1, 1),
+                end_position: (1, 50),
+                receiver: Some("client".to_string()),
+            }),
+        };
+
+        let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
+        // Should only match s3, not s3control (which requires AccountId)
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].possible_services, vec!["s3"]);
+        assert!(!result[0]
+            .possible_services
+            .contains(&"s3control".to_string()));
+    }
+
+    #[test]
+    fn test_sqs_create_queue_with_nested_map_not_filtered() {
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        // Test SQS CreateQueue with nested map keys in struct literal:
+        // result, err := sqsClient.CreateQueue(ctx, &sqs.CreateQueueInput{
+        //     QueueName: aws.String(queueName),
+        //     Attributes: map[string]string{
+        //         "VisibilityTimeout": "60",
+        //         "MessageRetentionPeriod": "345600",
+        //     },
+        // })
+        //
+        // With AST-based extraction, we extract only QueueName and Attributes (top-level fields).
+        // We do NOT extract VisibilityTimeout or MessageRetentionPeriod (nested map keys).
+        // This should pass validation because:
+        // - QueueName (required) is present
+        // - Attributes (optional) is present and valid
+
+        let method_call = SdkMethodCall {
+            name: "CreateQueue".to_string(),
+            possible_services: Vec::new(),
+            metadata: Some(SdkMethodCallMetadata {
+                parameters: vec![
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                        position: 0,
+                        type_annotation: Some("context.Context".to_string()),
+                        struct_fields: None,
+                    },
+                    Parameter::Positional {
+                        value: ParameterValue::Unresolved(
+                            "&sqs.CreateQueueInput{ QueueName: aws.String(queueName), Attributes: map[string]string{\"VisibilityTimeout\": \"60\", \"MessageRetentionPeriod\": \"345600\"} }".to_string(),
+                        ),
+                        position: 1,
+                        type_annotation: Some("sqs.CreateQueueInput".to_string()),
+                        // AST-extracted fields: only top-level fields, NOT nested map keys
+                        struct_fields: Some(vec!["QueueName".to_string(), "Attributes".to_string()]),
+                    },
+                ],
+                return_type: None,
+                start_position: (1, 1),
+                end_position: (1, 50),
+                receiver: Some("sqsClient".to_string()),
+            }),
+        };
+
+        let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
+
+        // Should NOT be filtered out because:
+        // - QueueName (required) is present in struct_fields
+        // - Attributes (optional) is present and valid
+        // - VisibilityTimeout and MessageRetentionPeriod are NOT in struct_fields (correctly not extracted)
+        assert_eq!(result.len(), 1, "CreateQueue should not be filtered out");
+        assert_eq!(result[0].possible_services, vec!["sqs"]);
+        assert_eq!(result[0].name, "CreateQueue");
     }
 }

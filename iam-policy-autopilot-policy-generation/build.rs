@@ -1,9 +1,25 @@
+use git2::Commit;
+use git2::Describe;
+use git2::DescribeFormatOptions;
+use git2::DescribeOptions;
+use git2::Reference;
+use git2::Repository;
+use relative_path::PathExt;
+use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::HashMap;
+use sha2::digest::consts::B0;
+use sha2::digest::consts::B1;
+use sha2::digest::generic_array::GenericArray;
+use sha2::digest::typenum::UInt;
+use sha2::digest::typenum::UTerm;
+use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::Path;
+use std::path::PathBuf;
 
 /// Simplified service definition with fields removed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -11,8 +27,8 @@ struct SimplifiedServiceDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     version: Option<String>,
     metadata: ServiceMetadata,
-    operations: HashMap<String, SimplifiedOperation>,
-    shapes: HashMap<String, SimplifiedShape>,
+    operations: BTreeMap<String, SimplifiedOperation>,
+    shapes: BTreeMap<String, SimplifiedShape>,
 }
 
 /// Service metadata from AWS service definitions
@@ -37,8 +53,8 @@ struct SimplifiedOperation {
 struct SimplifiedShape {
     #[serde(rename = "type")]
     type_name: String,
-    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    members: HashMap<String, ShapeReference>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    members: BTreeMap<String, ShapeReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<Vec<String>>,
 }
@@ -47,6 +63,17 @@ struct SimplifiedShape {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ShapeReference {
     shape: String,
+}
+
+// Git version and commit hash for boto3 and botocore
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct GitSubmoduleVersion {
+    #[serde(rename = "gitCommit")]
+    git_commit_hash: String,
+    #[serde(rename = "gitTag")]
+    git_tag: Option<String>,
+    #[serde(rename = "dataHash")]
+    data_hash: String,
 }
 
 fn main() {
@@ -123,6 +150,60 @@ fn main() {
     // Copy the boto3 directory to the workspace location
     copy_dir_recursive(&boto3_dir, workspace_boto3_embed_dir)
         .expect("Failed to copy boto3 simplified data");
+
+    let workspace_submodule_version_embed_dir = PathBuf::from("target/submodule-version-info");
+
+    // Remove existing directory if it exists
+    if workspace_submodule_version_embed_dir.exists() {
+        fs::remove_dir_all(&workspace_submodule_version_embed_dir)
+            .expect("Failed to remove existing submodule version directory");
+    }
+    fs::create_dir_all(&workspace_submodule_version_embed_dir)
+        .expect("Failed to create submodule version directory");
+
+    let boto3_submodule_dir = Path::new("resources/config/sdks/boto3");
+    let boto3_repo =
+        Repository::open(&boto3_submodule_dir).expect("Failed to open boto3 repository");
+
+    let boto3_info = GitSubmoduleVersion {
+        git_commit_hash: get_repository_commit(&boto3_repo)
+            .expect("Failed to get boto3 repository commit"),
+        git_tag: get_repository_tag(&boto3_repo).expect("Failed to get boto3 repository tag"),
+        data_hash: format!(
+            "{:X}",
+            sha2sum_recursive(&boto3_dir, &boto3_dir)
+                .expect("Failed to compute checksum over simplified boto3 data")
+        ),
+    };
+
+    let boto3_submodule_version_dir =
+        &workspace_submodule_version_embed_dir.join("boto3_version.json");
+    let boto3_info_json =
+        serde_json::to_string(&boto3_info).expect("Failed to serialize boto3 version metadata");
+    fs::write(boto3_submodule_version_dir, boto3_info_json)
+        .expect("Failed to write boto3 version metadata");
+
+    let botocore_submodule_dir = Path::new("resources/config/sdks/botocore-data");
+    let botocore_repo =
+        Repository::open(botocore_submodule_dir).expect("Failed to open botocore repository");
+
+    let botocore_info = GitSubmoduleVersion {
+        git_commit_hash: get_repository_commit(&botocore_repo)
+            .expect("Failed to get botocore repository commit"),
+        git_tag: get_repository_tag(&botocore_repo).expect("Failed to get botocore repository tag"),
+        data_hash: format!(
+            "{:X}",
+            sha2sum_recursive(&simplified_dir, &simplified_dir)
+                .expect("Failed to compute checksum over simplified botocore data")
+        ),
+    };
+
+    let botocore_submodule_version_dir =
+        &workspace_submodule_version_embed_dir.join("botocore_version.json");
+    let botocore_info_json = serde_json::to_string(&botocore_info)
+        .expect("Failed to serialize botocore version metadata");
+    fs::write(botocore_submodule_version_dir, botocore_info_json)
+        .expect("Failed to write botocore version metadata");
 }
 
 fn process_botocore_data(
@@ -297,8 +378,8 @@ fn extract_metadata(
 
 fn simplify_operations(
     operations_value: Option<&Value>,
-) -> Result<HashMap<String, SimplifiedOperation>, Box<dyn std::error::Error>> {
-    let mut simplified_operations = HashMap::new();
+) -> Result<BTreeMap<String, SimplifiedOperation>, Box<dyn std::error::Error>> {
+    let mut simplified_operations = BTreeMap::new();
 
     if let Some(Value::Object(operations)) = operations_value {
         for (op_name, op_value) in operations {
@@ -313,8 +394,8 @@ fn simplify_operations(
 
 fn simplify_shapes(
     shapes_value: Option<&Value>,
-) -> Result<HashMap<String, SimplifiedShape>, Box<dyn std::error::Error>> {
-    let mut simplified_shapes = HashMap::new();
+) -> Result<BTreeMap<String, SimplifiedShape>, Box<dyn std::error::Error>> {
+    let mut simplified_shapes = BTreeMap::new();
 
     if let Some(Value::Object(shapes)) = shapes_value {
         for (shape_name, shape_value) in shapes {
@@ -342,6 +423,47 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::
     }
 
     Ok(())
+}
+
+fn sha2sum_recursive(
+    cwd: &Path,
+    root: &Path,
+) -> Result<
+    GenericArray<u8, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>>,
+    Box<dyn std::error::Error>,
+> {
+    let mut hash_table: BTreeMap<
+        RelativePathBuf,
+        GenericArray<u8, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>>,
+    > = BTreeMap::new();
+    // let next_root = if (root.is_none()) {Some(cwd)} else {root};
+
+    let mut dir_entry_list = fs::read_dir(cwd)?
+        .map(|res| res.map(|e| e.path()))
+        .collect::<Result<Vec<_>, io::Error>>()?;
+    dir_entry_list.sort();
+
+    for entry_path in dir_entry_list {
+        let relt_path = entry_path.clone().relative_to(root)?;
+        if (entry_path.is_dir()) {
+            hash_table.insert(relt_path.clone(), sha2sum_recursive(&entry_path, root)?);
+        } else {
+            hash_table.insert(
+                relt_path.clone(),
+                Sha256::default()
+                    .chain_update(fs::read(entry_path)?)
+                    .finalize(),
+            );
+        }
+    }
+
+    let mut sha2 = Sha256::new();
+    for entry in hash_table {
+        sha2.update(entry.0.into_string());
+        sha2.update(entry.1);
+    }
+
+    Ok(sha2.finalize())
 }
 
 fn process_boto3_data(
@@ -416,4 +538,30 @@ fn process_boto3_service_version(
     }
 
     Ok(has_resources_file)
+}
+
+fn get_repository_tag(repo: &Repository) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    // we want to do this: git describe --exact-match --tags
+    let mut describe_options = DescribeOptions::new();
+    describe_options.max_candidates_tags(0);
+    describe_options.describe_tags();
+
+    Ok(repo
+        .describe(&describe_options)
+        .map(|desc| {
+            Option::Some(
+                desc.format(Option::None)
+                    .expect("Failed to format describe result"),
+            )
+        })
+        .unwrap_or_default())
+}
+
+fn get_repository_commit(repo: &Repository) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(repo
+        .revparse_single("HEAD")?
+        .into_commit()
+        .expect("Failed to get HEAD commit hash")
+        .id()
+        .to_string())
 }

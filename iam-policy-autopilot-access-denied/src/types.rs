@@ -69,6 +69,8 @@ impl ActionType {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyDocument {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
     pub version: String,
     pub statement: Vec<Statement>,
 }
@@ -156,6 +158,8 @@ impl Statement {
 
 #[cfg(test)]
 mod tests {
+    use crate::aws::policy_naming::POLICY_PREFIX;
+
     use super::*;
 
     #[test]
@@ -251,6 +255,7 @@ mod tests {
             ),
             actions: vec!["s3:GetObject".to_string()],
             policy: PolicyDocument {
+                id: Some(POLICY_PREFIX.to_string()),
                 version: "2012-10-17".to_string(),
                 statement: vec![],
             },

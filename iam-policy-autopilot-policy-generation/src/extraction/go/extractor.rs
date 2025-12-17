@@ -3,6 +3,7 @@
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::go::disambiguation::GoMethodDisambiguator;
 use crate::extraction::go::features_extractor::GoFeaturesExtractor;
+use crate::extraction::go::node_kinds;
 use crate::extraction::go::paginator_extractor::GoPaginatorExtractor;
 use crate::extraction::go::types::{GoImportInfo, ImportInfo};
 use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
@@ -156,9 +157,37 @@ rule:
             return None;
         };
 
-        // Extract arguments - get_multiple_matches returns Vec<Node> directly
-        let args_nodes = env.get_multiple_matches("ARGS");
-        let arguments = self.extract_arguments(&args_nodes);
+        // Extract arguments - ARGS captures the entire argument_list node
+        // We need to get its children to access individual arguments
+        let arguments = if let Some(args_node) = env.get_match("ARGS") {
+            log::debug!("Matched argument_list node: {:?}", args_node.text());
+
+            // Get the children of the argument_list node (excluding parentheses)
+            let arg_children: Vec<_> = args_node
+                .children()
+                .filter(|child| {
+                    // Filter out parentheses and commas, keep only actual argument nodes
+                    let kind = child.kind();
+                    kind != node_kinds::LEFT_PAREN
+                        && kind != node_kinds::RIGHT_PAREN
+                        && kind != node_kinds::COMMA
+                })
+                .collect();
+
+            log::debug!("Found {} argument children", arg_children.len());
+            for (i, child) in arg_children.iter().enumerate() {
+                log::debug!(
+                    "Argument [{}]: kind={}, text={:?}",
+                    i,
+                    child.kind(),
+                    child.text()
+                );
+            }
+
+            self.extract_arguments_with_ast(&arg_children)
+        } else {
+            vec![]
+        };
 
         // Get position information
         let node = node_match.get_node();
@@ -180,14 +209,15 @@ rule:
         Some(method_call)
     }
 
-    /// Extract arguments from argument nodes
-    fn extract_arguments(
+    /// Extract arguments from argument nodes with AST-based field extraction
+    fn extract_arguments_with_ast(
         &self,
         args_nodes: &[ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>],
     ) -> Vec<Parameter> {
         let mut parameters = Vec::new();
 
         for (position, arg_node) in args_nodes.iter().enumerate() {
+            log::debug!("Extracting parameter from: {:?}", arg_node.text());
             let arg_text = arg_node.text().to_string();
 
             // Check if this is a context parameter (first parameter in Go AWS SDK calls)
@@ -196,9 +226,22 @@ rule:
             }
             // Check if this is a struct literal (&Type{...})
             else if self.is_struct_literal(arg_node) {
-                if let Some(param) = self.parse_struct_literal(arg_node, position) {
-                    parameters.push(param);
-                }
+                // Use AST-based extraction for struct fields
+                let type_annotation = self.extract_type_from_struct_literal(&arg_node.text());
+                let fields = self.extract_struct_fields_from_ast(arg_node);
+
+                // Store as struct literal with proper field extraction
+                parameters.push(Parameter::Positional {
+                    value: ParameterValue::Unresolved(arg_text),
+                    position,
+                    type_annotation,
+                    struct_fields: Some(fields.clone()),
+                });
+
+                log::debug!(
+                    "Extracted {} struct fields from composite literal",
+                    fields.len()
+                );
             }
             // Otherwise, it's a general expression
             else {
@@ -206,7 +249,137 @@ rule:
             }
         }
 
+        log::debug!("Extracted {} parameters", parameters.len());
         parameters
+    }
+
+    /// Extract type name from struct literal text
+    fn extract_type_from_struct_literal(&self, text: &str) -> Option<String> {
+        let trimmed = text.trim();
+        if trimmed.starts_with('&') {
+            if let Some(brace_pos) = trimmed.find('{') {
+                let type_part = trimmed[1..brace_pos].trim();
+                return Some(type_part.to_string());
+            }
+        }
+        None
+    }
+
+    /// Extract top-level struct fields from AST node
+    fn extract_struct_fields_from_ast(
+        &self,
+        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> Vec<String> {
+        let field_names = Vec::new();
+
+        log::debug!(
+            "Extracting struct fields from AST node: kind={}",
+            node.kind()
+        );
+        log::debug!(
+            "Node text (first 100 chars): {:?}",
+            &node.text().chars().take(100).collect::<String>()
+        );
+
+        // Check if this node is directly a composite_literal
+        if node.kind() == node_kinds::COMPOSITE_LITERAL {
+            log::debug!("Node is directly a composite_literal");
+            return self.extract_fields_from_composite_literal(node);
+        }
+
+        // Check immediate children for unary_expression (for &Type{...} pattern)
+        for child in node.children() {
+            log::debug!("Checking child node: kind={}", child.kind());
+            if child.kind() == node_kinds::UNARY_EXPRESSION {
+                // Check the unary_expression's children for composite_literal
+                for unary_child in child.children() {
+                    log::debug!("Checking unary child: kind={}", unary_child.kind());
+                    if unary_child.kind() == node_kinds::COMPOSITE_LITERAL {
+                        log::debug!("Found composite_literal under unary_expression");
+                        return self.extract_fields_from_composite_literal(&unary_child);
+                    }
+                }
+            } else if child.kind() == node_kinds::COMPOSITE_LITERAL {
+                log::debug!("Found composite_literal as direct child");
+                return self.extract_fields_from_composite_literal(&child);
+            }
+        }
+
+        log::debug!("No composite_literal found");
+        field_names
+    }
+
+    /// Extract field names from a composite_literal node
+    ///
+    /// A `composite_literal` is a tree-sitter AST node type representing Go's composite literal syntax.
+    /// In Go, composite literals construct values for structs, arrays, slices, and maps.
+    ///
+    /// For our purposes, we focus on struct literals with named fields.
+    ///
+    /// # References
+    ///
+    /// - Go Language Spec: <https://go.dev/ref/spec#Composite_literals>
+    /// - Tree-sitter Go Grammar: <https://github.com/tree-sitter/tree-sitter-go/blob/master/grammar.js>
+    ///   (search for `composite_literal` to see the grammar definition)
+    ///
+    /// # Examples of composite_literals
+    ///
+    /// ```go
+    /// // Struct literal (what we extract from)
+    /// &s3.GetObjectInput{
+    ///     Bucket: aws.String("my-bucket"),  // Field: "Bucket"
+    ///     Key:    aws.String("my-key"),     // Field: "Key"
+    /// }
+    ///
+    /// // Array literal (not extracted)
+    /// []string{"a", "b", "c"}
+    ///
+    /// // Map literal (not extracted - we only get top-level fields)
+    /// map[string]string{
+    ///     "key1": "value1",
+    ///     "key2": "value2",
+    /// }
+    /// ```
+    ///
+    /// This function extracts only the top-level field names from struct literals,
+    /// not nested structures or map keys.
+    fn extract_fields_from_composite_literal(
+        &self,
+        composite_literal: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>,
+    ) -> Vec<String> {
+        let mut field_names = Vec::new();
+
+        log::debug!("Extracting fields from composite_literal, looking for literal_value...");
+
+        // Find the literal_value child which contains the fields.
+        // A composite_literal has exactly one literal_value child in the AST.
+        let literal_value = composite_literal
+            .children()
+            .find(|child| child.kind() == node_kinds::LITERAL_VALUE);
+
+        if let Some(literal_value) = literal_value {
+            log::debug!("Found literal_value, extracting keyed_elements...");
+            // Extract field names from keyed_element nodes
+            for element in literal_value.children() {
+                log::debug!("Literal_value child: kind={}", element.kind());
+                if element.kind() == node_kinds::KEYED_ELEMENT {
+                    // Get the first child, which is the field name (literal_element)
+                    if let Some(field_name_node) = element.children().next() {
+                        log::debug!(
+                            "Keyed_element first child: kind={}, text={:?}",
+                            field_name_node.kind(),
+                            field_name_node.text()
+                        );
+                        if field_name_node.kind() == node_kinds::LITERAL_ELEMENT {
+                            field_names.push(field_name_node.text().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        log::debug!("Field names extracted from AST: {:?}", field_names);
+        field_names
     }
 
     /// Check if a node represents a context parameter
@@ -226,48 +399,6 @@ rule:
         let text = node.text();
         let trimmed = text.trim();
         trimmed.starts_with('&') && trimmed.contains('{') && trimmed.ends_with('}')
-    }
-
-    /// Parse a struct literal node
-    fn parse_struct_literal(
-        &self,
-        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Go>>,
-        position: usize,
-    ) -> Option<Parameter> {
-        let text = node.text();
-
-        // Extract type name from &TypeName{...}
-        let type_start = if text.starts_with('&') { 1 } else { 0 };
-        let brace_pos = text.find('{')?;
-        let type_name = text[type_start..brace_pos].trim().to_string();
-
-        // Extract fields from the struct literal
-        let fields_text = &text[brace_pos + 1..text.len() - 1];
-        let fields = self.parse_struct_fields(fields_text);
-
-        Some(Parameter::struct_literal(type_name, fields, position))
-    }
-
-    /// Parse struct fields from the content between braces
-    fn parse_struct_fields(&self, fields_text: &str) -> Vec<StructField> {
-        let mut fields = Vec::new();
-
-        // Simple parsing - split by commas and extract field: value pairs
-        // This is a basic implementation; a more robust version would use proper AST parsing
-        for field_part in fields_text.split(',') {
-            let field_part = field_part.trim();
-            if field_part.is_empty() {
-                continue;
-            }
-
-            if let Some(colon_pos) = field_part.find(':') {
-                let name = field_part[..colon_pos].trim().to_string();
-                let value = field_part[colon_pos + 1..].trim().to_string();
-                fields.push(StructField { name, value });
-            }
-        }
-
-        fields
     }
 }
 
@@ -404,6 +535,7 @@ impl Parameter {
             value: ParameterValue::Unresolved(expression),
             position,
             type_annotation: Some("context.Context".to_string()),
+            struct_fields: None,
         }
     }
 
@@ -423,7 +555,8 @@ impl Parameter {
         Parameter::Positional {
             value: ParameterValue::Unresolved(format!("&{}{{ {} }}", type_name, fields_str)),
             position,
-            type_annotation: Some(format!("*{}", type_name)),
+            type_annotation: Some(type_name),
+            struct_fields: Some(fields.iter().map(|f| f.name.clone()).collect()),
         }
     }
 
@@ -433,6 +566,7 @@ impl Parameter {
             value: ParameterValue::Unresolved(value),
             position,
             type_annotation: None,
+            struct_fields: None,
         }
     }
 }
@@ -847,19 +981,6 @@ func main() {
         );
     }
 
-    #[test]
-    fn test_struct_field_parsing() {
-        let extractor = GoExtractor::new();
-        let fields_text = r#"Bucket: aws.String("my-bucket"), MaxKeys: aws.Int32(10)"#;
-        let fields = extractor.parse_struct_fields(fields_text);
-
-        assert_eq!(fields.len(), 2);
-        assert_eq!(fields[0].name, "Bucket");
-        assert_eq!(fields[0].value, r#"aws.String("my-bucket")"#);
-        assert_eq!(fields[1].name, "MaxKeys");
-        assert_eq!(fields[1].value, "aws.Int32(10)");
-    }
-
     #[tokio::test]
     async fn test_import_extraction_and_filtering() {
         use crate::extraction::sdk_model::{
@@ -1212,5 +1333,415 @@ func main() {
         );
 
         println!("✅ CloudWatch Logs service name mismatch test passed - method calls preserved when Go import name doesn't match AWS service name");
+    }
+
+    #[tokio::test]
+    async fn test_multiline_struct_literal_argument_extraction() {
+        let extractor = GoExtractor::new();
+
+        // Test code with multi-line struct literal
+        let test_code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/aws"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+type BucketBasics struct {
+    S3Client *s3.Client
+}
+
+func (basics BucketBasics) DownloadFile(ctx context.Context, bucketName string, objectKey string, fileName string) error {
+    result, err := basics.S3Client.GetObject(ctx, &s3.GetObjectInput{
+        Bucket: aws.String(bucketName),
+        Key:    aws.String(objectKey),
+    })
+    if err != nil {
+        return err
+    }
+    return nil
+}
+        "#;
+
+        let result = extractor.parse(test_code).await;
+        let method_calls = result.method_calls_ref();
+
+        println!(
+            "Multi-line struct literal test - Found {} method calls:",
+            method_calls.len()
+        );
+        for call in method_calls {
+            println!(
+                "  - {} (receiver: {:?})",
+                call.name,
+                call.metadata.as_ref().and_then(|m| m.receiver.as_ref())
+            );
+            if let Some(metadata) = &call.metadata {
+                println!("    Parameters: {} params", metadata.parameters.len());
+                for (i, param) in metadata.parameters.iter().enumerate() {
+                    match param {
+                        Parameter::Positional {
+                            value,
+                            type_annotation,
+                            ..
+                        } => {
+                            println!(
+                                "      [{}] value: {:?}, type: {:?}",
+                                i,
+                                value.as_string(),
+                                type_annotation
+                            );
+                        }
+                        _ => println!("      [{}] {:?}", i, param),
+                    }
+                }
+            }
+        }
+
+        // Find the GetObject call
+        let get_object_calls: Vec<_> = method_calls
+            .iter()
+            .filter(|call| call.name == "GetObject")
+            .collect();
+
+        assert_eq!(
+            get_object_calls.len(),
+            1,
+            "Should find exactly 1 GetObject call"
+        );
+
+        let get_object_call = get_object_calls[0];
+        assert_eq!(
+            get_object_call
+                .metadata
+                .as_ref()
+                .unwrap()
+                .receiver
+                .as_ref()
+                .unwrap(),
+            "basics.S3Client"
+        );
+
+        // Verify we extracted the parameters
+        let params = &get_object_call.metadata.as_ref().unwrap().parameters;
+
+        // Should have at least 2 parameters: ctx and the struct literal
+        assert!(
+            params.len() >= 2,
+            "Should have at least 2 parameters (ctx and struct literal)"
+        );
+
+        // First parameter should be context
+        match &params[0] {
+            Parameter::Positional { value, .. } => {
+                let value_str = value.as_string();
+                assert!(
+                    value_str == "ctx" || value_str.contains("context"),
+                    "First parameter should be context, got: {}",
+                    value_str
+                );
+            }
+            _ => panic!("Expected positional parameter for context"),
+        }
+
+        // Second parameter should be the struct literal with Bucket and Key fields
+        match &params[1] {
+            Parameter::Positional { value, .. } => {
+                let value_str = value.as_string();
+                println!("Struct literal parameter: {}", value_str);
+
+                // Verify it's a struct literal
+                assert!(
+                    value_str.contains("GetObjectInput"),
+                    "Should contain GetObjectInput type"
+                );
+                assert!(value_str.contains("Bucket"), "Should contain Bucket field");
+                assert!(value_str.contains("Key"), "Should contain Key field");
+                assert!(
+                    value_str.contains("aws.String"),
+                    "Should contain aws.String calls"
+                );
+            }
+            _ => panic!("Expected positional parameter for struct literal"),
+        }
+
+        println!("✅ Multi-line struct literal argument extraction test passed!");
+    }
+}
+#[cfg(test)]
+mod test_struct_fields {
+    use crate::extraction::extractor::Extractor;
+    use crate::extraction::go::extractor::GoExtractor;
+    use crate::extraction::Parameter;
+
+    /// Test extraction of struct literals with multiple fields
+    #[tokio::test]
+    async fn test_extraction_multiple_fields() {
+        let extractor = GoExtractor::new();
+
+        let code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+    "github.com/aws/aws-sdk-go-v2/aws"
+)
+
+func test() {
+    client := s3.NewFromConfig(cfg)
+    result, _ := client.GetObject(context.TODO(), &s3.GetObjectInput{
+        Bucket: aws.String("my-bucket"),
+        Key:    aws.String("my-key"),
+    })
+}
+"#;
+
+        let result = extractor.parse(code).await;
+        let method_calls = result.method_calls_ref();
+
+        let call = method_calls
+            .iter()
+            .find(|c| c.name == "GetObject")
+            .expect("Should find GetObject call");
+
+        let metadata = call.metadata.as_ref().expect("Should have metadata");
+        assert_eq!(metadata.parameters.len(), 2);
+
+        // Check context parameter
+        if let Parameter::Positional {
+            struct_fields,
+            type_annotation,
+            ..
+        } = &metadata.parameters[0]
+        {
+            assert_eq!(type_annotation.as_deref(), Some("context.Context"));
+            assert!(
+                struct_fields.is_none(),
+                "Context should not have struct_fields"
+            );
+        } else {
+            panic!("Expected Positional parameter for context");
+        }
+
+        // Check struct literal parameter
+        if let Parameter::Positional {
+            struct_fields,
+            type_annotation,
+            ..
+        } = &metadata.parameters[1]
+        {
+            assert_eq!(type_annotation.as_deref(), Some("s3.GetObjectInput"));
+            assert!(
+                struct_fields.is_some(),
+                "struct_fields should be Some for struct literal"
+            );
+            let fields = struct_fields.as_ref().unwrap();
+            assert_eq!(fields.len(), 2);
+            assert!(fields.contains(&"Bucket".to_string()));
+            assert!(fields.contains(&"Key".to_string()));
+        } else {
+            panic!("Expected Positional parameter for struct literal");
+        }
+    }
+
+    /// Test that variable references don't extract struct fields
+    #[tokio::test]
+    async fn test_extraction_variable_parameter() {
+        let extractor = GoExtractor::new();
+
+        let code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/service/s3"
+)
+
+func test() {
+    client := s3.NewFromConfig(cfg)
+    getObjectInput := &s3.GetObjectInput{
+        Bucket: aws.String("my-bucket"),
+        Key:    aws.String("my-key"),
+    }
+    result, _ := client.GetObject(context.TODO(), getObjectInput)
+}
+"#;
+
+        let result = extractor.parse(code).await;
+        let method_calls = result.method_calls_ref();
+
+        let call = method_calls
+            .iter()
+            .find(|c| c.name == "GetObject")
+            .expect("Should find GetObject call");
+
+        let metadata = call.metadata.as_ref().expect("Should have metadata");
+
+        // Check variable parameter - should NOT extract fields
+        if let Parameter::Positional {
+            struct_fields,
+            value,
+            ..
+        } = &metadata.parameters[1]
+        {
+            assert_eq!(value.as_string(), "getObjectInput");
+            assert!(
+                struct_fields.is_none(),
+                "struct_fields should be None for variable reference"
+            );
+        } else {
+            panic!("Expected Positional parameter");
+        }
+    }
+
+    /// Test that nested maps only extract top-level fields (critical for SQS CreateQueue case)
+    #[tokio::test]
+    async fn test_extraction_nested_map_only_top_level() {
+        let extractor = GoExtractor::new();
+
+        let code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/service/sqs"
+    "github.com/aws/aws-sdk-go-v2/aws"
+)
+
+func test() {
+    client := sqs.NewFromConfig(cfg)
+    result, _ := client.CreateQueue(context.TODO(), &sqs.CreateQueueInput{
+        QueueName: aws.String("my-queue"),
+        Attributes: map[string]string{
+            "VisibilityTimeout": "60",
+            "MessageRetentionPeriod": "345600",
+        },
+    })
+}
+"#;
+
+        let result = extractor.parse(code).await;
+        let method_calls = result.method_calls_ref();
+
+        let call = method_calls
+            .iter()
+            .find(|c| c.name == "CreateQueue")
+            .expect("Should find CreateQueue call");
+
+        let metadata = call.metadata.as_ref().expect("Should have metadata");
+
+        // Check struct literal parameter
+        if let Parameter::Positional { struct_fields, .. } = &metadata.parameters[1] {
+            assert!(struct_fields.is_some());
+            let fields = struct_fields.as_ref().unwrap();
+
+            // Should only extract top-level fields
+            assert_eq!(fields.len(), 2);
+            assert!(fields.contains(&"QueueName".to_string()));
+            assert!(fields.contains(&"Attributes".to_string()));
+
+            // Should NOT contain nested map keys
+            assert!(!fields.contains(&"VisibilityTimeout".to_string()));
+            assert!(!fields.contains(&"MessageRetentionPeriod".to_string()));
+        } else {
+            panic!("Expected Positional parameter");
+        }
+    }
+
+    /// Test that JSON strings in payloads are not parsed as struct fields
+    #[tokio::test]
+    async fn test_extraction_json_payload_not_parsed() {
+        let extractor = GoExtractor::new();
+
+        let code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/service/lambda"
+    "github.com/aws/aws-sdk-go-v2/aws"
+)
+
+func test() {
+    client := lambda.NewFromConfig(cfg)
+    result, _ := client.Invoke(context.TODO(), &lambda.InvokeInput{
+        FunctionName: aws.String("my-function"),
+        Payload:      []byte(`{"action": "process", "data": {"id": 123}}`),
+    })
+}
+"#;
+
+        let result = extractor.parse(code).await;
+        let method_calls = result.method_calls_ref();
+
+        let call = method_calls
+            .iter()
+            .find(|c| c.name == "Invoke")
+            .expect("Should find Invoke call");
+
+        let metadata = call.metadata.as_ref().expect("Should have metadata");
+
+        // Check struct literal parameter
+        if let Parameter::Positional { struct_fields, .. } = &metadata.parameters[1] {
+            assert!(struct_fields.is_some());
+            let fields = struct_fields.as_ref().unwrap();
+
+            // Should only extract Go struct fields, not JSON keys
+            assert_eq!(fields.len(), 2);
+            assert!(fields.contains(&"FunctionName".to_string()));
+            assert!(fields.contains(&"Payload".to_string()));
+
+            // Should NOT extract JSON keys from the string literal
+            assert!(!fields.contains(&"action".to_string()));
+            assert!(!fields.contains(&"data".to_string()));
+            assert!(!fields.contains(&"id".to_string()));
+        } else {
+            panic!("Expected Positional parameter");
+        }
+    }
+
+    /// Test that empty struct literals result in empty field list
+    #[tokio::test]
+    async fn test_extraction_empty_struct() {
+        let extractor = GoExtractor::new();
+
+        let code = r#"
+package main
+
+import (
+    "context"
+    "github.com/aws/aws-sdk-go-v2/service/sts"
+)
+
+func test() {
+    client := sts.NewFromConfig(cfg)
+    result, _ := client.GetCallerIdentity(context.TODO(), &sts.GetCallerIdentityInput{})
+}
+"#;
+
+        let result = extractor.parse(code).await;
+        let method_calls = result.method_calls_ref();
+
+        let call = method_calls
+            .iter()
+            .find(|c| c.name == "GetCallerIdentity")
+            .expect("Should find GetCallerIdentity call");
+
+        let metadata = call.metadata.as_ref().expect("Should have metadata");
+
+        // Check struct literal parameter
+        if let Parameter::Positional { struct_fields, .. } = &metadata.parameters[1] {
+            assert!(
+                struct_fields.is_some(),
+                "struct_fields should be Some even for empty struct"
+            );
+            let fields = struct_fields.as_ref().unwrap();
+            assert_eq!(fields.len(), 0, "Should have 0 fields for empty struct");
+        } else {
+            panic!("Expected Positional parameter");
+        }
     }
 }
