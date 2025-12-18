@@ -8,7 +8,6 @@ use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
 use ast_grep_language::Python;
-use convert_case::{Case, Casing};
 
 /// Information about a discovered get_waiter call
 #[derive(Debug, Clone)]
@@ -23,10 +22,21 @@ pub(crate) struct WaiterInfo {
     pub get_waiter_line: usize,
 }
 
+// TODO: This should be refactored at a higher level, so this type can be removed.
+// See https://github.com/awslabs/iam-policy-autopilot/issues/88.
 enum CallInfo<'a> {
     None(&'a WaiterInfo),
     Simple(&'a WaiterInfo, &'a WaitCallInfo),
     Chained(&'a ChainedWaiterCallInfo),
+}
+
+impl<'a> CallInfo<'a> {
+    fn waiter_name(&self) -> &'a str {
+        match self {
+            Self::None(waiter_info) | Self::Simple(waiter_info, ..) => &waiter_info.waiter_name,
+            Self::Chained(waiter_call_info) => &waiter_call_info.waiter_name,
+        }
+    }
 }
 
 /// Information about a wait method call
@@ -327,22 +337,15 @@ impl<'a> WaitersExtractor<'a> {
         wait_call: CallInfo,
         receiver: Option<String>,
     ) -> Vec<SdkMethodCall> {
-        let waiter_name = match wait_call {
-            CallInfo::None(waiter_info) => &waiter_info.waiter_name,
-            CallInfo::Simple(waiter_info, _) => &waiter_info.waiter_name,
-            CallInfo::Chained(waiter_call) => &waiter_call.waiter_name,
-        };
-
-        // Convert Python snake_case waiter name to PascalCase for lookup
-        let waiter_name_pascal = waiter_name.to_case(Case::Pascal);
         let mut synthetic_calls = Vec::new();
 
         // Get the operation for this service+waiter combination from service definition
-        if let Some(service_defs) = self.service_index.waiter_lookup.get(&waiter_name_pascal) {
+        if let Some(service_defs) = self
+            .service_index
+            .waiter_lookup
+            .get(wait_call.waiter_name())
+        {
             for service_method in service_defs {
-                // Convert operation name to Python snake_case for method name
-                let operation_snake = service_method.operation_name.to_case(Case::Snake);
-
                 let (parameters, start_position, end_position) = match wait_call {
                     CallInfo::Simple(_, wait_call) => {
                         // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
@@ -352,13 +355,15 @@ impl<'a> WaitersExtractor<'a> {
                             wait_call.end_position,
                         )
                     }
-                    CallInfo::Chained(wait_call) => {
+                    CallInfo::Chained(chained_wait_call) => {
                         // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
                         (
-                            ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone()),
+                            ParameterFilter::filter_waiter_parameters(
+                                chained_wait_call.arguments.clone(),
+                            ),
                             // Use wait call position (most specific)
-                            wait_call.start_position,
-                            wait_call.end_position,
+                            chained_wait_call.start_position,
+                            chained_wait_call.end_position,
                         )
                     }
                     CallInfo::None(waiter_info) => {
@@ -366,7 +371,7 @@ impl<'a> WaitersExtractor<'a> {
                         let fallback_end_pos = (waiter_info.get_waiter_line, 1);
                         let parameters = self.get_required_parameters(
                             &service_method.service_name,
-                            &operation_snake,
+                            &service_method.operation_name,
                             self.service_index,
                         );
                         (parameters, fallback_start_pos, fallback_end_pos)
@@ -375,7 +380,7 @@ impl<'a> WaitersExtractor<'a> {
 
                 // Create synthetic call with filtered wait() arguments
                 synthetic_calls.push(SdkMethodCall {
-                    name: operation_snake,
+                    name: wait_call.waiter_name().to_string(),
                     possible_services: vec![service_method.service_name.clone()],
                     metadata: Some(SdkMethodCallMetadata {
                         parameters,
@@ -434,10 +439,7 @@ impl<'a> WaitersExtractor<'a> {
 
         // Look up the service and operation in the service index
         if let Some(service_def) = service_index.services.get(service_name) {
-            // Convert snake_case operation name to PascalCase for lookup
-            let operation_name_pascal = operation_name.to_case(Case::Pascal);
-
-            if let Some(operation) = service_def.operations.get(&operation_name_pascal) {
+            if let Some(operation) = service_def.operations.get(operation_name) {
                 // Get the input shape if it exists
                 if let Some(input_ref) = &operation.input {
                     if let Some(input_shape) = service_def.shapes.get(&input_ref.shape) {
@@ -522,7 +524,7 @@ mod tests {
         );
 
         waiter_lookup.insert(
-            "InstanceTerminated".to_string(),
+            "instance_terminated".to_string(),
             vec![ServiceMethodRef {
                 service_name: "ec2".to_string(),
                 operation_name: "InstanceTerminated".to_string(),
@@ -578,7 +580,7 @@ mod tests {
         // Add TableExists waiter for DynamoDB
         dynamodb_waiters.insert("TableExists".to_string(), describe_tables_op);
         waiter_lookup.insert(
-            "TableExists".to_string(),
+            "table_exists".to_string(),
             vec![ServiceMethodRef {
                 service_name: "dynamodb".to_string(),
                 operation_name: "TableExists".to_string(),
