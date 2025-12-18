@@ -31,5 +31,14 @@ LL |     if node.kind() == "some_new_node_type" {
    |
    = help: define and use a constant like `const SOME_NEW_NODE_TYPE: &str = "some_new_node_type";` in a node_kinds module
 
-error: aborting due to 4 previous errors
+error: calling `to_case` with `Case::Pascal`
+  --> $DIR/main.rs:101:20
+   |
+LL |     let _result1 = text.to_case(convert_case::Case::Pascal);
+   |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: if you are converting a method name to an operation name, using PascalCase conversion is not what you want: Use ServiceModelIndex::method_lookup instead.
+   = note: `#[deny(convert_case_pascal)]` on by default
+
+error: aborting due to 5 previous errors
 
