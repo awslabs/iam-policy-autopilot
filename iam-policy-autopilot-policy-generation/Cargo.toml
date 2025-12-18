@@ -42,6 +42,7 @@ serde_json.workspace = true
 
 [features]
 default = []
+integ-test = []
 # Development features
 dev = ["tokio/test-util"]
 
@@ -54,6 +55,7 @@ proptest.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"
+iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]}
 
 # Documentation configuration
 [package.metadata.docs.rs]

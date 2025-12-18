@@ -1,4 +1,0 @@
-# Cargo configuration for the workspace
-
-[env]
-IAM_POLICY_AUTOPILOT_INTEGRATION_TEST = "1"

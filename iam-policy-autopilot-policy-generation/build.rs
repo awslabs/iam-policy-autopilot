@@ -52,7 +52,6 @@ struct ShapeReference {
 fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
-    println!("cargo:rerun-if-env-changed=IAM_POLICY_AUTOPILOT_INTEGRATION_TEST");
 
     let out_dir = env::var("OUT_DIR").unwrap();
     let simplified_dir = Path::new(&out_dir).join("botocore-data-simplified");

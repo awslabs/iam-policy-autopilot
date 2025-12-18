@@ -385,11 +385,7 @@ impl RemoteServiceReferenceLoader {
     }
 
     fn create_client() -> crate::errors::Result<Client> {
-        let user_agent_suffix = if std::env::var("IAM_POLICY_AUTOPILOT_INTEGRATION_TEST").is_ok() {
-                "-integration-test"
-        } else {
-            ""
-        };
+        let user_agent_suffix = if cfg!(feature = "integ-test") { "-integration-test" } else { "" };
 
         let user_agent = format!("{}{}/{}", IAM_POLICY_AUTOPILOT, user_agent_suffix, env!("CARGO_PKG_VERSION"));
         Client::builder()
