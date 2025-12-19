@@ -438,13 +438,10 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
     })
     .await?;
 
-    let policies = result.policies;
-    let explanations = result.explanations;
-
     if config.individual_policies {
         // Output individual policies
-        trace!("Outputting {} individual policies", policies.len());
-        output::output_iam_policies(policies, explanations, None, config.shared.pretty)
+        trace!("Outputting {} individual policies", result.policies.len());
+        output::output_iam_policies(result, None, config.shared.pretty)
             .context("Failed to output individual IAM policies")?;
     } else {
         // Default behavior: output merged policy with optional upload
@@ -457,7 +454,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
 
             let custom_name = config.upload_policies.as_deref().filter(|s| !s.is_empty());
             let batch_response = uploader
-                .upload_policies(&policies, custom_name)
+                .upload_policies(&result.policies, custom_name)
                 .await
                 .context("Failed to upload policies to AWS IAM")?;
 
@@ -483,7 +480,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             None
         };
 
-        output::output_iam_policies(policies, explanations, upload_result, config.shared.pretty)
+        output::output_iam_policies(result, upload_result, config.shared.pretty)
             .context("Failed to output merged IAM policy")?
     }
 

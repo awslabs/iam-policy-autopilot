@@ -42,6 +42,21 @@ impl std::hash::Hash for OperationWithFasExpansion {
     }
 }
 
+impl OperationWithFasExpansion {
+    // Build the FasInfo, which we eventually output, from the operation.
+    // None if there is no FAS expansion
+    fn to_fas_info(&self, service_cfg: &ServiceConfiguration) -> Option<FasInfo> {
+        if self.fas_chain.is_empty() {
+            None
+        } else {
+            // Build full chain: fas_chain + current operation
+            let mut chain = self.fas_chain.clone();
+            chain.push(self.operation.service_operation_name(service_cfg));
+            Some(FasInfo::new(chain))
+        }
+    }
+}
+
 /// ResourceMatcher coordinates OperationAction maps and Service Reference data to generate enriched method calls
 ///
 /// This struct provides the core functionality for the 3-stage enrichment pipeline,
@@ -127,14 +142,14 @@ impl ResourceMatcher {
         &self,
         initial: FasOperation,
     ) -> Result<Vec<OperationWithFasExpansion>> {
-        let mut operations = HashSet::<OperationWithFasExpansion>::new();
+        let mut processed_operations = HashSet::<OperationWithFasExpansion>::new();
 
         // Initial operation has empty FAS chain
         let initial = OperationWithFasExpansion {
             operation: initial.clone(),
             fas_chain: vec![],
         };
-        operations.insert(initial.clone());
+        processed_operations.insert(initial.clone());
 
         let mut to_process = vec![initial];
 
@@ -144,10 +159,7 @@ impl ResourceMatcher {
             // Process all operations in the current batch
             for current in &to_process {
                 let service_name = current.operation.service(&self.service_cfg);
-                let operation_fas_map_option =
-                    self.find_operation_fas_map_for_service(&service_name);
-
-                match operation_fas_map_option {
+                match self.find_operation_fas_map_for_service(&service_name) {
                     Some(operation_fas_map) => {
                         let service_operation_name =
                             current.operation.service_operation_name(&self.service_cfg);
@@ -158,21 +170,21 @@ impl ResourceMatcher {
                             .get(&service_operation_name)
                         {
                             for additional_op in additional_operations {
-                                // Build new FAS hain: current chain + current operation
+                                // Build new FAS chain: current chain + current operation
                                 let mut new_chain = current.fas_chain.clone();
                                 new_chain.push(
                                     current.operation.service_operation_name(&self.service_cfg),
                                 );
 
-                                let new_op_with_prov = OperationWithFasExpansion {
+                                let new_op = OperationWithFasExpansion {
                                     operation: additional_op.clone(),
                                     fas_chain: new_chain,
                                 };
 
                                 // Only add if we haven't seen this operation before
-                                if !operations.contains(&new_op_with_prov) {
-                                    operations.insert(new_op_with_prov.clone());
-                                    newly_discovered.push(new_op_with_prov);
+                                if !processed_operations.contains(&new_op) {
+                                    processed_operations.insert(new_op.clone());
+                                    newly_discovered.push(new_op);
                                 }
                             }
                         } else {
@@ -198,11 +210,12 @@ impl ResourceMatcher {
 
         log::debug!(
             "FAS expansion completed with {} total operations",
-            operations.len()
+            processed_operations.len()
         );
 
         // Convert HashSet to Vec and sort by service_operation_name for deterministic output
-        let mut operations_vec: Vec<OperationWithFasExpansion> = operations.into_iter().collect();
+        let mut operations_vec: Vec<OperationWithFasExpansion> =
+            processed_operations.into_iter().collect();
         operations_vec.sort_by_key(|op| op.operation.service_operation_name(&self.service_cfg));
 
         Ok(operations_vec)
@@ -271,11 +284,10 @@ impl ResourceMatcher {
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
         let operations = self.expand_fas_operations_to_fixed_point(initial)?;
 
-        let mut explanations = vec![];
         let mut enriched_actions = vec![];
 
-        for op_with_fas_chain in operations {
-            let service_name = op_with_fas_chain.operation.service(&self.service_cfg);
+        for op in operations {
+            let service_name = op.operation.service(&self.service_cfg);
             // Find the corresponding SDF using the cache
             let service_reference = service_reference_loader.load(&service_name).await?;
 
@@ -284,25 +296,20 @@ impl ResourceMatcher {
                     continue;
                 }
                 Some(service_reference) => {
-                    log::debug!("Creating actions for {:?}", op_with_fas_chain.operation);
-                    log::debug!("  with context {:?}", op_with_fas_chain.operation.context);
-                    log::debug!("  FAS chain: {:?}", op_with_fas_chain.fas_chain);
+                    log::debug!("Creating actions for {:?}", op.operation);
+                    log::debug!("  with context {:?}", op.operation.context);
+                    log::debug!("  FAS chain: {:?}", op.fas_chain);
 
                     if let Some(operation_to_authorized_actions) =
                         &service_reference.operation_to_authorized_actions
                     {
                         log::debug!(
                             "Looking up {}",
-                            &op_with_fas_chain
-                                .operation
-                                .service_operation_name(&self.service_cfg)
+                            &op.operation.service_operation_name(&self.service_cfg)
                         );
                         if let Some(operation_to_authorized_action) =
-                            operation_to_authorized_actions.get(
-                                &op_with_fas_chain
-                                    .operation
-                                    .service_operation_name(&self.service_cfg),
-                            )
+                            operation_to_authorized_actions
+                                .get(&op.operation.service_operation_name(&self.service_cfg))
                         {
                             for action in &operation_to_authorized_action.authorized_actions {
                                 let enriched_resources = self
@@ -318,8 +325,7 @@ impl ResourceMatcher {
                                     };
 
                                 // Combine conditions from FAS operation context and AuthorizedAction context
-                                let mut conditions =
-                                    Self::make_condition(&op_with_fas_chain.operation.context);
+                                let mut conditions = Self::make_condition(&op.operation.context);
 
                                 // Add conditions from AuthorizedAction context if present
                                 if let Some(auth_context) = &action.context {
@@ -328,93 +334,46 @@ impl ResourceMatcher {
                                     )));
                                 }
 
+                                // Create explanation for this action
+                                let explanation = Explanation {
+                                    reasons: vec![Reason {
+                                        operation: OperationView::from_call(
+                                            parsed_call,
+                                            original_service_name,
+                                        ),
+                                        fas: op.to_fas_info(&self.service_cfg),
+                                    }],
+                                };
                                 let enriched_action = Action::new(
                                     action.name.clone(),
                                     enriched_resources,
                                     conditions,
+                                    explanation,
                                 );
 
                                 enriched_actions.push(enriched_action);
-
-                                // Include FAS chain only if chain is non-empty
-                                let fas_info = if op_with_fas_chain.fas_chain.is_empty() {
-                                    log::debug!(
-                                        "  Action '{}': Excluding FAS chain (initial operation)",
-                                        action.name
-                                    );
-                                    None
-                                } else {
-                                    // Build full chain: fas_chain + current operation
-                                    let mut chain = op_with_fas_chain.fas_chain.clone();
-                                    chain.push(
-                                        op_with_fas_chain
-                                            .operation
-                                            .service_operation_name(&self.service_cfg),
-                                    );
-                                    log::debug!(
-                                        "  Action '{}': Including FAS chain: {:?}",
-                                        action.name,
-                                        chain
-                                    );
-                                    Some(FasInfo::new(chain))
-                                };
-
-                                // Create explanation for this action
-                                let explanation = Explanation {
-                                    action: action.name.clone(),
-                                    reasons: vec![Reason {
-                                        operation: OperationView::from_call(
-                                            parsed_call,
-                                            original_service_name,
-                                        ),
-                                        fas: fas_info,
-                                    }],
-                                };
-                                explanations.push(explanation);
                             }
                         } else {
                             // Fallback: operation not found in operation action map, create basic action
                             // This ensures we don't filter out operations, only ADD additional ones from the map
-                            if let Some(a) =
-                                self.create_fallback_action(&parsed_call.name, &service_reference)?
-                            {
-                                let action_name = a.name.clone();
+                            if let Some(a) = self.create_fallback_action(
+                                &parsed_call.name,
+                                &service_reference,
+                                parsed_call,
+                                original_service_name,
+                            )? {
                                 enriched_actions.push(a);
-
-                                // Create explanation for fallback action
-                                let explanation = Explanation {
-                                    action: action_name,
-                                    reasons: vec![Reason {
-                                        operation: OperationView::from_call(
-                                            parsed_call,
-                                            original_service_name,
-                                        ),
-                                        fas: None,
-                                    }],
-                                };
-                                explanations.push(explanation);
                             }
                         }
                     } else {
                         // Fallback: operation action map does not exist, create basic action
-                        if let Some(a) =
-                            self.create_fallback_action(&parsed_call.name, &service_reference)?
-                        {
-                            let action_name = a.name.clone();
+                        if let Some(a) = self.create_fallback_action(
+                            &parsed_call.name,
+                            &service_reference,
+                            parsed_call,
+                            original_service_name,
+                        )? {
                             enriched_actions.push(a);
-
-                            // Create explanation for fallback action
-                            let explanation = Explanation {
-                                action: action_name,
-                                reasons: vec![Reason {
-                                    operation: OperationView::from_call(
-                                        parsed_call,
-                                        original_service_name,
-                                    ),
-                                    fas: None,
-                                }],
-                            };
-                            explanations.push(explanation);
                         }
                     }
                 }
@@ -430,7 +389,6 @@ impl ResourceMatcher {
             service: original_service_name.to_string(),
             actions: enriched_actions,
             sdk_method_call: parsed_call,
-            explanations,
         }))
     }
 
@@ -442,6 +400,8 @@ impl ResourceMatcher {
         &self,
         method_name: &str,
         service_reference: &ServiceReference,
+        parsed_call: &SdkMethodCall,
+        original_service_name: &str,
     ) -> Result<Option<Action>> {
         let renamed_service = self
             .service_cfg
@@ -461,10 +421,19 @@ impl ResourceMatcher {
         let resources =
             self.find_resources_for_action_in_service_reference(&action_name, service_reference)?;
 
+        // Create explanation for fallback action
+        let explanation = Explanation {
+            reasons: vec![Reason {
+                operation: OperationView::from_call(parsed_call, original_service_name),
+                fas: None,
+            }],
+        };
+
         Ok(Some(Action::new(
             action_name.to_string(),
             resources,
             vec![],
+            explanation,
         )))
     }
 

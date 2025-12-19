@@ -8,7 +8,7 @@ mod tests {
     use super::super::{Effect, Engine};
     use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::errors::ExtractorError;
-    use crate::SdkMethodCall;
+    use crate::{Explanation, SdkMethodCall};
 
     fn create_test_sdk_call() -> SdkMethodCall {
         SdkMethodCall {
@@ -38,6 +38,7 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 ),
                 Action::new(
                     "s3:GetObjectVersion".to_string(),
@@ -48,10 +49,10 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 ),
             ],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         // Generate policies
@@ -109,9 +110,9 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 )],
                 sdk_method_call: &sdk_call1,
-                explanations: vec![],
             },
             EnrichedSdkMethodCall {
                 method_name: "put_object".to_string(),
@@ -125,9 +126,9 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 )],
                 sdk_method_call: &sdk_call2,
-                explanations: vec![],
             },
         ];
 
@@ -175,11 +176,11 @@ mod tests {
                             ])
                         )
                     ],
-                    vec![]
+                    vec![],
+                    Explanation::default(),
                 )
             ],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -213,9 +214,9 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -249,9 +250,9 @@ mod tests {
                     ]), // Invalid empty placeholder
                 )],
                 vec![],
+                Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         // Should fail due to empty placeholder
@@ -277,9 +278,9 @@ mod tests {
                 "s3:ListAllMyBuckets".to_string(),
                 vec![Resource::new("*".to_string(), None)], // No ARN patterns
                 vec![],
+                Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();

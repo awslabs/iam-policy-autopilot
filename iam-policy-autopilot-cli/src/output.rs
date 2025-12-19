@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 use iam_policy_autopilot_access_denied::{DenialType, PlanResult};
-use iam_policy_autopilot_policy_generation::{policy_generation::PolicyWithMetadata, Explanation};
+use iam_policy_autopilot_policy_generation::api::model::GeneratePoliciesResult;
 use iam_policy_autopilot_tools::BatchUploadResponse;
 use log::debug;
 use std::io::{self, Write};
@@ -161,10 +161,9 @@ pub(crate) fn print_unsupported_denial(denial_type: &DenialType, reason: &str) {
 #[serde(rename_all = "PascalCase")]
 struct PolicyOutput {
     /// The generated policies with type information
-    policies: Vec<PolicyWithMetadata>,
-    /// Explanations for why actions were added
-    #[serde(skip_serializing_if = "Option::is_none")]
-    explanations: Option<Vec<Explanation>>,
+    /// and explanations for why actions were added
+    #[serde(flatten)]
+    result: GeneratePoliciesResult,
     /// Upload results (only present when --upload-policies is used)
     #[serde(skip_serializing_if = "Option::is_none")]
     upload_result: Option<BatchUploadResponse>,
@@ -172,8 +171,7 @@ struct PolicyOutput {
 
 /// Output IAM policies as JSON to stdout
 pub(crate) fn output_iam_policies(
-    policies: Vec<PolicyWithMetadata>,
-    explanations: Option<Vec<Explanation>>,
+    result: GeneratePoliciesResult,
     upload_result: Option<BatchUploadResponse>,
     pretty: bool,
 ) -> Result<()> {
@@ -183,8 +181,7 @@ pub(crate) fn output_iam_policies(
     );
 
     let policy_output = PolicyOutput {
-        policies,
-        explanations,
+        result,
         upload_result,
     };
 
