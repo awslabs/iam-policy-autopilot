@@ -1,8 +1,10 @@
 //! Defined model for API
-use crate::{enrichment::Explanation, policy_generation::PolicyWithMetadata};
-use std::path::PathBuf;
+use serde::Serialize;
 
-/// Configuration for generate_policies Api
+use crate::{enrichment::Explanation, policy_generation::PolicyWithMetadata};
+use std::{collections::BTreeMap, path::PathBuf};
+
+/// Configuration for generate_policies API
 #[derive(Debug, Clone)]
 pub struct GeneratePolicyConfig {
     /// Config used to extract sdk calls for policy generation
@@ -20,12 +22,14 @@ pub struct GeneratePolicyConfig {
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
 pub struct GeneratePoliciesResult {
     /// Generated IAM policies
     pub policies: Vec<PolicyWithMetadata>,
     /// Explanations for why actions were added (if requested)
-    pub explanations: Option<Vec<Explanation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanations: Option<BTreeMap<String, Explanation>>,
 }
 
 /// Service hints for filtering SDK method calls

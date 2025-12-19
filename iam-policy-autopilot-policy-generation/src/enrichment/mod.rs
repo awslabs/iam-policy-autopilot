@@ -8,7 +8,7 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
-use std::path::PathBuf;
+use std::{collections::HashSet, path::PathBuf};
 
 use crate::SdkMethodCall;
 use schemars::JsonSchema;
@@ -80,6 +80,9 @@ pub(crate) use operation_fas_map::load_operation_fas_map;
 pub(crate) use resource_matcher::ResourceMatcher;
 pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
 
+const FAS_URL: &str =
+    "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
+
 /// Represents Forward Access Session (FAS) expansion information
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
@@ -95,7 +98,7 @@ impl FasInfo {
     #[must_use]
     pub fn new(expansion: Vec<String>) -> Self {
         Self {
-            explanation: "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html".to_string(),
+            explanation: FAS_URL.to_string(),
             expansion,
         }
     }
@@ -160,13 +163,23 @@ impl OperationView {
 }
 
 /// Represents an explanation for why an action was added to a policy
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct Explanation {
-    /// The action that was added (authorized action from service reference)
-    pub action: String,
     /// The reasons this action was added (can have multiple reasons for the same action)
     pub reasons: Vec<Reason>,
+}
+
+impl Explanation {
+    pub(crate) fn merge(&mut self, other: Explanation) {
+        let reasons_set = self.reasons.iter().cloned().collect::<HashSet<_>>();
+        for new_reason in other.reasons {
+            if reasons_set.contains(&new_reason) {
+                continue;
+            }
+            self.reasons.push(new_reason);
+        }
+    }
 }
 
 /// Represents an enriched method call with actions that need permissions
@@ -181,8 +194,6 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) actions: Vec<Action>,
     /// The initial SDK method call
     pub(crate) sdk_method_call: &'a SdkMethodCall,
-    /// Explanations for why each action was added
-    pub(crate) explanations: Vec<Explanation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
@@ -216,7 +227,7 @@ pub(crate) trait Context {
 ///
 /// This structure combines OperationAction action data with Service Reference resource information to provide
 /// complete IAM policy metadata for a single action.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, PartialEq)]
 pub(crate) struct Action {
     /// The IAM action name (e.g., "s3:GetObject")
     pub(crate) name: String,
@@ -224,6 +235,32 @@ pub(crate) struct Action {
     pub(crate) resources: Vec<Resource>,
     /// List of conditions we are adding
     pub(crate) conditions: Vec<Condition>,
+    /// Optional explanation why this action has been added
+    pub(crate) explanation: Explanation,
+}
+
+impl Action {
+    /// Create a new enriched action
+    ///
+    /// # Arguments
+    /// * `name` - The IAM action name
+    /// * `resources` - List of enriched resources
+    /// * `conditions` - List of conditions
+    /// * `explanation` - Explanation why the action has been added
+    #[must_use]
+    pub(crate) fn new(
+        name: String,
+        resources: Vec<Resource>,
+        conditions: Vec<Condition>,
+        explanation: Explanation,
+    ) -> Self {
+        Self {
+            name,
+            resources,
+            conditions,
+            explanation,
+        }
+    }
 }
 
 /// Represents a resource enriched with ARN pattern and metadata
@@ -236,23 +273,6 @@ pub(crate) struct Resource {
     pub(crate) name: String,
     /// ARN patterns from Service Reference data, if available
     pub(crate) arn_patterns: Option<Vec<String>>,
-}
-
-impl Action {
-    /// Create a new enriched action
-    ///
-    /// # Arguments
-    /// * `name` - The IAM action name
-    /// * `resources` - List of enriched resources
-    /// * `conditions` - List of conditions
-    #[must_use]
-    pub(crate) fn new(name: String, resources: Vec<Resource>, conditions: Vec<Condition>) -> Self {
-        Self {
-            name,
-            resources,
-            conditions,
-        }
-    }
 }
 
 impl Resource {

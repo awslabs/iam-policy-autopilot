@@ -109,17 +109,6 @@ pub struct PolicyWithMetadata {
     pub policy_type: PolicyType,
 }
 
-/// Result of policy generation including policies and explanations
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PolicyGenerationResult {
-    /// Generated policies
-    pub policies: Vec<PolicyWithMetadata>,
-    /// Explanations for why actions were added
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub explanations: Option<Vec<crate::enrichment::Explanation>>,
-}
-
 impl IamPolicy {
     /// Create a new IAM policy with the standard version
     pub fn new() -> Self {

@@ -4,12 +4,16 @@
 //! The engine processes EnrichedSdkMethodCall instances and creates corresponding IAM policies
 //! with proper ARN pattern replacement.
 
+use std::collections::BTreeMap;
+
 use super::merge::{PolicyMerger, PolicyMergerConfig};
 use super::utils::{ArnParser, ConditionValueProcessor};
-use super::{IamPolicy, PolicyGenerationResult, Statement};
-use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall, Explanation, Reason};
+use super::{IamPolicy, Statement};
+use crate::api::model::GeneratePoliciesResult;
+use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
+use crate::Explanation;
 
 /// Policy generation engine that converts enriched method calls into IAM policies
 #[derive(Debug, Clone)]
@@ -263,67 +267,43 @@ impl<'a> Engine<'a> {
     pub fn generate_policies(
         &self,
         enriched_calls: &[EnrichedSdkMethodCall],
-    ) -> Result<PolicyGenerationResult> {
+    ) -> Result<GeneratePoliciesResult> {
         let policies = self.generate_individual_policies(enriched_calls)?;
 
-        // Collect and deduplicate explanations
-        let explanations = self.group_explanations_by_action(enriched_calls);
+        // Collect explanations
+        let explanations = extract_explanations(enriched_calls);
 
-        Ok(PolicyGenerationResult {
+        Ok(GeneratePoliciesResult {
             policies,
-            explanations: if explanations.is_empty() {
-                None
-            } else {
-                Some(explanations)
-            },
+            explanations: Some(explanations),
         })
     }
+}
 
-    /// Collect and deduplicate explanations from enriched method calls
-    ///
-    /// This method gathers all explanations from the enriched calls and groups
-    /// reasons by action name, removing duplicate reasons.
-    fn group_explanations_by_action(
-        &self,
-        enriched_calls: &[EnrichedSdkMethodCall],
-    ) -> Vec<Explanation> {
-        use std::collections::HashMap;
+fn extract_explanations(
+    enriched_calls: &[EnrichedSdkMethodCall<'_>],
+) -> BTreeMap<String, Explanation> {
+    let mut explanations: BTreeMap<String, Explanation> = BTreeMap::new();
 
-        // Group reasons by action name
-        let mut action_to_reasons: HashMap<String, Vec<Reason>> = HashMap::new();
-
-        for enriched_call in enriched_calls {
-            for explanation in &enriched_call.explanations {
-                let reasons = action_to_reasons
-                    .entry(explanation.action.clone())
-                    .or_default();
-
-                // Add all reasons from this explanation, deduplicating as we go
-                for reason in &explanation.reasons {
-                    if !reasons.contains(reason) {
-                        reasons.push(reason.clone());
-                    }
-                }
-            }
+    // Collect and merge explanations for each action name
+    for call in enriched_calls {
+        for action in &call.actions {
+            explanations
+                .entry(action.name.clone())
+                .and_modify(|existing_explanation| {
+                    existing_explanation.merge(action.explanation.clone());
+                })
+                .or_insert_with(|| action.explanation.clone());
         }
-
-        // Convert back to Vec<ActionExplanation> and sort
-        let mut result: Vec<Explanation> = action_to_reasons
-            .into_iter()
-            .map(|(action, reasons)| Explanation { action, reasons })
-            .collect();
-
-        // Sort by action name for consistent output
-        result.sort_by(|a, b| a.action.cmp(&b.action));
-
-        result
     }
+
+    explanations
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::SdkMethodCall;
+    use crate::{Explanation, SdkMethodCall};
 
     use super::super::Effect;
     use crate::enrichment::{Action, EnrichedSdkMethodCall, OperationView, Resource};
@@ -358,9 +338,9 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -395,6 +375,7 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 ),
                 Action::new(
                     "s3:GetObjectVersion".to_string(),
@@ -405,10 +386,10 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation::default(),
                 ),
             ],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -440,9 +421,9 @@ mod tests {
                 "s3:ListAllMyBuckets".to_string(),
                 vec![Resource::new("*".to_string(), None)],
                 vec![],
+                Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -475,10 +456,10 @@ mod tests {
                         )
                     ],
                     vec![],
+                    Explanation::default(),
                 )
             ],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -505,10 +486,14 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
-        let action = Action::new("s3:GetObject".to_string(), vec![], vec![]);
+        let action = Action::new(
+            "s3:GetObject".to_string(),
+            vec![],
+            vec![],
+            Explanation::default(),
+        );
 
         // Test first action (index 0)
         let sid1 = engine.generate_statement_id(&enriched_call, &action, 0);
@@ -536,7 +521,6 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
-            explanations: vec![],
         };
 
         let result = engine.generate_policies(&[enriched_call]);
@@ -617,6 +601,7 @@ mod tests {
                 ]),
             )],
             vec![],
+            Explanation::default(),
         );
 
         let processed_resources = engine.process_action_resources(&action).unwrap();
@@ -650,6 +635,7 @@ mod tests {
                 ),
             ],
             vec![],
+            Explanation::default(),
         );
 
         let processed_resources = engine.process_action_resources(&action).unwrap();
@@ -681,6 +667,7 @@ mod tests {
                     values: vec!["${region}".to_string(), "us-west-${unknown}".to_string()],
                 },
             ],
+            Explanation::default(),
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
@@ -711,6 +698,7 @@ mod tests {
                 key: "s3:ExistingObjectTag/Environment".to_string(),
                 values: vec!["production".to_string(), "staging".to_string()],
             }],
+            Explanation::default(),
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
@@ -727,7 +715,12 @@ mod tests {
         let engine = create_test_engine();
 
         // Create an action with no conditions
-        let action = Action::new("s3:GetObject".to_string(), vec![], vec![]);
+        let action = Action::new(
+            "s3:GetObject".to_string(),
+            vec![],
+            vec![],
+            Explanation::default(),
+        );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
 
@@ -747,6 +740,7 @@ mod tests {
                 key: "s3:ExistingObjectTag/Environment".to_string(),
                 values: vec!["s3.${unknown}.amazonaws.com".to_string()],
             }],
+            Explanation::default(),
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
@@ -780,6 +774,7 @@ mod tests {
                     values: vec!["s3.${unknown}.amazonaws.com".to_string()], // Unknown placeholder, introduces wildcards
                 },
             ],
+            Explanation::default(),
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
@@ -818,6 +813,7 @@ mod tests {
                     "us-west-${unknown}".to_string(), // Unknown placeholder, introduces wildcards
                 ],
             }],
+            Explanation::default(),
         );
 
         let processed_conditions = engine.process_action_conditions(&action).unwrap();
@@ -844,6 +840,7 @@ mod tests {
                 key: "s3:ExistingObjectTag/Environment".to_string(),
                 values: vec!["arn:${partition}:s3:${region}:${account}:bucket/test".to_string()],
             }],
+            Explanation::default(),
         );
 
         let processed_conditions = engine_wildcard_partition
@@ -924,15 +921,14 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation {
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call, "s3"),
+                        fas: None,
+                    }],
+                },
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![Explanation {
-                action: "s3:GetObject".to_string(),
-                reasons: vec![Reason {
-                    operation: OperationView::from_call(&sdk_call, "s3"),
-                    fas: None,
-                }],
-            }],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -941,12 +937,16 @@ mod tests {
         assert_eq!(result.policies.len(), 1);
 
         // Verify explanations were collected
-        assert!(result.explanations.is_some());
-        let explanations = result.explanations.unwrap();
-        assert_eq!(explanations.len(), 1);
-        assert_eq!(explanations[0].action, "s3:GetObject");
-        assert_eq!(explanations[0].reasons.len(), 1);
-        assert!(explanations[0].reasons[0].fas.is_none());
+        if let Some(explanation) = result
+            .explanations
+            .as_ref()
+            .and_then(|explanations| explanations.get("s3:GetObject"))
+        {
+            assert_eq!(explanation.reasons.len(), 1);
+            assert!(explanation.reasons[0].fas.is_none());
+        } else {
+            panic!("Must have an explanation for s3:GetObject");
+        }
     }
 
     #[test]
@@ -974,15 +974,14 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation {
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call1, "s3"),
+                        fas: None,
+                    }],
+                },
             )],
             sdk_method_call: &sdk_call1,
-            explanations: vec![Explanation {
-                action: "s3:GetObject".to_string(),
-                reasons: vec![Reason {
-                    operation: OperationView::from_call(&sdk_call1, "s3"),
-                    fas: None,
-                }],
-            }],
         };
 
         let enriched_call2 = EnrichedSdkMethodCall {
@@ -997,15 +996,14 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation {
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call1, "s3"),
+                        fas: None,
+                    }],
+                },
             )],
             sdk_method_call: &sdk_call2,
-            explanations: vec![Explanation {
-                action: "s3:GetObject".to_string(),
-                reasons: vec![Reason {
-                    operation: OperationView::from_call(&sdk_call2, "s3"),
-                    fas: None,
-                }],
-            }],
         };
 
         let result = engine
@@ -1013,18 +1011,19 @@ mod tests {
             .unwrap();
 
         // Verify explanations were grouped by action with deduplicated reasons
-        assert!(result.explanations.is_some());
-        let explanations = result.explanations.unwrap();
-        assert_eq!(
-            explanations.len(),
-            1,
-            "Should have one action with grouped reasons"
-        );
-        assert_eq!(
-            explanations[0].reasons.len(),
-            1,
-            "Duplicate reasons should be deduplicated"
-        );
+        if let Some(explanation) = result
+            .explanations
+            .as_ref()
+            .and_then(|explanations| explanations.get("s3:GetObject"))
+        {
+            assert_eq!(
+                explanation.reasons.len(),
+                1,
+                "Duplicate reasons should be deduplicated"
+            );
+        } else {
+            panic!("Must have an explanation for s3:GetObject");
+        }
     }
 
     #[test]
@@ -1048,6 +1047,12 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation {
+                        reasons: vec![Reason {
+                            operation: OperationView::from_call(&sdk_call, "s3"),
+                            fas: None,
+                        }],
+                    },
                 ),
                 Action::new(
                     "kms:Decrypt".to_string(),
@@ -1058,41 +1063,31 @@ mod tests {
                         ]),
                     )],
                     vec![],
+                    Explanation {
+                        reasons: vec![Reason {
+                            operation: OperationView::from_call(&sdk_call, "s3"),
+                            fas: Some(crate::enrichment::FasInfo::new(vec![
+                                "s3:GetObject".to_string(),
+                                "kms:Decrypt".to_string(),
+                            ])),
+                        }],
+                    },
                 ),
             ],
             sdk_method_call: &sdk_call,
-            explanations: vec![
-                Explanation {
-                    action: "s3:GetObject".to_string(),
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call, "s3"),
-                        fas: None,
-                    }],
-                },
-                Explanation {
-                    action: "kms:Decrypt".to_string(),
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call, "s3"),
-                        fas: Some(crate::enrichment::FasInfo::new(vec![
-                            "s3:GetObject".to_string(),
-                            "kms:Decrypt".to_string(),
-                        ])),
-                    }],
-                },
-            ],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
         // Verify explanations include FAS expansion
-        assert!(result.explanations.is_some());
-        let explanations = result.explanations.unwrap();
-        assert_eq!(explanations.len(), 2);
+        assert_eq!(result.explanations.as_ref().unwrap().len(), 2);
 
         // Check the FAS-expanded action
-        let kms_explanation = explanations
-            .iter()
-            .find(|e| e.action == "kms:Decrypt")
+        let kms_explanation = result
+            .explanations
+            .as_ref()
+            .unwrap()
+            .get("kms:Decrypt")
             .expect("Should have kms:Decrypt explanation");
         assert_eq!(kms_explanation.reasons.len(), 1);
         assert!(kms_explanation.reasons[0].fas.is_some());
@@ -1131,22 +1126,18 @@ mod tests {
                     ]),
                 )],
                 vec![],
+                Explanation {
+                    reasons: vec![Reason {
+                        operation: OperationView::from_call(&sdk_call, "s3"),
+                        fas: None,
+                    }],
+                },
             )],
             sdk_method_call: &sdk_call,
-            explanations: vec![Explanation {
-                action: "s3:GetObject".to_string(),
-                reasons: vec![Reason {
-                    operation: OperationView::from_call(&sdk_call, "s3"),
-                    fas: None,
-                }],
-            }],
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
-        // Verify possible_false_positive flag is set
-        assert!(result.explanations.is_some());
-        let explanations = result.explanations.unwrap();
-        assert_eq!(explanations.len(), 1);
+        assert_eq!(result.explanations.as_ref().unwrap().len(), 1);
     }
 }
