@@ -30,6 +30,7 @@ strsim.workspace = true
 aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
+openssl.workspace = true
 
 
 # Build dependencies
