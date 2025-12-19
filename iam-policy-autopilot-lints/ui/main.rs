@@ -1,4 +1,4 @@
-// Test cases for node_kind_literal lint
+// Test cases for node_kind_literal and convert_case_pascal lints
 
 struct Node;
 
@@ -73,8 +73,49 @@ fn test_non_node_kind() {
     }
 }
 
+// Test cases for convert_case_pascal lint
+
+// Mock convert_case types and traits for testing
+mod convert_case {
+    pub enum Case {
+        Pascal,
+        Snake,
+        Camel,
+    }
+}
+
+trait Casing {
+    fn to_case(&self, case: convert_case::Case) -> String;
+}
+
+impl Casing for str {
+    fn to_case(&self, _case: convert_case::Case) -> String {
+        self.to_string()
+    }
+}
+
+fn test_convert_case_pascal() {
+    let text = "hello_world";
+    
+    // This should trigger a warning - using Case::Pascal
+    let _result1 = text.to_case(convert_case::Case::Pascal);
+    
+    // This should NOT trigger a warning - using different case
+    let _result2 = text.to_case(convert_case::Case::Snake);
+    let _result3 = text.to_case(convert_case::Case::Camel);
+}
+
+fn test_other_to_case_calls() {
+    let text = "test_string";
+    
+    // This should NOT trigger a warning - not using Case::Pascal
+    let _result = text.to_case(convert_case::Case::Snake);
+}
+
 fn main() {
     test_kind_comparisons();
     test_allowed_comparisons();
     test_non_node_kind();
+    test_convert_case_pascal();
+    test_other_to_case_calls();
 }
