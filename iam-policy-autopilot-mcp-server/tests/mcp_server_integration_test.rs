@@ -14,10 +14,12 @@ use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, Duration};
 
-async fn setup_stdio() -> RunningService<RoleClient, ()> {
+async fn setup_stdio(flags: Vec<&str>) -> RunningService<RoleClient, ()> {
     // Create MCP client using TokioChildProcess with debug binary
     let mut command = Command::new("../target/debug/iam-policy-autopilot");
-    command.args(&["mcp-server"]);
+    let mut args = vec!["mcp-server"];
+    args.extend(flags);
+    command.args(&args);
 
     ().serve(
         TokioChildProcess::new(command)
@@ -96,7 +98,7 @@ async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParam>, Ch
 
 #[tokio::test]
 async fn test_stdio_list_tools() {
-    let client = setup_stdio().await;
+    let client = setup_stdio(vec![]).await;
 
     // Call list_tools to get available tools
     let tools_result = client.list_tools(None).await.unwrap();
@@ -130,7 +132,7 @@ async fn test_stdio_generate_policy() {
         .unwrap()
         .join(Path::new("tests/test_data/lambda.py"));
 
-    let client = setup_stdio().await;
+    let client = setup_stdio(vec![]).await;
     let tool_result = client
         .call_tool(CallToolRequestParam {
             name: "generate_application_policies".into(),
@@ -150,7 +152,7 @@ async fn test_stdio_generate_policy() {
 
 #[tokio::test]
 async fn test_stdio_generate_policy_for_access_denied() {
-    let client = setup_stdio().await;
+    let client = setup_stdio(vec![]).await;
     let tool_result = client
         .call_tool(CallToolRequestParam {
             name: "generate_policy_for_access_denied".into(),
@@ -251,4 +253,29 @@ async fn test_http_generate_policy_for_access_denied() {
     // Clean up: kill the server process
     let _ = server_process.start_kill();
     let _ = server_process.wait().await;
+}
+
+#[tokio::test]
+async fn test_stdio_read_only_mode_hides_fix_access_denied_tool() {
+    let client = setup_stdio(vec!["--read-only"]).await;
+
+    // Call list_tools to get available tools
+    let tools_result = client.list_tools(None).await.unwrap();
+
+    // In read-only mode, we should only have 2 tools (fix_access_denied should be hidden)
+    assert_eq!(
+        tools_result.tools.len(),
+        2,
+        "Expected 2 tools in read-only mode, got {}",
+        tools_result.tools.len()
+    );
+
+    // Check that fix_access_denied is NOT present
+    let tool_names: Vec<&str> = tools_result.tools.iter().map(|t| t.name.as_ref()).collect();
+    assert!(tool_names.contains(&"generate_application_policies"));
+    assert!(tool_names.contains(&"generate_policy_for_access_denied"));
+    assert!(
+        !tool_names.contains(&"fix_access_denied"),
+        "fix_access_denied tool should be hidden in read-only mode"
+    );
 }
