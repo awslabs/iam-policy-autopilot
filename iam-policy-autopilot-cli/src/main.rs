@@ -20,7 +20,7 @@ use std::path::PathBuf;
 use std::process;
 
 use anyhow::{Context, Result};
-use clap::{crate_version, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
@@ -358,7 +358,10 @@ Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) o
         short_flag = 'V',
         long_flag = "version"
     )]
-    Version {},
+    Version {
+        #[arg(short = 'd', long = "debug", default_value_t = false, hide = true)]
+        debug: bool,
+    },
 }
 
 /// Initialize logging based on configuration
@@ -622,7 +625,7 @@ async fn main() {
             }
         }
 
-        Commands::Version {} => match print_version_info() {
+        Commands::Version { debug } => match print_version_info(debug) {
             Ok(()) => ExitCode::Success,
             Err(e) => {
                 print_cli_command_error(e);

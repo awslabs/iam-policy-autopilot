@@ -12,7 +12,6 @@ use crate::api::model::GitSubmoduleMetadata;
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::sdk_model::SdkServiceDefinition;
 use rust_embed::RustEmbed;
-use serde::{Deserialize, Serialize};
 
 /// Embedded AWS service definitions with compression
 ///

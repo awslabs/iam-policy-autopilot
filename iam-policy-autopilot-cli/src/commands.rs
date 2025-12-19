@@ -7,7 +7,7 @@ use iam_policy_autopilot_access_denied::{ApplyError, ApplyOptions, DenialType};
 fn is_tty() -> bool {
     atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stderr)
 }
-use clap::{crate_version, Parser, Subcommand};
+use clap::crate_version;
 
 /// Returns Some(true) if user confirmed, Some(false) if declined, None if not in TTY.
 fn prompt_yes_no() -> Option<bool> {
@@ -143,26 +143,28 @@ async fn fix_access_denied_with_service(
     }
 }
 
-pub fn print_version_info() -> anyhow::Result<()> {
-    let boto3_version_metadata =
-        iam_policy_autopilot_policy_generation::api::get_boto3_version_info()?;
-    let botocore_version_metadata =
-        iam_policy_autopilot_policy_generation::api::get_botocore_version_info()?;
+pub fn print_version_info(debug: bool) -> anyhow::Result<()> {
     println!("{}", crate_version!());
-    println!(
-        "boto3 version: commit_id={}, commit_tag={}, data_hash={}",
-        boto3_version_metadata.git_commit_hash,
-        boto3_version_metadata.git_tag.unwrap_or("None".to_string()),
-        boto3_version_metadata.data_hash
-    );
-    println!(
-        "botocore version: commit_id={}, commit_tag={}, data_hash={}",
-        botocore_version_metadata.git_commit_hash,
-        botocore_version_metadata
-            .git_tag
-            .unwrap_or("None".to_string()),
-        botocore_version_metadata.data_hash
-    );
+    if debug {
+        let boto3_version_metadata =
+            iam_policy_autopilot_policy_generation::api::get_boto3_version_info()?;
+        let botocore_version_metadata =
+            iam_policy_autopilot_policy_generation::api::get_botocore_version_info()?;
+        println!(
+            "boto3 version: commit_id={}, commit_tag={}, data_hash={}",
+            boto3_version_metadata.git_commit_hash,
+            boto3_version_metadata.git_tag.unwrap_or("None".to_string()),
+            boto3_version_metadata.data_hash
+        );
+        println!(
+            "botocore version: commit_id={}, commit_tag={}, data_hash={}",
+            botocore_version_metadata.git_commit_hash,
+            botocore_version_metadata
+                .git_tag
+                .unwrap_or("None".to_string()),
+            botocore_version_metadata.data_hash
+        );
+    }
     Ok(())
 }
 

@@ -1,4 +1,4 @@
-use crate::errors::{ExtractorError, Result};
+use crate::errors::Result;
 use crate::{api::model::GitSubmoduleMetadata, embedded_data::GitSubmoduleVersionInfo};
 
 /// Gets the version information for the boto3 submodule.

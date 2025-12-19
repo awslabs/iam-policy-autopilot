@@ -27,7 +27,7 @@ serde_json.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
-sha2.workspace = true
+aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
 
@@ -44,7 +44,7 @@ tokio-util.workspace = true
 # JSON processing
 serde_json.workspace = true
 
-sha2.workspace = true
+aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
 

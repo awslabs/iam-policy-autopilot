@@ -54,13 +54,13 @@ pub struct AwsContext {
 /// Exposes git version and commit hash for boto3 and botocore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitSubmoduleMetadata {
-    /// the git commit hash
+    /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "gitCommit")]
     pub git_commit_hash: String,
-    /// the git commit tag
+    /// the git tag of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "gitTag")]
     pub git_tag: Option<String>,
-    /// the simplified data file hash
+    /// the sha hash of boto3/botocore simplified models, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "dataHash")]
     pub data_hash: String,
 }

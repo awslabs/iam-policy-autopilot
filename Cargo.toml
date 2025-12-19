@@ -64,7 +64,7 @@ serial_test = "3.0"
 atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.8", features = ["v4"] }
-sha2 = "0.10.9"
+aws-lc-rs = "1.15.2"
 git2 = "0.20.3"
 relative-path = "2.0.1"
 url = "2.5"

@@ -1,19 +1,9 @@
-use git2::Commit;
-use git2::Describe;
-use git2::DescribeFormatOptions;
-use git2::DescribeOptions;
-use git2::Reference;
-use git2::Repository;
+use aws_lc_rs::digest::{Context, Digest, SHA256};
+use git2::{DescribeOptions, Repository};
 use relative_path::PathExt;
 use relative_path::RelativePathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sha2::digest::consts::B0;
-use sha2::digest::consts::B1;
-use sha2::digest::generic_array::GenericArray;
-use sha2::digest::typenum::UInt;
-use sha2::digest::typenum::UTerm;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -65,15 +55,73 @@ struct ShapeReference {
     shape: String,
 }
 
-// Git version and commit hash for boto3 and botocore
+/// This must be an exact copy of GitSubmoduleMetadata in model.rs
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct GitSubmoduleVersion {
+pub struct GitSubmoduleVersion {
+    /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "gitCommit")]
-    git_commit_hash: String,
+    pub git_commit_hash: String,
+    /// the git tag of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "gitTag")]
-    git_tag: Option<String>,
+    pub git_tag: Option<String>,
+    /// the sha hash of boto3/botocore simplified models, returned on calls to iam-policy-autopilot --version --debug
     #[serde(rename = "dataHash")]
-    data_hash: String,
+    pub data_hash: String,
+}
+
+impl GitSubmoduleVersion {
+    fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleVersion {
+        let repository = Repository::open(&git_path)
+            .expect(&format!("Failed to open repository at path {:?}", git_path));
+        GitSubmoduleVersion {
+            git_commit_hash: get_repository_commit(&repository).expect(&format!(
+                "Failed to get repository commit at path {:?}",
+                git_path
+            )),
+            git_tag: get_repository_tag(&repository).expect(&format!(
+                "Failed to get repository tag at path {:?}",
+                git_path
+            )),
+            data_hash: format!(
+                "{:?}",
+                Self::sha2sum_recursive(&data_path, &data_path).expect(&format!(
+                    "Failed to compute checksum over data at path {:?}",
+                    data_path
+                ))
+            ),
+        }
+    }
+
+    fn sha2sum_recursive(cwd: &Path, root: &Path) -> Result<Digest, Box<dyn std::error::Error>> {
+        let mut hash_table: BTreeMap<RelativePathBuf, Digest> = BTreeMap::new();
+
+        let mut dir_entry_list = fs::read_dir(cwd)?
+            .map(|res| res.map(|e| e.path()))
+            .collect::<Result<Vec<_>, io::Error>>()?;
+        dir_entry_list.sort();
+
+        for entry_path in dir_entry_list {
+            let relt_path = entry_path.clone().relative_to(root)?;
+            if entry_path.is_dir() {
+                hash_table.insert(
+                    relt_path.clone(),
+                    Self::sha2sum_recursive(&entry_path, root)?,
+                );
+            } else {
+                let mut sha2_context = Context::new(&SHA256);
+                sha2_context.update(&fs::read(entry_path)?);
+                hash_table.insert(relt_path.clone(), sha2_context.finish());
+            }
+        }
+
+        let mut sha2_context = Context::new(&SHA256);
+        for entry in hash_table {
+            sha2_context.update(&entry.0.into_string().as_bytes());
+            sha2_context.update(entry.1.as_ref());
+        }
+
+        Ok(sha2_context.finish())
+    }
 }
 
 fn main() {
@@ -161,49 +209,28 @@ fn main() {
     fs::create_dir_all(&workspace_submodule_version_embed_dir)
         .expect("Failed to create submodule version directory");
 
-    let boto3_submodule_dir = Path::new("resources/config/sdks/boto3");
-    let boto3_repo =
-        Repository::open(&boto3_submodule_dir).expect("Failed to open boto3 repository");
+    let boto3_info = GitSubmoduleVersion::new(Path::new("resources/config/sdks/boto3"), &boto3_dir);
 
-    let boto3_info = GitSubmoduleVersion {
-        git_commit_hash: get_repository_commit(&boto3_repo)
-            .expect("Failed to get boto3 repository commit"),
-        git_tag: get_repository_tag(&boto3_repo).expect("Failed to get boto3 repository tag"),
-        data_hash: format!(
-            "{:X}",
-            sha2sum_recursive(&boto3_dir, &boto3_dir)
-                .expect("Failed to compute checksum over simplified boto3 data")
-        ),
-    };
-
-    let boto3_submodule_version_dir =
-        &workspace_submodule_version_embed_dir.join("boto3_version.json");
     let boto3_info_json =
         serde_json::to_string(&boto3_info).expect("Failed to serialize boto3 version metadata");
-    fs::write(boto3_submodule_version_dir, boto3_info_json)
-        .expect("Failed to write boto3 version metadata");
+    fs::write(
+        &workspace_submodule_version_embed_dir.join("boto3_version.json"),
+        boto3_info_json,
+    )
+    .expect("Failed to write boto3 version metadata");
 
-    let botocore_submodule_dir = Path::new("resources/config/sdks/botocore-data");
-    let botocore_repo =
-        Repository::open(botocore_submodule_dir).expect("Failed to open botocore repository");
+    let botocore_info = GitSubmoduleVersion::new(
+        Path::new("resources/config/sdks/botocore-data"),
+        &simplified_dir,
+    );
 
-    let botocore_info = GitSubmoduleVersion {
-        git_commit_hash: get_repository_commit(&botocore_repo)
-            .expect("Failed to get botocore repository commit"),
-        git_tag: get_repository_tag(&botocore_repo).expect("Failed to get botocore repository tag"),
-        data_hash: format!(
-            "{:X}",
-            sha2sum_recursive(&simplified_dir, &simplified_dir)
-                .expect("Failed to compute checksum over simplified botocore data")
-        ),
-    };
-
-    let botocore_submodule_version_dir =
-        &workspace_submodule_version_embed_dir.join("botocore_version.json");
     let botocore_info_json = serde_json::to_string(&botocore_info)
         .expect("Failed to serialize botocore version metadata");
-    fs::write(botocore_submodule_version_dir, botocore_info_json)
-        .expect("Failed to write botocore version metadata");
+    fs::write(
+        &workspace_submodule_version_embed_dir.join("botocore_version.json"),
+        botocore_info_json,
+    )
+    .expect("Failed to write botocore version metadata");
 }
 
 fn process_botocore_data(
@@ -423,47 +450,6 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), Box<dyn std::error::
     }
 
     Ok(())
-}
-
-fn sha2sum_recursive(
-    cwd: &Path,
-    root: &Path,
-) -> Result<
-    GenericArray<u8, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>>,
-    Box<dyn std::error::Error>,
-> {
-    let mut hash_table: BTreeMap<
-        RelativePathBuf,
-        GenericArray<u8, UInt<UInt<UInt<UInt<UInt<UInt<UTerm, B1>, B0>, B0>, B0>, B0>, B0>>,
-    > = BTreeMap::new();
-    // let next_root = if (root.is_none()) {Some(cwd)} else {root};
-
-    let mut dir_entry_list = fs::read_dir(cwd)?
-        .map(|res| res.map(|e| e.path()))
-        .collect::<Result<Vec<_>, io::Error>>()?;
-    dir_entry_list.sort();
-
-    for entry_path in dir_entry_list {
-        let relt_path = entry_path.clone().relative_to(root)?;
-        if (entry_path.is_dir()) {
-            hash_table.insert(relt_path.clone(), sha2sum_recursive(&entry_path, root)?);
-        } else {
-            hash_table.insert(
-                relt_path.clone(),
-                Sha256::default()
-                    .chain_update(fs::read(entry_path)?)
-                    .finalize(),
-            );
-        }
-    }
-
-    let mut sha2 = Sha256::new();
-    for entry in hash_table {
-        sha2.update(entry.0.into_string());
-        sha2.update(entry.1);
-    }
-
-    Ok(sha2.finalize())
 }
 
 fn process_boto3_data(
