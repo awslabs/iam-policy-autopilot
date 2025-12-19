@@ -8,6 +8,7 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
+use crate::api::model::GitSubmoduleMetadata;
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::sdk_model::SdkServiceDefinition;
 use rust_embed::RustEmbed;
@@ -30,6 +31,11 @@ struct BotocoreRaw;
 #[folder = "target/boto3-data-simplified"]
 #[include = "*.json"]
 struct Boto3ResourcesRaw;
+
+#[derive(RustEmbed)]
+#[folder = "target/submodule-version-info"]
+#[include = "*.json"]
+struct GitSubmoduleVersionInfoRaw;
 
 /// Embedded boto3 utilities mapping
 ///
@@ -304,6 +310,38 @@ impl BotocoreData {
     }
 }
 
+/// Embedded submodule version data manager
+///
+/// Provides access to git submodule information, compiled during build.rs
+pub(crate) struct GitSubmoduleVersionInfo;
+
+impl GitSubmoduleVersionInfo {
+    pub(crate) fn get_boto3_version_info() -> Result<GitSubmoduleMetadata> {
+        let boto3_file = GitSubmoduleVersionInfoRaw::get("boto3_version.json")
+            .expect("boto3 version metadata file not found");
+
+        serde_json::from_slice(&boto3_file.data).map_err(|e| {
+            ExtractorError::sdk_processing_with_source(
+                "reading boto3_version.json",
+                "Failed to parse boto3 metadata file",
+                e,
+            )
+        })
+    }
+    pub(crate) fn get_botocore_version_info() -> Result<GitSubmoduleMetadata> {
+        let botocore_file = GitSubmoduleVersionInfoRaw::get("botocore_version.json")
+            .expect("botocore version metadata file not found");
+
+        serde_json::from_slice(&botocore_file.data).map_err(|e| {
+            ExtractorError::sdk_processing_with_source(
+                "reading botocore_version.json",
+                "Failed to parse botocore_version metadata file",
+                e,
+            )
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -511,5 +549,16 @@ mod tests {
     fn test_embedded_service_data_handles_empty_strings() {
         let result = BotocoreData::get_service_definition("", "");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_get_boto3_version_info_happy_path() {
+        let result = GitSubmoduleVersionInfo::get_boto3_version_info();
+        assert!(result.is_ok());
+    }
+
+    fn test_get_botocore_version_info_happy_path() {
+        let result = GitSubmoduleVersionInfo::get_botocore_version_info();
+        assert!(result.is_ok());
     }
 }

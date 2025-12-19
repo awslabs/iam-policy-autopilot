@@ -1,6 +1,8 @@
 //! Defined model for API
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 /// Configuration for generate_policies Api
 #[derive(Debug, Clone)]
 pub struct GeneratePolicyConfig {
@@ -47,6 +49,20 @@ pub struct AwsContext {
     pub region: String,
     /// AWS account ID
     pub account: String,
+}
+
+/// Exposes git version and commit hash for boto3 and botocore
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitSubmoduleMetadata {
+    /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
+    #[serde(rename = "gitCommit")]
+    pub git_commit_hash: String,
+    /// the git tag of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
+    #[serde(rename = "gitTag")]
+    pub git_tag: Option<String>,
+    /// the sha hash of boto3/botocore simplified models, returned on calls to iam-policy-autopilot --version --debug
+    #[serde(rename = "dataHash")]
+    pub data_hash: String,
 }
 
 impl AwsContext {
