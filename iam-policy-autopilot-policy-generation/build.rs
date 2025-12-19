@@ -71,20 +71,17 @@ pub struct GitSubmoduleVersion {
 
 impl GitSubmoduleVersion {
     fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleVersion {
-        let repository = Repository::open(&git_path)
-            .expect(&format!("Failed to open repository at path {:?}", git_path));
+        let repository = Repository::open(git_path)
+            .unwrap_or_else(|_| panic!("Failed to open repository at path {:?}", git_path));
         GitSubmoduleVersion {
-            git_commit_hash: get_repository_commit(&repository).expect(&format!(
-                "Failed to get repository commit at path {:?}",
-                git_path
-            )),
-            git_tag: get_repository_tag(&repository).expect(&format!(
-                "Failed to get repository tag at path {:?}",
-                git_path
-            )),
+            git_commit_hash: get_repository_commit(&repository).unwrap_or_else(|_| {
+                panic!("Failed to get repository commit at path {:?}", git_path)
+            }),
+            git_tag: get_repository_tag(&repository)
+                .unwrap_or_else(|_| panic!("Failed to get repository tag at path {:?}", git_path)),
             data_hash: format!(
                 "{:?}",
-                Self::sha2sum_recursive(&data_path, &data_path).expect(&format!(
+                Self::sha2sum_recursive(data_path, data_path).unwrap_or_else(|_| panic!(
                     "Failed to compute checksum over data at path {:?}",
                     data_path
                 ))
@@ -116,7 +113,7 @@ impl GitSubmoduleVersion {
 
         let mut sha2_context = Context::new(&SHA256);
         for entry in hash_table {
-            sha2_context.update(&entry.0.into_string().as_bytes());
+            sha2_context.update(entry.0.into_string().as_bytes());
             sha2_context.update(entry.1.as_ref());
         }
 
@@ -214,7 +211,7 @@ fn main() {
     let boto3_info_json =
         serde_json::to_string(&boto3_info).expect("Failed to serialize boto3 version metadata");
     fs::write(
-        &workspace_submodule_version_embed_dir.join("boto3_version.json"),
+        workspace_submodule_version_embed_dir.join("boto3_version.json"),
         boto3_info_json,
     )
     .expect("Failed to write boto3 version metadata");
@@ -227,7 +224,7 @@ fn main() {
     let botocore_info_json = serde_json::to_string(&botocore_info)
         .expect("Failed to serialize botocore version metadata");
     fs::write(
-        &workspace_submodule_version_embed_dir.join("botocore_version.json"),
+        workspace_submodule_version_embed_dir.join("botocore_version.json"),
         botocore_info_json,
     )
     .expect("Failed to write botocore version metadata");
