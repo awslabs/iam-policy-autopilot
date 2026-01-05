@@ -2,14 +2,28 @@ use aws_lc_rs::digest::{Context, Digest, SHA256};
 use git2::{DescribeOptions, Repository};
 use relative_path::PathExt;
 use relative_path::RelativePathBuf;
+use serde::Serializer;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::collections::HashMap;
 use std::env;
 use std::fs;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+
+/// For use with serde's [serialize_with] attribute; copied from https://stackoverflow.com/questions/42723065/how-to-sort-hashmap-keys-when-serializing-with-serde
+fn ordered_map<S, K: Ord + Serialize, V: Serialize>(
+    value: &HashMap<K, V>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let ordered: BTreeMap<_, _> = value.iter().collect();
+    ordered.serialize(serializer)
+}
 
 /// Simplified service definition with fields removed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -17,8 +31,10 @@ struct SimplifiedServiceDefinition {
     #[serde(skip_serializing_if = "Option::is_none")]
     version: Option<String>,
     metadata: ServiceMetadata,
-    operations: BTreeMap<String, SimplifiedOperation>,
-    shapes: BTreeMap<String, SimplifiedShape>,
+    #[serde(serialize_with = "ordered_map")]
+    operations: HashMap<String, SimplifiedOperation>,
+    #[serde(serialize_with = "ordered_map")]
+    shapes: HashMap<String, SimplifiedShape>,
 }
 
 /// Service metadata from AWS service definitions
@@ -43,8 +59,12 @@ struct SimplifiedOperation {
 struct SimplifiedShape {
     #[serde(rename = "type")]
     type_name: String,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    members: BTreeMap<String, ShapeReference>,
+    #[serde(
+        default,
+        skip_serializing_if = "HashMap::is_empty",
+        serialize_with = "ordered_map"
+    )]
+    members: HashMap<String, ShapeReference>,
     #[serde(skip_serializing_if = "Option::is_none")]
     required: Option<Vec<String>>,
 }
@@ -55,7 +75,7 @@ struct ShapeReference {
     shape: String,
 }
 
-/// This must be an exact copy of GitSubmoduleMetadata in model.rs
+/// This must be an exact copy of GitSubmoduleMetadata in model.rs. This struct contains the boto3/botocore submodule version info; it then gets serialized into a JSON file, which is then referenced via the GitSubmoduleVersionInfoRaw RustEmbed struct in embedded_data.rs, so that this version info can get read when --version in the CLI is called.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitSubmoduleVersion {
     /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
@@ -402,8 +422,8 @@ fn extract_metadata(
 
 fn simplify_operations(
     operations_value: Option<&Value>,
-) -> Result<BTreeMap<String, SimplifiedOperation>, Box<dyn std::error::Error>> {
-    let mut simplified_operations = BTreeMap::new();
+) -> Result<HashMap<String, SimplifiedOperation>, Box<dyn std::error::Error>> {
+    let mut simplified_operations = HashMap::new();
 
     if let Some(Value::Object(operations)) = operations_value {
         for (op_name, op_value) in operations {
@@ -418,8 +438,8 @@ fn simplify_operations(
 
 fn simplify_shapes(
     shapes_value: Option<&Value>,
-) -> Result<BTreeMap<String, SimplifiedShape>, Box<dyn std::error::Error>> {
-    let mut simplified_shapes = BTreeMap::new();
+) -> Result<HashMap<String, SimplifiedShape>, Box<dyn std::error::Error>> {
+    let mut simplified_shapes = HashMap::new();
 
     if let Some(Value::Object(shapes)) = shapes_value {
         for (shape_name, shape_value) in shapes {
