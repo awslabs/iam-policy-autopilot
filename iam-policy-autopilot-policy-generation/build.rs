@@ -100,9 +100,9 @@ impl GitSubmoduleMetadata {
         }
 
         let mut sha2_context = Context::new(&SHA256);
-        for entry in hash_table {
-            sha2_context.update(entry.0.into_string().as_bytes());
-            sha2_context.update(entry.1.as_ref());
+        for (path, digest) in hash_table {
+            sha2_context.update(path.into_string().as_bytes());
+            sha2_context.update(digest.as_ref());
         }
 
         Ok(sha2_context.finish())
