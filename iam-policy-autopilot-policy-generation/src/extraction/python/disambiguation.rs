@@ -199,6 +199,7 @@ mod tests {
         Shape, ShapeReference,
     };
     use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+    use crate::Location;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -320,9 +321,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -352,9 +351,7 @@ mod tests {
                     // Missing required Stage and ApiId parameters
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -378,9 +375,7 @@ mod tests {
                     position: 0,
                 }],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -407,9 +402,7 @@ mod tests {
                     type_annotation: None,
                 }],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -450,9 +443,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -489,9 +480,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };

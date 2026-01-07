@@ -7,7 +7,7 @@ use crate::extraction::python::paginator_extractor::PaginatorExtractor;
 use crate::extraction::python::resource_direct_calls_extractor::ResourceDirectCallsExtractor;
 use crate::extraction::python::waiters_extractor::WaitersExtractor;
 use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
-use crate::{ServiceModelIndex, SourceFile};
+use crate::{Location, ServiceModelIndex, SourceFile};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Python;
 use async_trait::async_trait;
@@ -44,11 +44,6 @@ impl PythonExtractor {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
-        // Get position information
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
@@ -56,9 +51,10 @@ impl PythonExtractor {
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
                 expr: node_match.text().to_string(),
-                file_path: source_file.path.clone(),
-                start_position: (start.line() + 1, start.column(node) + 1),
-                end_position: (end.line() + 1, end.column(node) + 1),
+                location: Location::from_node(
+                    source_file.path.to_path_buf(),
+                    node_match.get_node(),
+                ),
                 receiver,
             }),
         };

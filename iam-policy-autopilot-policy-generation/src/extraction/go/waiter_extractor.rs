@@ -3,13 +3,13 @@
 //! This module handles extraction of Go AWS SDK waiter patterns, which involve
 //! creating a waiter from a client, then calling Wait() on the waiter.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::extraction::go::utils;
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
-use crate::ServiceModelIndex;
+use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Go;
 
 /// Information about a discovered waiter creation call
@@ -23,12 +23,14 @@ pub(crate) struct WaiterInfo {
     pub client_receiver: String,
     /// Matched expression
     pub expr: String,
-    /// File where the waiter was found
-    pub file_path: PathBuf,
-    /// Line number where waiter was created
-    pub start_position: (usize, usize),
-    /// Line number where waiter was created
-    pub end_position: (usize, usize),
+    /// Location where the waiter was created
+    pub location: Location,
+}
+
+impl WaiterInfo {
+    pub(crate) fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 /// Information about a Wait method call
@@ -40,12 +42,14 @@ pub(crate) struct WaitCallInfo {
     pub arguments: Vec<Parameter>,
     /// Matched expression
     pub expr: String,
-    /// File where the wait call was found
-    pub file_path: PathBuf,
-    /// Start position of the Wait call node
-    pub start_position: (usize, usize),
-    /// End position of the Wait call node
-    pub end_position: (usize, usize),
+    /// Location where the waiter was called
+    pub location: Location,
+}
+
+impl WaitCallInfo {
+    pub(crate) fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 // TODO: This should be refactored at a higher level, so this type can be removed.
@@ -75,24 +79,10 @@ impl<'a> CallInfo<'a> {
         }
     }
 
-    fn file_path(&self) -> &'a PathBuf {
+    fn location(&self) -> &'a Location {
         match self {
-            CallInfo::None(waiter_info) => &waiter_info.file_path,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.file_path,
-        }
-    }
-
-    fn start_position(&self) -> (usize, usize) {
-        match self {
-            CallInfo::None(waiter_info) => waiter_info.start_position,
-            CallInfo::Simple(_, wait_call_info) => wait_call_info.start_position,
-        }
-    }
-
-    fn end_position(&self) -> (usize, usize) {
-        match self {
-            CallInfo::None(waiter_info) => waiter_info.end_position,
-            CallInfo::Simple(_, wait_call_info) => wait_call_info.end_position,
+            CallInfo::None(waiter_info) => &waiter_info.location,
+            CallInfo::Simple(_, wait_call_info) => &wait_call_info.location,
         }
     }
 }
@@ -219,27 +209,12 @@ impl<'a> GoWaiterExtractor<'a> {
             .and_then(|s| s.strip_suffix("Waiter"));
 
         if let Some(waiter_name) = waiter_name {
-            let start_position = {
-                let pos = node_match.get_node().start_pos();
-                let line = pos.line() + 1;
-                let col = pos.column(node_match.get_node()) + 1;
-                (line, col)
-            };
-            let end_position = {
-                let pos = node_match.get_node().end_pos();
-                let line = pos.line() + 1;
-                let col = pos.column(node_match.get_node()) + 1;
-                (line, col)
-            };
-
             return Some(WaiterInfo {
                 variable_name,
                 waiter_name: waiter_name.to_string(),
                 client_receiver,
                 expr: node_match.text().to_string(),
-                file_path: file_path.to_path_buf(),
-                start_position,
-                end_position,
+                location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
             });
         }
 
@@ -261,18 +236,11 @@ impl<'a> GoWaiterExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = utils::extract_arguments(&args_nodes);
 
-        // Get position information
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(WaitCallInfo {
             waiter_var,
             arguments,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -290,8 +258,8 @@ impl<'a> GoWaiterExtractor<'a> {
         for (idx, waiter) in waiters.iter().enumerate() {
             if waiter.variable_name == wait_call.waiter_var {
                 // Only consider waiters that come before the wait call
-                if waiter.start_position.0 < wait_call.start_position.0 {
-                    let distance = wait_call.start_position.0 - waiter.start_position.0;
+                if waiter.start_line() < wait_call.start_line() {
+                    let distance = wait_call.start_line() - waiter.start_line();
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(waiter);
@@ -337,9 +305,7 @@ impl<'a> GoWaiterExtractor<'a> {
                         parameters,
                         return_type: None,
                         expr: call.expr().to_string(),
-                        file_path: call.file_path().clone(),
-                        start_position: call.start_position(),
-                        end_position: call.end_position(),
+                        location: call.location().clone(),
                         receiver: Some(call.waiter_info().client_receiver.clone()),
                     }),
                 });

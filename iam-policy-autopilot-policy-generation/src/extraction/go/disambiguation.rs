@@ -334,6 +334,7 @@ mod tests {
         Shape, ShapeReference,
     };
     use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+    use crate::Location;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -607,9 +608,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -659,9 +658,7 @@ mod tests {
                     struct_fields: None,
                 }],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -709,9 +706,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -754,9 +749,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -805,9 +798,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -844,10 +835,8 @@ mod tests {
                     },
                 ],
                 expr: "GetObject".to_string(),
-                file_path: PathBuf::new(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -884,10 +873,8 @@ mod tests {
                     },
                 ],
                 expr: "GetObject".to_string(),
-                file_path: PathBuf::new(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -923,10 +910,8 @@ mod tests {
                     },
                 ],
                 expr: "GetObject".to_string(),
-                file_path: PathBuf::new(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -967,10 +952,8 @@ mod tests {
                     },
                 ],
                 expr: "GetObject".to_string(),
-                file_path: PathBuf::new(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -1026,10 +1009,8 @@ mod tests {
                     },
                 ],
                 expr: "CreateQueue".to_string(),
-                file_path: PathBuf::new(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("sqsClient".to_string()),
             }),
         };

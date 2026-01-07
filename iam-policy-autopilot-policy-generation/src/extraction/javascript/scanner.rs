@@ -6,47 +6,13 @@ use crate::extraction::javascript::types::{
     ValidClientTypes,
 };
 use crate::extraction::AstWithSourceFile;
+use crate::Location;
 
 use ast_grep_core::matcher::Pattern;
-use ast_grep_core::tree_sitter::StrDoc;
-use ast_grep_core::Doc;
 use ast_grep_core::{tree_sitter, MatchStrictness, NodeMatch};
+use ast_grep_core::{Doc, Node};
 
 use std::collections::HashMap;
-
-fn parse_import_item_with_span(
-    import_item: &str,
-    start_position: (usize, usize),
-    end_position: (usize, usize),
-) -> Option<ImportInfo> {
-    let import_item = import_item.trim();
-    if import_item.is_empty() {
-        return None;
-    }
-
-    // Check for rename syntax: "OriginalName as LocalName"
-    if let Some(as_pos) = import_item.find(" as ") {
-        let original_name = import_item[..as_pos].trim().to_string();
-        let local_name = import_item[as_pos + 4..].trim().to_string();
-        Some(ImportInfo::new(
-            original_name,
-            local_name,
-            import_item,
-            start_position,
-            end_position,
-        ))
-    } else {
-        // No rename - original name is the same as local name
-        let import_name = import_item.trim().to_string();
-        Some(ImportInfo::new(
-            import_name.clone(),
-            import_name,
-            import_item,
-            start_position,
-            end_position,
-        ))
-    }
-}
 
 fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
@@ -134,35 +100,6 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     }
 }
 
-fn parse_and_add_imports_with_span(
-    imports_text: &str,
-    sublibrary_info: &mut SublibraryInfo,
-    start_position: (usize, usize),
-    end_position: (usize, usize),
-) {
-    // Handle different import formats
-    if imports_text.starts_with('{') && imports_text.ends_with('}') {
-        // Destructuring - parse with rename support
-        let imports_content = &imports_text[1..imports_text.len() - 1]; // Remove braces
-
-        // Split by comma and parse each import
-        for import_item in imports_content.split(',') {
-            if let Some(import_info) =
-                parse_import_item_with_span(import_item, start_position, end_position)
-            {
-                sublibrary_info.add_import(import_info);
-            }
-        }
-    } else {
-        // Default import - single identifier
-        if let Some(import_info) =
-            parse_import_item_with_span(imports_text, start_position, end_position)
-        {
-            sublibrary_info.add_import(import_info);
-        }
-    }
-}
-
 /// Core AST scanner for JavaScript/TypeScript AWS SDK usage patterns
 pub(crate) struct ASTScanner<T>
 where
@@ -185,6 +122,63 @@ where
         Self { ast_grep, language }
     }
 
+    fn parse_and_add_imports(
+        &self,
+        imports_text: &str,
+        sublibrary_info: &mut SublibraryInfo,
+        node: &Node<'_, tree_sitter::StrDoc<T>>,
+    ) {
+        // Handle different import formats
+        if imports_text.starts_with('{') && imports_text.ends_with('}') {
+            // Destructuring - parse with rename support
+            let imports_content = &imports_text[1..imports_text.len() - 1]; // Remove braces
+
+            // Split by comma and parse each import
+            for import_item in imports_content.split(',') {
+                if let Some(import_info) = self.parse_import_item(import_item, node) {
+                    sublibrary_info.add_import(import_info);
+                }
+            }
+        } else {
+            // Default import - single identifier
+            if let Some(import_info) = self.parse_import_item(imports_text, node) {
+                sublibrary_info.add_import(import_info);
+            }
+        }
+    }
+
+    fn parse_import_item(
+        &self,
+        import_item: &str,
+        node: &Node<'_, tree_sitter::StrDoc<T>>,
+    ) -> Option<ImportInfo> {
+        let import_item = import_item.trim();
+        if import_item.is_empty() {
+            return None;
+        }
+
+        // Check for rename syntax: "OriginalName as LocalName"
+        if let Some(as_pos) = import_item.find(" as ") {
+            let original_name = import_item[..as_pos].trim().to_string();
+            let local_name = import_item[as_pos + 4..].trim().to_string();
+            Some(ImportInfo::new(
+                original_name,
+                local_name,
+                import_item,
+                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+            ))
+        } else {
+            // No rename - original name is the same as local name
+            let import_name = import_item.trim().to_string();
+            Some(ImportInfo::new(
+                import_name.clone(),
+                import_name,
+                import_item,
+                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+            ))
+        }
+    }
+
     /// Execute a pattern match against the AST using relaxed strictness to handle inline comments
     fn find_all_matches(
         &self,
@@ -199,28 +193,6 @@ where
         Ok(root.find_all(pattern_obj).collect())
     }
 
-    /// Extract 1-based (line, column) position from the first match
-    fn get_first_match_span(
-        matches: &[ast_grep_core::NodeMatch<StrDoc<T>>],
-    ) -> Option<((usize, usize), (usize, usize))> {
-        matches.first().map(|first_match| {
-            let node = first_match.get_node();
-            let start_pos = {
-                let pos = node.start_pos();
-                let line = pos.line() + 1;
-                let column = pos.column(node) + 1;
-                (line, column)
-            };
-            let end_pos = {
-                let pos = node.end_pos();
-                let line = pos.line() + 1;
-                let column = pos.column(node) + 1;
-                (line, column)
-            };
-            (start_pos, end_pos)
-        })
-    }
-
     /// Find Command instantiation and extract its arguments
     /// Returns CommandInstantiationResult with position and parameters
     pub(crate) fn find_command_instantiation_with_args(
@@ -232,9 +204,9 @@ where
         let pattern = format!("new {}($ARGS)", command_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(span) = Self::get_first_match_span(&matches) {
-                let first_match = matches.first().unwrap();
-
+            if let Some(first_match) = matches.first() {
+                let location =
+                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -242,12 +214,7 @@ where
                 let args_node = env.get_match("ARGS");
                 let parameters = ArgumentExtractor::extract_object_parameters(args_node);
 
-                return Some(CommandUsage::new(
-                    first_match.text(),
-                    span.0,
-                    span.1,
-                    parameters,
-                ));
+                return Some(CommandUsage::new(first_match.text(), location, parameters));
             }
         }
         None
@@ -264,20 +231,16 @@ where
         let pattern = format!("{}($ARG1, $ARG2)", function_name);
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
-            if let Some(span) = Self::get_first_match_span(&matches) {
-                let first_match = matches.first().unwrap();
+            if let Some(first_match) = matches.first() {
+                let location =
+                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
                 let env = first_match.get_env();
 
                 // Extract parameters from second argument (ARG2 = operation params)
                 let second_arg = env.get_match("ARG2");
                 let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                return Some(CommandUsage::new(
-                    first_match.text(),
-                    span.0,
-                    span.1,
-                    parameters,
-                ));
+                return Some(CommandUsage::new(first_match.text(), location, parameters));
             }
         }
         None
@@ -298,20 +261,18 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(span) = Self::get_first_match_span(&matches) {
-                    let first_match = matches.first().unwrap();
+                if let Some(first_match) = matches.first() {
+                    let location = Location::from_node(
+                        self.ast_grep.source_file.path.to_path_buf(),
+                        first_match,
+                    );
                     let env = first_match.get_env();
 
                     // Extract parameters from second argument (ARG2 = operation params)
                     let second_arg = env.get_match("ARG2");
                     let parameters = ArgumentExtractor::extract_object_parameters(second_arg);
 
-                    return Some(CommandUsage::new(
-                        first_match.text(),
-                        span.0,
-                        span.1,
-                        parameters,
-                    ));
+                    return Some(CommandUsage::new(first_match.text(), location, parameters));
                 }
             }
         }
@@ -332,11 +293,15 @@ where
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
-                if let Some(span) = Self::get_first_match_span(&matches) {
+                if let Some(first_match) = matches.first() {
+                    let location = Location::from_node(
+                        self.ast_grep.source_file.path.to_path_buf(),
+                        first_match,
+                    );
                     let expr_text = matches.first().unwrap().text();
                     // TODO: Extract from variable assignments
                     let parameters = vec![];
-                    return Some(CommandUsage::new(expr_text, span.0, span.1, parameters));
+                    return Some(CommandUsage::new(expr_text, location, parameters));
                 }
             }
         }
@@ -348,19 +313,17 @@ where
         let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
 
         let matches = self.find_all_matches(pattern)?;
-        Self::process_import_matches(matches, &mut sublibrary_data)?;
+        self.process_import_matches(matches, &mut sublibrary_data)?;
 
         Ok(sublibrary_data.into_values().collect())
     }
 
     /// Generic processing for import/require matches - works for both JavaScript and TypeScript
-    fn process_import_matches<U>(
-        matches: Vec<NodeMatch<U>>,
+    fn process_import_matches(
+        &self,
+        matches: Vec<ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<T>>>,
         sublibrary_data: &mut HashMap<String, SublibraryInfo>,
-    ) -> Result<(), String>
-    where
-        U: Doc + std::clone::Clone,
-    {
+    ) -> Result<(), String> {
         for node_match in matches {
             let env = node_match.get_env();
 
@@ -385,23 +348,10 @@ where
                     .entry(sublibrary.clone())
                     .or_insert_with(|| SublibraryInfo::new(sublibrary));
 
-                let start_position = {
-                    let pos = node_match.get_node().start_pos();
-                    let line = pos.line() + 1;
-                    let column = pos.column(imports_node) + 1;
-                    (line, column)
-                };
-                let end_position = {
-                    let pos = node_match.get_node().end_pos();
-                    let line = pos.line() + 1;
-                    let column = pos.column(imports_node) + 1;
-                    (line, column)
-                };
-                parse_and_add_imports_with_span(
+                self.parse_and_add_imports(
                     imports_text_str,
                     sublibrary_info,
-                    start_position,
-                    end_position,
+                    node_match.get_node(),
                 );
             }
         }
@@ -570,16 +520,13 @@ where
     }
 
     /// Generic processing for method call matches - works for both JavaScript and TypeScript
-    fn process_method_call_matches<U>(
+    fn process_method_call_matches(
         &self,
-        matches: Vec<NodeMatch<U>>,
+        matches: Vec<ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<T>>>,
         client_variables: &[String],
         client_info_map: &HashMap<String, (String, String, String)>,
         results: &mut Vec<MethodCall>,
-    ) -> Result<(), String>
-    where
-        U: Doc + std::clone::Clone,
-    {
+    ) -> Result<(), String> {
         for node_match in matches {
             let env = node_match.get_env();
 
@@ -604,26 +551,18 @@ where
                         HashMap::new()
                     };
 
-                    let start_position = {
-                        let pos = node_match.get_node().start_pos();
-                        (pos.line() + 1, pos.column(node_match.get_node()) + 1)
-                    };
-                    let end_position = {
-                        let pos = node_match.get_node().end_pos();
-                        (pos.line() + 1, pos.column(node_match.get_node()) + 1)
-                    };
-
                     results.push(MethodCall {
                         client_variable: variable_name,
                         client_type: client_type.clone(),
                         original_client_type: original_client_type.clone(),
                         client_sublibrary: client_sublibrary.clone(),
                         expr: node_match.text().to_string(),
-                        file_path: self.ast_grep.source_file.path.clone(),
                         method_name,
                         arguments,
-                        start_position,
-                        end_position,
+                        location: Location::from_node(
+                            self.ast_grep.source_file.path.to_path_buf(),
+                            node_match.get_node(),
+                        ),
                     });
                 }
             }
@@ -698,22 +637,6 @@ mod tests {
     use tree_sitter::LanguageExt;
 
     #[test]
-    fn test_parse_import_item() {
-        // Test regular import
-        let import_info = parse_import_item_with_span("S3Client", (1, 1), (1, 1)).unwrap();
-        assert_eq!(import_info.original_name, "S3Client");
-        assert_eq!(import_info.local_name, "S3Client");
-        assert!(!import_info.is_renamed);
-
-        // Test renamed import
-        let import_info =
-            parse_import_item_with_span("S3Client as MyS3Client", (1, 1), (1, 1)).unwrap();
-        assert_eq!(import_info.original_name, "S3Client");
-        assert_eq!(import_info.local_name, "MyS3Client");
-        assert!(import_info.is_renamed);
-    }
-
-    #[test]
     fn test_parse_object_literal() {
         let result = parse_object_literal("{region: 'us-east-1', timeout: 5000}");
         assert_eq!(result.get("region"), Some(&"us-east-1".to_string()));
@@ -732,6 +655,41 @@ mod tests {
         );
         let ast_grep = JavaScript.ast_grep(&source_file.content);
         AstWithSourceFile::new(ast_grep, source_file.clone())
+    }
+
+    #[test]
+    fn test_parse_import_item() {
+        // Test regular import
+        let source = r#"import S3Client from "@aws-sdk/client-s3""#;
+        let ast = create_js_ast(source);
+        let mut scanner = ASTScanner::new(ast, JavaScript.into());
+
+        let (imports, _requires) = scanner.scan_all_aws_imports().unwrap();
+        assert_eq!(
+            ImportInfo::new(
+                "S3Client".to_string(),
+                "S3Client".to_string(),
+                "S3Client",
+                Location::new(PathBuf::new(), (1, 1), (1, 42)),
+            ),
+            imports[0].imports[0]
+        );
+
+        // Test renamed import
+        let source = r#"import { S3Client as MyS3Client } from "@aws-sdk/client-s3";"#;
+        let ast = create_js_ast(source);
+        let mut scanner = ASTScanner::new(ast, JavaScript.into());
+
+        let (imports, _requires) = scanner.scan_all_aws_imports().unwrap();
+        assert_eq!(
+            ImportInfo::new(
+                "S3Client".to_string(),
+                "MyS3Client".to_string(),
+                "S3Client as MyS3Client",
+                Location::new(PathBuf::new(), (1, 1), (1, 61)),
+            ),
+            imports[0].imports[0]
+        );
     }
 
     #[test]
@@ -1038,7 +996,8 @@ function createListParams(): ListTablesInput {
 
         if let Some(result) = scanner.find_command_input_usage_position("QueryCommandInput") {
             assert_eq!(
-                result.start_position.0, 9,
+                result.location.start_line(),
+                9,
                 "QueryCommandInput should be at line 9"
             );
         } else {
@@ -1047,7 +1006,8 @@ function createListParams(): ListTablesInput {
 
         if let Some(result) = scanner.find_command_input_usage_position("ListTablesInput") {
             assert_eq!(
-                result.start_position.0, 15,
+                result.location.start_line(),
+                15,
                 "ListTablesInput should be at line 15"
             );
         } else {

@@ -3,12 +3,11 @@
 //! This module handles extraction of Go AWS SDK v2 feature methods like S3 Upload/Download,
 //! and other specialized SDK features.
 
-use std::path::PathBuf;
-
 use crate::extraction::go::features::{FeatureMethod, GoSdkV2Features};
 use crate::extraction::go::types::GoImportInfo;
 use crate::extraction::go::utils;
 use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
+use crate::Location;
 use ast_grep_config::from_yaml_string;
 use ast_grep_language::Go;
 
@@ -21,14 +20,10 @@ pub(crate) struct FeatureCallInfo {
     pub(crate) receiver: Option<String>,
     /// Extracted arguments
     pub(crate) arguments: Vec<crate::extraction::Parameter>,
-    /// File where we found the feature call
-    pub(crate) file_path: PathBuf,
     /// Matched expression
     pub(crate) expr: String,
-    /// Start position of the call node
-    pub(crate) start_position: (usize, usize),
-    /// End position of the call node
-    pub(crate) end_position: (usize, usize),
+    /// Location of the call
+    pub(crate) location: Location,
 }
 
 /// Extractor for Go AWS SDK v2 feature methods
@@ -112,19 +107,15 @@ rule:
                 let args_nodes = env.get_multiple_matches("ARGS");
                 let arguments = utils::extract_arguments(&args_nodes);
 
-                // Get position information
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let end = node.end_pos();
-
                 calls.push(FeatureCallInfo {
                     method_name,
                     receiver: Some(receiver),
                     arguments,
                     expr: node_match.text().to_string(),
-                    file_path: ast.source_file.path.clone(),
-                    start_position: (start.line() + 1, start.column(node) + 1),
-                    end_position: (end.line() + 1, end.column(node) + 1),
+                    location: Location::from_node(
+                        ast.source_file.path.clone(),
+                        node_match.get_node(),
+                    ),
                 });
             }
         }
@@ -230,9 +221,7 @@ rule:
                         parameters: parameters.clone(),
                         return_type: None,
                         expr: call_info.expr.clone(),
-                        file_path: call_info.file_path.clone(),
-                        start_position: call_info.start_position,
-                        end_position: call_info.end_position,
+                        location: call_info.location.clone(),
                         receiver: call_info.receiver.clone(),
                     }),
                 }
@@ -243,6 +232,8 @@ rule:
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use crate::{Language, SourceFile};
 
     use super::*;

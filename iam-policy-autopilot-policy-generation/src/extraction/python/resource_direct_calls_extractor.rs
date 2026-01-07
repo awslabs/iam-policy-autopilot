@@ -41,18 +41,11 @@ use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
-use crate::ServiceModelIndex;
+use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Python;
 use convert_case::{Case, Casing};
 use std::collections::{HashMap, HashSet};
-use std::path::{Path, PathBuf};
-
-/// Position tracking for deduplication (Tier 3)
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct MatchedPosition {
-    line: usize,
-    column: usize,
-}
+use std::path::Path;
 
 /// Information about a discovered resource constructor call
 #[derive(Debug, Clone)]
@@ -73,11 +66,14 @@ struct ResourceMethodCallInfo {
     resource_var: String,
     method_name: String,
     arguments: Vec<Parameter>,
-    method_call_line: usize,
     expr: String,
-    file_path: PathBuf,
-    start_position: (usize, usize),
-    end_position: (usize, usize),
+    location: Location,
+}
+
+impl ResourceMethodCallInfo {
+    fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 /// Resource usage classification for two-tier approach (Tier 3 is now separate)
@@ -178,18 +174,15 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         all_calls.extend(collection_synthetics);
 
         // Step 6: Collect matched positions for Tier 3 deduplication
-        let mut matched_positions = HashSet::new();
+        let mut matched_locations = HashSet::new();
         for call in &all_calls {
             if let Some(metadata) = &call.metadata {
-                matched_positions.insert(MatchedPosition {
-                    line: metadata.start_position.0,
-                    column: metadata.start_position.1,
-                });
+                matched_locations.insert(metadata.location.clone());
             }
         }
 
         // Step 7: New Tier 3 - service-agnostic fallback for unknown receivers
-        let tier3_calls = self.find_unmatched_utility_and_collection_calls(ast, &matched_positions);
+        let tier3_calls = self.find_unmatched_utility_and_collection_calls(ast, &matched_locations);
         all_calls.extend(tier3_calls);
 
         all_calls
@@ -420,9 +413,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     parameters,
                     return_type: None,
                     expr: method_call.expr.clone(),
-                    file_path: method_call.file_path.clone(),
-                    start_position: method_call.start_position,
-                    end_position: method_call.end_position,
+                    location: method_call.location.clone(),
                     receiver: Some(method_call.resource_var.clone()),
                 }),
             });
@@ -446,13 +437,10 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let mut synthetic_calls = Vec::new();
 
         // Extract position from evidence source
-        let (expr, file_path, start_pos, end_pos) = match evidence {
-            SyntheticEvidenceSource::UnmatchedMethod(ref method_call) => (
-                method_call.expr.clone(),
-                method_call.file_path.clone(),
-                method_call.start_position,
-                method_call.end_position,
-            ),
+        let (expr, location) = match evidence {
+            SyntheticEvidenceSource::UnmatchedMethod(ref method_call) => {
+                (method_call.expr.clone(), method_call.location.clone())
+            }
         };
 
         // Generate synthetic call for each action
@@ -507,9 +495,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     parameters,
                     return_type: None,
                     expr: expr.clone(),
-                    file_path: file_path.clone(),
-                    start_position: start_pos,
-                    end_position: end_pos,
+                    location: location.clone(),
                     receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
                 }),
             });
@@ -625,12 +611,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             a.resource_var
                 .cmp(&b.resource_var)
                 .then(a.method_name.cmp(&b.method_name))
-                .then(a.method_call_line.cmp(&b.method_call_line))
+                .then(a.start_line().cmp(&b.start_line()))
         });
         method_calls.dedup_by(|a, b| {
             a.resource_var == b.resource_var
                 && a.method_name == b.method_name
-                && a.method_call_line == b.method_call_line
+                && a.start_line() == b.start_line()
         });
 
         method_calls
@@ -654,20 +640,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
-        // Get position information from the method call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ResourceMethodCallInfo {
             resource_var,
             method_name,
             arguments,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
-            method_call_line: start.line() + 1,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -689,20 +667,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
-        // Get position information from the method call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ResourceMethodCallInfo {
             resource_var,
             method_name,
             arguments,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
-            method_call_line: start.line() + 1,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -827,9 +797,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 parameters: combined_parameters,
                 return_type: None,
                 expr: method_call.expr.clone(),
-                file_path: method_call.file_path.clone(),
-                start_position: method_call.start_position,
-                end_position: method_call.end_position,
+                location: method_call.location.clone(),
                 receiver: Some(method_call.resource_var.clone()),
             }),
         })
@@ -886,24 +854,21 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 };
 
                 // Check if this attribute matches a hasMany collection (in snake_case)
-                if let Some(has_many_spec) =
-                    boto3_model.get_has_many_spec(&constructor.resource_type, &attr_name)
+                if let Some(synthetic_call) = boto3_model
+                    .get_has_many_spec(&constructor.resource_type, &attr_name)
+                    .and_then(|has_many_spec| {
+                        self.generate_synthetic_for_collection(
+                            constructor,
+                            has_many_spec,
+                            node_match.text().to_string(),
+                            Location::from_node(
+                                ast.source_file.path.to_path_buf(),
+                                node_match.get_node(),
+                            ),
+                        )
+                    })
                 {
-                    // Generate synthetic call for the collection's operation
-                    let node = node_match.get_node();
-                    let start = node.start_pos();
-                    let end = node.end_pos();
-
-                    if let Some(synthetic_call) = self.generate_synthetic_for_collection(
-                        constructor,
-                        has_many_spec,
-                        node_match.text().to_string(),
-                        &ast.source_file.path,
-                        (start.line() + 1, start.column(node) + 1),
-                        (end.line() + 1, end.column(node) + 1),
-                    ) {
-                        synthetic_calls.push(synthetic_call);
-                    }
+                    synthetic_calls.push(synthetic_call);
                 }
             }
         }
@@ -917,9 +882,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         constructor: &ResourceConstructorInfo,
         has_many_spec: &HasManySpec,
         expr: String,
-        file_path: &Path,
-        start_position: (usize, usize),
-        end_position: (usize, usize),
+        location: Location,
     ) -> Option<SdkMethodCall> {
         let mut parameters = Vec::new();
 
@@ -954,9 +917,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 parameters,
                 return_type: None,
                 expr: expr.clone(),
-                file_path: file_path.to_path_buf(),
-                start_position,
-                end_position,
+                location,
                 receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
             }),
         })
@@ -970,15 +931,15 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     fn find_unmatched_utility_and_collection_calls(
         &self,
         ast: &AstWithSourceFile<Python>,
-        matched_positions: &HashSet<MatchedPosition>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
         let mut tier3_calls = Vec::new();
 
         // Search for utility method calls across all services
-        tier3_calls.extend(self.find_unmatched_utility_method_calls(ast, matched_positions));
+        tier3_calls.extend(self.find_unmatched_utility_method_calls(ast, matched_locations));
 
         // Search for collection accesses across all services
-        tier3_calls.extend(self.find_unmatched_collection_accesses(ast, matched_positions));
+        tier3_calls.extend(self.find_unmatched_collection_accesses(ast, matched_locations));
 
         tier3_calls
     }
@@ -987,7 +948,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     fn find_unmatched_utility_method_calls(
         &self,
         ast: &AstWithSourceFile<Python>,
-        matched_positions: &HashSet<MatchedPosition>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
         let root = ast.ast.root();
         let mut calls = Vec::new();
@@ -1011,16 +972,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     None => continue,
                 };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+                let location =
+                    Location::from_node(ast.source_file.path.clone(), node_match.get_node());
 
                 // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
+                if matched_locations.contains(&location) {
                     continue;
                 }
 
@@ -1048,9 +1004,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                 &arguments,
                                 &operation.required_params,
                                 node_match.text().to_string(),
-                                &ast.source_file.path,
-                                (start.line() + 1, start.column(node) + 1),
-                                (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
+                                &location,
                                 &receiver_var, // Use actual receiver from code
                             ));
                         }
@@ -1068,9 +1022,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                     &arguments,
                                     &operation.required_params,
                                     node_match.text().to_string(),
-                                    &ast.source_file.path,
-                                    (start.line() + 1, start.column(node) + 1),
-                                    (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
+                                    &location,
                                     &receiver_var, // Use actual receiver from code
                                 ));
                             }
@@ -1087,7 +1039,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     fn find_unmatched_collection_accesses(
         &self,
         ast: &AstWithSourceFile<Python>,
-        matched_positions: &HashSet<MatchedPosition>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
         let root = ast.ast.root();
         let mut calls = Vec::new();
@@ -1116,16 +1068,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     None => continue,
                 };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+                let location =
+                    Location::from_node(ast.source_file.path.clone(), node_match.get_node());
 
                 // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
+                if matched_locations.contains(&location) {
                     continue;
                 }
 
@@ -1144,12 +1091,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                     ),
                                     return_type: None,
                                     expr: node_match.text().to_string(),
-                                    file_path: ast.source_file.path.clone(),
-                                    start_position: (start.line() + 1, start.column(node) + 1),
-                                    end_position: (
-                                        node.end_pos().line() + 1,
-                                        node.end_pos().column(node) + 1,
-                                    ),
+                                    location: location.clone(),
                                     receiver: Some(receiver_var.clone()), // Use actual receiver from code
                                 }),
                             });
@@ -1171,12 +1113,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                 ),
                                 return_type: None,
                                 expr: node_match.text().to_string(),
-                                file_path: ast.source_file.path.clone(),
-                                start_position: (start.line() + 1, start.column(node) + 1),
-                                end_position: (
-                                    node.end_pos().line() + 1,
-                                    node.end_pos().column(node) + 1,
-                                ),
+                                location: location.clone(),
                                 receiver: Some(receiver_var.clone()), // Use actual receiver from code
                             }),
                         });
@@ -1197,9 +1134,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         arguments: &[Parameter],
         required_params: &[String],
         expr: String,
-        file_path: &Path,
-        start_position: (usize, usize),
-        end_position: (usize, usize),
+        location: &Location,
         receiver_marker: &str,
     ) -> SdkMethodCall {
         let mut parameters = Vec::new();
@@ -1235,9 +1170,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 parameters,
                 return_type: None,
                 expr: expr.clone(),
-                file_path: file_path.to_path_buf(),
-                start_position,
-                end_position,
+                location: location.clone(),
                 receiver: Some(receiver_marker.to_string()),
             }),
         }

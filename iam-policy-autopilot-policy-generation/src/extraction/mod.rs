@@ -29,7 +29,9 @@ pub use self::{core::*, output::*};
 pub mod core {
     use std::sync::Arc;
 
-    use crate::Language;
+    use schemars::JsonSchema;
+
+    use crate::{Language, Location};
 
     use super::{Deserialize, Path, PathBuf, Serialize};
 
@@ -102,7 +104,7 @@ pub mod core {
     /// Contains detailed information about a method call including parameters,
     /// position information, and parsing context. This is optional metadata
     /// that can be omitted when only basic method identification is needed.
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     #[serde(rename_all = "PascalCase")]
     pub struct SdkMethodCallMetadata {
         /// List of method parameters with their metadata
@@ -114,12 +116,7 @@ pub mod core {
         pub(crate) expr: String,
 
         // Position information
-        /// File path
-        pub(crate) file_path: PathBuf,
-        /// Starting position (line, column) - both 1-based
-        pub(crate) start_position: (usize, usize),
-        /// Ending position (line, column) - both 1-based
-        pub(crate) end_position: (usize, usize),
+        pub(crate) location: Location,
 
         // SDK method call context
         /// Receiver variable name (e.g., "`s3_client`", "ec2")
@@ -192,7 +189,7 @@ pub mod core {
     }
 
     /// Parameter value that distinguishes between resolved literals and unresolved expressions
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     pub(crate) enum ParameterValue {
         /// Resolved string literal with quotes stripped (e.g., "my-bucket", "42", "true")
         Resolved(String),
@@ -217,7 +214,7 @@ pub mod core {
     ///
     /// TODO: Refactor enum variant fields into separate structs to enable Default trait
     /// implementation and improve ergonomics. See: https://github.com/awslabs/iam-policy-autopilot/issues/61
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     pub(crate) enum Parameter {
         /// Positional argument (e.g., first, second argument in call)
         Positional {
@@ -328,7 +325,7 @@ pub mod output {
 
 #[cfg(test)]
 mod tests {
-    use crate::Language;
+    use crate::{Language, Location};
 
     use super::*;
     use std::path::PathBuf;
@@ -360,17 +357,21 @@ mod tests {
                 }],
                 return_type: Some("bool".to_string()),
                 expr: "test_method".to_string(),
-                file_path: PathBuf::new(),
-                start_position: (10, 1),
-                end_position: (10, 25),
+                location: Location::new(PathBuf::new(), (10, 1), (10, 25)),
                 receiver: None,
             }),
         };
 
         assert_eq!(method.name, "test_method");
         assert_eq!(method.metadata.as_ref().unwrap().parameters.len(), 1);
-        assert_eq!(method.metadata.as_ref().unwrap().start_position, (10, 1));
-        assert_eq!(method.metadata.as_ref().unwrap().end_position, (10, 25));
+        assert_eq!(
+            method.metadata.as_ref().unwrap().location.start_position,
+            (10, 1)
+        );
+        assert_eq!(
+            method.metadata.as_ref().unwrap().location.end_position,
+            (10, 25)
+        );
     }
 
     #[test]
@@ -387,9 +388,7 @@ mod tests {
                 }],
                 return_type: Some("Dict[str, Any]".to_string()),
                 expr: "get_object".to_string(),
-                file_path: PathBuf::new(),
-                start_position: (15, 5),
-                end_position: (15, 45),
+                location: Location::new(PathBuf::new(), (15, 5), (15, 45)),
                 receiver: Some("s3_client".to_string()),
             }),
         };
@@ -454,9 +453,7 @@ mod tests {
             parameters: vec![],
             return_type: Some("Dict[str, Any]".to_string()),
             expr: "s3_client.foo_bar".to_string(),
-            file_path: PathBuf::new(),
-            start_position: (10, 5),
-            end_position: (10, 30),
+            location: Location::new(PathBuf::new(), (10, 5), (10, 30)),
             receiver: Some("s3_client".to_string()),
         };
 

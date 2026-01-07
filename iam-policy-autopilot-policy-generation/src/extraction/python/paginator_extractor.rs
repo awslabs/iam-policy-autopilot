@@ -4,13 +4,13 @@
 //! two-phase operations: creating a paginator from a client, then executing
 //! the paginator with operation arguments.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
-use crate::Language;
 use crate::ServiceModelIndex;
+use crate::{Language, Location};
 use ast_grep_language::Python;
 
 /// Information about a discovered get_paginator call
@@ -24,10 +24,14 @@ pub(crate) struct PaginatorInfo {
     pub client_receiver: String,
     /// Matched expression
     pub expr: String,
-    /// File the paginator was found in
-    pub file_path: PathBuf,
-    /// Line number where get_paginator was called
-    pub get_paginator_line: usize,
+    /// Location where get_paginator was called
+    pub location: Location,
+}
+
+impl PaginatorInfo {
+    fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 /// Information about a paginate method call
@@ -37,16 +41,16 @@ pub(crate) struct PaginateCallInfo {
     pub paginator_var: String,
     /// Extracted arguments (excluding pagination-specific ones)
     pub arguments: Vec<Parameter>,
-    /// Line number where paginate was called (preferred for position reporting)
-    pub paginate_line: usize,
     /// Matched expression
     pub expr: String,
-    /// File the paginator was found in
-    pub file_path: PathBuf,
-    /// Start position of the paginate call node
-    pub start_position: (usize, usize),
-    /// End position of the paginate call node  
-    pub end_position: (usize, usize),
+    /// Location where paginator was called
+    pub location: Location,
+}
+
+impl PaginateCallInfo {
+    fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 /// Information about a chained paginator call (client.get_paginator().paginate())
@@ -58,17 +62,10 @@ pub(crate) struct ChainedPaginatorCallInfo {
     pub operation_name: String,
     /// Extracted arguments from paginate call (excluding pagination-specific ones)
     pub arguments: Vec<Parameter>,
-    /// Line number where chained call was made
-    #[allow(dead_code)]
-    pub line: usize,
     /// Matched expression
     pub expr: String,
-    /// File the chained paginator call was found in
-    pub file_path: PathBuf,
-    /// Start position of the chained call node
-    pub start_position: (usize, usize),
-    /// End position of the chained call node
-    pub end_position: (usize, usize),
+    /// Location where paginator was called
+    pub location: Location,
 }
 
 /// Extractor for boto3 paginate method patterns
@@ -234,16 +231,12 @@ impl<'a> PaginatorExtractor<'a> {
         let operation_text = operation_node.text();
         let operation_name = self.extract_quoted_string(&operation_text)?;
 
-        // Get line number
-        let get_paginator_line = node_match.get_node().start_pos().line() + 1;
-
         Some(PaginatorInfo {
             variable_name,
             operation_name,
             client_receiver,
-            get_paginator_line,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -263,19 +256,11 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        // Get position information from the paginate call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(PaginateCallInfo {
             paginator_var,
             arguments: filtered_arguments,
-            paginate_line: start.line() + 1,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -300,20 +285,12 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&paginate_args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        // Get position information from the chained call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ChainedPaginatorCallInfo {
             client_receiver,
             operation_name,
             arguments: filtered_arguments,
-            line: start.line() + 1,
             expr: node_match.text().to_string(),
-            file_path: file_path.to_path_buf(),
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -340,8 +317,8 @@ impl<'a> PaginatorExtractor<'a> {
         for (idx, paginator) in paginators.iter().enumerate() {
             if paginator.variable_name == paginate_call.paginator_var {
                 // Only consider paginators that come before the paginate call
-                if paginator.get_paginator_line < paginate_call.paginate_line {
-                    let distance = paginate_call.paginate_line - paginator.get_paginator_line;
+                if paginator.start_line() < paginate_call.start_line() {
+                    let distance = paginate_call.start_line() - paginator.start_line();
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(paginator);
@@ -385,9 +362,7 @@ impl<'a> PaginatorExtractor<'a> {
                 return_type: None,
                 expr: paginator_info.expr.clone(),
                 // Use get_paginator call position
-                file_path: paginator_info.file_path.clone(),
-                start_position: (paginator_info.get_paginator_line, 1),
-                end_position: (paginator_info.get_paginator_line, 1),
+                location: paginator_info.location.clone(),
                 receiver: Some(paginator_info.client_receiver.clone()),
             }),
         }
@@ -422,9 +397,7 @@ impl<'a> PaginatorExtractor<'a> {
                 return_type: None,
                 expr: paginate_call.expr.clone(),
                 // Use paginate call position (most specific)
-                file_path: paginate_call.file_path.clone(),
-                start_position: paginate_call.start_position,
-                end_position: paginate_call.end_position,
+                location: paginate_call.location.clone(),
                 // Use client receiver from get_paginator call
                 receiver: Some(paginator_info.client_receiver.clone()),
             }),
@@ -459,9 +432,7 @@ impl<'a> PaginatorExtractor<'a> {
                 return_type: None,
                 expr: chained_call.expr.clone(),
                 // Use chained call position
-                file_path: chained_call.file_path.clone(),
-                start_position: chained_call.start_position,
-                end_position: chained_call.end_position,
+                location: chained_call.location.clone(),
                 // Use client receiver from chained call
                 receiver: Some(chained_call.client_receiver.clone()),
             }),
@@ -486,7 +457,7 @@ mod tests {
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Python;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::PathBuf};
 
     fn create_test_ast(source_code: &str) -> AstWithSourceFile<Python> {
         let source_file = SourceFile::with_language(
@@ -733,7 +704,7 @@ page_iterator = paginator.paginate(Bucket='test-bucket')
         assert_eq!(call.name, "list_objects_v2");
 
         // Position should be from the paginate call (line 5), not get_paginator call (line 4)
-        assert_eq!(call.metadata.as_ref().unwrap().start_position.0, 5);
+        assert_eq!(call.metadata.as_ref().unwrap().location.start_line(), 5);
         assert_eq!(
             call.metadata.as_ref().unwrap().receiver,
             Some("client".to_string())

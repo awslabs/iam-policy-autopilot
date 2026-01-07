@@ -8,9 +8,7 @@ use convert_case::{Case, Casing};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use super::{
-    Action, Context, EnrichedSdkMethodCall, Explanation, FasInfo, OperationView, Reason, Resource,
-};
+use super::{Action, Context, EnrichedSdkMethodCall, Explanation, FasInfo, Reason, Resource};
 use crate::enrichment::operation_fas_map::{FasOperation, OperationFasMap, OperationFasMaps};
 use crate::enrichment::service_reference::ServiceReference;
 use crate::enrichment::{Condition, ServiceReferenceLoader};
@@ -336,13 +334,11 @@ impl ResourceMatcher {
 
                                 // Create explanation for this action
                                 let explanation = Explanation {
-                                    reasons: vec![Reason {
-                                        operation: OperationView::from_call(
-                                            parsed_call,
-                                            original_service_name,
-                                        ),
-                                        fas: op.to_fas_info(&self.service_cfg),
-                                    }],
+                                    reasons: vec![Reason::new(
+                                        parsed_call,
+                                        original_service_name,
+                                        op.to_fas_info(&self.service_cfg),
+                                    )],
                                 };
                                 let enriched_action = Action::new(
                                     action.name.clone(),
@@ -423,10 +419,7 @@ impl ResourceMatcher {
 
         // Create explanation for fallback action
         let explanation = Explanation {
-            reasons: vec![Reason {
-                operation: OperationView::from_call(parsed_call, original_service_name),
-                fas: None,
-            }],
+            reasons: vec![Reason::new(parsed_call, original_service_name, None)],
         };
 
         Ok(Some(Action::new(

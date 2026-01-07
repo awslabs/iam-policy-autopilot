@@ -10,7 +10,7 @@ use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
-use crate::{ServiceModelIndex, SourceFile};
+use crate::{Location, ServiceModelIndex, SourceFile};
 use ast_grep_config::from_yaml_string;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Go;
@@ -189,11 +189,6 @@ rule:
             vec![]
         };
 
-        // Get position information
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
@@ -201,9 +196,7 @@ rule:
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
                 expr: node_match.text().to_string(),
-                file_path: source_file.path.clone(),
-                start_position: (start.line() + 1, start.column(node) + 1),
-                end_position: (end.line() + 1, end.column(node) + 1),
+                location: Location::from_node(source_file.path.clone(), node_match.get_node()),
                 receiver,
             }),
         };

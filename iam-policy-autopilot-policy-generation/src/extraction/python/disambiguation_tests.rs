@@ -15,6 +15,7 @@ mod tests {
     use crate::extraction::{
         Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata, SourceFile,
     };
+    use crate::Location;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -202,9 +203,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 80),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 80)),
                 receiver: Some("apigateway_client".to_string()),
             }),
         };
@@ -235,9 +234,7 @@ mod tests {
                     // Missing required Stage and ApiId parameters
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 40),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 40)),
                 receiver: Some("apigateway_client".to_string()),
             }),
         };
@@ -283,9 +280,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 100),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 100)),
                 receiver: Some("apigateway_client".to_string()),
             }),
         };
@@ -309,9 +304,7 @@ mod tests {
                     position: 0,
                 }],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("apigateway_client".to_string()),
             }),
         };
@@ -344,9 +337,7 @@ mod tests {
                     type_annotation: None,
                 }],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("custom_client".to_string()),
             }),
         };
@@ -382,9 +373,7 @@ mod tests {
                         },
                     ],
                     return_type: None,
-                    file_path: PathBuf::new(),
-                    start_position: (1, 1),
-                    end_position: (1, 50),
+                    location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                     receiver: Some("s3_client".to_string()),
                 }),
             },
@@ -401,9 +390,7 @@ mod tests {
                         type_annotation: None,
                     }],
                     return_type: None,
-                    file_path: PathBuf::new(),
-                    start_position: (2, 1),
-                    end_position: (2, 30),
+                    location: Location::new(PathBuf::new(), (2, 1), (2, 30)),
                     receiver: Some("custom_client".to_string()),
                 }),
             },
@@ -420,9 +407,7 @@ mod tests {
                         type_annotation: None,
                     }],
                     return_type: None,
-                    file_path: PathBuf::new(),
-                    start_position: (3, 1),
-                    end_position: (3, 25),
+                    location: Location::new(PathBuf::new(), (3, 1), (3, 25)),
                     receiver: Some("custom_client".to_string()),
                 }),
             },
@@ -557,9 +542,7 @@ def example():
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 80),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 80)),
                 receiver: Some("s3_client".to_string()),
             }),
         };
@@ -610,9 +593,7 @@ def example():
                     },
                 ],
                 return_type: None,
-                file_path: PathBuf::new(),
-                start_position: (1, 1),
-                end_position: (1, 60),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 60)),
                 receiver: Some("s3_client".to_string()),
             }),
         };

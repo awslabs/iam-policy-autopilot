@@ -5,6 +5,7 @@
 
 use crate::extraction::javascript::types::{ImportInfo, JavaScriptScanResults};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use crate::Location;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
 use std::borrow::Cow;
@@ -54,10 +55,8 @@ fn load_libraries_mapping() -> Option<JsV3LibrariesMapping> {
 pub(crate) struct CommandUsage<'a> {
     /// The matched text from the AST
     pub(crate) text: Cow<'a, str>,
-    /// Start position in the source file (line, column) - 1-based
-    pub(crate) start_position: (usize, usize),
-    /// End position in the source file (line, column) - 1-based
-    pub(crate) end_position: (usize, usize),
+    /// Location where the command usage was found
+    pub(crate) location: Location,
     /// Extracted parameters from the command/function arguments
     pub(crate) parameters: Vec<crate::extraction::Parameter>,
 }
@@ -66,14 +65,12 @@ impl<'a> CommandUsage<'a> {
     /// Create a new CommandInstantiationResult
     pub(crate) fn new(
         text: Cow<'a, str>,
-        start_position: (usize, usize),
-        end_position: (usize, usize),
+        location: Location,
         parameters: Vec<crate::extraction::Parameter>,
     ) -> Self {
         Self {
             text,
-            start_position,
-            end_position,
+            location,
             parameters,
         }
     }
@@ -84,8 +81,7 @@ impl From<&ImportInfo> for CommandUsage<'_> {
     fn from(value: &ImportInfo) -> Self {
         Self {
             text: Cow::Owned(value.statement.clone()),
-            start_position: value.start_position,
-            end_position: value.end_position,
+            location: value.location.clone(),
             // TODO: parameters should be an Option, so we can distinguish
             // the case where we fall back to an import statement
             parameters: vec![],
@@ -208,9 +204,7 @@ impl ExtractionUtils {
                                         parameters: result.parameters.clone(),
                                         return_type: None,
                                         expr: result.text.to_string(),
-                                        file_path: scanner.ast_grep.source_file.path.clone(),
-                                        start_position: result.start_position,
-                                        end_position: result.end_position,
+                                        location: result.location.clone(),
                                         receiver: None, // Commands are typically standalone
                                     }),
                                 };
@@ -299,9 +293,7 @@ impl ExtractionUtils {
                                     parameters: result.parameters.clone(), // extracted from 2nd argument!
                                     return_type: None,
                                     expr: result.text.to_string(),
-                                    file_path: scanner.ast_grep.source_file.path.clone(),
-                                    start_position: result.start_position,
-                                    end_position: result.end_position,
+                                    location: result.location.clone(),
                                     receiver: None,
                                 }),
                             };
@@ -360,9 +352,7 @@ impl ExtractionUtils {
                                     parameters: result.parameters, // Extracted from 2nd argument (operation params)
                                     return_type: None,
                                     expr: result.text.to_string(),
-                                    file_path: scanner.ast_grep.source_file.path.clone(),
-                                    start_position: result.start_position,
-                                    end_position: result.end_position,
+                                    location: result.location.clone(),
                                     receiver: None, // Waiter functions are standalone
                                 }),
                             };
@@ -421,9 +411,7 @@ impl ExtractionUtils {
                                 parameters: Vec::new(),
                                 return_type: None,
                                 expr: result.text.to_string(),
-                                file_path: scanner.ast_grep.source_file.path.clone(),
-                                start_position: result.start_position,
-                                end_position: result.end_position,
+                                location: result.location.clone(),
                                 receiver: None,
                             }),
                         };
@@ -495,9 +483,7 @@ impl ExtractionUtils {
                                         parameters: result.parameters.clone(),
                                         return_type: None,
                                         expr: result.text.to_string(),
-                                        file_path: scanner.ast_grep.source_file.path.clone(),
-                                        start_position: result.start_position,
-                                        end_position: result.end_position,
+                                        location: result.location.clone(),
                                         receiver: None,
                                     }),
                                 };
@@ -546,9 +532,7 @@ impl ExtractionUtils {
                     parameters,
                     return_type: None,
                     expr: method_call.expr.clone(),
-                    file_path: method_call.file_path.clone(),
-                    start_position: method_call.start_position,
-                    end_position: method_call.end_position,
+                    location: method_call.location.clone(),
                     receiver: Some(method_call.client_variable.clone()),
                 }),
             };

@@ -306,7 +306,7 @@ mod tests {
     use crate::{Explanation, SdkMethodCall};
 
     use super::super::Effect;
-    use crate::enrichment::{Action, EnrichedSdkMethodCall, OperationView, Resource};
+    use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::errors::ExtractorError;
 
     fn create_test_engine() -> Engine<'static> {
@@ -922,10 +922,7 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call, "s3"),
-                        fas: None,
-                    }],
+                    reasons: vec![Reason::new(&sdk_call, "s3", None)],
                 },
             )],
             sdk_method_call: &sdk_call,
@@ -975,10 +972,7 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call1, "s3"),
-                        fas: None,
-                    }],
+                    reasons: vec![Reason::new(&sdk_call1, "s3", None)],
                 },
             )],
             sdk_method_call: &sdk_call1,
@@ -997,10 +991,7 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call1, "s3"),
-                        fas: None,
-                    }],
+                    reasons: vec![Reason::new(&sdk_call1, "s3", None)],
                 },
             )],
             sdk_method_call: &sdk_call2,
@@ -1048,10 +1039,7 @@ mod tests {
                     )],
                     vec![],
                     Explanation {
-                        reasons: vec![Reason {
-                            operation: OperationView::from_call(&sdk_call, "s3"),
-                            fas: None,
-                        }],
+                        reasons: vec![Reason::new(&sdk_call, "s3", None)],
                     },
                 ),
                 Action::new(
@@ -1064,13 +1052,14 @@ mod tests {
                     )],
                     vec![],
                     Explanation {
-                        reasons: vec![Reason {
-                            operation: OperationView::from_call(&sdk_call, "s3"),
-                            fas: Some(crate::enrichment::FasInfo::new(vec![
+                        reasons: vec![Reason::new(
+                            &sdk_call,
+                            "s3",
+                            Some(crate::enrichment::FasInfo::new(vec![
                                 "s3:GetObject".to_string(),
                                 "kms:Decrypt".to_string(),
                             ])),
-                        }],
+                        )],
                     },
                 ),
             ],
@@ -1127,10 +1116,7 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason {
-                        operation: OperationView::from_call(&sdk_call, "s3"),
-                        fas: None,
-                    }],
+                    reasons: vec![Reason::new(&sdk_call, "s3", None)],
                 },
             )],
             sdk_method_call: &sdk_call,
