@@ -34,6 +34,14 @@ pub async fn generate_policies(
     .await
     .context("Failed to process source files")?;
 
+    // Relies on the invariant that all source files must be of the same language, which we
+    // enforce in process_source_files
+    let sdk = extracted_methods
+        .metadata
+        .source_files
+        .first()
+        .map_or(crate::SdkType::Other, |f| f.language.sdk_type());
+
     let extracted_methods = extracted_methods
         .methods
         .into_iter()
@@ -53,7 +61,9 @@ pub async fn generate_policies(
     let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
 
     // Run the complete enrichment pipeline
-    let enriched_results = enrichment_engine.enrich_methods(&extracted_methods).await?;
+    let enriched_results = enrichment_engine
+        .enrich_methods(&extracted_methods, sdk)
+        .await?;
 
     let enrichment_duration = pipeline_start.elapsed();
     trace!("Enrichment pipeline completed in {:?}", enrichment_duration);

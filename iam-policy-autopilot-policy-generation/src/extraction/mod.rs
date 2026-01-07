@@ -189,6 +189,9 @@ pub mod core {
     /// This enum eliminates the conceptual confusion of the previous struct design
     /// where unpacked parameters had a "name" field containing expressions.
     /// Each variant contains only the fields that make sense for that parameter type.
+    ///
+    /// TODO: Refactor enum variant fields into separate structs to enable Default trait
+    /// implementation and improve ergonomics. See: https://github.com/awslabs/iam-policy-autopilot/issues/61
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub(crate) enum Parameter {
         /// Positional argument (e.g., first, second argument in call)
@@ -199,6 +202,9 @@ pub mod core {
             position: usize,
             /// Type annotation if available (e.g., "str", "int")
             type_annotation: Option<String>,
+            /// For Go struct literals: extracted top-level field names (not nested)
+            #[serde(skip_serializing_if = "Option::is_none")]
+            struct_fields: Option<Vec<String>>,
         },
         /// Named keyword argument (e.g., Bucket='my-bucket')
         Keyword {
@@ -237,6 +243,7 @@ pub mod output {
         /// List of all extracted methods
         pub methods: Vec<SdkMethodCall>,
         /// Metadata about the extraction process
+        /// INVARIANT: all source_files must have the same language
         pub metadata: ExtractionMetadata,
     }
 

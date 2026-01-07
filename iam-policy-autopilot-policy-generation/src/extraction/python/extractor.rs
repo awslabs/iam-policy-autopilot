@@ -108,8 +108,7 @@ impl Extractor for PythonExtractor {
 
                     // Add waiters to extracted methods using the service model index directly
                     let waiters_extractor = WaitersExtractor::new(service_index);
-                    let waiter_calls =
-                        waiters_extractor.extract_waiter_method_calls(ast, service_index);
+                    let waiter_calls = waiters_extractor.extract_waiter_method_calls(ast);
                     method_calls.extend(waiter_calls);
 
                     // Add paginators to extracted methods using the service model index directly

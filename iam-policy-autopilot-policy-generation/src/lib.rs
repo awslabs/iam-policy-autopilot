@@ -60,6 +60,23 @@ pub enum Language {
 }
 
 impl Language {
+    fn sdk_type(&self) -> SdkType {
+        match self {
+            Self::Python => SdkType::Boto3,
+            _ => SdkType::Other,
+        }
+    }
+}
+
+/// SdkType used, for Boto3 we look up the method name in the SDF
+#[derive(Debug, Copy, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+#[allow(missing_docs)]
+pub enum SdkType {
+    Boto3,
+    Other,
+}
+
+impl Language {
     /// Attempts to parse a language from a string representation.
     ///
     /// # Arguments

@@ -86,7 +86,6 @@ mod tests {
             },
             operations: apigateway_operations,
             shapes: apigateway_shapes,
-            waiters: HashMap::new(),
         };
 
         services.insert("apigatewayv2".to_string(), apigateway_service);
@@ -144,7 +143,6 @@ mod tests {
             },
             operations: s3_operations,
             shapes: s3_shapes,
-            waiters: HashMap::new(),
         };
 
         services.insert("s3".to_string(), s3_service);
@@ -169,7 +167,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 
@@ -538,6 +536,7 @@ def example():
                         value: ParameterValue::Resolved("positional_value".to_string()),
                         position: 3,
                         type_annotation: None,
+                        struct_fields: None,
                     },
                 ],
                 return_type: None,
@@ -588,6 +587,7 @@ def example():
                         value: ParameterValue::Resolved("positional_value".to_string()),
                         position: 2,
                         type_annotation: None,
+                        struct_fields: None,
                     },
                 ],
                 return_type: None,

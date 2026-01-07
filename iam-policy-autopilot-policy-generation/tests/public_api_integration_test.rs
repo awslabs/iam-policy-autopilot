@@ -6,7 +6,7 @@
 
 use iam_policy_autopilot_policy_generation::{
     EnrichmentEngine, ExtractionEngine, FileSystemProvider, JsonProvider, Language,
-    PolicyGenerationEngine, SourceFile,
+    PolicyGenerationEngine, SdkType, SourceFile,
 };
 use std::io::Write;
 use std::path::PathBuf;
@@ -91,7 +91,7 @@ def download_object():
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
 
     let enriched_methods = enrichment_engine
-        .enrich_methods(&extracted_methods.methods)
+        .enrich_methods(&extracted_methods.methods, SdkType::Boto3)
         .await
         .expect("Enrichment should succeed");
 
@@ -283,7 +283,7 @@ def multi_service_operations():
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
 
     let enriched = enrichment_engine
-        .enrich_methods(&extracted.methods)
+        .enrich_methods(&extracted.methods, SdkType::Boto3)
         .await
         .expect("Should enrich methods");
 
@@ -435,7 +435,7 @@ def start_policy_generation():
     // Enrich the methods
     let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
     let enriched = enrichment_engine
-        .enrich_methods(&extracted.methods)
+        .enrich_methods(&extracted.methods, SdkType::Boto3)
         .await
         .expect("Enrichment should succeed");
 

@@ -166,6 +166,8 @@ impl<'a> MethodDisambiguator<'a> {
             .unwrap_or_default();
 
         // Get all valid parameters from the shape
+        // TODO: Make this case-insensitive like Go disambiguation to handle inconsistent
+        // AWS model casing. See: https://github.com/awslabs/iam-policy-autopilot/issues/57
         let valid_params: HashSet<String> = shape.members.keys().cloned().collect();
 
         // Check that all required parameters are provided
@@ -266,7 +268,6 @@ mod tests {
             },
             operations,
             shapes,
-            waiters: HashMap::new(),
         };
 
         services.insert("apigatewayv2".to_string(), service_def);
@@ -283,7 +284,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 

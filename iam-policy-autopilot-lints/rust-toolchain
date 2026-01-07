@@ -1,0 +1,6 @@
+# Nightly toolchain required for building dylint custom lints
+# Dylint lints need access to rustc internals (rustc-dev) which are only available on nightly
+# Running the lints (via cargo dylint) works on stable Rust
+[toolchain]
+channel = "nightly-2025-09-18"
+components = ["llvm-tools-preview", "rustc-dev"]

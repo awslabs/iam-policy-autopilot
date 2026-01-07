@@ -362,7 +362,6 @@ mod tests {
                 },
                 operations: s3_operations,
                 shapes: s3_shapes,
-                waiters: HashMap::new(),
             },
         );
 
@@ -386,7 +385,6 @@ mod tests {
                 },
                 operations: ec2_operations,
                 shapes: HashMap::new(),
-                waiters: HashMap::new(),
             },
         );
 
@@ -409,7 +407,6 @@ mod tests {
                 },
                 operations: dynamodb_operations,
                 shapes: HashMap::new(),
-                waiters: HashMap::new(),
             },
         );
 
@@ -433,7 +430,6 @@ mod tests {
                 },
                 operations: gamelift_operations,
                 shapes: HashMap::new(),
-                waiters: HashMap::new(),
             },
         );
 
@@ -462,7 +458,6 @@ mod tests {
                     },
                     operations,
                     shapes: HashMap::new(),
-                    waiters: HashMap::new(),
                 },
             );
         }
@@ -501,7 +496,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 

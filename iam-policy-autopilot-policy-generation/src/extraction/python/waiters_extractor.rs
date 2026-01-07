@@ -8,7 +8,6 @@ use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
 use ast_grep_language::Python;
-use convert_case::{Case, Casing};
 
 /// Information about a discovered get_waiter call
 #[derive(Debug, Clone)]
@@ -21,6 +20,23 @@ pub(crate) struct WaiterInfo {
     pub client_receiver: String,
     /// Line number where get_waiter was called
     pub get_waiter_line: usize,
+}
+
+// TODO: This should be refactored at a higher level, so this type can be removed.
+// See https://github.com/awslabs/iam-policy-autopilot/issues/88.
+enum CallInfo<'a> {
+    None(&'a WaiterInfo),
+    Simple(&'a WaiterInfo, &'a WaitCallInfo),
+    Chained(&'a ChainedWaiterCallInfo),
+}
+
+impl<'a> CallInfo<'a> {
+    fn waiter_name(&self) -> &'a str {
+        match self {
+            Self::None(waiter_info) | Self::Simple(waiter_info, ..) => &waiter_info.waiter_name,
+            Self::Chained(waiter_call_info) => &waiter_call_info.waiter_name,
+        }
+    }
 }
 
 /// Information about a wait method call
@@ -92,7 +108,6 @@ impl<'a> WaitersExtractor<'a> {
     pub(crate) fn extract_waiter_method_calls(
         &self,
         ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-        service_index: &ServiceModelIndex,
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all get_waiter calls
         let waiters = self.find_get_waiter_calls(ast);
@@ -126,7 +141,7 @@ impl<'a> WaitersExtractor<'a> {
         for (idx, waiter) in waiters.iter().enumerate() {
             if !matched_waiter_indices.contains(&idx) {
                 // Create synthetic calls with required params for all candidate services
-                let unmatched_calls = self.create_unmatched_synthetic_calls(waiter, service_index);
+                let unmatched_calls = self.create_unmatched_synthetic_calls(waiter);
                 synthetic_calls.extend(unmatched_calls);
             }
         }
@@ -317,114 +332,88 @@ impl<'a> WaitersExtractor<'a> {
 
     /// Create synthetic SdkMethodCalls for a matched waiter + wait
     /// Creates one call per candidate service with the actual operation name
-    fn create_matched_synthetic_calls(
+    fn create_synthetic_calls_internal(
         &self,
-        wait_call: &WaitCallInfo,
-        waiter_info: &WaiterInfo,
+        wait_call: CallInfo,
+        receiver: Option<String>,
     ) -> Vec<SdkMethodCall> {
-        // Convert Python snake_case waiter name to PascalCase for lookup
-        let waiter_name_pascal = waiter_info.waiter_name.to_case(Case::Pascal);
-
-        // Find all services that provide this waiter using reverse index
-        let candidate_services = self
-            .service_index
-            .waiter_to_services
-            .get(&waiter_name_pascal)
-            .cloned()
-            .unwrap_or_default();
-
-        if candidate_services.is_empty() {
-            return Vec::new();
-        }
-
         let mut synthetic_calls = Vec::new();
 
-        for service_name in candidate_services {
-            // Get the operation for this service+waiter combination from service definition
-            if let Some(service_def) = self.service_index.services.get(&service_name) {
-                if let Some(operation) = service_def.waiters.get(&waiter_name_pascal) {
-                    // Convert operation name to Python snake_case for method name
-                    let operation_snake = operation.name.to_case(Case::Snake);
-
-                    // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                    let filtered_params =
-                        ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone());
-
-                    // Create synthetic call with filtered wait() arguments
-                    synthetic_calls.push(SdkMethodCall {
-                        name: operation_snake,
-                        possible_services: vec![service_name.clone()],
-                        metadata: Some(SdkMethodCallMetadata {
-                            parameters: filtered_params,
-                            return_type: None,
+        // Get the operation for this service+waiter combination from service definition
+        if let Some(service_defs) = self
+            .service_index
+            .waiter_lookup
+            .get(wait_call.waiter_name())
+        {
+            for service_method in service_defs {
+                let (parameters, start_position, end_position) = match wait_call {
+                    CallInfo::Simple(_, wait_call) => {
+                        // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
+                        (
+                            ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone()),
+                            wait_call.start_position,
+                            wait_call.end_position,
+                        )
+                    }
+                    CallInfo::Chained(chained_wait_call) => {
+                        // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
+                        (
+                            ParameterFilter::filter_waiter_parameters(
+                                chained_wait_call.arguments.clone(),
+                            ),
                             // Use wait call position (most specific)
-                            start_position: wait_call.start_position,
-                            end_position: wait_call.end_position,
-                            // Use client receiver from get_waiter call
-                            receiver: Some(waiter_info.client_receiver.clone()),
-                        }),
-                    });
-                }
+                            chained_wait_call.start_position,
+                            chained_wait_call.end_position,
+                        )
+                    }
+                    CallInfo::None(waiter_info) => {
+                        let fallback_start_pos = (waiter_info.get_waiter_line, 1);
+                        let fallback_end_pos = (waiter_info.get_waiter_line, 1);
+                        let parameters = self.get_required_parameters(
+                            &service_method.service_name,
+                            &service_method.operation_name,
+                            self.service_index,
+                        );
+                        (parameters, fallback_start_pos, fallback_end_pos)
+                    }
+                };
+
+                // Create synthetic call with filtered wait() arguments
+                synthetic_calls.push(SdkMethodCall {
+                    name: wait_call.waiter_name().to_string(),
+                    possible_services: vec![service_method.service_name.clone()],
+                    metadata: Some(SdkMethodCallMetadata {
+                        parameters,
+                        return_type: None,
+                        start_position,
+                        end_position,
+                        // Use client receiver from get_waiter call
+                        receiver: receiver.clone(),
+                    }),
+                });
             }
         }
 
         synthetic_calls
     }
 
-    /// Create synthetic SdkMethodCalls for an unmatched get_waiter
-    fn create_unmatched_synthetic_calls(
+    fn create_matched_synthetic_calls(
         &self,
+        wait_call: &WaitCallInfo,
         waiter_info: &WaiterInfo,
-        service_index: &ServiceModelIndex,
     ) -> Vec<SdkMethodCall> {
-        // Convert Python snake_case waiter name to PascalCase for lookup
-        let waiter_name_pascal = waiter_info.waiter_name.to_case(Case::Pascal);
+        self.create_synthetic_calls_internal(
+            CallInfo::Simple(waiter_info, wait_call),
+            Some(waiter_info.client_receiver.clone()),
+        )
+    }
 
-        // Find all services that provide this waiter using reverse index
-        let candidate_services = self
-            .service_index
-            .waiter_to_services
-            .get(&waiter_name_pascal)
-            .cloned()
-            .unwrap_or_default();
-
-        if candidate_services.is_empty() {
-            return Vec::new();
-        }
-
-        let mut synthetic_calls = Vec::new();
-
-        for service_name in candidate_services {
-            // Get the operation for this service+waiter combination from service definition
-            if let Some(service_def) = self.service_index.services.get(&service_name) {
-                if let Some(operation) = service_def.waiters.get(&waiter_name_pascal) {
-                    // Convert operation name to Python snake_case for method name
-                    let operation_snake = operation.name.to_case(Case::Snake);
-
-                    // Get required parameters for this operation
-                    let required_params = self.get_required_parameters(
-                        &service_name,
-                        &operation_snake,
-                        service_index,
-                    );
-
-                    // Create synthetic call with required parameters set to None
-                    synthetic_calls.push(SdkMethodCall {
-                        name: operation_snake,
-                        possible_services: vec![service_name.clone()],
-                        metadata: Some(SdkMethodCallMetadata {
-                            parameters: required_params,
-                            return_type: None,
-                            start_position: (waiter_info.get_waiter_line, 1),
-                            end_position: (waiter_info.get_waiter_line, 1),
-                            receiver: Some(waiter_info.client_receiver.clone()),
-                        }),
-                    });
-                }
-            }
-        }
-
-        synthetic_calls
+    /// Create synthetic SdkMethodCalls for an unmatched get_waiter
+    fn create_unmatched_synthetic_calls(&self, waiter_info: &WaiterInfo) -> Vec<SdkMethodCall> {
+        self.create_synthetic_calls_internal(
+            CallInfo::None(waiter_info),
+            Some(waiter_info.client_receiver.clone()),
+        )
     }
 
     /// Create synthetic SdkMethodCalls for a chained waiter call
@@ -433,53 +422,10 @@ impl<'a> WaitersExtractor<'a> {
         &self,
         chained_call: &ChainedWaiterCallInfo,
     ) -> Vec<SdkMethodCall> {
-        // Convert Python snake_case waiter name to PascalCase for lookup
-        let waiter_name_pascal = chained_call.waiter_name.to_case(Case::Pascal);
-
-        // Find all services that provide this waiter using reverse index
-        let candidate_services = self
-            .service_index
-            .waiter_to_services
-            .get(&waiter_name_pascal)
-            .cloned()
-            .unwrap_or_default();
-
-        if candidate_services.is_empty() {
-            return Vec::new();
-        }
-
-        let mut synthetic_calls = Vec::new();
-
-        for service_name in candidate_services {
-            // Get the operation for this service+waiter combination from service definition
-            if let Some(service_def) = self.service_index.services.get(&service_name) {
-                if let Some(operation) = service_def.waiters.get(&waiter_name_pascal) {
-                    // Convert operation name to Python snake_case for method name
-                    let operation_snake = operation.name.to_case(Case::Snake);
-
-                    // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                    let filtered_params =
-                        ParameterFilter::filter_waiter_parameters(chained_call.arguments.clone());
-
-                    // Create synthetic call with filtered wait() arguments
-                    synthetic_calls.push(SdkMethodCall {
-                        name: operation_snake,
-                        possible_services: vec![service_name.clone()],
-                        metadata: Some(SdkMethodCallMetadata {
-                            parameters: filtered_params,
-                            return_type: None,
-                            // Use chained call position
-                            start_position: chained_call.start_position,
-                            end_position: chained_call.end_position,
-                            // Use client receiver from chained call
-                            receiver: Some(chained_call.client_receiver.clone()),
-                        }),
-                    });
-                }
-            }
-        }
-
-        synthetic_calls
+        self.create_synthetic_calls_internal(
+            CallInfo::Chained(chained_call),
+            Some(chained_call.client_receiver.clone()),
+        )
     }
 
     /// Get required parameters for an operation from the service index
@@ -493,10 +439,7 @@ impl<'a> WaitersExtractor<'a> {
 
         // Look up the service and operation in the service index
         if let Some(service_def) = service_index.services.get(service_name) {
-            // Convert snake_case operation name to PascalCase for lookup
-            let operation_name_pascal = operation_name.to_case(Case::Pascal);
-
-            if let Some(operation) = service_def.operations.get(&operation_name_pascal) {
+            if let Some(operation) = service_def.operations.get(operation_name) {
                 // Get the input shape if it exists
                 if let Some(input_ref) = &operation.input {
                     if let Some(input_shape) = service_def.shapes.get(&input_ref.shape) {
@@ -527,6 +470,8 @@ impl<'a> WaitersExtractor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::extraction::sdk_model::ServiceMethodRef;
+
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Python;
@@ -546,8 +491,7 @@ mod tests {
         let mut services = HashMap::new();
         let mut operations = HashMap::new();
         let mut shapes = HashMap::new();
-        let mut waiters = HashMap::new();
-        let mut waiter_to_services = HashMap::new();
+        let mut waiter_lookup = HashMap::new();
 
         // Create a mock DescribeInstances operation with required params
         let mut input_shape_members = HashMap::new();
@@ -579,12 +523,13 @@ mod tests {
             describe_instances_op.clone(),
         );
 
-        // Add waiter entry for InstanceTerminated
-        waiters.insert(
-            "InstanceTerminated".to_string(),
-            describe_instances_op.clone(),
+        waiter_lookup.insert(
+            "instance_terminated".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "ec2".to_string(),
+                operation_name: "InstanceTerminated".to_string(),
+            }],
         );
-        waiter_to_services.insert("InstanceTerminated".to_string(), vec!["ec2".to_string()]);
 
         // Create DynamoDB DescribeTables operation for table_exists waiter
         let mut describe_tables_members = HashMap::new();
@@ -634,7 +579,13 @@ mod tests {
 
         // Add TableExists waiter for DynamoDB
         dynamodb_waiters.insert("TableExists".to_string(), describe_tables_op);
-        waiter_to_services.insert("TableExists".to_string(), vec!["dynamodb".to_string()]);
+        waiter_lookup.insert(
+            "table_exists".to_string(),
+            vec![ServiceMethodRef {
+                service_name: "dynamodb".to_string(),
+                operation_name: "TableExists".to_string(),
+            }],
+        );
 
         services.insert(
             "ec2".to_string(),
@@ -646,7 +597,6 @@ mod tests {
                 },
                 operations,
                 shapes,
-                waiters,
             },
         );
 
@@ -660,14 +610,13 @@ mod tests {
                 },
                 operations: dynamodb_operations,
                 shapes: dynamodb_shapes,
-                waiters: dynamodb_waiters,
             },
         );
 
         ServiceModelIndex {
             services,
             method_lookup: HashMap::new(),
-            waiter_to_services,
+            waiter_lookup,
         }
     }
 
@@ -722,7 +671,7 @@ waiter.wait(InstanceIds=['i-1234567890abcdef0'])
         let service_index = create_test_service_index();
         let extractor = WaitersExtractor::new(&service_index);
 
-        let calls = extractor.extract_waiter_method_calls(&ast, &service_index);
+        let calls = extractor.extract_waiter_method_calls(&ast);
 
         // Should extract at least one call
         assert!(!calls.is_empty());
@@ -779,7 +728,7 @@ dynamodb_client.get_waiter('table_exists').wait(TableName='test-table')
         let service_index = create_test_service_index();
         let extractor = WaitersExtractor::new(&service_index);
 
-        let calls = extractor.extract_waiter_method_calls(&ast, &service_index);
+        let calls = extractor.extract_waiter_method_calls(&ast);
 
         // Should extract at least one call for the chained waiter
         assert!(!calls.is_empty());

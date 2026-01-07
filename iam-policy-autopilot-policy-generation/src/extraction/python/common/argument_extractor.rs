@@ -4,6 +4,7 @@
 //! from ast-grep nodes, handling keyword arguments, positional arguments,
 //! and dictionary unpacking consistently across all Python extractors.
 
+use crate::extraction::python::node_kinds;
 use crate::extraction::{Parameter, ParameterValue};
 use ast_grep_language::Python;
 
@@ -20,7 +21,7 @@ impl ArgumentExtractor {
 
         for arg_node in args_nodes {
             // Filter out comment nodes
-            if arg_node.kind() == "comment" {
+            if arg_node.kind() == node_kinds::COMMENT {
                 continue;
             }
 
@@ -52,6 +53,7 @@ impl ArgumentExtractor {
                     value: Self::extract_parameter_value(&arg_text),
                     position: parameter_position,
                     type_annotation: None,
+                    struct_fields: None,
                 });
                 parameter_position += 1;
             }
@@ -64,14 +66,14 @@ impl ArgumentExtractor {
     pub fn is_keyword_argument(
         node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
     ) -> bool {
-        node.kind() == "keyword_argument"
+        node.kind() == node_kinds::KEYWORD_ARGUMENT
     }
 
     /// Check if a node represents dictionary unpacking (**kwargs)
     pub fn is_dictionary_splat(
         node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
     ) -> bool {
-        node.kind() == "dictionary_splat"
+        node.kind() == node_kinds::DICTIONARY_SPLAT
     }
 
     /// Parse a keyword argument node

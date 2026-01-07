@@ -3,6 +3,7 @@ pub(crate) mod disambiguation;
 pub(crate) mod extractor;
 pub(crate) mod features;
 pub(crate) mod features_extractor;
+pub(crate) mod node_kinds;
 pub(crate) mod paginator_extractor;
 pub(crate) mod types;
 pub(crate) mod utils;
