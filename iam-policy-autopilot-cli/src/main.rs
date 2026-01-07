@@ -359,8 +359,8 @@ Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) o
         long_flag = "version"
     )]
     Version {
-        #[arg(short = 'd', long = "debug", default_value_t = false, hide = true)]
-        debug: bool,
+        #[arg(long = "verbose", default_value_t = false, hide = true)]
+        verbose: bool,
     },
 }
 
@@ -625,7 +625,7 @@ async fn main() {
             }
         }
 
-        Commands::Version { debug } => match print_version_info(debug) {
+        Commands::Version { verbose } => match print_version_info(verbose) {
             Ok(()) => ExitCode::Success,
             Err(e) => {
                 print_cli_command_error(e);

@@ -27,10 +27,6 @@ serde_json.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
-aws-lc-rs.workspace = true
-git2.workspace = true
-relative-path.workspace = true
-openssl.workspace = true
 
 
 # Build dependencies

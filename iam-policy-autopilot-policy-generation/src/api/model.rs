@@ -51,19 +51,7 @@ pub struct AwsContext {
     pub account: String,
 }
 
-/// Exposes git version and commit hash for boto3 and botocore
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitSubmoduleMetadata {
-    /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "gitCommit")]
-    pub git_commit_hash: String,
-    /// the git tag of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "gitTag")]
-    pub git_tag: Option<String>,
-    /// the sha hash of boto3/botocore simplified models, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "dataHash")]
-    pub data_hash: String,
-}
+include!("../shared_submodule_model.rs");
 
 impl AwsContext {
     /// Creates a new AwsContext with the partition automatically derived from the region.

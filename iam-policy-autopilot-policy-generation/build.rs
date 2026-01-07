@@ -55,25 +55,13 @@ struct ShapeReference {
     shape: String,
 }
 
-/// This must be an exact copy of GitSubmoduleMetadata in model.rs. This struct contains the boto3/botocore submodule version info; it then gets serialized into a JSON file, which is then referenced via the GitSubmoduleVersionInfoRaw RustEmbed struct in embedded_data.rs, so that this version info can get read when --version in the CLI is called.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GitSubmoduleVersion {
-    /// the commit of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "gitCommit")]
-    pub git_commit_hash: String,
-    /// the git tag of boto3/botocore, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "gitTag")]
-    pub git_tag: Option<String>,
-    /// the sha hash of boto3/botocore simplified models, returned on calls to iam-policy-autopilot --version --debug
-    #[serde(rename = "dataHash")]
-    pub data_hash: String,
-}
+include!("src/shared_submodule_model.rs");
 
-impl GitSubmoduleVersion {
-    fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleVersion {
+impl GitSubmoduleMetadata {
+    fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleMetadata {
         let repository = Repository::open(git_path)
             .unwrap_or_else(|_| panic!("Failed to open repository at path {:?}", git_path));
-        GitSubmoduleVersion {
+        GitSubmoduleMetadata {
             git_commit_hash: get_repository_commit(&repository).unwrap_or_else(|_| {
                 panic!("Failed to get repository commit at path {:?}", git_path)
             }),
@@ -89,6 +77,9 @@ impl GitSubmoduleVersion {
         }
     }
 
+    /// Recursively computes a deterministic SHA-256 hash of a directory tree. Hashes each file's contents
+    /// and subdirectory recursively, then combines all hashes with their relative paths in sorted order
+    /// to produce a single hash representing the entire directory structure and contents.
     fn sha2sum_recursive(cwd: &Path, root: &Path) -> Result<Digest, Box<dyn std::error::Error>> {
         let mut hash_table: BTreeMap<RelativePathBuf, Digest> = BTreeMap::new();
 
@@ -100,14 +91,11 @@ impl GitSubmoduleVersion {
         for entry_path in dir_entry_list {
             let relt_path = entry_path.clone().relative_to(root)?;
             if entry_path.is_dir() {
-                hash_table.insert(
-                    relt_path.clone(),
-                    Self::sha2sum_recursive(&entry_path, root)?,
-                );
+                hash_table.insert(relt_path, Self::sha2sum_recursive(&entry_path, root)?);
             } else {
                 let mut sha2_context = Context::new(&SHA256);
                 sha2_context.update(&fs::read(entry_path)?);
-                hash_table.insert(relt_path.clone(), sha2_context.finish());
+                hash_table.insert(relt_path, sha2_context.finish());
             }
         }
 
@@ -206,7 +194,8 @@ fn main() {
     fs::create_dir_all(&workspace_submodule_version_embed_dir)
         .expect("Failed to create submodule version directory");
 
-    let boto3_info = GitSubmoduleVersion::new(Path::new("resources/config/sdks/boto3"), &boto3_dir);
+    let boto3_info =
+        GitSubmoduleMetadata::new(Path::new("resources/config/sdks/boto3"), &boto3_dir);
 
     let boto3_info_json =
         serde_json::to_string(&boto3_info).expect("Failed to serialize boto3 version metadata");
@@ -216,7 +205,7 @@ fn main() {
     )
     .expect("Failed to write boto3 version metadata");
 
-    let botocore_info = GitSubmoduleVersion::new(
+    let botocore_info = GitSubmoduleMetadata::new(
         Path::new("resources/config/sdks/botocore-data"),
         &simplified_dir,
     );
@@ -523,8 +512,8 @@ fn process_boto3_service_version(
     Ok(has_resources_file)
 }
 
+/// Performs git describe --exact-match --tags
 fn get_repository_tag(repo: &Repository) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    // we want to do this: git describe --exact-match --tags
     let mut describe_options = DescribeOptions::new();
     describe_options.max_candidates_tags(0);
     describe_options.describe_tags();
