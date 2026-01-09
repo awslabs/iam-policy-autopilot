@@ -903,7 +903,8 @@ mod tests {
 
     #[test]
     fn test_generate_policies_with_explanations() {
-        use crate::enrichment::{Explanation, Reason};
+        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use std::sync::Arc;
 
         let engine = create_test_engine();
         let sdk_call = create_test_sdk_call();
@@ -922,7 +923,11 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason::new(&sdk_call, "s3", None)],
+                    reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                        "get_object".to_string(),
+                        "s3".to_string(),
+                        OperationSource::Provided,
+                    ))])],
                 },
             )],
             sdk_method_call: &sdk_call,
@@ -940,7 +945,7 @@ mod tests {
             .and_then(|explanations| explanations.get("s3:GetObject"))
         {
             assert_eq!(explanation.reasons.len(), 1);
-            assert!(explanation.reasons[0].fas.is_none());
+            assert_eq!(explanation.reasons[0].operations.len(), 1);
         } else {
             panic!("Must have an explanation for s3:GetObject");
         }
@@ -948,7 +953,8 @@ mod tests {
 
     #[test]
     fn test_explanation_deduplication() {
-        use crate::enrichment::{Explanation, Reason};
+        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use std::sync::Arc;
 
         let engine = create_test_engine();
         let sdk_call1 = create_test_sdk_call();
@@ -972,7 +978,11 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason::new(&sdk_call1, "s3", None)],
+                    reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                        "get_object".to_string(),
+                        "s3".to_string(),
+                        OperationSource::Provided,
+                    ))])],
                 },
             )],
             sdk_method_call: &sdk_call1,
@@ -991,7 +1001,11 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason::new(&sdk_call1, "s3", None)],
+                    reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                        "get_object".to_string(),
+                        "s3".to_string(),
+                        OperationSource::Provided,
+                    ))])],
                 },
             )],
             sdk_method_call: &sdk_call2,
@@ -1019,7 +1033,8 @@ mod tests {
 
     #[test]
     fn test_explanation_with_fas_expansion() {
-        use crate::enrichment::{Explanation, Reason};
+        use crate::enrichment::{Explanation, Reason, Operation, OperationSource, operation_fas_map::FasContext};
+        use std::sync::Arc;
 
         let engine = create_test_engine();
         let sdk_call = create_test_sdk_call();
@@ -1039,7 +1054,11 @@ mod tests {
                     )],
                     vec![],
                     Explanation {
-                        reasons: vec![Reason::new(&sdk_call, "s3", None)],
+                        reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                            "get_object".to_string(),
+                            "s3".to_string(),
+                            OperationSource::Provided,
+                        ))])],
                     },
                 ),
                 Action::new(
@@ -1052,14 +1071,14 @@ mod tests {
                     )],
                     vec![],
                     Explanation {
-                        reasons: vec![Reason::new(
-                            &sdk_call,
-                            "s3",
-                            Some(crate::enrichment::FasInfo::new(vec![
-                                "s3:GetObject".to_string(),
-                                "kms:Decrypt".to_string(),
-                            ])),
-                        )],
+                        reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                            "Decrypt".to_string(),
+                            "kms".to_string(),
+                            OperationSource::Fas(vec![FasContext::new(
+                                "kms:ViaService".to_string(),
+                                vec!["s3.us-east-1.amazonaws.com".to_string()],
+                            )]),
+                        ))])],
                     },
                 ),
             ],
@@ -1079,21 +1098,26 @@ mod tests {
             .get("kms:Decrypt")
             .expect("Should have kms:Decrypt explanation");
         assert_eq!(kms_explanation.reasons.len(), 1);
-        assert!(kms_explanation.reasons[0].fas.is_some());
-        let fas_info = kms_explanation.reasons[0].fas.as_ref().unwrap();
-        assert_eq!(fas_info.expansion.len(), 2);
-        assert!(fas_info.expansion.contains(&"s3:GetObject".to_string()));
-        assert!(fas_info.expansion.contains(&"kms:Decrypt".to_string()));
-        // Verify the explanation URL is set
-        assert_eq!(
-            fas_info.explanation,
-            "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html"
-        );
+        assert_eq!(kms_explanation.reasons[0].operations.len(), 1);
+        
+        // Check that the operation has FAS context
+        let operation = &kms_explanation.reasons[0].operations[0];
+        assert_eq!(operation.name, "Decrypt");
+        assert_eq!(operation.service, "kms");
+        match &operation.source {
+            OperationSource::Fas(context) => {
+                assert_eq!(context.len(), 1);
+                assert_eq!(context[0].key, "kms:ViaService");
+                assert_eq!(context[0].values, vec!["s3.us-east-1.amazonaws.com"]);
+            }
+            _ => panic!("Expected FAS operation source"),
+        }
     }
 
     #[test]
     fn test_explanation_with_possible_false_positive() {
-        use crate::enrichment::{Explanation, Reason};
+        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use std::sync::Arc;
 
         let engine = create_test_engine();
         let sdk_call = SdkMethodCall {
@@ -1116,7 +1140,11 @@ mod tests {
                 )],
                 vec![],
                 Explanation {
-                    reasons: vec![Reason::new(&sdk_call, "s3", None)],
+                    reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                        "get_object".to_string(),
+                        "s3".to_string(),
+                        OperationSource::Provided,
+                    ))])],
                 },
             )],
             sdk_method_call: &sdk_call,
@@ -1127,3 +1155,5 @@ mod tests {
         assert_eq!(result.explanations.as_ref().unwrap().len(), 1);
     }
 }
+
+

@@ -462,8 +462,7 @@ mod tests {
         // Verify PascalCase field names
         assert!(json.contains("\"Parameters\""));
         assert!(json.contains("\"ReturnType\""));
-        assert!(json.contains("\"StartPosition\""));
-        assert!(json.contains("\"EndPosition\""));
+        assert!(json.contains("\"Location\""));
         assert!(json.contains("\"Receiver\""));
     }
 }

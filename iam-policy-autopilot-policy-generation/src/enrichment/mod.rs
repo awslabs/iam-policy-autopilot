@@ -8,9 +8,10 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
-use crate::{extraction::SdkMethodCallMetadata, SdkMethodCall};
+use crate::{SdkMethodCall, SdkType, enrichment::operation_fas_map::{FasContext, FasOperation}, extraction::SdkMethodCallMetadata, service_configuration::ServiceConfiguration};
+use convert_case::{Case, Casing};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -27,103 +28,144 @@ pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferen
 const FAS_URL: &str =
     "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
 
-/// Represents Forward Access Session (FAS) expansion information
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
-#[serde(rename_all = "PascalCase")]
-pub struct FasInfo {
-    /// Explanation URL for Forward Access Sessions
-    pub explanation: &'static str,
-    /// The chain of operations in the FAS expansion
-    pub expansion: Vec<String>,
-}
-
-impl FasInfo {
-    /// Create a new FasInfo with the standard AWS documentation URL
-    #[must_use]
-    pub fn new(expansion: Vec<String>) -> Self {
-        Self {
-            explanation: FAS_URL,
-            expansion,
-        }
-    }
-}
-
 /// Represents the reason why an action was added to a policy
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(derive_new::new, Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Reason {
     /// The original operation that was extracted
-    pub initial_operation: Operation,
-    /// Source of the operation
-    pub source: OperationSource,
-    /// Optional FAS expansion information
-    pub fas: Option<FasInfo>,
+    pub operations: Vec<Arc<Operation>>,
 }
 
-impl Reason {
-    pub(crate) fn new(
-        call: &SdkMethodCall,
-        original_service_name: &str,
-        fas: Option<FasInfo>,
-    ) -> Self {
-        let initial_operation =
-            Operation::new(call.name.clone(), original_service_name.to_string());
-        match &call.metadata {
-            None => Self {
-                initial_operation,
-                source: OperationSource::Provided,
-                fas,
-            },
-            Some(metadata) => Self {
-                initial_operation,
-                source: OperationSource::Extracted(metadata.clone()),
-                fas,
-            },
-        }
-    }
-}
-
-#[derive(derive_new::new, Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
     /// Name of the operation
     pub name: String,
     /// Name of the service
     pub service: String,
+    /// Source of the operation,
+    pub source: OperationSource,
+    /// Disallow struct construction, need to use Self::from_call or Operation::from(FasOperation)
+    _private: ()
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+impl Operation {
+    #[cfg(test)]
+    /// Convenience constructor for tests
+    pub(crate) fn new(name: String, service: String, source: OperationSource) -> Self {
+        Self {
+            name, service, source, _private: ()
+        }
+    }
+
+    pub(crate) fn service_operation_name(&self) -> String {
+        format!("{}:{}", self.service, self.name)
+    }
+
+    pub(crate) fn context(&self) -> &[FasContext] {
+        match &self.source {
+            OperationSource::Fas(context) => context,
+            _ => &[],
+        }
+    }
+    
+    pub(crate) async fn from_call(
+        call: &SdkMethodCall,
+        original_service_name: &str,
+        service_cfg: &ServiceConfiguration,
+        sdk: SdkType,
+        service_reference_loader: &ServiceReferenceLoader,
+    ) -> crate::errors::Result<Self> {
+        let service = service_cfg.rename_service_service_reference(original_service_name).to_string();
+        let name = if sdk == SdkType::Boto3 {
+            // Try to load service reference and look up the boto3 method mapping
+            service_reference_loader
+                .load(&service)
+                .await?
+                .and_then(|service_ref| {
+                    log::debug!("Looking up method {}", call.name);
+                    service_ref
+                        .boto3_method_to_operation
+                        .get(&call.name)
+                        .map(|op| {
+                            log::debug!("got {:?}", op);
+                            op.split(':').nth(1).unwrap_or(op).to_string()
+                        })
+                })
+                // Fallback to PascalCase conversion if mapping not found
+                // This should not be reachable, but if for some reason we cannot use the SDF,
+                // we try converting to PascalCase, knowing that this is flawed in some cases:
+                // think `AddRoleToDBInstance` (actual name)
+                //   vs. `AddRoleToDbInstance` (converted name)
+                .unwrap_or_else(|| call.name.to_case(Case::Pascal))
+        } else {
+            // For non-Boto3 SDKs we use the extracted name as-is
+            call.name.clone()
+        };
+
+        Ok(match &call.metadata {
+            None => Self {
+                name,
+                service,
+                source: OperationSource::Provided,
+                _private: (),
+            },
+            Some(metadata) => Self {
+                name,
+                service,
+                source: OperationSource::Extracted(metadata.clone()),
+                _private: (),
+            },
+        })
+    }
+}
+
+impl From<FasOperation> for Operation {
+    fn from(fas_op: FasOperation) -> Self {
+        Self {
+            name: fas_op.operation,
+            service: fas_op.service,
+            source: OperationSource::Fas(fas_op.context),
+            _private: (),
+        }
+    }
+}
+
+/// Custom serializer for extracted metadata that flattens the structure
+fn serialize_extracted_metadata<S>(metadata: &SdkMethodCallMetadata, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    use serde::ser::SerializeMap;
+    let mut map = serializer.serialize_map(Some(2))?;
+    map.serialize_entry("Expr", &metadata.expr)?;
+    map.serialize_entry("Location", &metadata.location)?;
+    map.end()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
-#[serde(untagged)]
 pub enum OperationSource {
     /// Operation extracted from source files
-    #[serde(rename_all = "PascalCase")]
     Extracted(SdkMethodCallMetadata),
     /// Operation provided (no metadata available)
-    #[serde(rename_all = "PascalCase")]
     Provided,
+    /// Operation comes from FAS expansion
+    Fas(Vec<FasContext>),
 }
 
-// impl OperationSource {
-//     pub(crate) fn from_call(call: &SdkMethodCall, service: &str) -> Self {
-//         match &call.metadata {
-//             None => Self::Provided {
-//                 name: call.name.clone(),
-//                 service: service.to_string(),
-//             },
-//             Some(metadata) => Self::Extracted {
-//                 name: call.name.clone(),
-//                 service: service.to_string(),
-//                 expr: metadata.expr.clone(),
-//                 location: Location::new(
-//                     metadata.file_path.clone(),
-//                     metadata.start_position,
-//                     metadata.end_position,
-//                 ),
-//             },
-//         }
-//     }
-// }
+impl Serialize for OperationSource {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        match self {
+            OperationSource::Extracted(metadata) => serialize_extracted_metadata(metadata, serializer),
+            OperationSource::Provided => serializer.serialize_str("Provided"),
+            OperationSource::Fas(_) => serializer.serialize_str("FAS"),
+        }
+    }
+}
 
 /// Represents an explanation for why an action was added to a policy
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema, Default)]
@@ -498,7 +540,7 @@ pub(crate) mod mock_remote_service_reference {
 #[cfg(test)]
 mod location_tests {
     use super::*;
-    use crate::Location;
+    use crate::{Location, enrichment::mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping, service_configuration::load_service_configuration};
     use std::path::PathBuf;
 
     #[test]
@@ -545,31 +587,117 @@ mod location_tests {
         }
     }
 
-    #[test]
-    fn test_reason_extracted_with_location() {
+    #[tokio::test]
+    async fn test_reason_extracted_with_location() {
+        let service_cfg = load_service_configuration().unwrap();
+        let (_, service_reference_loader) = setup_mock_server_with_loader_without_operation_to_action_mapping().await;
         let call = mock_sdk_method_call();
 
-        let reason = Reason::new(&call, "s3", None);
+        let reason = Reason::new(vec![Arc::new(Operation::from_call(&call, "s3", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap())]);
 
-        match reason.source {
+        assert_eq!(reason.operations[0].name, "GetObject");
+        assert_eq!(reason.operations[0].service, "s3");
+        match &reason.operations[0].source {
             OperationSource::Extracted(metadata) => {
-                assert_eq!(reason.initial_operation.name, "get_object");
-                assert_eq!(reason.initial_operation.service, "s3");
                 assert_eq!(metadata.expr, "s3.get_object(Bucket='my-bucket')");
                 assert_eq!(metadata.location.to_gnu_format(), "test.py:10.5-10.79");
             }
             _ => panic!("Expected Extracted variant"),
         }
+
+        let json = serde_json::to_string(&reason).unwrap();
+        // Verify the location is serialized as a string in GNU format
+        assert!(json.contains("\"Location\":\"test.py:10.5-10.79\""));
     }
 
     #[test]
-    fn test_reason_extracted_serialization() {
-        let call = mock_sdk_method_call();
+    fn test_operation_source_extracted_serialization() {
+        let metadata = SdkMethodCallMetadata {
+            parameters: vec![],
+            return_type: None,
+            expr: "dynamodb.get_item(\n        TableName='my-table',\n        Key={'id': {'S': '123'}}\n    )".to_string(),
+            location: Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
+            receiver: Some("dynamodb".to_string()),
+        };
+        
+        let source = OperationSource::Extracted(metadata);
+        let json = serde_json::to_string(&source).unwrap();
+        
+        // Verify the custom serialization format
+        assert!(json.contains("\"Expr\":\"dynamodb.get_item(\\n        TableName='my-table',\\n        Key={'id': {'S': '123'}}\\n    )\""));
+        assert!(json.contains("\"Location\":\"iam-policy-autopilot-cli/tests/resources/test_example.py:19.5-22.5\""));
+        // Should not contain nested "Source" key
+        assert!(!json.contains("\"Source\""));
+    }
 
-        let reason = Reason::new(&call, "s3", None);
-        let json = serde_json::to_string(&reason).unwrap();
+    #[test]
+    fn test_operation_source_provided_serialization() {
+        let source = OperationSource::Provided;
+        let json = serde_json::to_string(&source).unwrap();
+        
+        // Verify the custom serialization format
+        assert_eq!(json, "\"Provided\"");
+    }
 
-        // Verify the location is serialized as a string in GNU format
-        assert!(json.contains("\"Location\":\"test.py:10.5-10.79\""));
+    #[test]
+    fn test_operation_source_fas_serialization() {
+        use crate::enrichment::operation_fas_map::FasContext;
+        
+        let fas_context = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["ssm.${region}.amazonaws.com".to_string()],
+        )];
+        let source = OperationSource::Fas(fas_context);
+        let json = serde_json::to_string(&source).unwrap();
+        
+        // Verify the custom serialization format - should be just "FAS", not nested
+        assert_eq!(json, "\"FAS\"");
+    }
+
+    #[tokio::test]
+    async fn test_operation_methods() {
+        let service_cfg = load_service_configuration().unwrap();
+        let (_, service_reference_loader) = setup_mock_server_with_loader_without_operation_to_action_mapping().await;
+
+        {
+            let call = SdkMethodCall {
+                name: "decrypt".to_string(),
+                possible_services: vec!["kms".to_string()],
+                metadata: None,
+            };
+            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap();
+            assert_eq!(op.service_operation_name(), "kms:Decrypt");
+            assert_eq!(op.context(), &[]);
+        }
+
+        {
+            let expr = "kms.decrypt(...)".to_string();
+            let metadata = SdkMethodCallMetadata {
+                parameters: vec![],
+                return_type: None,
+                expr: expr.clone(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, expr.len() + 1)),
+                receiver: Some("kms".to_string()),
+            };
+            let call = SdkMethodCall {
+                name: "decrypt".to_string(),
+                possible_services: vec!["kms".to_string()],
+                metadata: Some(metadata),
+            };
+            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap();
+            assert_eq!(op.service_operation_name(), "kms:Decrypt");
+            assert_eq!(op.context(), &[]);
+        }
+
+        {
+            let context = vec![FasContext::new(
+                "kms:ViaService".to_string(),
+                vec!["ssm.${region}.amazonaws.com".to_string()],
+            )];
+            let fas_operation = FasOperation::new("Decrypt".to_string(), "kms".to_string(), context.clone());
+            let op = Operation::from(fas_operation);
+            assert_eq!(op.service_operation_name(), "kms:Decrypt");
+            assert_eq!(op.context(), &context);
+        }
     }
 }

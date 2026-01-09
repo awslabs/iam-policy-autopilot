@@ -19,7 +19,7 @@ description = "An open source Model Context Protocol (MCP) server and command-li
 # Shared dependency versions across workspace
 [workspace.dependencies]
 # Core serialization and utilities
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 futures = "0.3"
 thiserror = "1.0"
 anyhow = "1.0"
