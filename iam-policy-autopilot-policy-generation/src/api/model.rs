@@ -1,6 +1,8 @@
 //! Defined model for API
 use std::path::PathBuf;
 
+use serde::{Deserialize, Serialize};
+
 /// Configuration for generate_policies Api
 #[derive(Debug, Clone)]
 pub struct GeneratePolicyConfig {
@@ -48,6 +50,8 @@ pub struct AwsContext {
     /// AWS account ID
     pub account: String,
 }
+
+include!("../shared_submodule_model.rs");
 
 impl AwsContext {
     /// Creates a new AwsContext with the partition automatically derived from the region.
