@@ -18,6 +18,8 @@ pub struct GeneratePolicyConfig {
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
+    /// Use account resources in policy generation in place of wildcards
+    pub use_account_context: bool,
 }
 
 /// Service hints for filtering SDK method calls

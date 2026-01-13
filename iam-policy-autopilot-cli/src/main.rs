@@ -21,6 +21,7 @@ use std::process;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use iam_policy_autopilot_policy_generation::api::get_account_context::get_account_context as get_account_context_api;
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
@@ -92,6 +93,7 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
+    use_account_context: bool,
 }
 
 impl GeneratePolicyCliConfig {
@@ -330,7 +332,14 @@ Use this flag to force fresh data retrieval on every run."
             long_help = SERVICE_HINTS_LONG_HELP,
         )]
         service_hints: Option<Vec<String>>,
+
+        #[arg(long = "use-account-context", default_value_t = false)]
+        use_account_context: bool,
     },
+
+    /// List account context
+    #[command(long_about = "List resources from AWS calling account context.")]
+    GetAccountContext {},
 
     /// Start MCP server
     #[command(
@@ -419,6 +428,16 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
     Ok(())
 }
 
+async fn get_account_context() -> Result<()> {
+    info!("Running get-account-context command");
+
+    let res = get_account_context_api().await?;
+
+    print!("{}", serde_json::to_string_pretty(&res)?);
+
+    Ok(())
+}
+
 /// Handle the generate-policies subcommand
 async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
     info!("Running generate-policies command");
@@ -449,6 +468,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
+        use_account_context: config.use_account_context,
     })
     .await?;
 
@@ -582,6 +602,7 @@ async fn main() {
             minimal_policy_size,
             disable_cache,
             service_hints,
+            use_account_context,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -604,6 +625,7 @@ async fn main() {
                 upload_policies,
                 minimal_policy_size,
                 disable_cache,
+                use_account_context,
             };
 
             match handle_generate_policy(&config).await {
@@ -614,6 +636,14 @@ async fn main() {
                 }
             }
         }
+
+        Commands::GetAccountContext {} => match get_account_context().await {
+            Ok(()) => ExitCode::Success,
+            Err(e) => {
+                print_cli_command_error(e);
+                ExitCode::Error
+            }
+        },
 
         Commands::McpServer { transport, port } => {
             match start_mcp_server(transport, port).await {

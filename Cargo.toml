@@ -72,6 +72,7 @@ url = "2.5"
 percent-encoding = "2.3"
 aws-sdk-iam = "1.89.0"
 aws-sdk-sts = "1.86.0"
+aws-sdk-resourceexplorer2 = { version = "1.94.0"}
 aws-config = "1.8.6"
 base64 = "0.22"
 convert_case = "0.8"

@@ -198,6 +198,15 @@ pub enum ExtractorError {
         /// Formatted list of invalid services with suggestions
         suggestions: String,
     },
+
+    #[error("Fetching account resource context error: {message}")]
+    AccountResourceContext {
+        /// Detailed error message
+        message: String,
+        /// Optional underlying error
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
 }
 
 impl ExtractorError {
@@ -293,6 +302,16 @@ impl ExtractorError {
     pub(crate) fn invalid_service_hints(suggestions: impl Into<String>) -> Self {
         Self::InvalidServiceHints {
             suggestions: suggestions.into(),
+        }
+    }
+
+    pub(crate) fn account_resource_context_with_source(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::AccountResourceContext {
+            message: message.into(),
+            source: Some(Box::new(source)),
         }
     }
 }

@@ -1,10 +1,11 @@
 use anyhow::{Context, Result};
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use log::{debug, info, trace};
 
 use crate::{
     api::{common::process_source_files, model::GeneratePolicyConfig},
+    context_fetcher::service::{AccountContextFetcherService, AccountResourceContext},
     extraction::SdkMethodCall,
     policy_generation::{merge::PolicyMergerConfig, MethodActionMapping, PolicyWithMetadata},
     EnrichmentEngine, PolicyGenerationEngine,
@@ -23,6 +24,8 @@ pub async fn generate_policies(
 
     // Create the extractor
     let extractor = crate::ExtractionEngine::new();
+
+    let account_context = AccountContextFetcherService::new().await;
 
     // Process source files to get extracted methods
     let extracted_methods = process_source_files(
@@ -73,12 +76,21 @@ pub async fn generate_policies(
         allow_cross_service_merging: config.minimize_policy_size,
     };
 
-    let policy_engine = PolicyGenerationEngine::with_merger_config(
+    let policy_engine = PolicyGenerationEngine::with_config(
         &config.aws_context.partition,
         &config.aws_context.region,
         &config.aws_context.account,
         merger_config,
+        config.use_account_context,
     );
+
+    let account_context = if (config.use_account_context) {
+        &account_context.fetch_account_context().await?
+    } else {
+        &AccountResourceContext {
+            resource_map: HashMap::new(),
+        }
+    };
 
     // Generate IAM policies from enriched method calls
     debug!(
@@ -86,7 +98,7 @@ pub async fn generate_policies(
         enriched_results.len()
     );
     let policies = policy_engine
-        .generate_policies(&enriched_results)
+        .generate_policies(&enriched_results, account_context)
         .context("Failed to generate IAM policies")?;
 
     let total_duration = pipeline_start.elapsed();

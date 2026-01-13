@@ -23,6 +23,12 @@ pub(crate) mod service_configuration;
 // Embedded AWS service data
 pub mod embedded_data;
 
+// AWS utilities
+pub mod aws;
+
+/// Fetch resources from AWS accounts
+pub mod context_fetcher;
+
 // Re-export the extraction module for public use
 pub mod extraction;
 // Re-export the policy_generation module for public use
