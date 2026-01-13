@@ -7,11 +7,20 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use crate::api::model::GitSubmoduleMetadata;
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::sdk_model::SdkServiceDefinition;
+use regex::Regex;
 use rust_embed::RustEmbed;
+use serde_json::Value;
+
+/// Partitions definition. Map of partition ID to region regex.
+#[derive(Clone, Debug)]
+pub(crate) struct PartitionsDefinition {
+    pub(crate) partitions: HashMap<String, Regex>,
+}
 
 /// Embedded AWS service definitions with compression
 ///
@@ -122,6 +131,11 @@ impl Boto3ResourcesRaw {
 }
 
 impl BotocoreRaw {
+    /// Get the partitions definition
+    fn get_partitions() -> Option<Cow<'static, [u8]>> {
+        Self::get("partitions.json").map(|file| file.data)
+    }
+
     /// Get a service definition file by service name and API version
     fn get_service_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
@@ -241,6 +255,45 @@ impl Boto3Data {
 pub(crate) struct BotocoreData;
 
 impl BotocoreData {
+    /// Get a parsed partitions definition file
+    ///
+    /// # Returns
+    /// Parsed partitions definition or error if not found or parsing fails
+    pub(crate) fn get_partitions(
+    ) -> std::result::Result<&'static PartitionsDefinition, &'static ExtractorError> {
+        static PARTITIONS: LazyLock<std::result::Result<PartitionsDefinition, ExtractorError>> =
+            LazyLock::new(|| {
+                let data = BotocoreRaw::get_partitions()
+                    .ok_or_else(|| ExtractorError::validation("Partitions definition not found"))?;
+
+                let parsed: Value = serde_json::from_slice(&data).map_err(ExtractorError::from)?;
+                let partitions = parsed
+                    .get("partitions")
+                    .and_then(Value::as_object)
+                    .ok_or_else(|| {
+                        ExtractorError::validation("partitions not found in partitions definition")
+                    })?
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let region_regex_str = v.as_str().ok_or_else(|| {
+                            ExtractorError::validation(
+                                "Expected regionRegex string in partitions definition",
+                            )
+                        })?;
+                        let region_regex = Regex::new(region_regex_str).map_err(|_| {
+                            ExtractorError::validation(
+                                "Invalid region_regex in partitions definition",
+                            )
+                        })?;
+                        Ok((k.clone(), region_regex))
+                    })
+                    .collect::<Result<HashMap<_, _>>>()?;
+                Ok(PartitionsDefinition { partitions })
+            });
+
+        PARTITIONS.as_ref()
+    }
+
     /// Get a parsed service definition by service name and API version
     ///
     /// # Arguments

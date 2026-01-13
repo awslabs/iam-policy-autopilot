@@ -60,7 +60,7 @@ pub async fn generate_application_policies(
             language: None,
             service_hints,
         },
-        aws_context: AwsContext::new(region, account),
+        aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
 
         // true by default, if we want to allow the user to change it we should
