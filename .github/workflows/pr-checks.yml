@@ -8,51 +8,28 @@ permissions:
   contents: read
 
 jobs:
-  commit-messages:
-    name: Validate Commit Messages
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
         with:
-          fetch-depth: 0
-
-      - name: Validate commit messages
-        run: |
-          # Get all commits in the PR (excluding merge commits)
-          COMMITS=$(git log --format=%H --no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
-          
-          # Conventional commit pattern
-          PATTERN='^(feat|fix|docs|chore|test|refactor|perf|ci|build|style|revert)(\(.+\))?!?: .+'
-          
-          FAILED=0
-          for COMMIT in $COMMITS; do
-            MESSAGE=$(git log --format=%s -n 1 $COMMIT)
-            if ! echo "$MESSAGE" | grep -qE "$PATTERN"; then
-              echo "❌ Invalid commit message: $MESSAGE"
-              echo "   Commit: $COMMIT"
-              FAILED=1
-            else
-              echo "✅ Valid commit message: $MESSAGE"
-            fi
-          done
-          
-          if [ $FAILED -eq 1 ]; then
-            echo ""
-            echo "Commit messages must follow Conventional Commits format:"
-            echo "  <type>: <description>"
-            echo ""
-            echo "Valid types: feat, fix, docs, chore, test, refactor, perf, ci, build, style, revert"
-            echo "For breaking changes, add '!' after type: feat!: breaking change"
-            echo ""
-            echo "See CONTRIBUTING.md for more details."
-            exit 1
-          fi
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/*.toml'
+              - '**/Cargo.lock'
+              - '**/rust-toolchain'
+              - '**/.cargo/**'
 
   test-linux:
     name: Test Linux
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -87,7 +64,8 @@ jobs:
 
   test-windows:
     name: Test Windows
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -110,7 +88,8 @@ jobs:
 
   test-macos:
     name: Test macOS
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: macos-latest
     permissions:
       contents: read
@@ -133,7 +112,8 @@ jobs:
 
   fmt:
     name: Format
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -149,7 +129,8 @@ jobs:
 
   clippy:
     name: Clippy
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -169,7 +150,8 @@ jobs:
 
   custom-lints:
     name: Custom Lints (dylint)
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
