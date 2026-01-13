@@ -183,39 +183,49 @@ impl Serialize for OperationSource {
     }
 }
 
+/// Explanations for why actions have been included in a policy, with documentation for
+/// concepts leading to inclusion (such as FAS expansion)
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Explanations {
+    /// Explanation for inclusion of an action
     pub explanation_for_action: BTreeMap<String, Explanation>,
+    /// Documentation of concepts used in the explanation for an action
     pub documentation: BTreeMap<&'static str, Documentation>,
 }
 
 impl Explanations {
+    const FAS_PLAIN: &str =
+        "The explanation contains an operation added due to Forward Access Sessions.";
     const FAS_URL: &str =
         "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
 
     pub(crate) fn new(explanations: BTreeMap<String, Explanation>) -> Self {
         let mut documentation: Vec<(&'static str, Documentation)> = vec![];
-        for (_, explanation) in &explanations {
+        for explanation in explanations.values() {
             for reason in &explanation.reasons {
                 for op in &reason.operations {
                     match op.source {
                         OperationSource::Extracted(_) | OperationSource::Provided => (),
-                        OperationSource::Fas(_) => documentation.push(("FAS", Documentation {
-                            plain: "The explanation contains an operation added due to Forward Access Sessions.",
-                            url: Self::FAS_URL,
-                        }))
+                        OperationSource::Fas(_) => documentation.push((
+                            "FAS",
+                            Documentation {
+                                plain: Self::FAS_PLAIN,
+                                url: Self::FAS_URL,
+                            },
+                        )),
                     }
                 }
             }
         }
         Self {
             explanation_for_action: explanations,
-            documentation: BTreeMap::from_iter(documentation.into_iter()),
+            documentation: BTreeMap::from_iter(documentation),
         }
     }
 }
 
+/// Documentation of concepts appearing in explanations
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct Documentation {
