@@ -294,7 +294,7 @@ fn extract_explanations(enriched_calls: &[EnrichedSdkMethodCall<'_>]) -> Explana
                 .or_insert_with(|| action.explanation.clone());
         }
     }
-    
+
     Explanations::new(explanations)
 }
 
@@ -901,7 +901,7 @@ mod tests {
 
     #[test]
     fn test_generate_policies_with_explanations() {
-        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use crate::enrichment::{Explanation, Operation, OperationSource, Reason};
         use std::sync::Arc;
 
         let engine = create_test_engine();
@@ -951,7 +951,7 @@ mod tests {
 
     #[test]
     fn test_explanation_deduplication() {
-        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use crate::enrichment::{Explanation, Operation, OperationSource, Reason};
         use std::sync::Arc;
 
         let engine = create_test_engine();
@@ -1031,7 +1031,9 @@ mod tests {
 
     #[test]
     fn test_explanation_with_fas_expansion() {
-        use crate::enrichment::{Explanation, Reason, Operation, OperationSource, operation_fas_map::FasContext};
+        use crate::enrichment::{
+            operation_fas_map::FasContext, Explanation, Operation, OperationSource, Reason,
+        };
         use std::sync::Arc;
 
         let engine = create_test_engine();
@@ -1086,7 +1088,15 @@ mod tests {
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
         // Verify explanations include FAS expansion
-        assert_eq!(result.explanations.as_ref().unwrap().explanation_for_action.len(), 2);
+        assert_eq!(
+            result
+                .explanations
+                .as_ref()
+                .unwrap()
+                .explanation_for_action
+                .len(),
+            2
+        );
 
         // Check the FAS-expanded action
         let kms_explanation = result
@@ -1098,7 +1108,7 @@ mod tests {
             .expect("Should have kms:Decrypt explanation");
         assert_eq!(kms_explanation.reasons.len(), 1);
         assert_eq!(kms_explanation.reasons[0].operations.len(), 1);
-        
+
         // Check that the operation has FAS context
         let operation = &kms_explanation.reasons[0].operations[0];
         assert_eq!(operation.name, "Decrypt");
@@ -1115,7 +1125,7 @@ mod tests {
 
     #[test]
     fn test_explanation_with_possible_false_positive() {
-        use crate::enrichment::{Explanation, Reason, Operation, OperationSource};
+        use crate::enrichment::{Explanation, Operation, OperationSource, Reason};
         use std::sync::Arc;
 
         let engine = create_test_engine();
@@ -1151,8 +1161,14 @@ mod tests {
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
-        assert_eq!(result.explanations.as_ref().unwrap().explanation_for_action.len(), 1);
+        assert_eq!(
+            result
+                .explanations
+                .as_ref()
+                .unwrap()
+                .explanation_for_action
+                .len(),
+            1
+        );
     }
 }
-
-

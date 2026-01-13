@@ -8,9 +8,17 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
-use std::{collections::{BTreeMap, HashSet}, sync::Arc};
+use std::{
+    collections::{BTreeMap, HashSet},
+    sync::Arc,
+};
 
-use crate::{SdkMethodCall, SdkType, enrichment::operation_fas_map::{FasContext, FasOperation}, extraction::SdkMethodCallMetadata, service_configuration::ServiceConfiguration};
+use crate::{
+    enrichment::operation_fas_map::{FasContext, FasOperation},
+    extraction::SdkMethodCallMetadata,
+    service_configuration::ServiceConfiguration,
+    SdkMethodCall, SdkType,
+};
 use convert_case::{Case, Casing};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -44,7 +52,7 @@ pub struct Operation {
     pub source: OperationSource,
     /// Disallow struct construction, need to use Self::from_call or Operation::from(FasOperation)
     #[serde(skip)]
-    _private: ()
+    _private: (),
 }
 
 impl Operation {
@@ -52,7 +60,10 @@ impl Operation {
     /// Convenience constructor for tests
     pub(crate) fn new(service: String, name: String, source: OperationSource) -> Self {
         Self {
-            service, name, source, _private: ()
+            service,
+            name,
+            source,
+            _private: (),
         }
     }
 
@@ -66,7 +77,7 @@ impl Operation {
             _ => &[],
         }
     }
-    
+
     pub(crate) async fn from_call(
         call: &SdkMethodCall,
         original_service_name: &str,
@@ -74,7 +85,9 @@ impl Operation {
         sdk: SdkType,
         service_reference_loader: &ServiceReferenceLoader,
     ) -> crate::errors::Result<Self> {
-        let service = service_cfg.rename_service_service_reference(original_service_name).to_string();
+        let service = service_cfg
+            .rename_service_service_reference(original_service_name)
+            .to_string();
         let name = if sdk == SdkType::Boto3 {
             // Try to load service reference and look up the boto3 method mapping
             service_reference_loader
@@ -130,7 +143,10 @@ impl From<FasOperation> for Operation {
 }
 
 /// Custom serializer for extracted metadata that flattens the structure
-fn serialize_extracted_metadata<S>(metadata: &SdkMethodCallMetadata, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_extracted_metadata<S>(
+    metadata: &SdkMethodCallMetadata,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -158,7 +174,9 @@ impl Serialize for OperationSource {
         S: serde::Serializer,
     {
         match self {
-            OperationSource::Extracted(metadata) => serialize_extracted_metadata(metadata, serializer),
+            OperationSource::Extracted(metadata) => {
+                serialize_extracted_metadata(metadata, serializer)
+            }
             OperationSource::Provided => serializer.serialize_str("Provided"),
             OperationSource::Fas(_) => serializer.serialize_str("FAS"),
         }
@@ -193,7 +211,7 @@ impl Explanations {
         }
         Self {
             explanation_for_action: explanations,
-            documentation: BTreeMap::from_iter(documentation.into_iter())
+            documentation: BTreeMap::from_iter(documentation.into_iter()),
         }
     }
 }
@@ -580,7 +598,10 @@ pub(crate) mod mock_remote_service_reference {
 #[cfg(test)]
 mod location_tests {
     use super::*;
-    use crate::{Location, enrichment::mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping, service_configuration::load_service_configuration};
+    use crate::{
+        enrichment::mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping,
+        service_configuration::load_service_configuration, Location,
+    };
     use std::path::PathBuf;
 
     #[test]
@@ -630,10 +651,21 @@ mod location_tests {
     #[tokio::test]
     async fn test_reason_extracted_with_location() {
         let service_cfg = load_service_configuration().unwrap();
-        let (_, service_reference_loader) = setup_mock_server_with_loader_without_operation_to_action_mapping().await;
+        let (_, service_reference_loader) =
+            setup_mock_server_with_loader_without_operation_to_action_mapping().await;
         let call = mock_sdk_method_call();
 
-        let reason = Reason::new(vec![Arc::new(Operation::from_call(&call, "s3", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap())]);
+        let reason = Reason::new(vec![Arc::new(
+            Operation::from_call(
+                &call,
+                "s3",
+                &service_cfg,
+                SdkType::Boto3,
+                &service_reference_loader,
+            )
+            .await
+            .unwrap(),
+        )]);
 
         assert_eq!(reason.operations[0].name, "GetObject");
         assert_eq!(reason.operations[0].service, "s3");
@@ -659,13 +691,15 @@ mod location_tests {
             location: Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
             receiver: Some("dynamodb".to_string()),
         };
-        
+
         let source = OperationSource::Extracted(metadata);
         let json = serde_json::to_string(&source).unwrap();
-        
+
         // Verify the custom serialization format
         assert!(json.contains("\"Expr\":\"dynamodb.get_item(\\n        TableName='my-table',\\n        Key={'id': {'S': '123'}}\\n    )\""));
-        assert!(json.contains("\"Location\":\"iam-policy-autopilot-cli/tests/resources/test_example.py:19.5-22.5\""));
+        assert!(json.contains(
+            "\"Location\":\"iam-policy-autopilot-cli/tests/resources/test_example.py:19.5-22.5\""
+        ));
         // Should not contain nested "Source" key
         assert!(!json.contains("\"Source\""));
     }
@@ -674,7 +708,7 @@ mod location_tests {
     fn test_operation_source_provided_serialization() {
         let source = OperationSource::Provided;
         let json = serde_json::to_string(&source).unwrap();
-        
+
         // Verify the custom serialization format
         assert_eq!(json, "\"Provided\"");
     }
@@ -682,14 +716,14 @@ mod location_tests {
     #[test]
     fn test_operation_source_fas_serialization() {
         use crate::enrichment::operation_fas_map::FasContext;
-        
+
         let fas_context = vec![FasContext::new(
             "kms:ViaService".to_string(),
             vec!["ssm.${region}.amazonaws.com".to_string()],
         )];
         let source = OperationSource::Fas(fas_context);
         let json = serde_json::to_string(&source).unwrap();
-        
+
         // Verify the custom serialization format - should be just "FAS", not nested
         assert_eq!(json, "\"FAS\"");
     }
@@ -697,7 +731,8 @@ mod location_tests {
     #[tokio::test]
     async fn test_operation_methods() {
         let service_cfg = load_service_configuration().unwrap();
-        let (_, service_reference_loader) = setup_mock_server_with_loader_without_operation_to_action_mapping().await;
+        let (_, service_reference_loader) =
+            setup_mock_server_with_loader_without_operation_to_action_mapping().await;
 
         {
             let call = SdkMethodCall {
@@ -705,7 +740,15 @@ mod location_tests {
                 possible_services: vec!["kms".to_string()],
                 metadata: None,
             };
-            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap();
+            let op = Operation::from_call(
+                &call,
+                "kms",
+                &service_cfg,
+                SdkType::Boto3,
+                &service_reference_loader,
+            )
+            .await
+            .unwrap();
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &[]);
         }
@@ -724,7 +767,15 @@ mod location_tests {
                 possible_services: vec!["kms".to_string()],
                 metadata: Some(metadata),
             };
-            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3, &service_reference_loader).await.unwrap();
+            let op = Operation::from_call(
+                &call,
+                "kms",
+                &service_cfg,
+                SdkType::Boto3,
+                &service_reference_loader,
+            )
+            .await
+            .unwrap();
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &[]);
         }
@@ -734,7 +785,8 @@ mod location_tests {
                 "kms:ViaService".to_string(),
                 vec!["ssm.${region}.amazonaws.com".to_string()],
             )];
-            let fas_operation = FasOperation::new("Decrypt".to_string(), "kms".to_string(), context.clone());
+            let fas_operation =
+                FasOperation::new("Decrypt".to_string(), "kms".to_string(), context.clone());
             let op = Operation::from(fas_operation);
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &context);
