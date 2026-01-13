@@ -52,15 +52,6 @@ impl FasExpansion {
                             for additional_op in additional_operations {
                                 let new_op = Arc::new(Operation::from(additional_op.clone()));
 
-                                if dependency_graph.contains_key(&new_op) {
-                                    // Skip adding this operation as it's logically equivalent to an existing one
-                                    log::debug!(
-                                        "Skipping logically equivalent operation: {}",
-                                        new_op.service_operation_name()
-                                    );
-                                    continue;
-                                }
-
                                 if let Some(existing_deps) = dependency_graph.get_mut(&new_op) {
                                     // Operation already exists, add this dependency relationship
                                     existing_deps.push(Arc::clone(current));

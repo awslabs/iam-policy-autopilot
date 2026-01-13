@@ -41,7 +41,7 @@ pub struct Reason {
     pub operations: Vec<Arc<Operation>>,
 }
 
-#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
     /// Name of the service
@@ -139,6 +139,26 @@ impl From<FasOperation> for Operation {
             source: OperationSource::Fas(fas_op.context),
             _private: (),
         }
+    }
+}
+
+// Custom PartialEq and Hash implementations for Operation:
+
+// We consider operations to be equal when they would produce the same action in a policy.
+// I.e., same operation and same context used for the condition. Directly relevant to FAS expansion.
+impl PartialEq for Operation {
+    fn eq(&self, other: &Self) -> bool {
+        self.service == other.service
+            && self.name == other.name
+            && self.context() == other.context()
+    }
+}
+
+impl std::hash::Hash for Operation {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.service.hash(state);
+        self.name.hash(state);
+        self.context().hash(state);
     }
 }
 
@@ -359,6 +379,7 @@ impl Resource {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::enrichment::operation_fas_map::FasContext;
 
     #[test]
     fn test_enriched_resource_creation() {
@@ -371,6 +392,191 @@ mod tests {
         assert_eq!(
             resource.arn_patterns,
             Some(vec!["arn:aws:s3:::bucket/*".to_string()])
+        );
+    }
+
+    #[test]
+    fn test_operation_custom_equality_same_operation_different_sources() {
+        // Test that operations with same service, name, and context are equal regardless of source
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(Vec::new()), // Empty context
+        );
+
+        // Should be equal because they have same service, name, and context (both empty)
+        assert_eq!(op1, op2);
+        assert_eq!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_custom_equality_different_contexts() {
+        // Test that operations with different contexts are NOT equal
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided, // Empty context
+        );
+
+        let context = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["s3.us-east-1.amazonaws.com".to_string()],
+        )];
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(context),
+        );
+
+        // Should NOT be equal because they have different contexts
+        assert_ne!(op1, op2);
+        assert_ne!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_custom_equality_same_contexts() {
+        // Test that operations with same contexts are equal
+        let context1 = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["s3.us-east-1.amazonaws.com".to_string()],
+        )];
+        let context2 = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["s3.us-east-1.amazonaws.com".to_string()],
+        )];
+
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(context1),
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(context2),
+        );
+
+        // Should be equal because they have same service, name, and context
+        assert_eq!(op1, op2);
+        assert_eq!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_custom_equality_different_services() {
+        // Test that operations with different services are NOT equal
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "kms".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        // Should NOT be equal because they have different services
+        assert_ne!(op1, op2);
+        assert_ne!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_custom_equality_different_names() {
+        // Test that operations with different names are NOT equal
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "PutObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        // Should NOT be equal because they have different operation names
+        assert_ne!(op1, op2);
+        assert_ne!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_custom_hash_consistency() {
+        // Test that equal operations have the same hash
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(Vec::new()), // Empty context
+        );
+
+        // Equal operations should have the same hash
+        assert_eq!(op1, op2);
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher1 = DefaultHasher::new();
+        op1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+
+        let mut hasher2 = DefaultHasher::new();
+        op2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_eq!(hash1, hash2, "Equal operations should have the same hash");
+    }
+
+    #[test]
+    fn test_operation_custom_hash_different_for_unequal() {
+        // Test that unequal operations typically have different hashes
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let context = vec![FasContext::new(
+            "kms:ViaService".to_string(),
+            vec!["s3.us-east-1.amazonaws.com".to_string()],
+        )];
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(context),
+        );
+
+        // Unequal operations should typically have different hashes
+        assert_ne!(op1, op2);
+
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher1 = DefaultHasher::new();
+        op1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+
+        let mut hasher2 = DefaultHasher::new();
+        op2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        // Note: Hash collisions are possible but unlikely for this test case
+        assert_ne!(
+            hash1, hash2,
+            "Unequal operations should typically have different hashes"
         );
     }
 }
