@@ -10,7 +10,7 @@ use crate::{
     EnrichmentEngine, PolicyGenerationEngine,
 };
 
-/// Generate polcies for source files
+/// Generate policies for source files
 pub async fn generate_policies(
     config: &GeneratePolicyConfig,
 ) -> Result<(Vec<PolicyWithMetadata>, Vec<MethodActionMapping>)> {
