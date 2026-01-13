@@ -1,5 +1,5 @@
 //! Defined model for API
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{enrichment::Explanations, policy_generation::PolicyWithMetadata};
 use std::path::PathBuf;
@@ -62,6 +62,8 @@ pub struct AwsContext {
     /// AWS account ID
     pub account: String,
 }
+
+include!("../shared_submodule_model.rs");
 
 impl AwsContext {
     /// Creates a new AwsContext with the partition automatically derived from the region.

@@ -36,6 +36,8 @@ mod types;
 use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport};
 use types::ExitCode;
 
+use crate::commands::print_version_info;
+
 /// Default port for mcp server for Http Transport
 static MCP_HTTP_DEFAULT_PORT: u16 = 8001;
 
@@ -112,6 +114,7 @@ required for the operations you perform (e.g., KMS actions for S3 encryption).";
     name = "iam-policy-autopilot",
     author,
     version,
+    disable_version_flag = true,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
     long_about = "Unified tool that combines IAM policy generation from source code analysis \
 with automatic AccessDenied error fixing. Supports three main operations:\n\n\
@@ -347,6 +350,16 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
 Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
         port: u16,
+    },
+
+    #[command(
+        about = "Print version information.",
+        short_flag = 'V',
+        long_flag = "version"
+    )]
+    Version {
+        #[arg(long = "verbose", default_value_t = false, hide = true)]
+        verbose: bool,
     },
 }
 
@@ -599,6 +612,14 @@ async fn main() {
                 }
             }
         }
+
+        Commands::Version { verbose } => match print_version_info(verbose) {
+            Ok(()) => ExitCode::Success,
+            Err(e) => {
+                print_cli_command_error(e);
+                ExitCode::Error
+            }
+        },
     };
 
     process::exit(code.into());

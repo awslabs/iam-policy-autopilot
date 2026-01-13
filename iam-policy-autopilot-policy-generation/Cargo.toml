@@ -29,6 +29,7 @@ async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
 
+
 # Build dependencies
 [build-dependencies]
 serde.workspace = true
@@ -40,6 +41,10 @@ tokio-util.workspace = true
 
 # JSON processing
 serde_json.workspace = true
+
+aws-lc-rs.workspace = true
+git2.workspace = true
+relative-path.workspace = true
 
 [features]
 default = []
