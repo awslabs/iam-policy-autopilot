@@ -15,27 +15,17 @@ use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::ServiceConfiguration;
 use crate::{SdkMethodCall, SdkType};
 
-struct FasExpansionBuilder<'a> {
-    service_cfg: &'a ServiceConfiguration,
-    fas_maps: &'a OperationFasMaps,
+#[derive(Clone, Debug)]
+struct FasExpansion {
+    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
 }
 
-impl<'a> FasExpansionBuilder<'a> {
-    /// Find OperationFas map for a specific service
-    fn find_operation_fas_map_for_service(
-        &self,
-        service_name: &str,
-    ) -> Option<Arc<OperationFasMap>> {
-        self.fas_maps
-            .get(
-                self.service_cfg
-                    .rename_service_operation_action_map(service_name)
-                    .as_ref(),
-            )
-            .cloned()
-    }
-
-    fn expand_to_fixed_point(&self, initial: Operation) -> FasExpansion {
+impl FasExpansion {
+    fn new(
+        service_cfg: &ServiceConfiguration,
+        fas_maps: &OperationFasMaps,
+        initial: Operation,
+    ) -> Self {
         let mut dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>> = HashMap::new();
         let initial_arc = Arc::new(initial);
 
@@ -49,7 +39,8 @@ impl<'a> FasExpansionBuilder<'a> {
             for current in &to_process {
                 let service_name = &current.service;
 
-                match self.find_operation_fas_map_for_service(service_name) {
+                match Self::find_operation_fas_map_for_service(service_cfg, fas_maps, service_name)
+                {
                     Some(operation_fas_map) => {
                         let service_operation_name = current.service_operation_name();
                         log::debug!("Looking up operation {}", service_operation_name);
@@ -60,6 +51,15 @@ impl<'a> FasExpansionBuilder<'a> {
                         {
                             for additional_op in additional_operations {
                                 let new_op = Arc::new(Operation::from(additional_op.clone()));
+
+                                if dependency_graph.contains_key(&new_op) {
+                                    // Skip adding this operation as it's logically equivalent to an existing one
+                                    log::debug!(
+                                        "Skipping logically equivalent operation: {}",
+                                        new_op.service_operation_name()
+                                    );
+                                    continue;
+                                }
 
                                 if let Some(existing_deps) = dependency_graph.get_mut(&new_op) {
                                     // Operation already exists, add this dependency relationship
@@ -94,24 +94,22 @@ impl<'a> FasExpansionBuilder<'a> {
             "FAS expansion completed with {} total operations",
             dependency_graph.len()
         );
-        FasExpansion { dependency_graph }
+        Self { dependency_graph }
     }
-}
 
-#[derive(Clone, Debug)]
-struct FasExpansion {
-    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
-}
-
-impl FasExpansion {
-    fn builder<'a>(
-        service_cfg: &'a ServiceConfiguration,
-        fas_maps: &'a OperationFasMaps,
-    ) -> FasExpansionBuilder<'a> {
-        FasExpansionBuilder {
-            service_cfg,
-            fas_maps,
-        }
+    /// Find OperationFas map for a specific service
+    fn find_operation_fas_map_for_service(
+        service_cfg: &ServiceConfiguration,
+        fas_maps: &OperationFasMaps,
+        service_name: &str,
+    ) -> Option<Arc<OperationFasMap>> {
+        fas_maps
+            .get(
+                service_cfg
+                    .rename_service_operation_action_map(service_name)
+                    .as_ref(),
+            )
+            .cloned()
     }
 
     fn operations(&self) -> impl Iterator<Item = &Arc<Operation>> {
@@ -216,8 +214,7 @@ impl ResourceMatcher {
 
         log::debug!("Expanded {:?}", initial);
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
-        let fas_expansion =
-            FasExpansion::builder(&self.service_cfg, &self.fas_maps).expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::new(&self.service_cfg, &self.fas_maps, initial);
 
         log::debug!("to\n{:?}", fas_expansion.dependency_graph);
 
@@ -966,57 +963,60 @@ mod tests {
         let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with no cycles: A -> B -> C (linear chain)
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service B: Decrypt
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "Decrypt".to_string(),
+            // Service A: GetObject -> Service B: Decrypt
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "Decrypt".to_string(),
+                    "service-b".to_string(),
+                    vec![FasContext::new(
+                        "test".to_string(),
+                        vec!["value".to_string()],
+                    )],
+                )],
+            );
+
+            // Service B: Decrypt -> Service C: Log
+            let mut service_b_operations = HashMap::new();
+            service_b_operations.insert(
+                "service-b:Decrypt".to_string(),
+                vec![FasOperation::new(
+                    "Log".to_string(),
+                    "service-c".to_string(),
+                    vec![FasContext::new(
+                        "test2".to_string(),
+                        vec!["value2".to_string()],
+                    )],
+                )],
+            );
+
+            // Service C: Log -> nothing (terminal)
+            let service_c_operations = HashMap::new();
+
+            fas_maps.insert(
+                "service-a".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps.insert(
                 "service-b".to_string(),
-                vec![FasContext::new(
-                    "test".to_string(),
-                    vec!["value".to_string()],
-                )],
-            )],
-        );
-
-        // Service B: Decrypt -> Service C: Log
-        let mut service_b_operations = HashMap::new();
-        service_b_operations.insert(
-            "service-b:Decrypt".to_string(),
-            vec![FasOperation::new(
-                "Log".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_b_operations,
+                }),
+            );
+            fas_maps.insert(
                 "service-c".to_string(),
-                vec![FasContext::new(
-                    "test2".to_string(),
-                    vec!["value2".to_string()],
-                )],
-            )],
-        );
-
-        // Service C: Log -> nothing (terminal)
-        let service_c_operations = HashMap::new();
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-b".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_b_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-c".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_c_operations,
-            }),
-        );
+                Arc::new(OperationFasMap {
+                    fas_operations: service_c_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject
         let initial = Operation::new(
@@ -1025,8 +1025,7 @@ mod tests {
             OperationSource::Provided,
         );
 
-        let fas_expansion =
-            FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         assert_eq!(
             fas_expansion.dependency_graph.len(),
@@ -1057,48 +1056,51 @@ mod tests {
         let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with a cycle: A -> B -> A
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service B: Decrypt
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "Decrypt".to_string(),
-                "service-b".to_string(),
-                vec![FasContext::new(
-                    "test".to_string(),
-                    vec!["value".to_string()],
+            // Service A: GetObject -> Service B: Decrypt
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "Decrypt".to_string(),
+                    "service-b".to_string(),
+                    vec![FasContext::new(
+                        "test".to_string(),
+                        vec!["value".to_string()],
+                    )],
                 )],
-            )],
-        );
+            );
 
-        // Service B: Decrypt -> Service A: GetObject (creates cycle!)
-        let mut service_b_operations = HashMap::new();
-        service_b_operations.insert(
-            "service-b:Decrypt".to_string(),
-            vec![FasOperation::new(
-                "GetObject".to_string(),
+            // Service B: Decrypt -> Service A: GetObject (creates cycle!)
+            let mut service_b_operations = HashMap::new();
+            service_b_operations.insert(
+                "service-b:Decrypt".to_string(),
+                vec![FasOperation::new(
+                    "GetObject".to_string(),
+                    "service-a".to_string(),
+                    vec![FasContext::new(
+                        "test2".to_string(),
+                        vec!["value2".to_string()],
+                    )],
+                )],
+            );
+
+            fas_maps.insert(
                 "service-a".to_string(),
-                vec![FasContext::new(
-                    "test2".to_string(),
-                    vec!["value2".to_string()],
-                )],
-            )],
-        );
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-b".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_b_operations,
-            }),
-        );
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps.insert(
+                "service-b".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_b_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject - should detect cycle and terminate
         let initial = Operation::new(
@@ -1107,8 +1109,7 @@ mod tests {
             OperationSource::Provided,
         );
 
-        let fas_expansion =
-            FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         // Debug: print what operations we actually got
         let operation_names: std::collections::HashSet<String> = fas_expansion
@@ -1138,37 +1139,40 @@ mod tests {
         // Create a service configuration
         let service_cfg = create_empty_service_config();
 
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Create a chain that loops back: A -> B -> C -> D -> A
-        let operations_data = vec![
-            ("service-a", "GetObject", "service-b", "Decrypt"),
-            ("service-b", "Decrypt", "service-c", "Validate"),
-            ("service-c", "Validate", "service-d", "Log"),
-            ("service-d", "Log", "service-a", "GetObject"), // Back to start
-        ];
+            // Create a chain that loops back: A -> B -> C -> D -> A
+            let operations_data = vec![
+                ("service-a", "GetObject", "service-b", "Decrypt"),
+                ("service-b", "Decrypt", "service-c", "Validate"),
+                ("service-c", "Validate", "service-d", "Log"),
+                ("service-d", "Log", "service-a", "GetObject"), // Back to start
+            ];
 
-        for (from_service, from_op, to_service, to_op) in operations_data {
-            let mut operations = HashMap::new();
-            operations.insert(
-                format!("{}:{}", from_service, from_op),
-                vec![FasOperation::new(
-                    to_op.to_string(),
-                    to_service.to_string(),
-                    vec![FasContext::new(
-                        "cycle".to_string(),
-                        vec!["test".to_string()],
+            for (from_service, from_op, to_service, to_op) in operations_data {
+                let mut operations = HashMap::new();
+                operations.insert(
+                    format!("{}:{}", from_service, from_op),
+                    vec![FasOperation::new(
+                        to_op.to_string(),
+                        to_service.to_string(),
+                        vec![FasContext::new(
+                            "cycle".to_string(),
+                            vec!["test".to_string()],
+                        )],
                     )],
-                )],
-            );
+                );
 
-            fas_maps.insert(
-                from_service.to_string(),
-                Arc::new(OperationFasMap {
-                    fas_operations: operations,
-                }),
-            );
-        }
+                fas_maps.insert(
+                    from_service.to_string(),
+                    Arc::new(OperationFasMap {
+                        fas_operations: operations,
+                    }),
+                );
+            }
+            fas_maps
+        };
 
         let initial = Operation::new(
             "service-a".to_string(),
@@ -1176,8 +1180,7 @@ mod tests {
             OperationSource::Provided,
         );
 
-        let fas_expansion =
-            FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
         assert!(
@@ -1199,8 +1202,7 @@ mod tests {
             OperationSource::Provided,
         );
 
-        let fas_expansion =
-            FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial.clone());
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial.clone());
         assert_eq!(
             fas_expansion.dependency_graph.len(),
             1,
@@ -1228,25 +1230,28 @@ mod tests {
         let service_cfg = create_empty_service_config();
 
         // Create a FAS map where A -> A with empty context (self-referential)
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service A: GetObject (with empty context)
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "GetObject".to_string(),
+            // Service A: GetObject -> Service A: GetObject (with empty context)
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "GetObject".to_string(),
+                    "service-a".to_string(),
+                    Vec::new(), // Empty context - same as initial
+                )],
+            );
+
+            fas_maps.insert(
                 "service-a".to_string(),
-                Vec::new(), // Empty context - same as initial
-            )],
-        );
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject with empty context
         let initial = Operation::new(
@@ -1255,8 +1260,7 @@ mod tests {
             OperationSource::Provided,
         );
 
-        let fas_expansion =
-            FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial.clone());
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial.clone());
 
         // Should have exactly 1 operation since A->A with same context creates no new operations
         assert_eq!(
