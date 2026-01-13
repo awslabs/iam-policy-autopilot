@@ -10,7 +10,7 @@ use super::merge::{PolicyMerger, PolicyMergerConfig};
 use super::utils::{ArnParser, ConditionValueProcessor};
 use super::{IamPolicy, Statement};
 use crate::api::model::GeneratePoliciesResult;
-use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall};
+use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall, Explanations};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
 use crate::Explanation;
@@ -280,9 +280,7 @@ impl<'a> Engine<'a> {
     }
 }
 
-fn extract_explanations(
-    enriched_calls: &[EnrichedSdkMethodCall<'_>],
-) -> BTreeMap<String, Explanation> {
+fn extract_explanations(enriched_calls: &[EnrichedSdkMethodCall<'_>]) -> Explanations {
     let mut explanations: BTreeMap<String, Explanation> = BTreeMap::new();
 
     // Collect and merge explanations for each action name
@@ -296,8 +294,8 @@ fn extract_explanations(
                 .or_insert_with(|| action.explanation.clone());
         }
     }
-
-    explanations
+    
+    Explanations::new(explanations)
 }
 
 #[cfg(test)]
@@ -924,8 +922,8 @@ mod tests {
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                        "get_object".to_string(),
                         "s3".to_string(),
+                        "get_object".to_string(),
                         OperationSource::Provided,
                     ))])],
                 },
@@ -942,7 +940,7 @@ mod tests {
         if let Some(explanation) = result
             .explanations
             .as_ref()
-            .and_then(|explanations| explanations.get("s3:GetObject"))
+            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
         {
             assert_eq!(explanation.reasons.len(), 1);
             assert_eq!(explanation.reasons[0].operations.len(), 1);
@@ -979,8 +977,8 @@ mod tests {
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                        "get_object".to_string(),
                         "s3".to_string(),
+                        "get_object".to_string(),
                         OperationSource::Provided,
                     ))])],
                 },
@@ -1002,8 +1000,8 @@ mod tests {
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                        "get_object".to_string(),
                         "s3".to_string(),
+                        "get_object".to_string(),
                         OperationSource::Provided,
                     ))])],
                 },
@@ -1019,7 +1017,7 @@ mod tests {
         if let Some(explanation) = result
             .explanations
             .as_ref()
-            .and_then(|explanations| explanations.get("s3:GetObject"))
+            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
         {
             assert_eq!(
                 explanation.reasons.len(),
@@ -1055,8 +1053,8 @@ mod tests {
                     vec![],
                     Explanation {
                         reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                            "get_object".to_string(),
                             "s3".to_string(),
+                            "get_object".to_string(),
                             OperationSource::Provided,
                         ))])],
                     },
@@ -1072,8 +1070,8 @@ mod tests {
                     vec![],
                     Explanation {
                         reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                            "Decrypt".to_string(),
                             "kms".to_string(),
+                            "Decrypt".to_string(),
                             OperationSource::Fas(vec![FasContext::new(
                                 "kms:ViaService".to_string(),
                                 vec!["s3.us-east-1.amazonaws.com".to_string()],
@@ -1088,13 +1086,14 @@ mod tests {
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
         // Verify explanations include FAS expansion
-        assert_eq!(result.explanations.as_ref().unwrap().len(), 2);
+        assert_eq!(result.explanations.as_ref().unwrap().explanation_for_action.len(), 2);
 
         // Check the FAS-expanded action
         let kms_explanation = result
             .explanations
             .as_ref()
             .unwrap()
+            .explanation_for_action
             .get("kms:Decrypt")
             .expect("Should have kms:Decrypt explanation");
         assert_eq!(kms_explanation.reasons.len(), 1);
@@ -1141,8 +1140,8 @@ mod tests {
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
-                        "get_object".to_string(),
                         "s3".to_string(),
+                        "get_object".to_string(),
                         OperationSource::Provided,
                     ))])],
                 },
@@ -1152,7 +1151,7 @@ mod tests {
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
-        assert_eq!(result.explanations.as_ref().unwrap().len(), 1);
+        assert_eq!(result.explanations.as_ref().unwrap().explanation_for_action.len(), 1);
     }
 }
 

@@ -15,31 +15,12 @@ use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::ServiceConfiguration;
 use crate::{SdkMethodCall, SdkType};
 
-#[derive(derive_new::new, Clone, Debug)]
-struct FasExpansion<'a> {
+struct FasExpansionBuilder<'a> {
     service_cfg: &'a ServiceConfiguration,
     fas_maps: &'a OperationFasMaps,
-    #[new(default)]
-    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
 }
 
-impl<'a> FasExpansion<'a> {
-    fn operations(&self) -> impl Iterator<Item = &Arc<Operation>> {
-        self.dependency_graph.keys()
-    }
-
-    fn complete_provenance_chain(&self, op: Arc<Operation>) -> Vec<Arc<Operation>> {
-        let mut result = vec![];
-        if let Some(deps) = self.dependency_graph.get(&op) {
-            for dep in deps {
-                result.push(Arc::clone(dep));
-            }
-        }
-        // Add the initial operation
-        result.push(Arc::clone(&op));
-        result
-    }
-    
+impl<'a> FasExpansionBuilder<'a> {
     /// Find OperationFas map for a specific service
     fn find_operation_fas_map_for_service(
         &self,
@@ -53,11 +34,12 @@ impl<'a> FasExpansion<'a> {
             )
             .cloned()
     }
-    
-    fn expand_to_fixed_point(&mut self, initial: Operation) {
+
+    fn expand_to_fixed_point(&self, initial: Operation) -> FasExpansion {
+        let mut dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>> = HashMap::new();
         let initial_arc = Arc::new(initial);
         
-        self.dependency_graph.insert(Arc::clone(&initial_arc), Vec::new()); // Root has no dependencies
+        dependency_graph.insert(Arc::clone(&initial_arc), Vec::new()); // Root has no dependencies
         
         let mut to_process = vec![Arc::clone(&initial_arc)];
         
@@ -79,12 +61,12 @@ impl<'a> FasExpansion<'a> {
                             for additional_op in additional_operations {
                                 let new_op = Arc::new(Operation::from(additional_op.clone()));
                                 
-                                if let Some(existing_deps) = self.dependency_graph.get_mut(&new_op) {
+                                if let Some(existing_deps) = dependency_graph.get_mut(&new_op) {
                                     // Operation already exists, add this dependency relationship
                                     existing_deps.push(Arc::clone(current));
                                 } else {
                                     // New operation
-                                    self.dependency_graph.insert(Arc::clone(&new_op), vec![Arc::clone(current)]);
+                                    dependency_graph.insert(Arc::clone(&new_op), vec![Arc::clone(current)]);
                                     newly_discovered.push(Arc::clone(&new_op));
                                 }
                             }
@@ -109,11 +91,38 @@ impl<'a> FasExpansion<'a> {
         
         log::debug!(
             "FAS expansion completed with {} total operations",
-            self.dependency_graph.len()
+            dependency_graph.len()
         );
+        FasExpansion { dependency_graph }
     }
 
+}
 
+#[derive(Clone, Debug)]
+struct FasExpansion {
+    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
+}
+
+impl FasExpansion {
+    fn builder<'a>(service_cfg: &'a ServiceConfiguration, fas_maps: &'a OperationFasMaps) -> FasExpansionBuilder<'a> {
+        FasExpansionBuilder { service_cfg, fas_maps }
+    }
+
+    fn operations(&self) -> impl Iterator<Item = &Arc<Operation>> {
+        self.dependency_graph.keys()
+    }
+
+    fn complete_provenance_chain(&self, op: Arc<Operation>) -> Vec<Arc<Operation>> {
+        let mut result = vec![];
+        if let Some(deps) = self.dependency_graph.get(&op) {
+            for dep in deps {
+                result.push(Arc::clone(dep));
+            }
+        }
+        // Add the initial operation
+        result.push(Arc::clone(&op));
+        result
+    }
 }
 
 /// ResourceMatcher coordinates OperationAction maps and Service Reference data to generate enriched method calls
@@ -189,8 +198,6 @@ impl ResourceMatcher {
             parsed_call.name
         );
         
-        let mut fas_expansion = FasExpansion::new(&self.service_cfg, &self.fas_maps);
-
         // Store the original service name from parsed_call for use in explanations
         let original_service_name = service_name;
 
@@ -198,7 +205,8 @@ impl ResourceMatcher {
 
         log::debug!("Expanded {:?}", initial);
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
-        fas_expansion.expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::builder(&self.service_cfg, &self.fas_maps).expand_to_fixed_point(initial);
+
         log::debug!("to\n{:?}", fas_expansion.dependency_graph);
 
         let mut enriched_actions = vec![];
@@ -997,10 +1005,9 @@ mod tests {
 
         // Test expansion starting from GetObject
         let initial =
-            Operation::new("GetObject".to_string(), "service-a".to_string(), OperationSource::Provided);
+            Operation::new("service-a".to_string(), "GetObject".to_string(), OperationSource::Provided);
 
-        let mut fas_expansion = FasExpansion::new(&service_cfg, &fas_maps);
-        fas_expansion.expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
 
         assert_eq!(
             fas_expansion.dependency_graph.len(),
@@ -1074,13 +1081,11 @@ mod tests {
             }),
         );
 
-        let mut fas_expansion = FasExpansion::new(&service_cfg, &fas_maps);
-
         // Test expansion starting from GetObject - should detect cycle and terminate
         let initial =
-            Operation::new("GetObject".to_string(), "service-a".to_string(), OperationSource::Provided);
+            Operation::new("service-a".to_string(), "GetObject".to_string(), OperationSource::Provided);
 
-        fas_expansion.expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
 
         // Debug: print what operations we actually got
         let operation_names: std::collections::HashSet<String> = fas_expansion
@@ -1139,12 +1144,10 @@ mod tests {
             );
         }
 
-        let mut fas_expansion = FasExpansion::new(&service_cfg, &fas_maps);
-        
         let initial =
-            Operation::new("GetObject".to_string(), "service-a".to_string(), OperationSource::Provided);
+            Operation::new("service-a".to_string(),"GetObject".to_string() , OperationSource::Provided);
 
-        fas_expansion.expand_to_fixed_point(initial);
+        let fas_expansion = FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial);
 
         // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
         assert!(
@@ -1160,15 +1163,13 @@ mod tests {
         let service_cfg = create_empty_service_config();
         let fas_maps = HashMap::new();
 
-        let mut fas_expansion = FasExpansion::new(&service_cfg, &fas_maps);
-
         let initial = Operation::new(
-            "NonExistentOperation".to_string(),
             "non-existent-service".to_string(),
+            "NonExistentOperation".to_string(),
             OperationSource::Provided,
         );
 
-        fas_expansion.expand_to_fixed_point(initial.clone());
+        let fas_expansion = FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial.clone());
         assert_eq!(
             fas_expansion.dependency_graph.len(),
             1,
@@ -1216,16 +1217,14 @@ mod tests {
             }),
         );
 
-        let mut fas_expansion = FasExpansion::new(&service_cfg, &fas_maps);
-
         // Test expansion starting from GetObject with empty context
         let initial = Operation::new(
-            "GetObject".to_string(),
             "service-a".to_string(),
+            "GetObject".to_string(),
             OperationSource::Provided,
         );
 
-        fas_expansion.expand_to_fixed_point(initial.clone());
+        let fas_expansion = FasExpansion::builder(&service_cfg, &fas_maps).expand_to_fixed_point(initial.clone());
 
         // Should have exactly 1 operation since A->A with same context creates no new operations
         assert_eq!(

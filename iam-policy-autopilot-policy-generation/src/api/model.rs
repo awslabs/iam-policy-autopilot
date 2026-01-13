@@ -1,8 +1,8 @@
 //! Defined model for API
 use serde::Serialize;
 
-use crate::{enrichment::Explanation, policy_generation::PolicyWithMetadata};
-use std::{collections::BTreeMap, path::PathBuf};
+use crate::{enrichment::Explanations, policy_generation::PolicyWithMetadata};
+use std::path::PathBuf;
 
 /// Configuration for generate_policies API
 #[derive(Debug, Clone)]
@@ -29,7 +29,7 @@ pub struct GeneratePoliciesResult {
     pub policies: Vec<PolicyWithMetadata>,
     /// Explanations for why actions were added (if requested)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub explanations: Option<BTreeMap<String, Explanation>>,
+    pub explanations: Option<Explanations>,
 }
 
 /// Service hints for filtering SDK method calls

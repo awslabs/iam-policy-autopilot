@@ -8,7 +8,7 @@
 //! that represent method calls enriched with IAM metadata from operation
 //! action maps and Service Definition Files.
 
-use std::{collections::HashSet, sync::Arc};
+use std::{collections::{BTreeMap, HashSet}, sync::Arc};
 
 use crate::{SdkMethodCall, SdkType, enrichment::operation_fas_map::{FasContext, FasOperation}, extraction::SdkMethodCallMetadata, service_configuration::ServiceConfiguration};
 use convert_case::{Case, Casing};
@@ -25,9 +25,6 @@ pub(crate) use operation_fas_map::load_operation_fas_map;
 pub(crate) use resource_matcher::ResourceMatcher;
 pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
 
-const FAS_URL: &str =
-    "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
-
 /// Represents the reason why an action was added to a policy
 #[derive(derive_new::new, Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
@@ -39,22 +36,23 @@ pub struct Reason {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
-    /// Name of the operation
-    pub name: String,
     /// Name of the service
     pub service: String,
+    /// Name of the operation
+    pub name: String,
     /// Source of the operation,
     pub source: OperationSource,
     /// Disallow struct construction, need to use Self::from_call or Operation::from(FasOperation)
+    #[serde(skip)]
     _private: ()
 }
 
 impl Operation {
     #[cfg(test)]
     /// Convenience constructor for tests
-    pub(crate) fn new(name: String, service: String, source: OperationSource) -> Self {
+    pub(crate) fn new(service: String, name: String, source: OperationSource) -> Self {
         Self {
-            name, service, source, _private: ()
+            service, name, source, _private: ()
         }
     }
 
@@ -105,14 +103,14 @@ impl Operation {
 
         Ok(match &call.metadata {
             None => Self {
-                name,
                 service,
+                name,
                 source: OperationSource::Provided,
                 _private: (),
             },
             Some(metadata) => Self {
-                name,
                 service,
+                name,
                 source: OperationSource::Extracted(metadata.clone()),
                 _private: (),
             },
@@ -123,8 +121,8 @@ impl Operation {
 impl From<FasOperation> for Operation {
     fn from(fas_op: FasOperation) -> Self {
         Self {
-            name: fas_op.operation,
             service: fas_op.service,
+            name: fas_op.operation,
             source: OperationSource::Fas(fas_op.context),
             _private: (),
         }
@@ -167,9 +165,51 @@ impl Serialize for OperationSource {
     }
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Explanations {
+    pub explanation_for_action: BTreeMap<String, Explanation>,
+    pub documentation: BTreeMap<&'static str, Documentation>,
+}
+
+impl Explanations {
+    const FAS_URL: &str =
+        "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
+
+    pub(crate) fn new(explanations: BTreeMap<String, Explanation>) -> Self {
+        let mut documentation: Vec<(&'static str, Documentation)> = vec![];
+        for (_, explanation) in &explanations {
+            for reason in &explanation.reasons {
+                for op in &reason.operations {
+                    match op.source {
+                        OperationSource::Extracted(_) | OperationSource::Provided => (),
+                        OperationSource::Fas(_) => documentation.push(("FAS", Documentation {
+                            plain: "The explanation contains an operation added due to Forward Access Sessions.",
+                            url: Self::FAS_URL,
+                        }))
+                    }
+                }
+            }
+        }
+        Self {
+            explanation_for_action: explanations,
+            documentation: BTreeMap::from_iter(documentation.into_iter())
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct Documentation {
+    plain: &'static str,
+    #[serde(rename = "URL")]
+    url: &'static str,
+}
+
 /// Represents an explanation for why an action was added to a policy
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema, Default)]
-#[serde(rename_all = "PascalCase")]
+// Don't print the `"Reasons":` key, treat this as just a JSON array.
+#[serde(transparent)]
 pub struct Explanation {
     /// The reasons this action was added (can have multiple reasons for the same action)
     pub reasons: Vec<Reason>,
