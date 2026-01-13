@@ -55,6 +55,12 @@ struct ShapeReference {
     shape: String,
 }
 
+/// Simplified partitions definition. Map of partition ids to region regex.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SimplifiedPartitionsDefinition {
+    partitions: BTreeMap<String, String>,
+}
+
 include!("src/shared_submodule_model.rs");
 
 impl GitSubmoduleMetadata {
@@ -225,6 +231,13 @@ fn process_botocore_data(
 ) -> Result<usize, Box<dyn std::error::Error>> {
     let mut processed_count = 0;
 
+    // Process partitions.json
+    let partitions_src = botocore_path.join("partitions.json");
+    if partitions_src.is_file() {
+        let partitions_dst = output_dir.join("partitions.json");
+        process_partitions(&partitions_src, &partitions_dst)?;
+    }
+
     // Iterate through service directories
     for entry in fs::read_dir(botocore_path)? {
         let entry = entry?;
@@ -255,6 +268,50 @@ fn process_botocore_data(
     }
 
     Ok(processed_count)
+}
+
+fn process_partitions(
+    input_path: &Path,
+    output_path: &Path,
+) -> Result<(), Box<dyn std::error::Error>> {
+    // Read the original partitions definition
+    let content = fs::read_to_string(input_path)?;
+    let original: Value = serde_json::from_str(&content)?;
+
+    // Extract partitions (required)
+    let simplified_partitions = if let Some(Value::Array(partitions)) = original.get("partitions") {
+        partitions
+            .iter()
+            .map(|partition| {
+                let id = partition
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or("expected id in partition")?;
+                let region_regex = partition
+                    .get("regionRegex")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or("expected regionRegex in partition")?;
+                Ok((id, region_regex))
+            })
+            .collect::<Result<BTreeMap<_, _>, Box<dyn std::error::Error>>>()?
+    } else {
+        return Err("expected partitions array in partitions.json".into());
+    };
+
+    // Convert to simplified structure
+    let simplified = SimplifiedPartitionsDefinition {
+        partitions: simplified_partitions,
+    };
+
+    // Write the simplified version as uncompressed JSON
+    let simplified_json = serde_json::to_string(&simplified)?;
+
+    // Write uncompressed JSON file (rust-embed will handle compression)
+    fs::write(output_path, simplified_json)?;
+
+    Ok(())
 }
 
 fn find_latest_api_version(
