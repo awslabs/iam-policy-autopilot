@@ -14,6 +14,7 @@ pub(crate) mod javascript;
 pub(crate) mod python;
 pub(crate) mod sdk_model;
 pub(crate) mod service_hints;
+pub(crate) mod shared;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
