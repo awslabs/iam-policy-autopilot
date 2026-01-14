@@ -23,6 +23,16 @@ if node.kind() == COMPOSITE_LITERAL {
 }
 ```
 
+### `convert_case_pascal`
+
+Detects calls to `convert_case::to_case` with `Case::Pascal` as an argument. It is inviting to use such case conversion to rename Python snake_case method names to operation names, which are often--**but not always**--Pascal case (see https://github.com/awslabs/iam-policy-autopilot/issues/66).
+
+**Bad:**
+```rust
+use convert_case::{Case, Casing};
+let result = some_string.to_case(Case::Pascal);
+```
+
 ## Usage
 
 ### Install dylint
