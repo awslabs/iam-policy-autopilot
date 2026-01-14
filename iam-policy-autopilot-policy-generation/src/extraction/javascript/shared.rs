@@ -196,7 +196,7 @@ impl ExtractionUtils {
                             // Extract operation name by removing "Command" suffix
                             if let Some(operation_name) = command_name.strip_suffix("Command") {
                                 // Keep PascalCase operation name to match service index
-                                // e.g., "CreateBucket" stays "CreateBucket"
+                                // e.g., "PutItem" from "PutItemCommand"
                                 let method_call = SdkMethodCall {
                                     name: operation_name.to_string(),
                                     possible_services: vec![service.clone()],

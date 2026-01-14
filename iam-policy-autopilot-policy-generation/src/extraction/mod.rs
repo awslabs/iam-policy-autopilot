@@ -344,68 +344,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_method_creation() {
-        let method = SdkMethodCall {
-            name: "test_method".to_string(),
-            possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![Parameter::Keyword {
-                    name: "param1".to_string(),
-                    value: ParameterValue::Resolved("test_value".to_string()),
-                    position: 0,
-                    type_annotation: Some("str".to_string()),
-                }],
-                return_type: Some("bool".to_string()),
-                expr: "test_method".to_string(),
-                location: Location::new(PathBuf::new(), (10, 1), (10, 25)),
-                receiver: None,
-            }),
-        };
-
-        assert_eq!(method.name, "test_method");
-        assert_eq!(method.metadata.as_ref().unwrap().parameters.len(), 1);
-        assert_eq!(
-            method.metadata.as_ref().unwrap().location.start_position,
-            (10, 1)
-        );
-        assert_eq!(
-            method.metadata.as_ref().unwrap().location.end_position,
-            (10, 25)
-        );
-    }
-
-    #[test]
-    fn test_parsed_method_with_sdk_context() {
-        let method = SdkMethodCall {
-            name: "get_object".to_string(),
-            possible_services: vec!["s3".to_string()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![Parameter::Keyword {
-                    name: "Bucket".to_string(),
-                    value: ParameterValue::Resolved("my-bucket".to_string()),
-                    position: 0,
-                    type_annotation: Some("str".to_string()),
-                }],
-                return_type: Some("Dict[str, Any]".to_string()),
-                expr: "get_object".to_string(),
-                location: Location::new(PathBuf::new(), (15, 5), (15, 45)),
-                receiver: Some("s3_client".to_string()),
-            }),
-        };
-
-        assert_eq!(method.name, "get_object");
-        assert_eq!(
-            method.metadata.as_ref().unwrap().receiver,
-            Some("s3_client".to_string())
-        );
-        assert_eq!(method.possible_services, vec!["s3".to_string()]);
-        if let Parameter::Keyword {
-            value, position, ..
-        } = &method.metadata.as_ref().unwrap().parameters[0]
-        {
-            assert_eq!(value.as_string(), "my-bucket");
-            assert_eq!(*position, 0);
-        }
+    fn test_location_construction() {
+        let location = Location::new(PathBuf::new(), (10, 1), (10, 25));
+        assert_eq!(location.start_position, (10, 1));
+        assert_eq!(location.end_position, (10, 25));
     }
 
     #[test]

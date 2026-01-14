@@ -211,47 +211,32 @@ pub struct Explanations {
     /// Explanation for inclusion of an action
     pub explanation_for_action: BTreeMap<String, Explanation>,
     /// Documentation of concepts used in the explanation for an action
-    pub documentation: BTreeMap<&'static str, Documentation>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub documentation: Vec<&'static str>,
 }
 
 impl Explanations {
-    const FAS_PLAIN: &str =
-        "The explanation contains an operation added due to Forward Access Sessions.";
-    const FAS_URL: &str =
-        "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html";
+    const FAS: &str =
+        "The explanation contains an operation added due to Forward Access Sessions (FAS). See https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html.";
 
     pub(crate) fn new(explanations: BTreeMap<String, Explanation>) -> Self {
-        let mut documentation: Vec<(&'static str, Documentation)> = vec![];
+        let mut documentation: Vec<&'static str> = vec![];
         for explanation in explanations.values() {
             for reason in &explanation.reasons {
                 for op in &reason.operations {
                     match op.source {
                         OperationSource::Extracted(_) | OperationSource::Provided => (),
-                        OperationSource::Fas(_) => documentation.push((
-                            "FAS",
-                            Documentation {
-                                plain: Self::FAS_PLAIN,
-                                url: Self::FAS_URL,
-                            },
-                        )),
+                        OperationSource::Fas(_) => documentation.push(Self::FAS),
                     }
                 }
             }
         }
+        documentation.dedup();
         Self {
             explanation_for_action: explanations,
-            documentation: BTreeMap::from_iter(documentation),
+            documentation,
         }
     }
-}
-
-/// Documentation of concepts appearing in explanations
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct Documentation {
-    plain: &'static str,
-    #[serde(rename = "URL")]
-    url: &'static str,
 }
 
 /// Represents an explanation for why an action was added to a policy
