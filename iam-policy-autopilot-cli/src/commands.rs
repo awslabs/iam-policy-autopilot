@@ -8,7 +8,6 @@ use iam_policy_autopilot_access_denied::{ApplyError, ApplyOptions, DenialType};
 fn is_tty() -> bool {
     atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stderr)
 }
-use clap::crate_version;
 
 /// Returns Some(true) if user confirmed, Some(false) if declined, None if not in TTY.
 fn prompt_yes_no() -> Option<bool> {
