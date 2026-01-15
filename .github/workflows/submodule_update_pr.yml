@@ -4,9 +4,6 @@ on:
   schedule:
     - cron: "0 0 * * *"
   workflow_dispatch:
-permissions:
-  contents: write
-  pull-requests: write
 
 jobs:
   # checks out the head commit on iam-policy-autopilot/release, and gets the boto3/botocore versions used there, to see if they need to be bumped up.
@@ -265,9 +262,7 @@ jobs:
           fetch-tags: true
           ref: release
           token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
-      - name: Force-merge from release
-        run: |
-          git merge -X theirs release
+
       - name: Update submodule in clone
         env: 
           LATEST_RELEASE_BOTO3_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_boto3_commit }}
@@ -320,9 +315,7 @@ jobs:
           fetch-tags: true
           ref: release
           token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
-      - name: Force-merge from release
-        run: |
-          git merge -X theirs release
+
       - name: Update submodule in clone
         env: 
           LATEST_RELEASE_BOTOCORE_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_botocore_commit }}
