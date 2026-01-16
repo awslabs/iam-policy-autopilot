@@ -4,11 +4,7 @@ use std::{collections::HashMap, time::Instant};
 use log::{debug, info, trace};
 
 use crate::{
-    api::{common::process_source_files, model::GeneratePolicyConfig},
-    context_fetcher::service::{AccountContextFetcherService, AccountResourceContext},
-    extraction::SdkMethodCall,
-    policy_generation::{merge::PolicyMergerConfig, MethodActionMapping, PolicyWithMetadata},
-    EnrichmentEngine, PolicyGenerationEngine,
+    EnrichmentEngine, PolicyGenerationEngine, api::{common::process_source_files, model::GeneratePolicyConfig}, context_fetcher::{TerraformProjectExplorer, service::{AccountContextFetcherService, AccountResourceContext}, terraform_state::TerraformStateContext}, extraction::SdkMethodCall, policy_generation::{MethodActionMapping, PolicyWithMetadata, merge::PolicyMergerConfig}
 };
 
 /// Generate polcies for source files
@@ -24,8 +20,6 @@ pub async fn generate_policies(
 
     // Create the extractor
     let extractor = crate::ExtractionEngine::new();
-
-    let account_context = AccountContextFetcherService::new().await;
 
     // Process source files to get extracted methods
     let extracted_methods = process_source_files(
@@ -82,13 +76,22 @@ pub async fn generate_policies(
         &config.aws_context.account,
         merger_config,
         config.use_account_context,
+        config.use_terraform
     );
 
     let account_context = if (config.use_account_context) {
-        &account_context.fetch_account_context().await?
+        &AccountContextFetcherService::new().await.fetch_account_context().await?
     } else {
         &AccountResourceContext {
             resource_map: HashMap::new(),
+        }
+    };
+
+    let terraform_context = if (config.use_terraform) {
+        TerraformProjectExplorer::new(&config.terraform_dir)?
+    } else {
+        TerraformProjectExplorer {
+            terraform_state_context: TerraformStateContext { resource_arns: HashMap::new() }
         }
     };
 
@@ -98,7 +101,7 @@ pub async fn generate_policies(
         enriched_results.len()
     );
     let policies = policy_engine
-        .generate_policies(&enriched_results, account_context)
+        .generate_policies(&enriched_results, account_context, &terraform_context)
         .context("Failed to generate IAM policies")?;
 
     let total_duration = pipeline_start.elapsed();

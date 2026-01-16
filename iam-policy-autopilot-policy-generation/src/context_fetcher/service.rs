@@ -1,6 +1,6 @@
-use crate::aws::{
-    resource_explorer_client::AwsResourceExplorerClient, sts::caller_account_id, AwsResult,
-};
+use crate::{aws::{
+    AwsResult, resource_explorer_client::AwsResourceExplorerClient, sts::caller_account_id
+}};
 use aws_config::Region;
 use aws_sdk_resourceexplorer2::{types::Resource, Client as ResourceExplorerClient};
 use aws_sdk_sts::{operation::get_caller_identity, Client as StsClient};
@@ -45,7 +45,7 @@ impl AccountContextFetcherService {
             resource_explorer_client: AwsResourceExplorerClient::new(ResourceExplorerClient::new(
                 &config,
             )),
-            sts_client: StsClient::new(&config),
+            sts_client: StsClient::new(&config)
         }
     }
 

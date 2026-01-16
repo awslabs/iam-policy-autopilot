@@ -20,6 +20,10 @@ pub struct GeneratePolicyConfig {
     pub disable_file_system_cache: bool,
     /// Use account resources in policy generation in place of wildcards
     pub use_account_context: bool,
+    /// enable terraform support?
+    pub use_terraform: bool,
+    /// terraform directory to cwd into 
+    pub terraform_dir: PathBuf
 }
 
 /// Service hints for filtering SDK method calls

@@ -17,11 +17,12 @@
 //! See `types::ExitCode` for the enum definition.
 
 use std::path::PathBuf;
-use std::process;
+use std::{env, process};
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use iam_policy_autopilot_policy_generation::api::get_account_context::get_account_context as get_account_context_api;
+use iam_policy_autopilot_policy_generation::api::get_terraform_state::{get_terraform_state as get_terraform_state_api};
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
@@ -29,6 +30,7 @@ use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_po
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
+use std::process::Command;
 
 mod commands;
 mod output;
@@ -94,6 +96,9 @@ struct GeneratePolicyCliConfig {
     /// Disable file system caching for service references
     disable_cache: bool,
     use_account_context: bool,
+    use_terraform: bool,
+    // Terraform directory, if using terraform
+    terraform_dir: PathBuf
 }
 
 impl GeneratePolicyCliConfig {
@@ -335,11 +340,25 @@ Use this flag to force fresh data retrieval on every run."
 
         #[arg(long = "use-account-context", default_value_t = false)]
         use_account_context: bool,
+
+        #[arg(long = "use-terraform", default_value_t = false)]
+        use_terraform: bool,
+
+        #[arg(long = "terraform-dir", default_value = env::current_exe().unwrap().parent().unwrap().to_path_buf().into_os_string())]
+        terraform_dir: PathBuf
     },
 
     /// List account context
     #[command(long_about = "List resources from AWS calling account context.")]
     GetAccountContext {},
+
+
+    /// List terraform state context
+    #[command(long_about = "List resources in terraform state.")]
+    GetTerraformState {
+        #[arg(long = "terraform-dir", default_value = env::current_exe().unwrap().parent().unwrap().to_path_buf().into_os_string())]
+        terraform_dir: PathBuf
+    },
 
     /// Start MCP server
     #[command(
@@ -438,6 +457,16 @@ async fn get_account_context() -> Result<()> {
     Ok(())
 }
 
+async fn get_terraform_state(terraform_dir: PathBuf) -> Result<()> {
+    info!("Running get-terraform-state command");
+
+    let res = get_terraform_state_api(terraform_dir).await?;
+
+    print!("{}", serde_json::to_string_pretty(&res.resource_arns)?);
+
+    Ok(())
+}
+
 /// Handle the generate-policies subcommand
 async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
     info!("Running generate-policies command");
@@ -469,6 +498,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
         use_account_context: config.use_account_context,
+        use_terraform: config.use_terraform,
+        terraform_dir: config.terraform_dir.clone()
     })
     .await?;
 
@@ -603,6 +634,8 @@ async fn main() {
             disable_cache,
             service_hints,
             use_account_context,
+            use_terraform,
+            terraform_dir
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -626,6 +659,8 @@ async fn main() {
                 minimal_policy_size,
                 disable_cache,
                 use_account_context,
+                use_terraform,
+                terraform_dir
             };
 
             match handle_generate_policy(&config).await {
@@ -638,6 +673,14 @@ async fn main() {
         }
 
         Commands::GetAccountContext {} => match get_account_context().await {
+            Ok(()) => ExitCode::Success,
+            Err(e) => {
+                print_cli_command_error(e);
+                ExitCode::Error
+            }
+        },
+
+        Commands::GetTerraformState {terraform_dir} => match get_terraform_state(terraform_dir).await {
             Ok(()) => ExitCode::Success,
             Err(e) => {
                 print_cli_command_error(e);

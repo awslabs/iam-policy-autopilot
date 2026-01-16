@@ -47,7 +47,7 @@ criterion = "0.5"
 proptest = "1.0"
 
 # CLI-specific dependencies
-clap = { version = "4.5", features = ["derive", "env", "cargo"] }
+clap = { version = "4.5", features = ["derive", "env", "cargo", "string"] }
 env_logger = "0.11"
 log = "0.4"
 walkdir = "2.0"
