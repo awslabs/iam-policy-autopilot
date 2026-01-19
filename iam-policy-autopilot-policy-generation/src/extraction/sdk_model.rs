@@ -127,7 +127,7 @@ pub(crate) struct ServiceModelIndex {
     pub(crate) services: HashMap<String, SdkServiceDefinition>,
     /// Map of method name to possible service method references
     pub(crate) method_lookup: HashMap<String, Vec<ServiceMethodRef>>,
-    /// Reverse index: waiter name (PascalCase) to list of services that provide it
+    /// Reverse index: waiter name to list of services that provide it
     /// Example: "InstanceTerminated" -> ["ec2"], "BucketExists" -> ["s3"]
     pub(crate) waiter_lookup: HashMap<String, Vec<ServiceMethodRef>>,
 }
