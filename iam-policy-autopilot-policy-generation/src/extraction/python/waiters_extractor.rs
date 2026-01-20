@@ -319,14 +319,11 @@ impl<'a> WaitersExtractor<'a> {
                             chained_wait_call.arguments.clone(),
                         )
                     }
-                    CallInfo::None(_waiter_info) => {
-                        // For unmatched waiters, use required parameters from service definition
-                        self.get_required_parameters(
-                            &service_method.service_name,
-                            &service_method.operation_name,
-                            self.service_index,
-                        )
-                    }
+                    CallInfo::None(_waiter_info) => self.get_required_parameters(
+                        &service_method.service_name,
+                        &service_method.operation_name,
+                        self.service_index,
+                    ),
                 };
 
                 // Create synthetic call with filtered wait() arguments

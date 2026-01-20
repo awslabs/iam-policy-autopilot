@@ -17,7 +17,6 @@ use crate::{Language, Location};
 use ast_grep_language::Python;
 
 /// Extractor for boto3 paginate method patterns
-/// Extractor for boto3 paginate method patterns
 ///
 /// This extractor discovers paginate patterns in Python code and creates synthetic
 /// SdkMethodCall objects that represent the actual AWS operations being paginated.

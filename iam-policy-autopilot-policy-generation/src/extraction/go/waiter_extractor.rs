@@ -272,22 +272,11 @@ impl<'a> GoWaiterExtractor<'a> {
         best_match.map(|w| (w, best_idx))
     }
 
-    fn create_synthetic_call_internal(
-        &self,
-        call: CallInfo,
-    ) -> Vec<SdkMethodCall> {
+    fn create_synthetic_call_internal(&self, call: CallInfo) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
-        let waiter_info = match call {
-            CallInfo::None(info) | CallInfo::Simple(info, _) => info,
-        };
-
         // waiter_name already contains the clean waiter name (e.g., "InstanceTerminated")
-        if let Some(service_defs) = self
-            .service_index
-            .waiter_lookup
-            .get(&waiter_info.waiter_name)
-        {
+        if let Some(service_defs) = self.service_index.waiter_lookup.get(call.waiter_name()) {
             // Create one call per service
             for service_def in service_defs {
                 let service_name = &service_def.service_name;
@@ -311,7 +300,7 @@ impl<'a> GoWaiterExtractor<'a> {
                         return_type: None,
                         expr: call.expr().to_string(),
                         location: call.location().clone(),
-                        receiver: Some(waiter_info.client_receiver.clone()),
+                        receiver: Some(call.waiter_info().client_receiver.clone()),
                     }),
                 });
             }
