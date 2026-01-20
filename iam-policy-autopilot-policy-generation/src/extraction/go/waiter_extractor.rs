@@ -6,51 +6,12 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
+use crate::extraction::shared::extraction_utils::{WaiterCallInfo, WaiterCreationInfo};
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
 use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Go;
-
-/// Information about a discovered waiter creation call
-#[derive(Debug, Clone)]
-pub(crate) struct WaiterCreationInfo {
-    /// Variable name assigned to the waiter (e.g., "waiter", "instanceWaiter")
-    pub variable_name: String,
-    /// Clean waiter name (e.g., "InstanceTerminated")
-    pub waiter_name: String,
-    /// Client receiver variable name (e.g., "client", "ec2Client")
-    pub client_receiver: String,
-    /// Matched expression
-    pub expr: String,
-    /// Location where the waiter was created
-    pub location: Location,
-}
-
-impl WaiterCreationInfo {
-    pub(crate) fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
-
-/// Information about a Wait method call
-#[derive(Debug, Clone)]
-pub(crate) struct WaiterCallInfo {
-    /// Waiter variable being called (e.g., "waiter")
-    pub waiter_var: String,
-    /// Extracted arguments (context + input struct)
-    pub arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location where the waiter was called
-    pub location: Location,
-}
-
-impl WaiterCallInfo {
-    pub(crate) fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
 
 // TODO: This should be refactored at a higher level, so this type can be removed.
 // See https://github.com/awslabs/iam-policy-autopilot/issues/88.

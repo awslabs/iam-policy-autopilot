@@ -141,7 +141,7 @@ impl<'a> GoPaginatorExtractor<'a> {
 
         if let Some(operation_name) = operation_name {
             let node = node_match.get_node();
-            let location = Location::from_node(file_path.to_path_buf(), &node);
+            let location = Location::from_node(file_path.to_path_buf(), node);
             let expr = node_match.text().to_string();
 
             return Some(PaginatorCreationInfo {

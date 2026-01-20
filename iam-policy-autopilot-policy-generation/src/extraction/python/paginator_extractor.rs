@@ -183,7 +183,7 @@ impl<'a> PaginatorExtractor<'a> {
         let operation_name = self.extract_quoted_string(&operation_text)?;
 
         let node = node_match.get_node();
-        let location = Location::from_node(file_path.to_path_buf(), &node);
+        let location = Location::from_node(file_path.to_path_buf(), node);
         let expr = node_match.text().to_string();
 
         Some(PaginatorCreationInfo {
