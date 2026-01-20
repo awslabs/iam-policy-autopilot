@@ -8,65 +8,13 @@ use std::path::Path;
 
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::sdk_model::ServiceDiscovery;
+use crate::extraction::shared::{
+    ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCreationInfo,
+};
 use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
 use crate::{Language, Location};
 use ast_grep_language::Python;
-
-/// Information about a discovered get_paginator call
-#[derive(Debug, Clone)]
-pub(crate) struct PaginatorInfo {
-    /// Variable name assigned to the paginator (e.g., "paginator", "s3_paginator")
-    pub variable_name: String,
-    /// Operation name from get_paginator argument (e.g., "list_objects_v2")
-    pub operation_name: String,
-    /// Client receiver variable name (e.g., "client", "s3_client")
-    pub client_receiver: String,
-    /// Matched expression
-    pub expr: String,
-    /// Location where get_paginator was called
-    pub location: Location,
-}
-
-impl PaginatorInfo {
-    fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
-
-/// Information about a paginate method call
-#[derive(Debug, Clone)]
-pub(crate) struct PaginateCallInfo {
-    /// Paginator variable being called (e.g., "paginator")
-    pub paginator_var: String,
-    /// Extracted arguments (excluding pagination-specific ones)
-    pub arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location where paginator was called
-    pub location: Location,
-}
-
-impl PaginateCallInfo {
-    fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
-
-/// Information about a chained paginator call (client.get_paginator().paginate())
-#[derive(Debug, Clone)]
-pub(crate) struct ChainedPaginatorCallInfo {
-    /// Client receiver variable name (e.g., "s3_client")
-    pub client_receiver: String,
-    /// Operation name from get_paginator argument (e.g., "list_objects_v2")
-    pub operation_name: String,
-    /// Extracted arguments from paginate call (excluding pagination-specific ones)
-    pub arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location where paginator was called
-    pub location: Location,
-}
 
 /// Extractor for boto3 paginate method patterns
 ///
@@ -152,7 +100,10 @@ impl<'a> PaginatorExtractor<'a> {
     }
 
     /// Find all get_paginator calls in the AST
-    fn find_get_paginator_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<PaginatorInfo> {
+    fn find_get_paginator_calls(
+        &self,
+        ast: &AstWithSourceFile<Python>,
+    ) -> Vec<PaginatorCreationInfo> {
         let root = ast.ast.root();
         let mut paginators = Vec::new();
 
@@ -171,7 +122,7 @@ impl<'a> PaginatorExtractor<'a> {
     }
 
     /// Find all paginate calls in the AST
-    fn find_paginate_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<PaginateCallInfo> {
+    fn find_paginate_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<PaginatorCallInfo> {
         let root = ast.ast.root();
         let mut paginate_calls = Vec::new();
 
@@ -212,12 +163,12 @@ impl<'a> PaginatorExtractor<'a> {
         chained_calls
     }
 
-    /// Parse a get_paginator call into PaginatorInfo
+    /// Parse a get_paginator call into PaginatorCreationInfo
     fn parse_get_paginator_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
         file_path: &Path,
-    ) -> Option<PaginatorInfo> {
+    ) -> Option<PaginatorCreationInfo> {
         let env = node_match.get_env();
 
         // Extract paginator variable name
@@ -231,21 +182,26 @@ impl<'a> PaginatorExtractor<'a> {
         let operation_text = operation_node.text();
         let operation_name = self.extract_quoted_string(&operation_text)?;
 
-        Some(PaginatorInfo {
+        let node = node_match.get_node();
+        let location = Location::from_node(file_path.to_path_buf(), node);
+        let expr = node_match.text().to_string();
+
+        Some(PaginatorCreationInfo {
             variable_name,
             operation_name,
             client_receiver,
-            expr: node_match.text().to_string(),
-            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
+            location,
+            creation_arguments: Vec::new(), // Python doesn't have creation arguments
+            expr,
         })
     }
 
-    /// Parse a paginate call into PaginateCallInfo
+    /// Parse a paginate call into PaginatorCallInfo
     fn parse_paginate_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
         file_path: &Path,
-    ) -> Option<PaginateCallInfo> {
+    ) -> Option<PaginatorCallInfo> {
         let env = node_match.get_env();
 
         // Extract paginator variable name
@@ -256,7 +212,7 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        Some(PaginateCallInfo {
+        Some(PaginatorCallInfo {
             paginator_var,
             arguments: filtered_arguments,
             expr: node_match.text().to_string(),
@@ -305,9 +261,9 @@ impl<'a> PaginatorExtractor<'a> {
     /// Match a paginate call to its corresponding get_paginator call, returning both paginator and index
     fn match_paginate_to_paginator_with_index<'b>(
         &self,
-        paginate_call: &PaginateCallInfo,
-        paginators: &'b [PaginatorInfo],
-    ) -> Option<(&'b PaginatorInfo, usize)> {
+        paginate_call: &PaginatorCallInfo,
+        paginators: &'b [PaginatorCreationInfo],
+    ) -> Option<(&'b PaginatorCreationInfo, usize)> {
         // Find paginator with matching variable name
         // Conservative approach: use the closest preceding paginator with the same name
         let mut best_match = None;
@@ -317,8 +273,9 @@ impl<'a> PaginatorExtractor<'a> {
         for (idx, paginator) in paginators.iter().enumerate() {
             if paginator.variable_name == paginate_call.paginator_var {
                 // Only consider paginators that come before the paginate call
-                if paginator.start_line() < paginate_call.start_line() {
-                    let distance = paginate_call.start_line() - paginator.start_line();
+                if paginator.location.start_line() < paginate_call.location.start_line() {
+                    let distance =
+                        paginate_call.location.start_line() - paginator.location.start_line();
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(paginator);
@@ -337,7 +294,7 @@ impl<'a> PaginatorExtractor<'a> {
     /// The synthetic call uses the operation name from get_paginator with empty parameters.
     fn create_fallback_synthetic_method_call(
         &self,
-        paginator_info: &PaginatorInfo,
+        paginator_info: &PaginatorCreationInfo,
     ) -> SdkMethodCall {
         // Convert paginator operation name to match method lookup index format
         let method_name =
@@ -371,8 +328,8 @@ impl<'a> PaginatorExtractor<'a> {
     /// Create a synthetic SdkMethodCall from a matched paginate pattern
     fn create_synthetic_method_call(
         &self,
-        paginate_call: &PaginateCallInfo,
-        paginator_info: &PaginatorInfo,
+        paginate_call: &PaginatorCallInfo,
+        paginator_info: &PaginatorCreationInfo,
     ) -> SdkMethodCall {
         // Convert paginator operation name to match method lookup index format
         let method_name =
