@@ -215,6 +215,7 @@ impl<'a> WaitersExtractor<'a> {
     fn parse_wait_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<WaiterCallInfo> {
         let env = node_match.get_env();
 
@@ -318,15 +319,13 @@ impl<'a> WaitersExtractor<'a> {
                             chained_wait_call.arguments.clone(),
                         )
                     }
-                    CallInfo::None(waiter_info) => {
-                        let fallback_start_pos = waiter_info.start_position;
-                        let fallback_end_pos = waiter_info.end_position;
-                        let parameters = self.get_required_parameters(
+                    CallInfo::None(_waiter_info) => {
+                        // For unmatched waiters, use required parameters from service definition
+                        self.get_required_parameters(
                             &service_method.service_name,
                             &service_method.operation_name,
                             self.service_index,
-                        );
-                        (parameters, fallback_start_pos, fallback_end_pos)
+                        )
                     }
                 };
 
@@ -599,7 +598,7 @@ waiter = ec2_client.get_waiter('instance_terminated')
         assert_eq!(waiters[0].variable_name, "waiter");
         assert_eq!(waiters[0].waiter_name, "instance_terminated");
         assert_eq!(waiters[0].client_receiver, "ec2_client");
-        assert_eq!(waiters[0].line(), 4);
+        assert_eq!(waiters[0].location.start_line(), 4);
     }
 
     #[test]

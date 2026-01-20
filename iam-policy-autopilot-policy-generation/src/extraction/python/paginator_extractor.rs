@@ -168,6 +168,7 @@ impl<'a> PaginatorExtractor<'a> {
     fn parse_get_paginator_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<PaginatorCreationInfo> {
         let env = node_match.get_env();
 
@@ -200,6 +201,7 @@ impl<'a> PaginatorExtractor<'a> {
     fn parse_paginate_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<PaginatorCallInfo> {
         let env = node_match.get_env();
 
@@ -211,7 +213,7 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        Some(PaginateCallInfo {
+        Some(PaginatorCallInfo {
             paginator_var,
             arguments: filtered_arguments,
             expr: node_match.text().to_string(),

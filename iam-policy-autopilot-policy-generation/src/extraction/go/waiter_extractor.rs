@@ -274,10 +274,13 @@ impl<'a> GoWaiterExtractor<'a> {
 
     fn create_synthetic_call_internal(
         &self,
-        wait_call: Option<&WaiterCallInfo>,
-        waiter_info: &WaiterCreationInfo,
+        call: CallInfo,
     ) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
+
+        let waiter_info = match call {
+            CallInfo::None(info) | CallInfo::Simple(info, _) => info,
+        };
 
         // waiter_name already contains the clean waiter name (e.g., "InstanceTerminated")
         if let Some(service_defs) = self
@@ -295,13 +298,8 @@ impl<'a> GoWaiterExtractor<'a> {
                         self.filter_waiter_parameters(wait_call.arguments.clone())
                     }
                     CallInfo::None(_) => {
-                        // Fallback:
-                        (
-                            // Get required parameters for this operation
-                            self.get_required_parameters(service_name, operation_name),
-                            waiter_info.start_position,
-                            waiter_info.end_position,
-                        )
+                        // Fallback: Get required parameters for this operation
+                        self.get_required_parameters(service_name, operation_name)
                     }
                 };
 
@@ -313,7 +311,7 @@ impl<'a> GoWaiterExtractor<'a> {
                         return_type: None,
                         expr: call.expr().to_string(),
                         location: call.location().clone(),
-                        receiver: Some(call.waiter_info().client_receiver.clone()),
+                        receiver: Some(waiter_info.client_receiver.clone()),
                     }),
                 });
             }
@@ -337,7 +335,7 @@ impl<'a> GoWaiterExtractor<'a> {
         &self,
         waiter_info: &WaiterCreationInfo,
     ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_call_internal(None, waiter_info)
+        self.create_synthetic_call_internal(CallInfo::None(waiter_info))
     }
 
     /// Get required parameters for an operation from the service index
