@@ -1,3 +1,9 @@
+## [Unreleased]
+
+## Added
+
+- Add `--explain` feature to output the reasons for why an action has been added to the policy. The explanations allow to review the operations which static analysis extracted from source code, and to correct them using the `--service-hints` flag, if necessary.
+
 ## [0.1.2] - 2025-12-15
 
 ## Fixed

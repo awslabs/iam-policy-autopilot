@@ -28,9 +28,31 @@ pub use self::{core::*, output::*};
 
 /// Core data structures for source file parsing and method extraction
 pub mod core {
-    use crate::Language;
+    use std::sync::Arc;
+
+    use schemars::JsonSchema;
+
+    use crate::{Language, Location};
 
     use super::{Deserialize, Path, PathBuf, Serialize};
+
+    #[derive(Clone)]
+    pub(crate) struct AstWithSourceFile<T: ast_grep_language::LanguageExt> {
+        pub(crate) ast: Arc<ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>>,
+        pub(crate) source_file: Arc<SourceFile>,
+    }
+
+    impl<T: ast_grep_language::LanguageExt> AstWithSourceFile<T> {
+        pub(crate) fn new(
+            ast: ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>,
+            source_file: SourceFile,
+        ) -> Self {
+            Self {
+                ast: Arc::new(ast),
+                source_file: Arc::new(source_file),
+            }
+        }
+    }
 
     /// Represents a source file being analyzed
     ///
@@ -83,7 +105,7 @@ pub mod core {
     /// Contains detailed information about a method call including parameters,
     /// position information, and parsing context. This is optional metadata
     /// that can be omitted when only basic method identification is needed.
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     #[serde(rename_all = "PascalCase")]
     pub struct SdkMethodCallMetadata {
         /// List of method parameters with their metadata
@@ -91,11 +113,11 @@ pub mod core {
         /// Return type annotation if available
         pub(crate) return_type: Option<String>,
 
+        /// The matched expression
+        pub(crate) expr: String,
+
         // Position information
-        /// Starting position (line, column) - both 1-based
-        pub(crate) start_position: (usize, usize),
-        /// Ending position (line, column) - both 1-based
-        pub(crate) end_position: (usize, usize),
+        pub(crate) location: Location,
 
         // SDK method call context
         /// Receiver variable name (e.g., "`s3_client`", "ec2")
@@ -168,7 +190,7 @@ pub mod core {
     }
 
     /// Parameter value that distinguishes between resolved literals and unresolved expressions
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     pub(crate) enum ParameterValue {
         /// Resolved string literal with quotes stripped (e.g., "my-bucket", "42", "true")
         Resolved(String),
@@ -193,7 +215,7 @@ pub mod core {
     ///
     /// TODO: Refactor enum variant fields into separate structs to enable Default trait
     /// implementation and improve ergonomics. See: https://github.com/awslabs/iam-policy-autopilot/issues/61
-    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     pub(crate) enum Parameter {
         /// Positional argument (e.g., first, second argument in call)
         Positional {
@@ -304,7 +326,7 @@ pub mod output {
 
 #[cfg(test)]
 mod tests {
-    use crate::Language;
+    use crate::{Language, Location};
 
     use super::*;
     use std::path::PathBuf;
@@ -323,62 +345,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parsed_method_creation() {
-        let method = SdkMethodCall {
-            name: "test_method".to_string(),
-            possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![Parameter::Keyword {
-                    name: "param1".to_string(),
-                    value: ParameterValue::Resolved("test_value".to_string()),
-                    position: 0,
-                    type_annotation: Some("str".to_string()),
-                }],
-                return_type: Some("bool".to_string()),
-                start_position: (10, 1),
-                end_position: (10, 25),
-                receiver: None,
-            }),
-        };
-
-        assert_eq!(method.name, "test_method");
-        assert_eq!(method.metadata.as_ref().unwrap().parameters.len(), 1);
-        assert_eq!(method.metadata.as_ref().unwrap().start_position, (10, 1));
-        assert_eq!(method.metadata.as_ref().unwrap().end_position, (10, 25));
-    }
-
-    #[test]
-    fn test_parsed_method_with_sdk_context() {
-        let method = SdkMethodCall {
-            name: "get_object".to_string(),
-            possible_services: vec!["s3".to_string()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![Parameter::Keyword {
-                    name: "Bucket".to_string(),
-                    value: ParameterValue::Resolved("my-bucket".to_string()),
-                    position: 0,
-                    type_annotation: Some("str".to_string()),
-                }],
-                return_type: Some("Dict[str, Any]".to_string()),
-                start_position: (15, 5),
-                end_position: (15, 45),
-                receiver: Some("s3_client".to_string()),
-            }),
-        };
-
-        assert_eq!(method.name, "get_object");
-        assert_eq!(
-            method.metadata.as_ref().unwrap().receiver,
-            Some("s3_client".to_string())
-        );
-        assert_eq!(method.possible_services, vec!["s3".to_string()]);
-        if let Parameter::Keyword {
-            value, position, ..
-        } = &method.metadata.as_ref().unwrap().parameters[0]
-        {
-            assert_eq!(value.as_string(), "my-bucket");
-            assert_eq!(*position, 0);
-        }
+    fn test_location_construction() {
+        let location = Location::new(PathBuf::new(), (10, 1), (10, 25));
+        assert_eq!(location.start_position, (10, 1));
+        assert_eq!(location.end_position, (10, 25));
     }
 
     #[test]
@@ -425,8 +395,8 @@ mod tests {
         let metadata = SdkMethodCallMetadata {
             parameters: vec![],
             return_type: Some("Dict[str, Any]".to_string()),
-            start_position: (10, 5),
-            end_position: (10, 30),
+            expr: "s3_client.foo_bar".to_string(),
+            location: Location::new(PathBuf::new(), (10, 5), (10, 30)),
             receiver: Some("s3_client".to_string()),
         };
 
@@ -435,8 +405,7 @@ mod tests {
         // Verify PascalCase field names
         assert!(json.contains("\"Parameters\""));
         assert!(json.contains("\"ReturnType\""));
-        assert!(json.contains("\"StartPosition\""));
-        assert!(json.contains("\"EndPosition\""));
+        assert!(json.contains("\"Location\""));
         assert!(json.contains("\"Receiver\""));
     }
 }

@@ -1,23 +1,35 @@
 //! Defined model for API
-use std::path::PathBuf;
-
 use serde::{Deserialize, Serialize};
 
-/// Configuration for generate_policies Api
+use crate::{enrichment::Explanations, policy_generation::PolicyWithMetadata};
+use std::path::PathBuf;
+
+/// Configuration for generate_policies API
 #[derive(Debug, Clone)]
 pub struct GeneratePolicyConfig {
     /// Config used to extract sdk calls for policy generation
     pub extract_sdk_calls_config: ExtractSdkCallsConfig,
     /// AWS Config
     pub aws_context: AwsContext,
-    /// Generate Action Mappings
-    pub generate_action_mappings: bool,
     /// Output individual policies
     pub individual_policies: bool,
     /// Enable policy size minimization
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
+    /// Generate explanations for why actions were added
+    pub generate_explanations: bool,
+}
+
+/// Result of policy generation including policies, action mappings, and explanations
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct GeneratePoliciesResult {
+    /// Generated IAM policies
+    pub policies: Vec<PolicyWithMetadata>,
+    /// Explanations for why actions were added (if requested)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub explanations: Option<Explanations>,
 }
 
 /// Service hints for filtering SDK method calls

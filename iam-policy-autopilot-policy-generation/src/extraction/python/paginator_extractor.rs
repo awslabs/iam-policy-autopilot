@@ -4,16 +4,19 @@
 //! two-phase operations: creating a paginator from a client, then executing
 //! the paginator with operation arguments.
 
+use std::path::Path;
+
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{
     ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCreationInfo,
 };
-use crate::extraction::{Parameter, SdkMethodCall, SdkMethodCallMetadata};
-use crate::Language;
+use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
+use crate::{Language, Location};
 use ast_grep_language::Python;
 
+/// Extractor for boto3 paginate method patterns
 /// Extractor for boto3 paginate method patterns
 ///
 /// This extractor discovers paginate patterns in Python code and creates synthetic
@@ -58,7 +61,7 @@ impl<'a> PaginatorExtractor<'a> {
     /// empty parameters, since paginators are often created but used elsewhere.
     pub(crate) fn extract_paginate_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all get_paginator calls
         let paginators = self.find_get_paginator_calls(ast);
@@ -100,16 +103,18 @@ impl<'a> PaginatorExtractor<'a> {
     /// Find all get_paginator calls in the AST
     fn find_get_paginator_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<PaginatorCreationInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut paginators = Vec::new();
 
         // Pattern: $PAGINATOR = $CLIENT.get_paginator($OPERATION $$$ARGS)
         let get_paginator_pattern = "$PAGINATOR = $CLIENT.get_paginator($OPERATION $$$ARGS)";
 
         for node_match in root.find_all(get_paginator_pattern) {
-            if let Some(paginator_info) = self.parse_get_paginator_call(&node_match) {
+            if let Some(paginator_info) =
+                self.parse_get_paginator_call(&node_match, &ast.source_file.path)
+            {
                 paginators.push(paginator_info);
             }
         }
@@ -118,18 +123,17 @@ impl<'a> PaginatorExtractor<'a> {
     }
 
     /// Find all paginate calls in the AST
-    fn find_paginate_calls(
-        &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-    ) -> Vec<PaginatorCallInfo> {
-        let root = ast.root();
+    fn find_paginate_calls(&self, ast: &AstWithSourceFile<Python>) -> Vec<PaginatorCallInfo> {
+        let root = ast.ast.root();
         let mut paginate_calls = Vec::new();
 
         // Pattern: $PAGINATOR.paginate($$$ARGS) - flexible pattern without assignment requirement
         let paginate_pattern = "$PAGINATOR.paginate($$$ARGS)";
 
         for node_match in root.find_all(paginate_pattern) {
-            if let Some(paginate_info) = self.parse_paginate_call(&node_match) {
+            if let Some(paginate_info) =
+                self.parse_paginate_call(&node_match, &ast.source_file.path)
+            {
                 paginate_calls.push(paginate_info);
             }
         }
@@ -140,9 +144,9 @@ impl<'a> PaginatorExtractor<'a> {
     /// Find all chained paginator calls in the AST
     fn find_chained_paginator_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<ChainedPaginatorCallInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut chained_calls = Vec::new();
 
         // Pattern: $CLIENT.get_paginator($OPERATION $$$GET_ARGS).paginate($$$PAGINATE_ARGS)
@@ -150,7 +154,9 @@ impl<'a> PaginatorExtractor<'a> {
             "$CLIENT.get_paginator($OPERATION $$$GET_ARGS).paginate($$$PAGINATE_ARGS)";
 
         for node_match in root.find_all(chained_pattern) {
-            if let Some(chained_info) = self.parse_chained_paginator_call(&node_match) {
+            if let Some(chained_info) =
+                self.parse_chained_paginator_call(&node_match, &ast.source_file.path)
+            {
                 chained_calls.push(chained_info);
             }
         }
@@ -176,21 +182,17 @@ impl<'a> PaginatorExtractor<'a> {
         let operation_text = operation_node.text();
         let operation_name = self.extract_quoted_string(&operation_text)?;
 
-        // Get position information
         let node = node_match.get_node();
-        let start_position = (
-            node.start_pos().line() + 1,
-            node.start_pos().column(node) + 1,
-        );
-        let end_position = (node.end_pos().line() + 1, node.end_pos().column(node) + 1);
+        let location = Location::from_node(file_path.to_path_buf(), &node);
+        let expr = node_match.text().to_string();
 
         Some(PaginatorCreationInfo {
             variable_name,
             operation_name,
             client_receiver,
-            start_position,
-            end_position,
+            location,
             creation_arguments: Vec::new(), // Python doesn't have creation arguments
+            expr,
         })
     }
 
@@ -209,16 +211,11 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        // Get position information from the paginate call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
-        Some(PaginatorCallInfo {
+        Some(PaginateCallInfo {
             paginator_var,
             arguments: filtered_arguments,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            expr: node_match.text().to_string(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -226,6 +223,7 @@ impl<'a> PaginatorExtractor<'a> {
     fn parse_chained_paginator_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<ChainedPaginatorCallInfo> {
         let env = node_match.get_env();
 
@@ -242,17 +240,12 @@ impl<'a> PaginatorExtractor<'a> {
         let all_arguments = self.extract_arguments(&paginate_args_nodes);
         let filtered_arguments = self.filter_pagination_parameters(all_arguments);
 
-        // Get position information from the chained call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ChainedPaginatorCallInfo {
             client_receiver,
             operation_name,
             arguments: filtered_arguments,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            expr: node_match.text().to_string(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -279,8 +272,9 @@ impl<'a> PaginatorExtractor<'a> {
         for (idx, paginator) in paginators.iter().enumerate() {
             if paginator.variable_name == paginate_call.paginator_var {
                 // Only consider paginators that come before the paginate call
-                if paginator.line() < paginate_call.line() {
-                    let distance = paginate_call.line() - paginator.line();
+                if paginator.location.start_line() < paginate_call.location.start_line() {
+                    let distance =
+                        paginate_call.location.start_line() - paginator.location.start_line();
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(paginator);
@@ -322,9 +316,9 @@ impl<'a> PaginatorExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: Vec::new(), // Empty parameters for unmatched paginators
                 return_type: None,
+                expr: paginator_info.expr.clone(),
                 // Use get_paginator call position
-                start_position: paginator_info.start_position,
-                end_position: paginator_info.end_position,
+                location: paginator_info.location.clone(),
                 receiver: Some(paginator_info.client_receiver.clone()),
             }),
         }
@@ -357,9 +351,9 @@ impl<'a> PaginatorExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: paginate_call.arguments.clone(),
                 return_type: None,
+                expr: paginate_call.expr.clone(),
                 // Use paginate call position (most specific)
-                start_position: paginate_call.start_position,
-                end_position: paginate_call.end_position,
+                location: paginate_call.location.clone(),
                 // Use client receiver from get_paginator call
                 receiver: Some(paginator_info.client_receiver.clone()),
             }),
@@ -392,9 +386,9 @@ impl<'a> PaginatorExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: chained_call.arguments.clone(),
                 return_type: None,
+                expr: chained_call.expr.clone(),
                 // Use chained call position
-                start_position: chained_call.start_position,
-                end_position: chained_call.end_position,
+                location: chained_call.location.clone(),
                 // Use client receiver from chained call
                 receiver: Some(chained_call.client_receiver.clone()),
             }),
@@ -414,17 +408,21 @@ impl<'a> PaginatorExtractor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::extraction::ParameterValue;
+    use crate::{extraction::ParameterValue, SourceFile};
 
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Python;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::PathBuf};
 
-    fn create_test_ast(
-        source_code: &str,
-    ) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>> {
-        Python.ast_grep(source_code)
+    fn create_test_ast(source_code: &str) -> AstWithSourceFile<Python> {
+        let source_file = SourceFile::with_language(
+            PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::Python,
+        );
+        let ast_grep = Python.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file.clone())
     }
 
     fn create_test_service_index() -> ServiceModelIndex {
@@ -662,7 +660,7 @@ page_iterator = paginator.paginate(Bucket='test-bucket')
         assert_eq!(call.name, "list_objects_v2");
 
         // Position should be from the paginate call (line 5), not get_paginator call (line 4)
-        assert_eq!(call.metadata.as_ref().unwrap().start_position.0, 5);
+        assert_eq!(call.metadata.as_ref().unwrap().location.start_line(), 5);
         assert_eq!(
             call.metadata.as_ref().unwrap().receiver,
             Some("client".to_string())

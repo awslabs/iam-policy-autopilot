@@ -58,6 +58,9 @@ We follow [Conventional Commits](https://www.conventionalcommits.org/) for commi
 - `refactor:` - Code refactoring without changing functionality
 - `perf:` - Performance improvements
 - `ci:` - CI/CD configuration changes
+- `build:` - Compilation/build related changes
+- `style:` - Formatting changes
+- `revert:` - Reverted commits
 
 **Breaking Changes:**
 
@@ -65,8 +68,6 @@ For breaking changes, append `!` after the type or add `BREAKING CHANGE:` in the
 
 ```bash
 feat!: change CLI argument format for generate-policies command
-
-BREAKING CHANGE: --region flag is now required instead of optional
 ```
 
 **Examples:**

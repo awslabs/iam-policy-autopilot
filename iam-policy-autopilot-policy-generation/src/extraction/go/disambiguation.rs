@@ -334,7 +334,9 @@ mod tests {
         Shape, ShapeReference,
     };
     use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+    use crate::Location;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     fn create_test_service_index() -> ServiceModelIndex {
         let mut services = HashMap::new();
@@ -587,6 +589,7 @@ mod tests {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "ListObjectsV2".to_string(),
                 parameters: vec![
                     Parameter::Positional {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
@@ -605,8 +608,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -648,6 +650,7 @@ mod tests {
             name: "NonAwsMethod".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "NonAwsMethod".to_string(),
                 parameters: vec![Parameter::Positional {
                     value: ParameterValue::Unresolved("someParam".to_string()),
                     position: 0,
@@ -655,8 +658,7 @@ mod tests {
                     struct_fields: None,
                 }],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -685,6 +687,7 @@ mod tests {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "ListObjectsV2".to_string(),
                 parameters: vec![
                     Parameter::Positional {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
@@ -703,8 +706,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -728,6 +730,7 @@ mod tests {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "ListObjectsV2".to_string(),
                 parameters: vec![
                     Parameter::Positional {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
@@ -746,8 +749,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -777,6 +779,7 @@ mod tests {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "ListObjectsV2".to_string(),
                 parameters: vec![
                     Parameter::Positional {
                         value: ParameterValue::Unresolved("context.TODO()".to_string()),
@@ -795,8 +798,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -832,9 +834,9 @@ mod tests {
                         struct_fields: Some(vec!["Bucket".to_string()]),
                     },
                 ],
+                expr: "GetObject".to_string(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -870,9 +872,9 @@ mod tests {
                         struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
                     },
                 ],
+                expr: "GetObject".to_string(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -907,9 +909,9 @@ mod tests {
                         struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
                     },
                 ],
+                expr: "GetObject".to_string(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -949,9 +951,9 @@ mod tests {
                         struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
                     },
                 ],
+                expr: "GetObject".to_string(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -1006,9 +1008,9 @@ mod tests {
                         struct_fields: Some(vec!["QueueName".to_string(), "Attributes".to_string()]),
                     },
                 ],
+                expr: "CreateQueue".to_string(),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
                 receiver: Some("sqsClient".to_string()),
             }),
         };

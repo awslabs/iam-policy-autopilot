@@ -3,12 +3,15 @@
 //! This module handles extraction of Go AWS SDK v2 paginator patterns by detecting
 //! paginator creation calls, which contain the meaningful parameters for IAM policy generation.
 
+use std::path::Path;
+
 use crate::extraction::go::utils;
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{ChainedPaginatorCallInfo, PaginatorCreationInfo};
-use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
 use crate::Language;
 use crate::ServiceModelIndex;
+use crate::{Language, Location};
 use ast_grep_language::Go;
 
 /// Extractor for Go AWS SDK paginator patterns
@@ -32,7 +35,7 @@ impl<'a> GoPaginatorExtractor<'a> {
     /// Extract paginator method calls from the AST
     pub(crate) fn extract_paginator_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        ast: &AstWithSourceFile<Go>,
     ) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
@@ -56,16 +59,18 @@ impl<'a> GoPaginatorExtractor<'a> {
     /// Find all paginator creation calls (NewXxxPaginator functions)
     fn find_paginator_creation_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        ast: &AstWithSourceFile<Go>,
     ) -> Vec<PaginatorCreationInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut paginators = Vec::new();
 
         // Pattern: $VAR := $PACKAGE.$FUNCTION($$$ARGS) where FUNCTION contains "New" and "Paginator"
         let paginator_pattern = "$VAR := $PACKAGE.$FUNCTION($$$ARGS)";
 
         for node_match in root.find_all(paginator_pattern) {
-            if let Some(paginator_info) = self.parse_paginator_creation_call(&node_match) {
+            if let Some(paginator_info) =
+                self.parse_paginator_creation_call(&node_match, &ast.source_file.path)
+            {
                 paginators.push(paginator_info);
             }
         }
@@ -76,16 +81,18 @@ impl<'a> GoPaginatorExtractor<'a> {
     /// Find all chained paginator calls
     fn find_chained_paginator_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        ast: &AstWithSourceFile<Go>,
     ) -> Vec<ChainedPaginatorCallInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut chained_calls = Vec::new();
 
         // Pattern: $PACKAGE.$FUNCTION($$$ARGS).NextPage($$$NEXT_ARGS)
         let chained_pattern = "$PACKAGE.$FUNCTION($$$ARGS).NextPage($$$NEXT_ARGS)";
 
         for node_match in root.find_all(chained_pattern) {
-            if let Some(chained_info) = self.parse_chained_paginator_call(&node_match) {
+            if let Some(chained_info) =
+                self.parse_chained_paginator_call(&node_match, &ast.source_file.path)
+            {
                 chained_calls.push(chained_info);
             }
         }
@@ -97,6 +104,7 @@ impl<'a> GoPaginatorExtractor<'a> {
     fn parse_paginator_creation_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        file_path: &Path,
     ) -> Option<PaginatorCreationInfo> {
         let env = node_match.get_env();
 
@@ -134,19 +142,16 @@ impl<'a> GoPaginatorExtractor<'a> {
 
         if let Some(operation_name) = operation_name {
             let node = node_match.get_node();
-            let start_position = (
-                node.start_pos().line() + 1,
-                node.start_pos().column(node) + 1,
-            );
-            let end_position = (node.end_pos().line() + 1, node.end_pos().column(node) + 1);
+            let location = Location::from_node(file_path.to_path_buf(), &node);
+            let expr = node_match.text().to_string();
 
             return Some(PaginatorCreationInfo {
                 variable_name,
                 operation_name: operation_name.to_string(),
                 client_receiver,
-                start_position,
-                end_position,
+                location,
                 creation_arguments,
+                expr,
             });
         }
 
@@ -157,6 +162,7 @@ impl<'a> GoPaginatorExtractor<'a> {
     fn parse_chained_paginator_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        file_path: &Path,
     ) -> Option<ChainedPaginatorCallInfo> {
         let env = node_match.get_env();
 
@@ -189,17 +195,12 @@ impl<'a> GoPaginatorExtractor<'a> {
             Vec::new()
         };
 
-        // Get position information
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ChainedPaginatorCallInfo {
             operation_name,
             client_receiver,
             arguments: creation_arguments,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            expr: node_match.text().to_string(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -231,8 +232,8 @@ impl<'a> GoPaginatorExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: paginator_info.creation_arguments.clone(),
                 return_type: None,
-                start_position: paginator_info.start_position,
-                end_position: paginator_info.end_position,
+                expr: paginator_info.expr.clone(),
+                location: paginator_info.location.clone(),
                 receiver: Some(paginator_info.client_receiver.clone()),
             }),
         }
@@ -266,8 +267,8 @@ impl<'a> GoPaginatorExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: chained_call.arguments.clone(),
                 return_type: None,
-                start_position: chained_call.start_position,
-                end_position: chained_call.end_position,
+                expr: chained_call.expr.clone(),
+                location: chained_call.location.clone(),
                 receiver: Some(chained_call.client_receiver.clone()),
             }),
         }
@@ -276,16 +277,19 @@ impl<'a> GoPaginatorExtractor<'a> {
 
 #[cfg(test)]
 mod tests {
+    use crate::SourceFile;
+
     use super::*;
     use crate::extraction::Parameter;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Go;
-    use std::collections::HashMap;
+    use std::{collections::HashMap, path::PathBuf};
 
-    fn create_test_ast(
-        source_code: &str,
-    ) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>> {
-        Go.ast_grep(source_code)
+    fn create_test_ast(source_code: &str) -> AstWithSourceFile<Go> {
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), source_code.to_string(), Language::Go);
+        let ast_grep = Go.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file)
     }
 
     fn create_test_service_index() -> ServiceModelIndex {

@@ -1,4 +1,5 @@
 use crate::extraction::core::Parameter;
+use crate::Location;
 
 /// Information about a discovered waiter creation call (get_waiter in Python, NewXxxWaiter in Go)
 #[derive(Debug, Clone)]
@@ -9,17 +10,10 @@ pub struct WaiterCreationInfo {
     pub waiter_name: String,
     /// Client receiver variable name (e.g., "client", "ec2_client")
     pub client_receiver: String,
-    /// Start position of the waiter creation call
-    pub start_position: (usize, usize),
-    /// End position of the waiter creation call
-    pub end_position: (usize, usize),
-}
-
-impl WaiterCreationInfo {
-    /// Get the line number from the start position
-    pub fn line(&self) -> usize {
-        self.start_position.0
-    }
+    /// Location of the waiter creation call
+    pub location: Location,
+    /// The expression text of the waiter creation call
+    pub expr: String,
 }
 
 /// Information about a wait method call (wait() in Python, Wait() in Go)
@@ -29,17 +23,10 @@ pub struct WaiterCallInfo {
     pub waiter_var: String,
     /// Extracted arguments (language-specific filtering applied)
     pub arguments: Vec<Parameter>,
-    /// Start position of the wait call node
-    pub start_position: (usize, usize),
-    /// End position of the wait call node
-    pub end_position: (usize, usize),
-}
-
-impl WaiterCallInfo {
-    /// Get the line number from the start position
-    pub fn line(&self) -> usize {
-        self.start_position.0
-    }
+    /// Location of the wait call node
+    pub location: Location,
+    /// The expression text of the wait call
+    pub expr: String,
 }
 
 /// Information about a chained waiter call (client.get_waiter().wait() - Python only)
@@ -51,10 +38,10 @@ pub struct ChainedWaiterCallInfo {
     pub waiter_name: String,
     /// Extracted arguments from wait call
     pub arguments: Vec<Parameter>,
-    /// Start position of the chained call node
-    pub start_position: (usize, usize),
-    /// End position of the chained call node
-    pub end_position: (usize, usize),
+    /// Location of the chained call node
+    pub location: Location,
+    /// The expression text of the chained call
+    pub expr: String,
 }
 
 /// Information about a discovered paginator creation call (get_paginator in Python, NewXxxPaginator in Go)
@@ -66,20 +53,13 @@ pub struct PaginatorCreationInfo {
     pub operation_name: String,
     /// Client receiver variable name (e.g., "client", "s3_client")
     pub client_receiver: String,
-    /// Start position of the paginator creation call
-    pub start_position: (usize, usize),
-    /// End position of the paginator creation call
-    pub end_position: (usize, usize),
+    /// Location of the paginator creation call
+    pub location: Location,
     /// Extracted arguments from paginator creation (Go only - input struct)
     /// For Python, this is typically empty as arguments come from paginate() call
     pub creation_arguments: Vec<Parameter>,
-}
-
-impl PaginatorCreationInfo {
-    /// Get the line number from the start position
-    pub fn line(&self) -> usize {
-        self.start_position.0
-    }
+    /// The expression text of the paginator creation call
+    pub expr: String,
 }
 
 /// Information about a paginate method call (paginate() in Python, Pages() in Go)
@@ -89,17 +69,10 @@ pub struct PaginatorCallInfo {
     pub paginator_var: String,
     /// Extracted arguments (language-specific filtering applied)
     pub arguments: Vec<Parameter>,
-    /// Start position of the paginate call node
-    pub start_position: (usize, usize),
-    /// End position of the paginate call node
-    pub end_position: (usize, usize),
-}
-
-impl PaginatorCallInfo {
-    /// Get the line number from the start position
-    pub fn line(&self) -> usize {
-        self.start_position.0
-    }
+    /// Location of the paginate call node
+    pub location: Location,
+    /// The expression text of the paginate call
+    pub expr: String,
 }
 
 /// Information about a chained paginator call (client.get_paginator().paginate() - Python only)
@@ -111,8 +84,8 @@ pub struct ChainedPaginatorCallInfo {
     pub operation_name: String,
     /// Extracted arguments from paginate call
     pub arguments: Vec<Parameter>,
-    /// Start position of the chained call node
-    pub start_position: (usize, usize),
-    /// End position of the chained call node
-    pub end_position: (usize, usize),
+    /// Location of the chained call node
+    pub location: Location,
+    /// The expression text of the chained call
+    pub expr: String,
 }

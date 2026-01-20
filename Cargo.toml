@@ -19,7 +19,7 @@ description = "An open source Model Context Protocol (MCP) server and command-li
 # Shared dependency versions across workspace
 [workspace.dependencies]
 # Core serialization and utilities
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 futures = "0.3"
 thiserror = "1.0"
 anyhow = "1.0"
@@ -29,6 +29,7 @@ ast-grep-core = "0.39"
 schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.9", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false }
+derive-new = "0.7.0"
 openssl = { version = "0.10", features = ["vendored"] }
 
 # Native async runtime and parallel processing
