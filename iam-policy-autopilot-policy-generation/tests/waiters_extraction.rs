@@ -28,17 +28,15 @@ async fn test_waiters_extraction() {
             service_info.service_name, service_info.version
         );
 
-        // Limit to first 1 waiter per service for testing
         for waiter in service_info.waiters.iter() {
             println!(
                 "  Testing waiter: {} -> operation: {}",
                 waiter.waiter_name, waiter.operation
             );
 
-            // Create TestProgram instance
             let runner = TestRunner::new(service_info.clone(), waiter.clone());
 
-            // Test all languages using the TestProgram methods
+            // Test all supported languages
             runner.test_python().await;
             runner.test_go().await;
             runner.test_javascript().await;
@@ -108,7 +106,7 @@ struct WaiterDefinition {
     operation: String,
 }
 
-/// TestProgram encapsulates service information and waiter details,
+/// TestRunner encapsulates service information and waiter details,
 /// providing code generators for different programming languages
 #[derive(Debug, Clone)]
 struct TestRunner {
