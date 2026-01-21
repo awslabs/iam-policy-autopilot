@@ -14,6 +14,8 @@ use std::{
 
 /// Operation rename configuration
 #[derive(Clone, Debug, Deserialize)]
+// TODO: remove
+#[allow(dead_code)]
 pub(crate) struct OperationRename {
     /// Target service name
     pub(crate) service: String,
@@ -31,6 +33,8 @@ pub(crate) struct ServiceConfiguration {
     pub(crate) rename_services_service_reference: HashMap<String, String>,
     /// Smithy to Botocore model: service renames
     pub(crate) smithy_botocore_service_name_mapping: HashMap<String, String>,
+    // TODO: remove
+    #[allow(dead_code)]
     /// Operation renames
     pub(crate) rename_operations: HashMap<String, OperationRename>,
     /// Resource overrides
@@ -55,6 +59,8 @@ impl ServiceConfiguration {
         }
     }
 
+    // TODO: remove
+    #[allow(dead_code)]
     pub(crate) fn rename_operation<'a>(&self, service: &str, original: &'a str) -> Cow<'a, str> {
         let tmp = format!("{}:{}", service, original);
         match self.rename_operations.get(&tmp) {

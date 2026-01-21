@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::javascript::scanner::ASTScanner;
 use crate::extraction::javascript::shared::ExtractionUtils;
-use crate::ServiceModelIndex;
+use crate::extraction::AstWithSourceFile;
+use crate::{ServiceModelIndex, SourceFile};
 
 /// TypeScript extractor for AWS SDK method calls
 pub(crate) struct TypeScriptExtractor;
@@ -30,9 +31,10 @@ impl Default for TypeScriptExtractor {
 
 #[async_trait]
 impl Extractor for TypeScriptExtractor {
-    async fn parse(&self, source_code: &str) -> ExtractorResult {
+    async fn parse(&self, source_file: &SourceFile) -> ExtractorResult {
         // Create AST once and reuse it
-        let ast = TypeScript.ast_grep(source_code);
+        let ast_grep = TypeScript.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
 
         // Create scanner with the pre-built AST
         let mut scanner = ASTScanner::new(ast.clone(), TypeScript.into());
@@ -55,7 +57,7 @@ impl Extractor for TypeScriptExtractor {
             &scan_results,
         ));
 
-        // Return TypeScript variant with the same AST (no double construction)
+        // Return TypeScript variant with the same AST
         ExtractorResult::TypeScript(ast, method_calls)
     }
 
@@ -207,6 +209,14 @@ mod tests {
         }
     }
 
+    fn create_source_file(source_code: &str) -> SourceFile {
+        SourceFile::with_language(
+            std::path::PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::TypeScript,
+        )
+    }
+
     #[tokio::test]
     async fn test_parse_typescript_with_types() {
         let extractor = TypeScriptExtractor::new();
@@ -242,7 +252,7 @@ async function queryUsers(): Promise<User[]> {
 }
         "#;
 
-        let result = extractor.parse(typescript_code).await;
+        let result = extractor.parse(&create_source_file(typescript_code)).await;
 
         // Verify TypeScript AST is returned
         match result {
@@ -320,7 +330,7 @@ class MyS3Service<T> implements S3Service<T> {
 }
         "#;
 
-        let result = extractor.parse(typescript_code).await;
+        let result = extractor.parse(&create_source_file(typescript_code)).await;
 
         // Verify TypeScript extraction with generics
         match result {
@@ -375,7 +385,7 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         "#;
 
         // Parse the code
-        let mut results = vec![extractor.parse(typescript_code).await];
+        let mut results = vec![extractor.parse(&create_source_file(typescript_code)).await];
 
         // Build service index with all services for testing
         let service_index = ServiceDiscovery::load_service_index(Language::TypeScript)
@@ -447,7 +457,7 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         "#;
 
         // Parse the code
-        let mut results = vec![extractor.parse(typescript_code).await];
+        let mut results = vec![extractor.parse(&create_source_file(typescript_code)).await];
 
         // Load service index
         let service_index = ServiceDiscovery::load_service_index(Language::TypeScript)

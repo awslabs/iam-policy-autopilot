@@ -102,9 +102,11 @@ def download_object():
     // 4. Test Policy Generation Engine (Public API)
     let policy_engine = PolicyGenerationEngine::new("aws", "us-east-1", "123456789012");
 
-    let policies = policy_engine
+    let result = policy_engine
         .generate_policies(&enriched_methods)
         .expect("Policy generation should succeed");
+
+    let policies = result.policies;
 
     // Verify policy generation results using serialization
     assert!(!policies.is_empty(), "Should generate policies");
@@ -117,29 +119,6 @@ def download_object():
         assert!(policy_json.contains("Statement"));
         println!("  Policy {}: serialized successfully", i + 1);
     }
-
-    // 5. Test policy merging
-    let merged_policy = policy_engine
-        .merge_policies(&policies)
-        .expect("Policy merging should succeed");
-
-    let merged_json =
-        serde_json::to_string(&merged_policy).expect("Should serialize merged policy");
-    assert!(merged_json.contains("2012-10-17"));
-    println!("Merged policy serialized successfully");
-
-    // 6. Test method action mapping extraction
-    let action_mappings = policy_engine
-        .extract_action_mappings(&enriched_methods)
-        .expect("Action mapping extraction should succeed");
-
-    assert!(!action_mappings.is_empty(), "Should have action mappings");
-    println!("Generated {} action mappings", action_mappings.len());
-
-    // Test serialization of action mappings
-    let mappings_json =
-        serde_json::to_string(&action_mappings).expect("Should serialize action mappings");
-    assert!(!mappings_json.is_empty());
 }
 
 #[tokio::test]
@@ -289,9 +268,11 @@ def multi_service_operations():
 
     let policy_engine = PolicyGenerationEngine::new("aws", "us-west-2", "987654321098");
 
-    let policies = policy_engine
+    let result = policy_engine
         .generate_policies(&enriched)
         .expect("Should generate policies");
+
+    let policies = result.policies;
 
     // Verify we got policies for multi-service operations
     println!(
@@ -445,7 +426,8 @@ def start_policy_generation():
     let policy_engine = PolicyGenerationEngine::new("aws", "us-east-1", "123456789012");
     let policies = policy_engine
         .generate_policies(&enriched)
-        .expect("Policy generation should succeed");
+        .expect("Policy generation should succeed")
+        .policies;
 
     assert!(!policies.is_empty(), "Should generate policies");
 

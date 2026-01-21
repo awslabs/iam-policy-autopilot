@@ -7,8 +7,10 @@ use crate::extraction::go::node_kinds;
 use crate::extraction::go::paginator_extractor::GoPaginatorExtractor;
 use crate::extraction::go::types::{GoImportInfo, ImportInfo};
 use crate::extraction::go::waiter_extractor::GoWaiterExtractor;
-use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
-use crate::ServiceModelIndex;
+use crate::extraction::{
+    AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
+};
+use crate::{Location, ServiceModelIndex, SourceFile};
 use ast_grep_config::from_yaml_string;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Go;
@@ -23,12 +25,9 @@ impl GoExtractor {
     }
 
     /// Extract import statements from Go source code using ast-grep
-    fn extract_imports(
-        &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
-    ) -> GoImportInfo {
+    fn extract_imports(&self, ast: &AstWithSourceFile<Go>) -> GoImportInfo {
         let mut import_info = GoImportInfo::new();
-        let root = ast.root();
+        let root = ast.ast.root();
 
         // AST-grep configuration for extracting import statements
         let import_config = r#"
@@ -142,6 +141,7 @@ rule:
     fn parse_method_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        source_file: &SourceFile,
     ) -> Option<SdkMethodCall> {
         let env = node_match.get_env();
 
@@ -189,19 +189,14 @@ rule:
             vec![]
         };
 
-        // Get position information
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
             metadata: Some(SdkMethodCallMetadata {
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
-                start_position: (start.line() + 1, start.column(node) + 1),
-                end_position: (end.line() + 1, end.column(node) + 1),
+                expr: node_match.text().to_string(),
+                location: Location::from_node(source_file.path.clone(), node_match.get_node()),
                 receiver,
             }),
         };
@@ -419,9 +414,13 @@ impl Default for GoExtractor {
 
 #[async_trait]
 impl Extractor for GoExtractor {
-    async fn parse(&self, source_code: &str) -> crate::extraction::extractor::ExtractorResult {
-        let ast_grep = Go.ast_grep(source_code);
-        let root = ast_grep.root();
+    async fn parse(
+        &self,
+        source_file: &SourceFile,
+    ) -> crate::extraction::extractor::ExtractorResult {
+        let ast_grep = Go.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
+        let root = ast.ast.root();
 
         let mut method_calls = Vec::new();
 
@@ -453,15 +452,15 @@ rule:
 
         // Find all method calls with attribute access: receiver.method(args)
         for node_match in root.find_all(&config.matcher) {
-            if let Some(method_call) = self.parse_method_call(&node_match) {
+            if let Some(method_call) = self.parse_method_call(&node_match, source_file) {
                 method_calls.push(method_call);
             }
         }
 
         // Extract import information
-        let import_info = self.extract_imports(&ast_grep);
+        let import_info = self.extract_imports(&ast);
 
-        crate::extraction::extractor::ExtractorResult::Go(ast_grep, method_calls, import_info)
+        crate::extraction::extractor::ExtractorResult::Go(ast, method_calls, import_info)
     }
 
     fn filter_map(
@@ -573,6 +572,8 @@ impl Parameter {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[tokio::test]
@@ -615,8 +616,10 @@ func main() {
     }
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), aws_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(aws_code).await;
+        let result = extractor.parse(&source_file).await;
         let aws_method_calls = result.method_calls_ref();
 
         println!("AWS test - Found {} method calls:", aws_method_calls.len());
@@ -655,8 +658,10 @@ func main() {
     result2, err2 := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         println!(
@@ -722,8 +727,10 @@ func main() {
     result3, err3 := client.GetObject(ctx, &s3.GetObjectInput{})
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         println!(
@@ -813,8 +820,10 @@ func main() {
     result3, err3 := factory.createClient("s3").GetObject(ctx, &s3.GetObjectInput{})
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         println!(
@@ -905,8 +914,10 @@ func main() {
     DescribeInstances(ctx, &ec2.DescribeInstancesInput{})
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         println!(
@@ -1167,8 +1178,10 @@ func main() {
     _ = objectOutput
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
 
         // Verify import extraction
         if let Some(import_info) = result.go_import_info() {
@@ -1288,8 +1301,10 @@ func main() {
     _ = output
 }
         "#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
 
-        let result = extractor.parse(test_code).await;
+        let result = extractor.parse(&source_file).await;
 
         // Verify import extraction
         if let Some(import_info) = result.go_import_info() {
@@ -1363,7 +1378,9 @@ func (basics BucketBasics) DownloadFile(ctx context.Context, bucketName string, 
 }
         "#;
 
-        let result = extractor.parse(test_code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), test_code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         println!(
@@ -1470,9 +1487,12 @@ func (basics BucketBasics) DownloadFile(ctx context.Context, bucketName string, 
 }
 #[cfg(test)]
 mod test_struct_fields {
+    use std::path::PathBuf;
+
     use crate::extraction::extractor::Extractor;
     use crate::extraction::go::extractor::GoExtractor;
     use crate::extraction::Parameter;
+    use crate::SourceFile;
 
     /// Test extraction of struct literals with multiple fields
     #[tokio::test]
@@ -1497,7 +1517,9 @@ func test() {
 }
 "#;
 
-        let result = extractor.parse(code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         let call = method_calls
@@ -1568,7 +1590,9 @@ func test() {
 }
 "#;
 
-        let result = extractor.parse(code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         let call = method_calls
@@ -1621,7 +1645,9 @@ func test() {
 }
 "#;
 
-        let result = extractor.parse(code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         let call = method_calls
@@ -1672,7 +1698,9 @@ func test() {
 }
 "#;
 
-        let result = extractor.parse(code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         let call = method_calls
@@ -1720,7 +1748,9 @@ func test() {
 }
 "#;
 
-        let result = extractor.parse(code).await;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Go);
+        let result = extractor.parse(&source_file).await;
         let method_calls = result.method_calls_ref();
 
         let call = method_calls

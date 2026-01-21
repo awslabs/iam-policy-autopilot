@@ -4,6 +4,8 @@
 //! from ast-grep nodes, handling object literals, shorthand properties,
 //! spread operators, and proper value resolution (literal vs identifier).
 
+use ast_grep_core::tree_sitter::StrDoc;
+
 use crate::extraction::{Parameter, ParameterValue};
 
 /// Utility for extracting arguments from JavaScript/TypeScript AST nodes
@@ -19,10 +21,10 @@ impl ArgumentExtractor {
     ///
     /// Returns a vector of Parameters with proper Resolved/Unresolved classification
     pub fn extract_object_parameters<T>(
-        args_node: Option<&ast_grep_core::Node<T>>,
+        args_node: Option<&ast_grep_core::Node<StrDoc<T>>>,
     ) -> Vec<Parameter>
     where
-        T: ast_grep_core::Doc,
+        T: ast_grep_language::LanguageExt,
     {
         let Some(node) = args_node else {
             return Vec::new();
