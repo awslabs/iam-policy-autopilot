@@ -44,30 +44,39 @@ pub(crate) mod policy_autopilot {
 mod policy_autopilot {
     use anyhow::Result;
     use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult, PlanResult};
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
 
-    pub static mut MOCK_PLAN_RETURN: Option<Result<PlanResult>> = None;
-    pub static mut MOCK_APPLY_RETURN: Option<Result<ApplyResult>> = None;
+    // Simple mock storage - Mutex is needed for static variables even with serial tests
+    static MOCK_PLAN_RETURN: OnceLock<Mutex<Option<Result<PlanResult>>>> = OnceLock::new();
+    static MOCK_APPLY_RETURN: OnceLock<Mutex<Option<Result<ApplyResult>>>> = OnceLock::new();
 
     pub async fn plan(_error_message: &str) -> Result<PlanResult> {
-        #[allow(static_mut_refs)]
-        unsafe {
-            MOCK_PLAN_RETURN.take().unwrap()
-        }
+        let mutex = MOCK_PLAN_RETURN.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard
+            .take()
+            .expect("Mock plan return value not set. Call set_mock_plan_return() first.")
     }
 
     pub async fn apply(_plan: &PlanResult, _options: ApplyOptions) -> Result<ApplyResult> {
-        #[allow(static_mut_refs)]
-        unsafe {
-            MOCK_APPLY_RETURN.take().unwrap()
-        }
+        let mutex = MOCK_APPLY_RETURN.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard
+            .take()
+            .expect("Mock apply return value not set. Call set_mock_apply_return() first.")
     }
 
     pub fn set_mock_plan_return(value: Result<PlanResult>) {
-        unsafe { MOCK_PLAN_RETURN = Some(value) }
+        let mutex = MOCK_PLAN_RETURN.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        *guard = Some(value);
     }
 
     pub fn set_mock_apply_return(value: Result<ApplyResult>) {
-        unsafe { MOCK_APPLY_RETURN = Some(value) }
+        let mutex = MOCK_APPLY_RETURN.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        *guard = Some(value);
     }
 }
 

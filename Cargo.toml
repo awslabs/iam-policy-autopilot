@@ -80,6 +80,7 @@ strsim = "0.11"
 # Additional workspace configuration
 [workspace.lints.rust]
 unsafe_code = "forbid"
+dead_code = "deny"
 
 [workspace.lints.clippy]
 enum_glob_use = "deny"

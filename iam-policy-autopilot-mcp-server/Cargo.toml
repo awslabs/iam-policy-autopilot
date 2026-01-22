@@ -46,3 +46,6 @@ rmcp = { version = "^0.8" , features = [
     "transport-streamable-http-client-reqwest",
 ]}  # Replace with the actual version used
 tokio = {version = "^1", features = ["full"]}
+
+[lints]
+workspace = true
