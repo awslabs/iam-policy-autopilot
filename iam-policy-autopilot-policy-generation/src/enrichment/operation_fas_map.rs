@@ -221,7 +221,6 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
     result
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

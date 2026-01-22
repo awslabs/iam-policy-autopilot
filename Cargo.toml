@@ -130,6 +130,9 @@ unused_async = "allow"
 unused_self = "allow"
 use_self = "allow"
 single_char_pattern = "allow"
+or_fun_call = "allow"
+default_trait_access = "allow"
+unnested_or_patterns = "allow"
 
 # Workspace-level profiles
 [profile.dev]
