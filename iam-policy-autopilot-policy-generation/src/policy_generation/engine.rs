@@ -329,12 +329,9 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "object".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                    ]),
-                )],
+                vec![Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                ]))],
                 vec![],
                 Explanation::default(),
             )],
@@ -366,23 +363,17 @@ mod tests {
             actions: vec![
                 Action::new(
                     "s3:GetObject".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec![
-                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                        ]),
-                    )],
+                    vec![Resource::new(Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                    ]))],
                     vec![],
                     Explanation::default(),
                 ),
                 Action::new(
                     "s3:GetObjectVersion".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec![
-                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                        ]),
-                    )],
+                    vec![Resource::new(Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                    ]))],
                     vec![],
                     Explanation::default(),
                 ),
@@ -417,7 +408,7 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:ListAllMyBuckets".to_string(),
-                vec![Resource::new("*".to_string(), None)],
+                vec![Resource::new(None)],
                 vec![],
                 Explanation::default(),
             )],
@@ -440,23 +431,20 @@ mod tests {
         let enriched_call = EnrichedSdkMethodCall {
             method_name: "get_object".to_string(),
             service: "s3".to_string(),
-            actions: vec![
-                Action::new(
-                    "s3:GetObject".to_string(),
-                    vec![
-                        Resource::new(
-                            "object".to_string(),
-                            Some(vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()])
-                        ),
-                        Resource::new(
-                            "accesspoint".to_string(),
-                            Some(vec!["arn:${Partition}:s3:${Region}:${Account}:accesspoint/${AccessPointName}".to_string()])
-                        )
-                    ],
-                    vec![],
-                    Explanation::default(),
-                )
-            ],
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![
+                    Resource::new(Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                    ])),
+                    Resource::new(Some(vec![
+                        "arn:${Partition}:s3:${Region}:${Account}:accesspoint/${AccessPointName}"
+                            .to_string(),
+                    ])),
+                ],
+                vec![],
+                Explanation::default(),
+            )],
             sdk_method_call: &sdk_call,
         };
 
@@ -591,13 +579,10 @@ mod tests {
         // Create an action with subsumed resources (the example case from requirements)
         let action = Action::new(
             "events:PutRule".to_string(),
-            vec![Resource::new(
-                "rule".to_string(),
-                Some(vec![
-                    "arn:${Partition}:events:${Region}:${Account}:rule/*".to_string(),
-                    "arn:${Partition}:events:${Region}:${Account}:rule/*/*".to_string(),
-                ]),
-            )],
+            vec![Resource::new(Some(vec![
+                "arn:${Partition}:events:${Region}:${Account}:rule/*".to_string(),
+                "arn:${Partition}:events:${Region}:${Account}:rule/*/*".to_string(),
+            ]))],
             vec![],
             Explanation::default(),
         );
@@ -620,17 +605,12 @@ mod tests {
         let action = Action::new(
             "multi:Action".to_string(),
             vec![
-                Resource::new(
-                    "s3-bucket".to_string(),
-                    Some(vec!["arn:${Partition}:s3:::${BucketName}/*".to_string()]),
-                ),
-                Resource::new(
-                    "dynamodb-table".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"
-                            .to_string(),
-                    ]),
-                ),
+                Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/*".to_string()
+                ])),
+                Resource::new(Some(vec![
+                    "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
+                ])),
             ],
             vec![],
             Explanation::default(),
@@ -913,12 +893,9 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "object".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                    ]),
-                )],
+                vec![Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                ]))],
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
@@ -968,12 +945,9 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "object".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                    ]),
-                )],
+                vec![Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                ]))],
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
@@ -991,12 +965,9 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "object".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                    ]),
-                )],
+                vec![Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                ]))],
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(
@@ -1046,12 +1017,9 @@ mod tests {
             actions: vec![
                 Action::new(
                     "s3:GetObject".to_string(),
-                    vec![Resource::new(
-                        "object".to_string(),
-                        Some(vec![
-                            "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                        ]),
-                    )],
+                    vec![Resource::new(Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                    ]))],
                     vec![],
                     Explanation {
                         reasons: vec![Reason::new(vec![Arc::new(Operation::new(
@@ -1063,12 +1031,9 @@ mod tests {
                 ),
                 Action::new(
                     "kms:Decrypt".to_string(),
-                    vec![Resource::new(
-                        "key".to_string(),
-                        Some(vec![
-                            "arn:${Partition}:kms:${Region}:${Account}:key/${KeyId}".to_string(),
-                        ]),
-                    )],
+                    vec![Resource::new(Some(vec![
+                        "arn:${Partition}:kms:${Region}:${Account}:key/${KeyId}".to_string(),
+                    ]))],
                     vec![],
                     Explanation {
                         reasons: vec![Reason::new(vec![Arc::new(Operation::new(
@@ -1141,12 +1106,9 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![Action::new(
                 "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "object".to_string(),
-                    Some(vec![
-                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
-                    ]),
-                )],
+                vec![Resource::new(Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string(),
+                ]))],
                 vec![],
                 Explanation {
                     reasons: vec![Reason::new(vec![Arc::new(Operation::new(

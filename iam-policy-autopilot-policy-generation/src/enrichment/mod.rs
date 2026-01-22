@@ -347,8 +347,6 @@ impl Action {
 /// metadata to provide complete resource information for IAM policies.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub(crate) struct Resource {
-    /// The resource type name (e.g., "bucket", "object", "*")
-    pub(crate) name: String,
     /// ARN patterns from Service Reference data, if available
     pub(crate) arn_patterns: Option<Vec<String>>,
 }
@@ -356,8 +354,8 @@ pub(crate) struct Resource {
 impl Resource {
     /// Create a new enriched resource
     #[must_use]
-    pub(crate) fn new(name: String, arn_patterns: Option<Vec<String>>) -> Self {
-        Self { name, arn_patterns }
+    pub(crate) fn new(arn_patterns: Option<Vec<String>>) -> Self {
+        Self { arn_patterns }
     }
 }
 
@@ -368,12 +366,8 @@ mod tests {
 
     #[test]
     fn test_enriched_resource_creation() {
-        let resource = Resource::new(
-            "object".to_string(),
-            Some(vec!["arn:aws:s3:::bucket/*".to_string()]),
-        );
+        let resource = Resource::new(Some(vec!["arn:aws:s3:::bucket/*".to_string()]));
 
-        assert_eq!(resource.name, "object");
         assert_eq!(
             resource.arn_patterns,
             Some(vec!["arn:aws:s3:::bucket/*".to_string()])

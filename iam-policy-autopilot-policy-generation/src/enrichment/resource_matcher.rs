@@ -245,7 +245,7 @@ impl ResourceMatcher {
                                     )?;
                                 let enriched_resources =
                                     if RESOURCE_CUTOFF <= enriched_resources.len() {
-                                        vec![Resource::new("*".to_string(), None)]
+                                        vec![Resource::new(None)]
                                     } else {
                                         enriched_resources
                                     };
@@ -377,7 +377,7 @@ impl ResourceMatcher {
                         "find_resources_for_action_in_service_reference: resource override = {}",
                         r#override
                     );
-                        Resource::new(resource.clone(), Some(vec![r#override.clone()]))
+                        Resource::new(Some(vec![r#override.clone()]))
                     } else {
                         log::debug!(
                         "find_resources_for_action_in_service_reference: looking up resource = {}",
@@ -392,7 +392,7 @@ impl ResourceMatcher {
                             "find_resources_for_action_in_service_reference: arn_pattern = {:?}",
                             arn_patterns
                         );
-                        Resource::new(resource.clone(), arn_patterns)
+                        Resource::new(arn_patterns)
                     };
                 result.push(service_reference_resource);
             }
@@ -844,7 +844,6 @@ mod tests {
         assert_eq!(action.resources.len(), 1, "Should have one resource");
 
         let resource = &action.resources[0];
-        assert_eq!(resource.name, "user");
 
         // This is the key test: verify that the resource override "*" is used
         assert!(
@@ -913,34 +912,33 @@ mod tests {
         let action = &enriched_call.actions[0];
         assert_eq!(action.resources.len(), 2, "Should have two resources");
 
-        // Find bucket and object resources
-        let bucket_resource = action
-            .resources
-            .iter()
-            .find(|r| r.name == "bucket")
-            .unwrap();
-        let object_resource = action
-            .resources
-            .iter()
-            .find(|r| r.name == "object")
-            .unwrap();
+        // Find bucket and object resources by their ARN patterns instead of relying on resource.name
+        let mut bucket_resource = None;
+        let mut object_resource = None;
+
+        for resource in &action.resources {
+            if let Some(arn_patterns) = &resource.arn_patterns {
+                if arn_patterns.len() == 1 {
+                    if arn_patterns[0] == "arn:aws:s3:::*" {
+                        bucket_resource = Some(resource);
+                    } else if arn_patterns[0] == "arn:${Partition}:s3:::${BucketName}/${ObjectName}"
+                    {
+                        object_resource = Some(resource);
+                    }
+                }
+            }
+        }
 
         // Bucket should use override
-        assert!(bucket_resource.arn_patterns.is_some());
-        let bucket_patterns = bucket_resource.arn_patterns.as_ref().unwrap();
-        assert_eq!(bucket_patterns.len(), 1);
-        assert_eq!(
-            bucket_patterns[0], "arn:aws:s3:::*",
-            "Bucket should use override value"
+        assert!(
+            bucket_resource.is_some(),
+            "Should find bucket resource with override ARN pattern"
         );
 
         // Object should use normal service reference lookup
-        assert!(object_resource.arn_patterns.is_some());
-        let object_patterns = object_resource.arn_patterns.as_ref().unwrap();
-        assert_eq!(object_patterns.len(), 1);
-        assert_eq!(
-            object_patterns[0], "arn:${Partition}:s3:::${BucketName}/${ObjectName}",
-            "Object should use normal service reference"
+        assert!(
+            object_resource.is_some(),
+            "Should find object resource with normal ARN pattern"
         );
 
         println!("✓ Test passed: Mixed resource overrides work correctly - overrides applied selectively");
