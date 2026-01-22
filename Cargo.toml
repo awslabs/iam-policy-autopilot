@@ -30,7 +30,6 @@ schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.9", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false }
 derive-new = "0.7.0"
-openssl = { version = "0.10", features = ["vendored"] }
 
 # Native async runtime and parallel processing
 tokio = { version = "1.0", features = ["fs", "rt", "rt-multi-thread", "macros", "signal"] }
@@ -67,7 +66,7 @@ atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.8", features = ["v4"] }
 aws-lc-rs = "1.15.2"
-git2 = "0.20.3"
+git2 = { version = "0.20.3", default-features = false, features = ["vendored-libgit2"] }
 relative-path = "2.0.1"
 url = "2.5"
 percent-encoding = "2.3"
