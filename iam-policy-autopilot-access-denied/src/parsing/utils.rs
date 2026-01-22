@@ -53,7 +53,8 @@ pub fn extract_principal(message: &str) -> Option<String> {
         return None;
     }
     let pattern = ARN_PATTERN.get_or_init(|| {
-        Regex::new(r"arn:aws:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+").unwrap()
+        Regex::new(r"arn:aws:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+")
+            .expect("Valid ARN regex pattern")
     });
     pattern.find(message).map(|m| m.as_str().to_string())
 }
@@ -153,7 +154,8 @@ pub fn extract_resource(message: &str) -> Option<String> {
     // Fallback: second ARN in the message
     let principal = extract_principal(message);
     let pattern = ARN_PATTERN.get_or_init(|| {
-        Regex::new(r"arn:aws:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+").unwrap()
+        Regex::new(r"arn:aws:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+")
+            .expect("Valid ARN regex pattern")
     });
     let arns: Vec<&str> = pattern.find_iter(message).map(|m| m.as_str()).collect();
     if arns.len() >= 2 {

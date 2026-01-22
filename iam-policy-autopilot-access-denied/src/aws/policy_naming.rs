@@ -10,10 +10,13 @@ pub const POLICY_PREFIX: &str = "IamPolicyAutopilot";
 
 fn sanitize_component(component: &str) -> String {
     static SANITIZE_REGEX: OnceLock<Regex> = OnceLock::new();
-    let regex = SANITIZE_REGEX.get_or_init(|| Regex::new(r"[^a-zA-Z0-9+=,.@_-]").unwrap());
+    let regex = SANITIZE_REGEX.get_or_init(|| {
+        Regex::new(r"[^a-zA-Z0-9+=,.@_-]")
+            .expect("Valid regex pattern for policy name sanitization")
+    });
     let sanitized = regex.replace_all(component, "-").to_string();
     let cleaned = Regex::new(r"-+")
-        .unwrap()
+        .expect("Valid cleanup regex pattern")
         .replace_all(&sanitized, "-")
         .trim_matches('-')
         .to_string();
