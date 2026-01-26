@@ -1,0 +1,346 @@
+name: Submodule updater
+
+on:
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  # checks out the head commit on iam-policy-autopilot/release, and gets the boto3/botocore versions used there, to see if they need to be bumped up.
+  checkout_autopilot_release_head:
+    runs-on: ubuntu-latest
+    name: Checkout release head and get the current submodule version info
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+    outputs:
+      # boto3, botocore commits used at iam-policy-autopilot/release
+      autopilot_release_head_boto3_commit: ${{ steps.get-head-boto3-version-info.outputs.boto3_version }}
+      autopilot_release_head_botocore_commit: ${{ steps.get-head-botocore-version-info.outputs.botocore_version }}
+      # the HEAD commit of iam-policy-autopilot/release
+      autopilot_release_head_commit: ${{ steps.get-autopilot-head-commit.outputs.autopilot_release_head_commit }}
+      
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: true
+        fetch-depth: 0
+        fetch-tags: true
+        ref: release
+        token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
+
+    - name: Get autopilot head commit
+      id: get-autopilot-head-commit
+      run: |
+        pwd && echo "autopilot_release_head_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+    - name: Get boto3 version used by release HEAD
+      id: get-head-boto3-version-info
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && echo "boto3_version=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+        cat $GITHUB_OUTPUT
+
+    - name: Get botocore version used by release HEAD
+      id: get-head-botocore-version-info
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data && echo "botocore_version=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+        cat $GITHUB_OUTPUT
+
+  # check out the latest tagged release version of iam-policy-autopilot; build it using the newest tagged release of boto3 and botocore submodules.
+  checkout_release_repos_with_latest_submodule:
+    runs-on: ubuntu-latest
+    name: Checkout and build iam-policy-autopilot using the latest release of this repo; but with the newest release of submodules
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+    outputs:
+      # the commit ID corresponding to the newest tagged release of boto3 and botocore
+      latest_release_boto3_commit: ${{ steps.checkout-submodules-to-latest-release.outputs.latest_release_boto3_commit }}
+      latest_release_botocore_commit: ${{ steps.checkout-submodules-to-latest-release.outputs.latest_release_botocore_commit }}
+      # the corresponding outputted lines of iam-policy-autopilot --version --debug, using the newest tagged release of boto3/botocore
+      boto3_latest_release_version_info: ${{ steps.version-info-boto3-latest-release.outputs.boto3_version_info }}
+      botocore_latest_release_version_info: ${{ steps.version-info-botocore-latest-release.outputs.botocore_version_info }}
+      # the git tag, if existent, corresponding to the newest tagged release of boto3 and botocore
+      boto3_latest_release_git_tag: ${{ steps.checkout-submodules-to-latest-release.outputs.latest_release_boto3_tag }}
+      botocore_latest_release_git_tag: ${{ steps.checkout-submodules-to-latest-release.outputs.latest_release_botocore_tag }}
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: false
+        fetch-depth: 0
+        fetch-tags: true
+        ref: release
+        token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
+
+    - name: checkout repo to latest release version
+      run: |
+        pwd && git fetch --tags && tag_version=$(git tag -l --sort=-version:refname | head -n 1) && git checkout "tags/$tag_version" && git submodule update --init --recursive
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: checkout submodules to latest release version
+      id: checkout-submodules-to-latest-release
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && git checkout master && git pull origin master && git fetch --tags && tag_version=$(git tag -l --sort=-version:refname | head -n 1) && git checkout "tags/$tag_version" && echo "latest_release_boto3_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && echo "latest_release_boto3_tag=$tag_version" >> "$GITHUB_OUTPUT" && cd ../botocore-data && git checkout master && git pull origin master && tag_version=$(git tag -l --sort=-version:refname | head -n 1) && git checkout "tags/$tag_version" && echo "latest_release_botocore_commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && echo "latest_release_botocore_tag=$tag_version" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+        cat $GITHUB_OUTPUT
+
+    - name: Build with updated submodules
+      run: |
+        sudo apt-get install -y cmake pkg-config libssl-dev
+        cargo build --release --workspace --verbose 
+
+    - name: Run version info with updated submodules
+      id: version-info-boto3-latest-release
+      run: |
+        echo "boto3_version_info=$(target/release/iam-policy-autopilot --version --debug | head -n 2 | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+    - name: Run version info with updated submodules
+      id: version-info-botocore-latest-release
+      run: |
+        echo "botocore_version_info=$(target/release/iam-policy-autopilot --version --debug | head -n 3 | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+  checkout_release_repos_with_autopilot_head_submodule:
+    runs-on: ubuntu-latest
+    needs: checkout_autopilot_release_head
+    name: Checkout the latest release of this repo; and, the current version of submodules at head of iam-policy-autopilot/release
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+    outputs:
+      # the corresponding outputted lines of iam-policy-autopilot --version --debug, using the current used release of boto3/botocore at head of iam-policy-autopilot/release
+      boto3_autopilot_release_head_version_info: ${{ steps.version-info-boto3-autopilot-head.outputs.boto3_version_info }}
+      botocore_autopilot_release_head_version_info: ${{ steps.version-info-botocore-autopilot-head.outputs.botocore_version_info }}
+      # the corresponding git tag of the boto3/botocore commit used at head of iam-policy-autopilot/release
+      boto3_autopilot_release_head_git_tag: ${{ steps.checkout-submodules-to-autopilot-head-commit.outputs.autopilot_head_boto3_tag }}
+      botocore_autopilot_release_head_git_tag: ${{ steps.checkout-submodules-to-autopilot-head-commit.outputs.autopilot_head_botocore_tag }}
+      
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: false
+        fetch-depth: 0
+        fetch-tags: true
+        ref: release
+        token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
+
+    - name: checkout repo to latest release version
+      run: |
+        git fetch --tags && tag_version=$(git tag -l --sort=-version:refname | head -n 1) && git checkout "tags/$tag_version" && git submodule update --init --recursive
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: update submodules to current versions used at head of release branch
+      id: checkout-submodules-to-autopilot-head-commit
+      env: 
+        AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_boto3_commit }}
+        AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_botocore_commit }}
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && git checkout master && git pull origin master && git checkout $AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT && git fetch --tags && echo "autopilot_head_boto3_tag=$(git tag --points-at HEAD || echo 'None')" >> "$GITHUB_OUTPUT" && cd ../botocore-data && git checkout master && git pull origin master && git checkout $AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT && git fetch --tags && echo "autopilot_head_botocore_tag=$(git tag --points-at HEAD || echo 'None')" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+    - name: Build with current submodules at head of release branch
+      run: |
+        sudo apt-get install -y cmake pkg-config libssl-dev
+        cargo build --release --workspace --verbose 
+
+    - name: Run boto3 version info with current submodules at head of release branch
+      id: version-info-boto3-autopilot-head
+      run: |
+        echo "boto3_version_info=$(target/release/iam-policy-autopilot --version --debug | head -n 2 | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+    - name: Run botocore version info with current submodules at head of release branch
+      id: version-info-botocore-autopilot-head
+      run: |
+        echo "botocore_version_info=$(target/release/iam-policy-autopilot --version --debug | head -n 3 | tail -n 1)" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+  compare_submodule_version:
+    runs-on: ubuntu-latest
+    needs: [checkout_autopilot_release_head, checkout_release_repos_with_latest_submodule, checkout_release_repos_with_autopilot_head_submodule]
+    name: Grep & compare the submodule versions from autopilot release head, and the newest releases of those dependencies; submit PR if they have diverged
+    permissions:
+      contents: read
+    # Define the matrix for runners and Rust targets
+    strategy:
+      fail-fast: true
+    outputs:
+      should_create_boto3_pr: ${{ steps.compare-data-hash.outputs.boto3_data_hash_changed }}
+      should_create_botocore_pr: ${{ steps.compare-data-hash.outputs.botocore_data_hash_changed }}
+
+    steps:
+      - env:
+          # the corresponding outputted lines of iam-policy-autopilot --version --debug, using the newest tagged release of boto3/botocore
+          BOTO3_LATEST_RELEASE_VERSION_STR: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.boto3_latest_release_version_info }}
+          BOTOCORE_LATEST_RELEASE_VERSION_STR: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.botocore_latest_release_version_info }}
+          # the git tag corresponding to the newest tagged release of boto3 and botocore
+          BOTO3_LATEST_RELEASE_GIT_TAG: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.boto3_latest_release_git_tag }}
+          BOTOCORE_LATEST_RELEASE_GIT_TAG: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.botocore_latest_release_git_tag }}
+          # the corresponding outputted lines of iam-policy-autopilot --version --debug, using the current version of boto3/botocore used at head of iam-policy-autopilot/release
+          BOTO3_AUTOPILOT_RELEASE_HEAD_VERSION_STR: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.boto3_autopilot_release_head_version_info }} 
+          BOTOCORE_AUTOPILOT_RELEASE_HEAD_VERSION_STR: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.botocore_autopilot_release_head_version_info }}
+          # the corresponding git tag of the current boto3/botocore commit used at head of iam-policy-autopilot/release
+          BOTO3_AUTOPILOT_RELEASE_HEAD_GIT_TAG: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.boto3_autopilot_release_head_git_tag }} 
+          BOTOCORE_AUTOPILOT_RELEASE_HEAD_GIT_TAG: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.botocore_autopilot_release_head_git_tag }}
+          # the git commit corresponding to the newest tagged release of boto3 and botocore
+          LATEST_RELEASE_BOTO3_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_boto3_commit }}
+          LATEST_RELEASE_BOTOCORE_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_botocore_commit }}
+          # the git commit corresponding to the current boto3/botocore commit used at head of iam-policy-autopilot/release
+          AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_boto3_commit }}
+          AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_botocore_commit }}
+          # the git commit of iam-policy-autopilot at head of release branch
+          AUTOPILOT_RELEASE_HEAD_COMMIT: ${{needs.checkout_autopilot_release_head.outputs.autopilot_release_head_commit}}
+          
+        id: compare-data-hash
+        run: |
+          echo "::notice autopilot release head commit: $AUTOPILOT_RELEASE_HEAD_COMMIT" && echo "::notice autopilot release head, $BOTO3_AUTOPILOT_RELEASE_HEAD_VERSION_STR (commit_id=$AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT, tag=$BOTO3_AUTOPILOT_RELEASE_HEAD_GIT_TAG)" && echo "::notice autopilot release head, $BOTOCORE_AUTOPILOT_RELEASE_HEAD_VERSION_STR (commit_id=$AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT, tag=$BOTOCORE_AUTOPILOT_RELEASE_HEAD_GIT_TAG)" && echo "::notice latest release, $BOTO3_LATEST_RELEASE_VERSION_STR (commit_id=$LATEST_RELEASE_BOTO3_COMMIT, tag=$BOTO3_LATEST_RELEASE_GIT_TAG)" && echo "::notice latest release, $BOTOCORE_LATEST_RELEASE_VERSION_STR (commit_id=$LATEST_RELEASE_BOTOCORE_COMMIT, tag=$BOTOCORE_LATEST_RELEASE_GIT_TAG)"
+
+          export BOTO3_LATEST_RELEASE_DATA_HASH="$( echo $BOTO3_LATEST_RELEASE_VERSION_STR | sed -n 's/.*, data_hash=\([a-zA-Z0-9:]*\).*/\1/p' )"
+          export BOTO3_AUTOPILOT_RELEASE_HEAD_DATA_HASH="$( echo $BOTO3_AUTOPILOT_RELEASE_HEAD_VERSION_STR | sed -n 's/.*, data_hash=\([a-zA-Z0-9:]*\).*/\1/p' )"
+
+          export BOTOCORE_LATEST_RELEASE_DATA_HASH="$( echo $BOTOCORE_LATEST_RELEASE_VERSION_STR | sed -n 's/.*, data_hash=\([a-zA-Z0-9:]*\).*/\1/p' )"
+          export BOTOCORE_AUTOPILOT_RELEASE_HEAD_DATA_HASH="$( echo $BOTOCORE_AUTOPILOT_RELEASE_HEAD_VERSION_STR | sed -n 's/.*, data_hash=\([a-zA-Z0-9:]*\).*/\1/p' )"
+
+          echo "::notice extracted latest release boto3 data hash: $BOTO3_LATEST_RELEASE_DATA_HASH"
+          echo "::notice extracted autopilot head boto3 data hash: $BOTO3_AUTOPILOT_RELEASE_HEAD_DATA_HASH"
+          echo "::notice extracted latest release botocore data hash: $BOTOCORE_LATEST_RELEASE_DATA_HASH"
+          echo "::notice extracted autopilot head botocore data hash: $BOTOCORE_AUTOPILOT_RELEASE_HEAD_DATA_HASH"
+
+          export BOTO3_HASH_CHANGED=false
+          export BOTOCORE_HASH_CHANGED=false
+
+          if [[ "$BOTO3_LATEST_RELEASE_DATA_HASH" != "$BOTO3_AUTOPILOT_RELEASE_HEAD_DATA_HASH" ]]; then
+            echo "::notice boto3 data hash has changed. Lets emit a PR."
+            export BOTO3_HASH_CHANEGD=true
+          fi
+
+          if [[ "$BOTOCORE_LATEST_RELEASE_DATA_HASH" != "$BOTOCORE_AUTOPILOT_RELEASE_HEAD_DATA_HASH" ]]; then
+            echo "::notice botocore data hash has changed. Lets emit a PR."
+            export BOTOCORE_HASH_CHANGED=true
+          fi
+
+          echo "boto3_data_hash_changed=$BOTO3_HASH_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "botocore_data_hash_changed=$BOTOCORE_HASH_CHANGED" >> "$GITHUB_OUTPUT"
+
+          cat $GITHUB_OUTPUT
+
+  # if boto3 change is detected, send a PR to update the release branch
+  sync_and_pr_boto3_submodule:
+    runs-on: ubuntu-latest
+    needs: [checkout_autopilot_release_head, compare_submodule_version, checkout_release_repos_with_latest_submodule, checkout_release_repos_with_autopilot_head_submodule]
+    name: Sync and update boto3 dependency branch, and update PR 
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: true
+    if: ${{ needs.compare_submodule_version.outputs.should_create_boto3_pr == 'true' }}
+
+    steps:
+      - name: Clone boto3 dependency branch
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          fetch-depth: 0
+          fetch-tags: true
+          ref: release
+          token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
+
+      - name: Update submodule in clone
+        env: 
+          LATEST_RELEASE_BOTO3_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_boto3_commit }}
+          AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_boto3_commit }}
+        run: |
+          cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && git submodule update --init --recursive && git checkout $LATEST_RELEASE_BOTO3_COMMIT && cd ../../../../..
+      
+      - name: Trim commit hashes to 7 chars
+        id: trim-commit-hashes
+        env: 
+          LATEST_RELEASE_BOTO3_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_boto3_commit }}
+          AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_boto3_commit }}
+        run: |
+          echo "latest_release_boto3_commit_display=${LATEST_RELEASE_BOTO3_COMMIT:0:7}" >> $GITHUB_OUTPUT
+          echo "autopilot_release_head_boto3_commit_display=${AUTOPILOT_RELEASE_HEAD_BOTO3_COMMIT:0:7}" >> $GITHUB_OUTPUT
+          
+
+
+      - name: Create pull request to commit, push, and create PR for update boto3 dependency version
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: |
+            chore: update boto3 version from ${{ steps.trim-commit-hashes.outputs.autopilot_release_head_boto3_commit_display }} (tag: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.boto3_autopilot_release_head_git_tag }}) to ${{ steps.trim-commit-hashes.outputs.latest_release_boto3_commit_display }} (tag: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.boto3_latest_release_git_tag }})
+          branch: dependencies/boto3
+          sign-commits: true
+          title: | 
+            chore: update boto3 version from ${{ steps.trim-commit-hashes.outputs.autopilot_release_head_boto3_commit_display }} (tag: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.boto3_autopilot_release_head_git_tag }}) to ${{ steps.trim-commit-hashes.outputs.latest_release_boto3_commit_display }} (tag: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.boto3_latest_release_git_tag }})
+          body: |
+            boto3 version info at current head: ```${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.boto3_autopilot_release_head_version_info }}```
+            boto3 version info to be updated to: ```${{ needs.checkout_release_repos_with_latest_submodule.outputs.boto3_latest_release_version_info }}```
+
+  # if botocore change is detected, send a PR to update the release branch
+  sync_and_pr_botocore_submodule:
+    runs-on: ubuntu-latest
+    needs: [checkout_autopilot_release_head, compare_submodule_version, checkout_release_repos_with_latest_submodule, checkout_release_repos_with_autopilot_head_submodule]
+    name: Sync and update botocore dependency branch, and update PR 
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: true
+    if: ${{ needs.compare_submodule_version.outputs.should_create_botocore_pr == 'true' }}
+
+    steps:
+      - name: Clone botocore dependency branch
+        uses: actions/checkout@v6
+        with:
+          submodules: false
+          fetch-depth: 0
+          fetch-tags: true
+          ref: release
+          token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
+
+      - name: Update submodule in clone
+        env: 
+          LATEST_RELEASE_BOTOCORE_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_botocore_commit }}
+          AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_botocore_commit }}
+        run: |
+          cd iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data && git submodule update --init --recursive && git checkout $LATEST_RELEASE_BOTOCORE_COMMIT && cd ../../../../..
+
+      - name: Trim commit hashes to 7 chars
+        id: trim-commit-hashes
+        env: 
+          LATEST_RELEASE_BOTOCORE_COMMIT: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.latest_release_botocore_commit }}
+          AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT: ${{ needs.checkout_autopilot_release_head.outputs.autopilot_release_head_botocore_commit }}
+        run: |
+          echo "latest_release_botocore_commit_display=${LATEST_RELEASE_BOTOCORE_COMMIT:0:7}" >> $GITHUB_OUTPUT
+          echo "autopilot_release_head_botocore_commit_display=${AUTOPILOT_RELEASE_HEAD_BOTOCORE_COMMIT:0:7}" >> $GITHUB_OUTPUT
+
+      - name: Create pull request to commit, push, and create PR for update botocore dependency version
+        uses: peter-evans/create-pull-request@v8
+        with:
+          commit-message: |
+            chore: update botocore version from ${{ steps.trim-commit-hashes.outputs.autopilot_release_head_botocore_commit_display }} (tag: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.botocore_autopilot_release_head_git_tag }} ) to ${{ steps.trim-commit-hashes.outputs.latest_release_botocore_commit_display }} (tag: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.botocore_latest_release_git_tag }})
+          branch: dependencies/botocore
+          sign-commits: true
+          title: | 
+            chore: update botocore version from ${{ steps.trim-commit-hashes.outputs.autopilot_release_head_botocore_commit_display }} (tag: ${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.botocore_autopilot_release_head_git_tag }} ) to ${{ steps.trim-commit-hashes.outputs.latest_release_botocore_commit_display }} (tag: ${{ needs.checkout_release_repos_with_latest_submodule.outputs.botocore_latest_release_git_tag }})
+          body: |
+            botocore version info at current head: ```${{ needs.checkout_release_repos_with_autopilot_head_submodule.outputs.botocore_autopilot_release_head_version_info }}```
+            botocore version info to be updated to: ```${{ needs.checkout_release_repos_with_latest_submodule.outputs.botocore_latest_release_version_info }}```
