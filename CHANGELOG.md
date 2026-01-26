@@ -1,3 +1,9 @@
+## [0.1.3] - 2026-01-26
+
+### Fixed
+
+- Add type hints for fix_access_denied for strict schema checks (#117)
+
 ## [0.1.2] - 2025-12-15
 
 ## Fixed
