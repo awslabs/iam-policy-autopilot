@@ -3,34 +3,44 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::Location;
+
 /// Information about a single import with rename support
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct ImportInfo {
     /// Original name in the AWS SDK (e.g., "S3Client", "PutObjectCommand")
     pub(crate) original_name: String,
+    /// Import statement
+    pub(crate) statement: String,
     /// Local name used in the code (e.g., "MyS3Client", "PutObject")
     pub(crate) local_name: String,
     /// Whether this import was renamed (original_name != local_name)
     pub(crate) is_renamed: bool,
-    /// Line number where this import appears
-    pub(crate) line: usize,
+    /// Location of the import
+    pub(crate) location: Location,
 }
 
 impl ImportInfo {
     /// Create a new ImportInfo with the given names and line position
-    pub(crate) fn new(original_name: String, local_name: String, line: usize) -> Self {
+    pub(crate) fn new(
+        original_name: String,
+        local_name: String,
+        statement: &str,
+        location: Location,
+    ) -> Self {
         let is_renamed = original_name != local_name;
         Self {
             original_name,
+            statement: statement.to_string(),
             local_name,
             is_renamed,
-            line,
+            location,
         }
     }
 }
 
 /// Information about imports from a specific AWS SDK sublibrary
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct SublibraryInfo {
     /// AWS SDK sublibrary name (e.g., "client-s3", "lib-dynamodb")
     pub(crate) sublibrary: String,
@@ -109,7 +119,7 @@ impl ValidClientTypes {
 }
 
 /// Information about a method call (non-send)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct MethodCall {
     /// Client variable name
     pub(crate) client_variable: String,
@@ -123,12 +133,14 @@ pub(crate) struct MethodCall {
     pub(crate) method_name: String,
     /// Method arguments
     pub(crate) arguments: HashMap<String, String>,
-    /// Line number where call occurs
-    pub(crate) line: usize,
+    /// Matched expression
+    pub(crate) expr: String,
+    /// Location where the method call was found
+    pub(crate) location: Location,
 }
 
 /// Combined results from all scanning operations
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct JavaScriptScanResults {
     /// Import information
     pub(crate) imports: Vec<SublibraryInfo>,

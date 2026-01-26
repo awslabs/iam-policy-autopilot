@@ -265,12 +265,6 @@
     "service-catalog-appregistry": "servicecatalog-appregistry",
     "storage-gateway": "storagegateway"
   },
-  "RenameOperations": {
-    "s3:ListObjectsV2": {
-      "service": "s3",
-      "operation": "ListObjects"
-    }
-  },
   "ResourceOverrides": {
     "iam:GetUser": {
         "user": "*"

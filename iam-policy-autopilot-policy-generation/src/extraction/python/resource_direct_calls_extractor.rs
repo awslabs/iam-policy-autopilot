@@ -38,18 +38,14 @@ use crate::extraction::python::boto3_resources_model::{
     Boto3ResourcesModel, Boto3ResourcesRegistry, HasManySpec, OperationType,
 };
 use crate::extraction::python::common::ArgumentExtractor;
-use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
-use crate::ServiceModelIndex;
+use crate::extraction::{
+    AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
+};
+use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Python;
 use convert_case::{Case, Casing};
 use std::collections::{HashMap, HashSet};
-
-/// Position tracking for deduplication (Tier 3)
-#[derive(Debug, Clone, Hash, Eq, PartialEq)]
-struct MatchedPosition {
-    line: usize,
-    column: usize,
-}
+use std::path::Path;
 
 /// Information about a discovered resource constructor call
 #[derive(Debug, Clone)]
@@ -70,9 +66,14 @@ struct ResourceMethodCallInfo {
     resource_var: String,
     method_name: String,
     arguments: Vec<Parameter>,
-    method_call_line: usize,
-    start_position: (usize, usize),
-    end_position: (usize, usize),
+    expr: String,
+    location: Location,
+}
+
+impl ResourceMethodCallInfo {
+    fn start_line(&self) -> usize {
+        self.location.start_line()
+    }
 }
 
 /// Resource usage classification for two-tier approach (Tier 3 is now separate)
@@ -124,7 +125,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// **Tier 3**: Constructor only → maximum conservation with constructor position as evidence
     pub(crate) fn extract_resource_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all resource constructors using service-agnostic matching
         let constructors = self.find_resource_constructors(ast, &self.registry);
@@ -173,18 +174,15 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         all_calls.extend(collection_synthetics);
 
         // Step 6: Collect matched positions for Tier 3 deduplication
-        let mut matched_positions = HashSet::new();
+        let mut matched_locations = HashSet::new();
         for call in &all_calls {
             if let Some(metadata) = &call.metadata {
-                matched_positions.insert(MatchedPosition {
-                    line: metadata.start_position.0,
-                    column: metadata.start_position.1,
-                });
+                matched_locations.insert(metadata.location.clone());
             }
         }
 
         // Step 7: New Tier 3 - service-agnostic fallback for unknown receivers
-        let tier3_calls = self.find_unmatched_utility_and_collection_calls(ast, &matched_positions);
+        let tier3_calls = self.find_unmatched_utility_and_collection_calls(ast, &matched_locations);
         all_calls.extend(tier3_calls);
 
         all_calls
@@ -414,8 +412,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 metadata: Some(SdkMethodCallMetadata {
                     parameters,
                     return_type: None,
-                    start_position: method_call.start_position,
-                    end_position: method_call.end_position,
+                    expr: method_call.expr.clone(),
+                    location: method_call.location.clone(),
                     receiver: Some(method_call.resource_var.clone()),
                 }),
             });
@@ -439,9 +437,9 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let mut synthetic_calls = Vec::new();
 
         // Extract position from evidence source
-        let (start_pos, end_pos) = match evidence {
+        let (expr, location) = match evidence {
             SyntheticEvidenceSource::UnmatchedMethod(ref method_call) => {
-                (method_call.start_position, method_call.end_position)
+                (method_call.expr.clone(), method_call.location.clone())
             }
         };
 
@@ -496,8 +494,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 metadata: Some(SdkMethodCallMetadata {
                     parameters,
                     return_type: None,
-                    start_position: start_pos,
-                    end_position: end_pos,
+                    expr: expr.clone(),
+                    location: location.clone(),
                     receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
                 }),
             });
@@ -509,10 +507,10 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// Find all resource constructor calls in the AST using service-agnostic matching
     fn find_resource_constructors(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
         registry: &Boto3ResourcesRegistry,
     ) -> Vec<ResourceConstructorInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut constructors = Vec::new();
 
         // Service-agnostic pattern: $VAR = $ANY.$RESOURCE_TYPE($$$ARGS)
@@ -582,15 +580,17 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// Find all method calls on potential resource objects
     fn find_resource_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
     ) -> Vec<ResourceMethodCallInfo> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut method_calls = Vec::new();
 
         let method_call_pattern = "$RESULT = $RESOURCE_VAR.$METHOD($$$ARGS)";
 
         for node_match in root.find_all(method_call_pattern) {
-            if let Some(method_call_info) = self.parse_resource_method_call(&node_match) {
+            if let Some(method_call_info) =
+                self.parse_resource_method_call(&node_match, &ast.source_file.path)
+            {
                 method_calls.push(method_call_info);
             }
         }
@@ -599,7 +599,9 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let simple_method_pattern = "$RESOURCE_VAR.$METHOD($$$ARGS)";
 
         for node_match in root.find_all(simple_method_pattern) {
-            if let Some(method_call_info) = self.parse_simple_resource_method_call(&node_match) {
+            if let Some(method_call_info) =
+                self.parse_simple_resource_method_call(&node_match, &ast.source_file.path)
+            {
                 method_calls.push(method_call_info);
             }
         }
@@ -609,12 +611,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             a.resource_var
                 .cmp(&b.resource_var)
                 .then(a.method_name.cmp(&b.method_name))
-                .then(a.method_call_line.cmp(&b.method_call_line))
+                .then(a.start_line().cmp(&b.start_line()))
         });
         method_calls.dedup_by(|a, b| {
             a.resource_var == b.resource_var
                 && a.method_name == b.method_name
-                && a.method_call_line == b.method_call_line
+                && a.start_line() == b.start_line()
         });
 
         method_calls
@@ -624,6 +626,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     fn parse_resource_method_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<ResourceMethodCallInfo> {
         let env = node_match.get_env();
 
@@ -637,18 +640,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
-        // Get position information from the method call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ResourceMethodCallInfo {
             resource_var,
             method_name,
             arguments,
-            method_call_line: start.line() + 1,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            expr: node_match.text().to_string(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -656,6 +653,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     fn parse_simple_resource_method_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        file_path: &Path,
     ) -> Option<ResourceMethodCallInfo> {
         let env = node_match.get_env();
 
@@ -669,18 +667,12 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
-        // Get position information from the method call node
-        let node = node_match.get_node();
-        let start = node.start_pos();
-        let end = node.end_pos();
-
         Some(ResourceMethodCallInfo {
             resource_var,
             method_name,
             arguments,
-            method_call_line: start.line() + 1,
-            start_position: (start.line() + 1, start.column(node) + 1),
-            end_position: (end.line() + 1, end.column(node) + 1),
+            expr: node_match.text().to_string(),
+            location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
     }
 
@@ -702,22 +694,25 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let resolved_operation = match &action_mapping.operation {
             OperationType::Waiter { waiter_name } => {
                 // Resolve actual operation via ServiceModelIndex
-                if let Some(service_def) =
-                    self.service_index.services.get(&constructor.service_name)
-                {
-                    if let Some(operation) = service_def.waiters.get(waiter_name) {
-                        operation.name.to_case(Case::Snake)
-                    } else {
-                        log::debug!(
-                            "Waiter '{}' not found in service '{}' waiters",
-                            waiter_name,
-                            constructor.service_name
-                        );
-                        return None;
+                if let Some(service_methods) = self.service_index.waiter_lookup.get(waiter_name) {
+                    let service_methods_filtered = service_methods
+                        .iter()
+                        .filter(|x| x.service_name == constructor.service_name)
+                        .collect::<Vec<_>>();
+                    match service_methods_filtered.first() {
+                        None => {
+                            log::debug!(
+                                "Service '{}' not found in ServiceModelIndex",
+                                constructor.service_name
+                            );
+                            return None;
+                        }
+                        Some(service_method) => service_method.operation_name.to_case(Case::Snake),
                     }
                 } else {
                     log::debug!(
-                        "Service '{}' not found in ServiceModelIndex",
+                        "Waiter '{}' not found in service '{}' waiters",
+                        waiter_name,
                         constructor.service_name
                     );
                     return None;
@@ -801,8 +796,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters: combined_parameters,
                 return_type: None,
-                start_position: method_call.start_position,
-                end_position: method_call.end_position,
+                expr: method_call.expr.clone(),
+                location: method_call.location.clone(),
                 receiver: Some(method_call.resource_var.clone()),
             }),
         })
@@ -814,10 +809,10 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// Generates synthetic SdkMethodCall for the collection's operation at the access point
     fn find_and_generate_collection_synthetics(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        ast: &AstWithSourceFile<Python>,
         constructors: &[ResourceConstructorInfo],
     ) -> Vec<SdkMethodCall> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut synthetic_calls = Vec::new();
 
         // Pattern: $VAR = $RESOURCE_VAR.$ATTR_NAME (with optional assignment)
@@ -859,22 +854,21 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 };
 
                 // Check if this attribute matches a hasMany collection (in snake_case)
-                if let Some(has_many_spec) =
-                    boto3_model.get_has_many_spec(&constructor.resource_type, &attr_name)
+                if let Some(synthetic_call) = boto3_model
+                    .get_has_many_spec(&constructor.resource_type, &attr_name)
+                    .and_then(|has_many_spec| {
+                        self.generate_synthetic_for_collection(
+                            constructor,
+                            has_many_spec,
+                            node_match.text().to_string(),
+                            Location::from_node(
+                                ast.source_file.path.to_path_buf(),
+                                node_match.get_node(),
+                            ),
+                        )
+                    })
                 {
-                    // Generate synthetic call for the collection's operation
-                    let node = node_match.get_node();
-                    let start = node.start_pos();
-                    let end = node.end_pos();
-
-                    if let Some(synthetic_call) = self.generate_synthetic_for_collection(
-                        constructor,
-                        has_many_spec,
-                        (start.line() + 1, start.column(node) + 1),
-                        (end.line() + 1, end.column(node) + 1),
-                    ) {
-                        synthetic_calls.push(synthetic_call);
-                    }
+                    synthetic_calls.push(synthetic_call);
                 }
             }
         }
@@ -887,8 +881,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         &self,
         constructor: &ResourceConstructorInfo,
         has_many_spec: &HasManySpec,
-        start_position: (usize, usize),
-        end_position: (usize, usize),
+        expr: String,
+        location: Location,
     ) -> Option<SdkMethodCall> {
         let mut parameters = Vec::new();
 
@@ -922,8 +916,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters,
                 return_type: None,
-                start_position,
-                end_position,
+                expr: expr.clone(),
+                location,
                 receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
             }),
         })
@@ -936,16 +930,16 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// all-synthetic parameters since we don't know the receiver.
     fn find_unmatched_utility_and_collection_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-        matched_positions: &HashSet<MatchedPosition>,
+        ast: &AstWithSourceFile<Python>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
         let mut tier3_calls = Vec::new();
 
         // Search for utility method calls across all services
-        tier3_calls.extend(self.find_unmatched_utility_method_calls(ast, matched_positions));
+        tier3_calls.extend(self.find_unmatched_utility_method_calls(ast, matched_locations));
 
         // Search for collection accesses across all services
-        tier3_calls.extend(self.find_unmatched_collection_accesses(ast, matched_positions));
+        tier3_calls.extend(self.find_unmatched_collection_accesses(ast, matched_locations));
 
         tier3_calls
     }
@@ -953,10 +947,10 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// Find utility method calls with unknown receivers (Tier 3)
     fn find_unmatched_utility_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-        matched_positions: &HashSet<MatchedPosition>,
+        ast: &AstWithSourceFile<Python>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut calls = Vec::new();
 
         // Pattern for method calls
@@ -978,16 +972,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     None => continue,
                 };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+                let location =
+                    Location::from_node(ast.source_file.path.clone(), node_match.get_node());
 
                 // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
+                if matched_locations.contains(&location) {
                     continue;
                 }
 
@@ -1014,8 +1003,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                 &operation.operation,
                                 &arguments,
                                 &operation.required_params,
-                                (start.line() + 1, start.column(node) + 1),
-                                (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
+                                node_match.text().to_string(),
+                                &location,
                                 &receiver_var, // Use actual receiver from code
                             ));
                         }
@@ -1032,8 +1021,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                     &operation.operation,
                                     &arguments,
                                     &operation.required_params,
-                                    (start.line() + 1, start.column(node) + 1),
-                                    (node.end_pos().line() + 1, node.end_pos().column(node) + 1),
+                                    node_match.text().to_string(),
+                                    &location,
                                     &receiver_var, // Use actual receiver from code
                                 ));
                             }
@@ -1049,10 +1038,10 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// Find collection accesses with unknown receivers (Tier 3)
     fn find_unmatched_collection_accesses(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-        matched_positions: &HashSet<MatchedPosition>,
+        ast: &AstWithSourceFile<Python>,
+        matched_locations: &HashSet<Location>,
     ) -> Vec<SdkMethodCall> {
-        let root = ast.root();
+        let root = ast.ast.root();
         let mut calls = Vec::new();
 
         // Patterns for attribute access (including chained method calls)
@@ -1079,16 +1068,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     None => continue,
                 };
 
-                // Get position
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let position = MatchedPosition {
-                    line: start.line() + 1,
-                    column: start.column(node) + 1,
-                };
+                let location =
+                    Location::from_node(ast.source_file.path.clone(), node_match.get_node());
 
                 // Skip if already matched in Tier 1/2
-                if matched_positions.contains(&position) {
+                if matched_locations.contains(&location) {
                     continue;
                 }
 
@@ -1106,11 +1090,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                         &has_many_spec.identifier_params,
                                     ),
                                     return_type: None,
-                                    start_position: (start.line() + 1, start.column(node) + 1),
-                                    end_position: (
-                                        node.end_pos().line() + 1,
-                                        node.end_pos().column(node) + 1,
-                                    ),
+                                    expr: node_match.text().to_string(),
+                                    location: location.clone(),
                                     receiver: Some(receiver_var.clone()), // Use actual receiver from code
                                 }),
                             });
@@ -1131,11 +1112,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                                     &service_has_many_spec.identifier_params,
                                 ),
                                 return_type: None,
-                                start_position: (start.line() + 1, start.column(node) + 1),
-                                end_position: (
-                                    node.end_pos().line() + 1,
-                                    node.end_pos().column(node) + 1,
-                                ),
+                                expr: node_match.text().to_string(),
+                                location: location.clone(),
                                 receiver: Some(receiver_var.clone()), // Use actual receiver from code
                             }),
                         });
@@ -1155,8 +1133,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         operation: &str,
         arguments: &[Parameter],
         required_params: &[String],
-        start_position: (usize, usize),
-        end_position: (usize, usize),
+        expr: String,
+        location: &Location,
         receiver_marker: &str,
     ) -> SdkMethodCall {
         let mut parameters = Vec::new();
@@ -1191,8 +1169,8 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             metadata: Some(SdkMethodCallMetadata {
                 parameters,
                 return_type: None,
-                start_position,
-                end_position,
+                expr: expr.clone(),
+                location: location.clone(),
                 receiver: Some(receiver_marker.to_string()),
             }),
         }

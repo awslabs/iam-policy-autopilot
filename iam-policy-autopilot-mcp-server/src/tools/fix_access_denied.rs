@@ -67,7 +67,7 @@ pub struct FixAccessDeniedInput {
 #[serde(rename_all = "PascalCase")]
 #[schemars(description = "Output containing the result for fixing access denied issue")]
 pub struct FixAccessDeniedOutput {
-    #[schemars(description = "Applied policy")]
+    #[schemars(description = "Applied policy", with = "FixResult")]
     pub fix_result: Option<FixResult>,
 
     #[schemars(

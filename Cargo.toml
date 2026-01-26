@@ -19,7 +19,7 @@ description = "An open source Model Context Protocol (MCP) server and command-li
 # Shared dependency versions across workspace
 [workspace.dependencies]
 # Core serialization and utilities
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 futures = "0.3"
 thiserror = "1.0"
 anyhow = "1.0"
@@ -29,6 +29,7 @@ ast-grep-core = "0.39"
 schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.9", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false }
+derive-new = "0.7.0"
 
 # Native async runtime and parallel processing
 tokio = { version = "1.0", features = ["fs", "rt", "rt-multi-thread", "macros", "signal"] }
@@ -46,7 +47,7 @@ criterion = "0.5"
 proptest = "1.0"
 
 # CLI-specific dependencies
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.5", features = ["derive", "env", "cargo"] }
 env_logger = "0.11"
 log = "0.4"
 walkdir = "2.0"
@@ -64,7 +65,9 @@ serial_test = "3.0"
 atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.8", features = ["v4"] }
-sha2 = "0.10"
+aws-lc-rs = "1.15.2"
+git2 = { version = "0.20.3", default-features = false, features = ["vendored-libgit2"] }
+relative-path = "2.0.1"
 url = "2.5"
 percent-encoding = "2.3"
 aws-sdk-iam = "1.89.0"

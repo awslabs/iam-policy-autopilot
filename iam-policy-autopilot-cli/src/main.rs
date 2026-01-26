@@ -36,6 +36,8 @@ mod types;
 use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport};
 use types::ExitCode;
 
+use crate::commands::print_version_info;
+
 /// Default port for mcp server for Http Transport
 static MCP_HTTP_DEFAULT_PORT: u16 = 8001;
 
@@ -82,14 +84,14 @@ struct GeneratePolicyCliConfig {
     account: String,
     /// Output individual policies instead of merged policy
     individual_policies: bool,
-    /// Show method to action mappings alongside policies
-    show_action_mappings: bool,
     /// Upload policies to AWS with optional custom name prefix
     upload_policies: Option<String>,
     /// Enable minimal policy size by allowing cross-service merging
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
+    /// Generate explanations for why actions were added
+    explain: bool,
 }
 
 impl GeneratePolicyCliConfig {
@@ -112,6 +114,7 @@ required for the operations you perform (e.g., KMS actions for S3 encryption).";
     name = "iam-policy-autopilot",
     author,
     version,
+    disable_version_flag = true,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
     long_about = "Unified tool that combines IAM policy generation from source code analysis \
 with automatic AccessDenied error fixing. Supports three main operations:\n\n\
@@ -280,16 +283,6 @@ for each method call. Disables --upload-policy, if provided."
         )]
         individual_policies: bool,
 
-        /// Include method to action mappings alongside the generated policies
-        #[arg(
-            hide = true,
-            long = "show-action-mappings",
-            long_help = "When enabled, outputs detailed method to action \
-mappings alongside the generated policies. This provides granular visibility into which SDK method calls \
-require which specific IAM actions and their associated resources. Disables --upload-policy, if provided."
-        )]
-        show_action_mappings: bool,
-
         /// Upload generated policies to AWS IAM with optional custom name prefix
         #[arg(long = "upload-policies", num_args = 0..=1, require_equals = false, default_missing_value = "",
               long_help = "Upload the generated policies to AWS IAM using the iam:CreatePolicy API. \
@@ -327,6 +320,15 @@ Use this flag to force fresh data retrieval on every run."
             long_help = SERVICE_HINTS_LONG_HELP,
         )]
         service_hints: Option<Vec<String>>,
+
+        /// Generate explanations for why actions were added
+        #[arg(
+            long = "explain",
+            long_help = "When enabled, generates detailed explanations for why each IAM action \
+was added to the policy. Explanations include the initial operation with location information, FAS (https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html) expansion chains. The output format \
+may change in future versions."
+        )]
+        explain: bool,
     },
 
     /// Start MCP server
@@ -348,6 +350,16 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
 Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
         port: u16,
+    },
+
+    #[command(
+        about = "Print version information.",
+        short_flag = 'V',
+        long_flag = "version"
+    )]
+    Version {
+        #[arg(long = "verbose", default_value_t = false, hide = true)]
+        verbose: bool,
     },
 }
 
@@ -425,35 +437,24 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             service_names: names.clone(),
         });
 
-    let (policies, method_action_mappings) = generate_policies(&GeneratePolicyConfig {
+    let result = generate_policies(&GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: config.shared.source_files.to_owned(),
             language: config.shared.language.to_owned(),
             service_hints,
         },
         aws_context: AwsContext::new(config.region.clone(), config.account.clone()),
-        generate_action_mappings: config.show_action_mappings,
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
+        generate_explanations: config.explain,
     })
     .await?;
 
-    // Handle policy output based on configuration
-    if config.show_action_mappings {
-        // Output combined format with mappings and policies
-        output::output_combined_policy_mappings(
-            method_action_mappings,
-            policies,
-            config.shared.pretty,
-        )
-        .context("Failed to output combined policy and mappings")?;
-
-        trace!("Combined policy and mappings output written to stdout");
-    } else if config.individual_policies {
+    if config.individual_policies {
         // Output individual policies
-        trace!("Outputting {} individual policies", policies.len());
-        output::output_iam_policies(policies, None, config.shared.pretty)
+        trace!("Outputting {} individual policies", result.policies.len());
+        output::output_iam_policies(result, None, config.shared.pretty)
             .context("Failed to output individual IAM policies")?;
     } else {
         // Default behavior: output merged policy with optional upload
@@ -466,7 +467,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
 
             let custom_name = config.upload_policies.as_deref().filter(|s| !s.is_empty());
             let batch_response = uploader
-                .upload_policies(&policies, custom_name)
+                .upload_policies(&result.policies, custom_name)
                 .await
                 .context("Failed to upload policies to AWS IAM")?;
 
@@ -492,7 +493,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             None
         };
 
-        output::output_iam_policies(policies, upload_result, config.shared.pretty)
+        output::output_iam_policies(result, upload_result, config.shared.pretty)
             .context("Failed to output merged IAM policy")?
     }
 
@@ -564,11 +565,11 @@ async fn main() {
             region,
             account,
             individual_policies,
-            show_action_mappings,
             upload_policies,
             minimal_policy_size,
             disable_cache,
             service_hints,
+            explain,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -587,10 +588,10 @@ async fn main() {
                 region,
                 account,
                 individual_policies,
-                show_action_mappings,
                 upload_policies,
                 minimal_policy_size,
                 disable_cache,
+                explain,
             };
 
             match handle_generate_policy(&config).await {
@@ -611,6 +612,14 @@ async fn main() {
                 }
             }
         }
+
+        Commands::Version { verbose } => match print_version_info(verbose) {
+            Ok(()) => ExitCode::Success,
+            Err(e) => {
+                print_cli_command_error(e);
+                ExitCode::Error
+            }
+        },
     };
 
     process::exit(code.into());

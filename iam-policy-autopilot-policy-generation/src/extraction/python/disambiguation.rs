@@ -94,7 +94,10 @@ impl<'a> MethodDisambiguator<'a> {
         // Get the service definition
         let service_definition = match self.service_index.services.get(&service_ref.service_name) {
             Some(def) => def,
-            None => return false, // Service not found
+            None => {
+                log::debug!("in validate_method_against_service: Service not found");
+                return false; // Service not found
+            }
         };
 
         // Get the operation definition
@@ -103,7 +106,10 @@ impl<'a> MethodDisambiguator<'a> {
             .get(&service_ref.operation_name)
         {
             Some(op) => op,
-            None => return false, // Operation not found
+            None => {
+                log::debug!("in validate_method_against_service: operation not found");
+                return false; // Operation not found
+            }
         };
 
         // If there's no metadata, we can't validate parameters, so accept it
@@ -199,7 +205,9 @@ mod tests {
         Shape, ShapeReference,
     };
     use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+    use crate::Location;
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     fn create_test_service_index() -> ServiceModelIndex {
         let mut services = HashMap::new();
@@ -268,7 +276,6 @@ mod tests {
             },
             operations,
             shapes,
-            waiters: HashMap::new(),
         };
 
         services.insert("apigatewayv2".to_string(), service_def);
@@ -285,7 +292,7 @@ mod tests {
         ServiceModelIndex {
             services,
             method_lookup,
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         }
     }
 
@@ -298,6 +305,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -319,8 +327,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -339,6 +346,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -349,8 +357,7 @@ mod tests {
                     // Missing required Stage and ApiId parameters
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -368,13 +375,13 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![Parameter::DictionarySplat {
                     expression: "**params".to_string(),
                     position: 0,
                 }],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -393,6 +400,7 @@ mod tests {
             name: "non_aws_method".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "non_aws_method".to_string(),
                 parameters: vec![Parameter::Keyword {
                     name: "custom_param".to_string(),
                     value: ParameterValue::Resolved("value".to_string()),
@@ -400,8 +408,7 @@ mod tests {
                     type_annotation: None,
                 }],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 30),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -422,6 +429,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -441,8 +449,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
@@ -463,6 +470,7 @@ mod tests {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
             metadata: Some(SdkMethodCallMetadata {
+                expr: "create_api_mapping".to_string(),
                 parameters: vec![
                     Parameter::Keyword {
                         name: "DomainName".to_string(),
@@ -478,8 +486,7 @@ mod tests {
                     },
                 ],
                 return_type: None,
-                start_position: (1, 1),
-                end_position: (1, 50),
+                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
                 receiver: Some("client".to_string()),
             }),
         };
