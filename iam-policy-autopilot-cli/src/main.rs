@@ -90,8 +90,8 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
-    /// Generate explanations for why actions were added
-    explain: bool,
+    /// Generate explanations for why actions were added (with optional action filters)
+    explain: Option<Vec<String>>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -321,14 +321,22 @@ Use this flag to force fresh data retrieval on every run."
         )]
         service_hints: Option<Vec<String>>,
 
-        /// Generate explanations for why actions were added
+        /// Generate explanations for why actions were added, filtered to specific action patterns
         #[arg(
             long = "explain",
-            long_help = "When enabled, generates detailed explanations for why each IAM action \
-was added to the policy. Explanations include the initial operation with location information, FAS (https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html) expansion chains. The output format \
-may change in future versions."
+            num_args = 1..,
+            value_name = "ACTION_PATTERNS",
+            long_help = "Generates detailed explanations for why IAM actions were added to the policy. \
+Requires one or more action patterns. Use '*' to explain all actions. \
+Patterns support wildcards (*) that match any sequence of characters. \
+Examples:\n  \
+--explain '*'                 # Explain all actions\n  \
+--explain 's3:*'              # Explain only S3 actions\n  \
+--explain s3:PutObject        # Explain only s3:PutObject\n  \
+--explain 'ec2:Describe*'     # Explain EC2 Describe actions\n  \
+--explain 's3:*' 'dynamodb:*' # Explain S3 and DynamoDB actions"
         )]
-        explain: bool,
+        explain: Option<Vec<String>>,
     },
 
     /// Start MCP server
@@ -447,7 +455,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
-        generate_explanations: config.explain,
+        explain_filters: config.explain.clone(),
     })
     .await?;
 

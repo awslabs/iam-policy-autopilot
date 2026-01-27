@@ -17,8 +17,11 @@ pub struct GeneratePolicyConfig {
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
-    /// Generate explanations for why actions were added
-    pub generate_explanations: bool,
+    /// Generate explanations for why actions were added, filtered by patterns.
+    /// - `None`: No explanations generated
+    /// - `Some(patterns)`: Generate explanations for actions matching the patterns
+    ///   (supports wildcards like "s3:*", "ec2:Get*", "*" for all)
+    pub explain_filters: Option<Vec<String>>,
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
