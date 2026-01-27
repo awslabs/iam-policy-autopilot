@@ -424,7 +424,6 @@ mod tests {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         })
     }
@@ -442,7 +441,6 @@ mod tests {
                 "RenameServicesOperationActionMap": {},
                 "RenameServicesServiceReference": {},
                 "SmithyBotocoreServiceNameMapping": {},
-                "RenameOperations": {},
                 "ResourceOverrides": {}
             }"#;
 
@@ -518,16 +516,6 @@ mod tests {
             .cloned()
             .collect(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: [(
-                "s3:ListObjectsV2".to_string(),
-                crate::service_configuration::OperationRename {
-                    service: "s3".to_string(),
-                    operation: "ListObjects".to_string(),
-                },
-            )]
-            .iter()
-            .cloned()
-            .collect(),
             resource_overrides: HashMap::new(),
         };
 
@@ -657,7 +645,6 @@ mod tests {
             .cloned()
             .collect(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         };
 
@@ -767,7 +754,6 @@ mod tests {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides,
         };
 
@@ -881,7 +867,6 @@ mod tests {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides,
         };
 

@@ -2,7 +2,7 @@ name: 'PR Checks'
 
 on:
   pull_request:
-    branches: [ main, prerelease, releases/** ]
+    branches: [ main, prerelease, release/** ]
 
 permissions:
   contents: read
