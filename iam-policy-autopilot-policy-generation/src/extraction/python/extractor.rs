@@ -5,6 +5,7 @@ use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::python::disambiguation::MethodDisambiguator;
 use crate::extraction::python::paginator_extractor::PaginatorExtractor;
 use crate::extraction::python::resource_direct_calls_extractor::ResourceDirectCallsExtractor;
+use crate::extraction::python::variable_type_tracker::VariableTypeTracker;
 use crate::extraction::python::waiters_extractor::WaitersExtractor;
 use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
 use crate::{Location, ServiceModelIndex, SourceFile};
@@ -21,10 +22,14 @@ impl PythonExtractor {
     }
 
     /// Parse a single method call match into a SdkMethodCall
+    ///
+    /// Uses the VariableTypeTracker to resolve unknown receivers when possible.
     fn parse_method_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
         source_file: &SourceFile,
+        tracker: &VariableTypeTracker,
+        current_function: Option<&str>,
     ) -> Option<SdkMethodCall> {
         let env = node_match.get_env();
 
@@ -44,9 +49,58 @@ impl PythonExtractor {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
 
+        // Try to resolve the receiver's service type using the tracker
+        let possible_services = if let Some(ref receiver_name) = receiver {
+            // Use get_service_for_variable_in_context to respect Python's scoping rules (LEGB)
+            // This checks: 1) function-local variables, 2) parameters (first match), 3) module scope
+            if let Some(service) =
+                tracker.get_service_for_variable_in_context(receiver_name, current_function)
+            {
+                // Found a single service type (from variable assignment or first parameter match)
+                log::debug!(
+                    "Resolved receiver '{}' to service '{}' for method '{}'",
+                    receiver_name,
+                    service,
+                    method_name
+                );
+                vec![service.clone()]
+            } else if let Some(func_name) = current_function {
+                // Not found as a variable. Check if it's a parameter with multiple possible types.
+                // get_services_for_parameter returns ALL possible types, not just the first.
+                if let Some(services) = tracker.get_services_for_parameter(func_name, receiver_name)
+                {
+                    let service_vec: Vec<String> = services.iter().cloned().collect();
+                    log::debug!(
+                        "Resolved parameter '{}' in function '{}' to multiple services {:?} for method '{}'",
+                        receiver_name,
+                        func_name,
+                        service_vec,
+                        method_name
+                    );
+                    service_vec
+                } else {
+                    log::debug!(
+                        "Could not resolve receiver '{}' for method '{}' - will use disambiguation",
+                        receiver_name,
+                        method_name
+                    );
+                    Vec::new() // Will be determined later during service validation
+                }
+            } else {
+                log::debug!(
+                    "Could not resolve receiver '{}' for method '{}' - will use disambiguation",
+                    receiver_name,
+                    method_name
+                );
+                Vec::new() // Will be determined later during service validation
+            }
+        } else {
+            Vec::new()
+        };
+
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
-            possible_services: Vec::new(), // Will be determined later during service validation
+            possible_services,
             metadata: Some(SdkMethodCallMetadata {
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
@@ -58,8 +112,8 @@ impl PythonExtractor {
                 receiver,
             }),
         };
-        log::debug!("Found method call: {:?}", method_call);
 
+        log::debug!("Found method call: {:?}", method_call);
         Some(method_call)
     }
 }
@@ -80,14 +134,58 @@ impl Extractor for PythonExtractor {
         let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
         let root = ast.ast.root();
 
+        // Step 1: Track boto3 variable assignments
+        let mut tracker = VariableTypeTracker::new();
+        tracker.track_boto3_assignments(&ast);
+        log::debug!("Variable tracking complete");
+
+        // Step 2: Build a map of line ranges to function names for context tracking
+        // This allows us to determine which function a method call is in
+        let mut function_ranges: Vec<(String, std::ops::Range<usize>)> = Vec::new();
+
+        // Find all function definitions
+        let function_pattern = "def $FUNC_NAME($$$PARAMS): $$$BODY";
+        for func_match in root.find_all(function_pattern) {
+            if let Some(func_name_node) = func_match.get_env().get_match("FUNC_NAME") {
+                let func_name = func_name_node.text().to_string();
+                let node = func_match.get_node();
+                let start_line = node.start_pos().line();
+                let end_line = node.end_pos().line();
+                function_ranges.push((func_name.clone(), start_line..end_line + 1));
+                log::debug!(
+                    "Found function '{}' at lines {}-{}",
+                    func_name,
+                    start_line,
+                    end_line
+                );
+            }
+        }
+
         let mut method_calls = Vec::new();
 
         let pattern = "$OBJ.$METHOD($$$ARGS)";
 
         // Find all method calls with attribute access: obj.method(args)
         for node_match in root.find_all(pattern) {
-            if let Some(method_call) = self.parse_method_call(&node_match, source_file) {
-                method_calls.push(method_call);
+            // Determine which function this method call is in (if any)
+            let call_line = node_match.get_node().start_pos().line();
+            let current_function = function_ranges
+                .iter()
+                .find(|(_, range)| range.contains(&call_line))
+                .map(|(name, _)| name.as_str());
+
+            if let Some(func) = current_function {
+                log::debug!(
+                    "Method call at line {} is in function '{}'",
+                    call_line,
+                    func
+                );
+            }
+
+            if let Some(call) =
+                self.parse_method_call(&node_match, source_file, &tracker, current_function)
+            {
+                method_calls.push(call);
             }
         }
 

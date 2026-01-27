@@ -45,9 +45,24 @@ impl<'a> MethodDisambiguator<'a> {
         for mut method_call in method_calls {
             // Check if this method name exists in the SDK
             if let Some(service_refs) = self.service_index.method_lookup.get(&method_call.name) {
-                // Validate the method call against each possible service
+                // If variable tracking already identified specific services, only validate against those
+                // This respects the variable type tracking results from the extractor
+                let services_to_validate: Vec<ServiceMethodRef> =
+                    if !method_call.possible_services.is_empty() {
+                        // Filter to only the services identified by variable tracking
+                        service_refs
+                            .iter()
+                            .filter(|s| method_call.possible_services.contains(&s.service_name))
+                            .cloned()
+                            .collect()
+                    } else {
+                        // No tracking info available, validate against all possible services
+                        service_refs.clone()
+                    };
+
+                // Validate the method call against the filtered service list
                 let valid_services =
-                    self.validate_method_against_services(&method_call, service_refs);
+                    self.validate_method_against_services(&method_call, &services_to_validate);
 
                 if !valid_services.is_empty() {
                     // Update the method call with only the valid services
