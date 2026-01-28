@@ -358,6 +358,15 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
 Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
         port: u16,
+
+        /// Run in read-only mode (no policy modifications will be applied to any AWS account)
+        #[arg(
+            long = "read-only",
+            long_help = "When enabled, the MCP server will operate in read-only mode and will not make any \
+modifications to AWS resources. Tools that would normally apply changes will instead return the generated \
+output without executing any mutations."
+        )]
+        read_only: bool,
     },
 
     #[command(
@@ -611,8 +620,12 @@ async fn main() {
             }
         }
 
-        Commands::McpServer { transport, port } => {
-            match start_mcp_server(transport, port).await {
+        Commands::McpServer {
+            transport,
+            port,
+            read_only,
+        } => {
+            match start_mcp_server(transport, port, read_only).await {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);

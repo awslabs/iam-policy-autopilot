@@ -1,10 +1,14 @@
 use anyhow;
 use log::{error, info, trace};
 use rmcp::{
+    handler::server::tool::ToolCallContext,
     handler::server::{tool::ToolRouter, wrapper::Parameters},
-    model::{ErrorCode, ServerCapabilities, ServerInfo},
+    model::{
+        CallToolRequestParam, CallToolResult, ErrorCode, ListToolsResult, PaginatedRequestParam,
+        ServerCapabilities, ServerInfo, Tool,
+    },
     service::RequestContext,
-    tool, tool_handler, tool_router,
+    tool, tool_router,
     transport::{
         self, streamable_http_server::session::local::LocalSessionManager, StreamableHttpService,
     },
@@ -22,14 +26,16 @@ use crate::tools::{
 struct IamAutoPilotMcpServer {
     tool_router: ToolRouter<Self>,
     log_file: Option<String>,
+    read_only: bool,
 }
 
 #[tool_router]
 impl IamAutoPilotMcpServer {
-    pub fn new(log_file: Option<String>) -> Self {
+    pub fn new(log_file: Option<String>, read_only: bool) -> Self {
         Self {
             tool_router: Self::tool_router(),
             log_file,
+            read_only,
         }
     }
 
@@ -137,7 +143,6 @@ impl IamAutoPilotMcpServer {
     }
 }
 
-#[tool_handler]
 impl ServerHandler for IamAutoPilotMcpServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -166,14 +171,52 @@ impl ServerHandler for IamAutoPilotMcpServer {
                 ..Default::default()
         }
     }
+
+    async fn list_tools(
+        &self,
+        _: Option<PaginatedRequestParam>,
+        _: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        let all_tools = self.tool_router.list_all();
+
+        // Filter out fix_access_denied tool when in read-only mode
+        let tools: Vec<Tool> = if self.read_only {
+            all_tools
+                .into_iter()
+                .filter(|tool| tool.name.as_ref() != "fix_access_denied")
+                .collect()
+        } else {
+            all_tools
+        };
+
+        Ok(ListToolsResult {
+            tools,
+            next_cursor: None,
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        let tool_context = ToolCallContext {
+            service: self,
+            name: request.name.clone(),
+            arguments: request.arguments,
+            request_context: context,
+        };
+        self.tool_router.call(tool_context).await
+    }
 }
 
 pub async fn begin_http_transport(
     bind_address: &str,
     log_file: Option<String>,
+    read_only: bool,
 ) -> anyhow::Result<()> {
     let service = StreamableHttpService::new(
-        move || Ok(IamAutoPilotMcpServer::new(log_file.clone())),
+        move || Ok(IamAutoPilotMcpServer::new(log_file.clone(), read_only)),
         LocalSessionManager::default().into(),
         Default::default(),
     );
@@ -205,8 +248,11 @@ pub async fn begin_http_transport(
     Ok(())
 }
 
-pub async fn begin_stdio_transport(log_file: Option<String>) -> anyhow::Result<()> {
-    let server = IamAutoPilotMcpServer::new(log_file);
+pub async fn begin_stdio_transport(
+    log_file: Option<String>,
+    read_only: bool,
+) -> anyhow::Result<()> {
+    let server = IamAutoPilotMcpServer::new(log_file, read_only);
     let service = server.serve(transport::stdio()).await?;
     service.waiting().await?;
     Ok(())
