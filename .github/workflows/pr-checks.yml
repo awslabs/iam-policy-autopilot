@@ -13,8 +13,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
+      submodules: ${{ steps.filter.outputs.submodules }}
+      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.submodules == 'true' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
       - uses: dorny/paths-filter@v3
         id: filter
         with:
@@ -25,11 +29,14 @@ jobs:
               - '**/Cargo.lock'
               - '**/rust-toolchain'
               - '**/.cargo/**'
+            submodules:
+              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
+              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
 
   test-linux:
     name: Test Linux
     needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,7 +72,7 @@ jobs:
   test-windows:
     name: Test Windows
     needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: windows-latest
     permissions:
       contents: read
@@ -89,7 +96,7 @@ jobs:
   test-macos:
     name: Test macOS
     needs: [changes]
-    if: needs.changes.outputs.rust == 'true'
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: macos-latest
     permissions:
       contents: read
