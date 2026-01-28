@@ -88,6 +88,7 @@ impl Operation {
         let service = service_cfg
             .rename_service_service_reference(original_service_name)
             .to_string();
+        #[allow(unknown_lints, convert_case_pascal)]
         let name = if sdk == SdkType::Boto3 {
             // Try to load service reference and look up the boto3 method mapping
             service_reference_loader

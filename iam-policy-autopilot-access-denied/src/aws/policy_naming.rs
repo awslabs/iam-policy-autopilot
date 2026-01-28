@@ -45,6 +45,7 @@ pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String 
 
 /// Generate unique Sid with format IamPolicyAutopilot{Service}{Action}{YYYYMMDD}
 /// Handles collision detection by appending counter (2, 3, etc.)
+#[allow(unknown_lints, convert_case_pascal)]
 pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -> String {
     // Falls back to "Unknown" service if format is invalid
     let parts: Vec<&str> = action.split(':').collect();
