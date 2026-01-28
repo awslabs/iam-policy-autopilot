@@ -298,7 +298,7 @@ where
                         self.ast_grep.source_file.path.to_path_buf(),
                         first_match,
                     );
-                    let expr_text = matches.first().unwrap().text();
+                    let expr_text = first_match.text();
                     // TODO: Extract from variable assignments
                     let parameters = vec![];
                     return Some(CommandUsage::new(expr_text, location, parameters));
@@ -335,24 +335,22 @@ where
                 let module_text = module_text_cow.trim_matches('"').trim_matches('\'');
 
                 // Check if it's an AWS SDK statement
-                if !module_text.starts_with("@aws-sdk/") {
-                    continue;
+                if let Some(sublibrary) = module_text.strip_prefix("@aws-sdk/") {
+                    let sublibrary = sublibrary.to_string();
+                    let imports_text = imports_node.text();
+                    let imports_text_str = imports_text.as_ref(); // Convert Cow to &str
+
+                    // Initialize sublibrary data if not exists
+                    let sublibrary_info = sublibrary_data
+                        .entry(sublibrary.clone())
+                        .or_insert_with(|| SublibraryInfo::new(sublibrary));
+
+                    self.parse_and_add_imports(
+                        imports_text_str,
+                        sublibrary_info,
+                        node_match.get_node(),
+                    );
                 }
-
-                let sublibrary = module_text.strip_prefix("@aws-sdk/").unwrap().to_string();
-                let imports_text = imports_node.text();
-                let imports_text_str = imports_text.as_ref(); // Convert Cow to &str
-
-                // Initialize sublibrary data if not exists
-                let sublibrary_info = sublibrary_data
-                    .entry(sublibrary.clone())
-                    .or_insert_with(|| SublibraryInfo::new(sublibrary));
-
-                self.parse_and_add_imports(
-                    imports_text_str,
-                    sublibrary_info,
-                    node_match.get_node(),
-                );
             }
         }
         Ok(())
@@ -523,7 +521,6 @@ where
     fn process_method_call_matches(
         &self,
         matches: Vec<ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<T>>>,
-        client_variables: &[String],
         client_info_map: &HashMap<String, (String, String, String)>,
         results: &mut Vec<MethodCall>,
     ) -> Result<(), String> {
@@ -539,10 +536,9 @@ where
                 let method_name = method_node.text().to_string();
 
                 // Check if it's a known client variable
-                if client_variables.contains(&variable_name) {
-                    let (client_type, original_client_type, client_sublibrary) =
-                        client_info_map.get(&variable_name).unwrap();
-
+                if let Some((client_type, original_client_type, client_sublibrary)) =
+                    client_info_map.get(&variable_name)
+                {
                     // Extract arguments
                     let arguments = if let Some(args_node) = args_node {
                         let args_text = args_node.text();
@@ -595,16 +591,9 @@ where
             })
             .collect();
 
-        let client_variables: Vec<String> = client_info_map.keys().cloned().collect();
-
         // Single pattern to match method calls (covers both awaited and non-awaited)
         let matches = self.find_all_matches("$VAR.$METHOD($ARGS)")?;
-        self.process_method_call_matches(
-            matches,
-            &client_variables,
-            &client_info_map,
-            &mut results,
-        )?;
+        self.process_method_call_matches(matches, &client_info_map, &mut results)?;
 
         Ok(results)
     }

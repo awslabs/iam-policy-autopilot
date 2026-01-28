@@ -87,21 +87,27 @@ mod api {
     use iam_policy_autopilot_policy_generation::api::model::{
         GeneratePoliciesResult, GeneratePolicyConfig,
     };
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
 
-    // Static mutable return value
-    pub static mut MOCK_RETURN_VALUE: Option<Result<GeneratePoliciesResult>> = None;
+    // Simple mock storage - Mutex is needed for static variables even with serial tests
+    static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
+        OnceLock::new();
 
     pub async fn generate_policies(
         _config: &GeneratePolicyConfig,
     ) -> Result<GeneratePoliciesResult> {
-        #[allow(static_mut_refs)]
-        unsafe {
-            MOCK_RETURN_VALUE.take().unwrap()
-        }
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard
+            .take()
+            .expect("Mock return value not set. Call set_mock_return() first.")
     }
 
     pub fn set_mock_return(value: Result<GeneratePoliciesResult>) {
-        unsafe { MOCK_RETURN_VALUE = Some(value) }
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        *guard = Some(value);
     }
 }
 
