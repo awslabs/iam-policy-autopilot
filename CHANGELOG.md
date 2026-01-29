@@ -4,6 +4,12 @@
 
 - Add `--explain` feature with action pattern filtering to output the reasons for why a actions were added to the policy. Supports wildcards (e.g., `--explain '*'` for all, `--explain 's3:*'` for S3 actions). The explanations allow to review the operations which static analysis extracted from source code, and to correct them using the `--service-hints` flag, if necessary.
 
+## [0.1.3] - 2026-01-26
+
+### Fixed
+
+- Add type hints for fix_access_denied for strict schema checks (#117)
+
 ## [0.1.2] - 2025-12-15
 
 ## Fixed
