@@ -144,7 +144,7 @@ async fn fix_access_denied_with_service(
 }
 
 pub fn print_version_info(verbose: bool) -> anyhow::Result<()> {
-    println!("{}", crate_version!());
+    println!("iam-policy-autopilot {}", crate_version!());
     if verbose {
         let boto3_version_metadata =
             iam_policy_autopilot_policy_generation::api::get_boto3_version_info()?;
