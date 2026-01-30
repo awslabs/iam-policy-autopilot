@@ -24,7 +24,7 @@ impl Display for McpTransport {
     }
 }
 
-pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> {
+pub async fn start_mcp_server(transport: McpTransport, port: u16, read_only: bool) -> Result<()> {
     info!("Starting MCP server with transport: {}", transport);
 
     let env = env_logger::Env::default().filter_or("IAMPA_LOG_LEVEL", "debug");
@@ -65,14 +65,14 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
             let bind_address: String = format!("{}:{}", BIND_ADDRESS, port);
             info!("Starting HTTP MCP server at {}", bind_address);
 
-            crate::mcp::begin_http_transport(bind_address.as_str(), path_str)
+            crate::mcp::begin_http_transport(bind_address.as_str(), path_str, read_only)
                 .await
                 .with_context(|| format!("Failed to start HTTP Server at '{bind_address}'"))?
         }
         McpTransport::Stdio => {
             info!("Starting STDIO MCP server");
 
-            crate::mcp::begin_stdio_transport(path_str)
+            crate::mcp::begin_stdio_transport(path_str, read_only)
                 .await
                 .with_context(|| "Failed to start STDIO Server".to_string())?
         }
