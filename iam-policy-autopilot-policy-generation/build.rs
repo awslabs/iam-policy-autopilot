@@ -113,6 +113,7 @@ fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
 
+    #[allow(clippy::unwrap_used)]
     let out_dir = env::var("OUT_DIR").unwrap();
     let simplified_dir = Path::new(&out_dir).join("botocore-data-simplified");
     let boto3_dir = Path::new(&out_dir).join("boto3-data-simplified");
