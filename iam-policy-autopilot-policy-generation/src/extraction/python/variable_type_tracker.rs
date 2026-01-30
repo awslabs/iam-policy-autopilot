@@ -54,6 +54,7 @@
 //! - `session.resource('service')` - Track session-based resource creation
 
 use crate::extraction::AstWithSourceFile;
+use crate::extraction::python::node_kinds;
 use ast_grep_language::Python;
 use std::collections::{HashMap, HashSet};
 
@@ -271,7 +272,7 @@ impl VariableTypeTracker {
                 // Add to function scope
                 self.function_scopes
                     .entry(func_name.clone())
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(
                         var_name,
                         VariableTypeInfo::from_service_with_kind(
@@ -293,7 +294,7 @@ impl VariableTypeTracker {
             let mut current = node_match.get_node().parent();
             let mut is_inside_function = false;
             while let Some(node) = current {
-                if node.kind() == "function_definition" {
+                if node.kind() == node_kinds::FUNCTION_DEFINITION {
                     is_inside_function = true;
                     break;
                 }
@@ -372,7 +373,7 @@ impl VariableTypeTracker {
                 // Add to function scope
                 self.function_scopes
                     .entry(func_name.clone())
-                    .or_insert_with(HashMap::new)
+                    .or_default()
                     .insert(
                         var_name,
                         VariableTypeInfo::from_service_with_kind(
@@ -393,7 +394,7 @@ impl VariableTypeTracker {
             let mut current = node_match.get_node().parent();
             let mut is_inside_function = false;
             while let Some(node) = current {
-                if node.kind() == "function_definition" {
+                if node.kind() == node_kinds::FUNCTION_DEFINITION {
                     is_inside_function = true;
                     break;
                 }
@@ -488,7 +489,7 @@ impl VariableTypeTracker {
                     // Add to function scope
                     self.function_scopes
                         .entry(func_name.clone())
-                        .or_insert_with(HashMap::new)
+                        .or_default()
                         .insert(new_var, type_info);
                 }
             }
@@ -503,7 +504,7 @@ impl VariableTypeTracker {
             let mut current = node_match.get_node().parent();
             let mut is_inside_function = false;
             while let Some(node) = current {
-                if node.kind() == "function_definition" {
+                if node.kind() == node_kinds::FUNCTION_DEFINITION {
                     is_inside_function = true;
                     break;
                 }
@@ -631,7 +632,7 @@ impl VariableTypeTracker {
                             // Add type info to the set of possible types for this parameter
                             self.parameter_types
                                 .entry((func_name.clone(), param_name.clone()))
-                                .or_insert_with(HashSet::new)
+                                .or_default()
                                 .insert(type_info);
                         }
                     }
@@ -760,7 +761,7 @@ impl VariableTypeTracker {
                     // Resource collections inherit the service from their parent resource
                     self.function_scopes
                         .entry(func_name.clone())
-                        .or_insert_with(HashMap::new)
+                        .or_default()
                         .insert(
                             var_name,
                             VariableTypeInfo::from_service_with_kind(
@@ -783,7 +784,7 @@ impl VariableTypeTracker {
             let mut current = node_match.get_node().parent();
             let mut is_inside_function = false;
             while let Some(node) = current {
-                if node.kind() == "function_definition" {
+                if node.kind() == node_kinds::FUNCTION_DEFINITION {
                     is_inside_function = true;
                     break;
                 }
