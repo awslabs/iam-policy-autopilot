@@ -53,8 +53,8 @@
 //! - `session.client('service')` - Track session-based client creation
 //! - `session.resource('service')` - Track session-based resource creation
 
-use crate::extraction::AstWithSourceFile;
 use crate::extraction::python::node_kinds;
+use crate::extraction::AstWithSourceFile;
 use ast_grep_language::Python;
 use std::collections::{HashMap, HashSet};
 
