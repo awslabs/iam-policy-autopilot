@@ -451,7 +451,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             language: config.shared.language.to_owned(),
             service_hints,
         },
-        aws_context: AwsContext::new(config.region.clone(), config.account.clone()),
+        aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
