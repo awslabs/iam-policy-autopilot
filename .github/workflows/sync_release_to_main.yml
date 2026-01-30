@@ -1,0 +1,102 @@
+name: Sync release branch to main branch
+on:
+  push:
+    branches:
+      - release
+  workflow_dispatch:
+
+jobs:
+  sync-branches:
+    runs-on: ubuntu-latest
+    name: Checkout main head and merge in release
+    permissions:
+      contents: write
+      pull-requests: write
+    strategy:
+      fail-fast: true
+    outputs:
+      pull-request-number: ${{ steps.create-pull-request.outputs.pull-request-number }}
+      
+    steps:
+    - uses: actions/checkout@v6
+      with:
+        submodules: false
+        fetch-depth: 0
+        fetch-tags: true
+        ref: main
+
+    - name: Get autopilot release head commit, just for cosmetic purposes (logging)
+      id: get-autopilot-release-head-commit
+      run: |
+        
+        git config --global user.name "${GITHUB_ACTOR}"
+        git config --global user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+        git checkout release && git submodule init && git submodule update && export autopilot_release_head_commit=$(git rev-parse release) && echo "autopilot_release_head_commit=${autopilot_release_head_commit:0:7}" >> "$GITHUB_OUTPUT"
+
+        cat $GITHUB_OUTPUT
+
+    - name: Get boto3 version used by release HEAD
+      id: get-head-boto3-version-info
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && echo "boto3_version=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+        cat $GITHUB_OUTPUT
+
+    - name: Get botocore version used by release HEAD
+      id: get-head-botocore-version-info
+      run: |
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data && echo "botocore_version=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT" && cd ../../../../..
+
+        cat $GITHUB_OUTPUT
+
+    - name: Pull submodule versions from release, and synchronize
+      run: |
+        git checkout main && git submodule init && git submodule update
+
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3 && git fetch --all && git checkout $BOTO3_RELEASE_HEAD_COMMIT && cd ../../../../.. && git add iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
+
+        cd iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data && git fetch --all && git checkout $BOTOCORE_RELEASE_HEAD_COMMIT && cd ../../../../.. && git add iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data
+
+      env: 
+        BOTO3_RELEASE_HEAD_COMMIT: ${{ steps.get-head-boto3-version-info.outputs.boto3_version }}
+        BOTOCORE_RELEASE_HEAD_COMMIT: ${{ steps.get-head-botocore-version-info.outputs.botocore_version }}
+        AUTOPILOT_RELEASE_HEAD_COMMIT: ${{ steps.get-autopilot-release-head-commit.outputs.autopilot_release_head_commit }}
+
+
+    - name: Create pull request to sync from release to main
+      uses: peter-evans/create-pull-request@v8
+      id: create-pull-request
+      with:
+        commit-message: |
+          chore: sync release branch submodule versions at commit ${{ steps.get-autopilot-release-head-commit.outputs.autopilot_release_head_commit }} to main branch
+        branch: sync-release-branch
+        sign-commits: true
+        title: | 
+          chore: sync release branch submodule versions at commit ${{ steps.get-autopilot-release-head-commit.outputs.autopilot_release_head_commit }} to main branch
+        body: |
+          chore: sync release branch submodule versions at commit ${{ steps.get-autopilot-release-head-commit.outputs.autopilot_release_head_commit }} to main branch
+
+    - name: Enable Pull Request Automerge for that submitted PR
+      run: |
+        if [[ "$PR_NUMBER" != "" ]]; then 
+          git status && gh pr merge --merge --auto "$PR_NUMBER"
+        fi 
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        PR_NUMBER: ${{steps.create-pull-request.outputs.pull-request-number}}
+
+  # The PR in the previous step was submitted on behalf of the github-actions actor. We now use our own PAT from our own account, to submit an approval on that PR. 
+  #   With auto-merge enabled, this will result in the PR being automatically merged.
+  auto-approve:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+    needs: [sync-branches]
+    if: needs.sync-branches.outputs.pull-request-number != ''
+    steps:
+      - name: Auto approve PR requests from github actions
+        uses: hmarr/auto-approve-action@v4
+        with:
+          pull-request-number:  ${{ needs.sync-branches.outputs.pull-request-number }}
+          github-token: ${{ secrets.CUSTOM_GITHUB_ACTION_PAT }}
