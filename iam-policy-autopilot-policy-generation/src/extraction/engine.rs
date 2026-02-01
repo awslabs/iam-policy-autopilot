@@ -84,6 +84,7 @@ impl Engine {
             Language::TypeScript => {
                 Arc::new(extraction::typescript::extractor::TypeScriptExtractor::new())
             }
+            Language::Java => Arc::new(extraction::java::extractor::JavaExtractor::new()),
             _ => return Err(ExtractorError::unsupported_language_override(language)),
         };
 
