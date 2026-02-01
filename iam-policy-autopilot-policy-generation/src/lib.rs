@@ -57,6 +57,7 @@ pub enum Language {
     Go,
     JavaScript,
     TypeScript,
+    Java,
 }
 
 impl Language {
@@ -103,6 +104,7 @@ impl Language {
             "go" => Ok(Language::Go),
             "javascript" | "js" => Ok(Language::JavaScript),
             "typescript" | "ts" => Ok(Language::TypeScript),
+            "java" => Ok(Language::Java),
             _ => Err(ExtractorError::UnsupportedLanguage {
                 language: s.to_string(),
             }),
@@ -117,6 +119,7 @@ impl Display for Language {
             Language::Go => "go",
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
+            Language::Java => "java",
         };
         write!(f, "{}", language_str)
     }
@@ -129,6 +132,7 @@ impl From<Language> for String {
             Language::Go => "go",
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
+            Language::Java => "java",
         }
         .to_string()
     }
@@ -167,10 +171,10 @@ mod tests {
             Language::try_from_str("typescript").unwrap(),
             Language::TypeScript
         );
+        assert_eq!(Language::try_from_str("java").unwrap(), Language::Java);
 
         // Test invalid language string returns error
         assert!(Language::try_from_str("unsupported").is_err());
-        assert!(Language::try_from_str("java").is_err());
         assert!(Language::try_from_str("").is_err());
     }
 }
