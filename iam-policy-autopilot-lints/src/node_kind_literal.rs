@@ -3,9 +3,10 @@
 use clippy_utils::diagnostics::span_lint_and_help;
 use rustc_ast::LitKind;
 use rustc_hir::{BinOpKind, Expr, ExprKind};
-use rustc_lint::LateLintPass;
+use rustc_lint::{LateContext, LateLintPass, LintPass, LintStore};
+use rustc_session::{declare_lint, Session};
 
-dylint_linting::declare_late_lint! {
+declare_lint! {
     /// ### What it does
     /// Detects string literals used in comparisons with `.kind()` method calls,
     /// which typically indicate Tree-sitter node kind checks that should use constants.
@@ -38,6 +39,8 @@ dylint_linting::declare_late_lint! {
     "use of string literals in comparisons with .kind() method calls"
 }
 
+pub struct NodeKindLiteral;
+
 /// Check if an expression is a call to the `.kind()` method on a tree-sitter Node
 fn is_kind_method_call<'tcx>(cx: &rustc_lint::LateContext<'tcx>, expr: &'tcx Expr<'_>) -> bool {
     if let ExprKind::MethodCall(path_segment, receiver, _, _) = &expr.kind {
@@ -55,8 +58,18 @@ fn is_kind_method_call<'tcx>(cx: &rustc_lint::LateContext<'tcx>, expr: &'tcx Exp
     }
 }
 
+impl LintPass for NodeKindLiteral {
+    fn name(&self) -> &'static str {
+        "NodeKindLiteral"
+    }
+
+    fn get_lints(&self) -> Vec<&'static rustc_lint::Lint> {
+        vec![&NODE_KIND_LITERAL]
+    }
+}
+
 impl<'tcx> LateLintPass<'tcx> for NodeKindLiteral {
-    fn check_expr(&mut self, cx: &rustc_lint::LateContext<'tcx>, expr: &'tcx Expr<'_>) {
+    fn check_expr(&mut self, cx: &LateContext<'tcx>, expr: &'tcx Expr<'_>) {
         // Check if this is a binary operation (== or !=)
         if let ExprKind::Binary(op, left, right) = &expr.kind {
             // Only check equality and inequality operations
@@ -110,4 +123,9 @@ impl<'tcx> LateLintPass<'tcx> for NodeKindLiteral {
             }
         }
     }
+}
+
+pub fn register_lints(_sess: &Session, lint_store: &mut LintStore) {
+    lint_store.register_lints(&[&NODE_KIND_LITERAL]);
+    lint_store.register_late_pass(|_| Box::new(NodeKindLiteral));
 }

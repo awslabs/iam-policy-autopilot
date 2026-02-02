@@ -6,57 +6,18 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
+use crate::extraction::shared::extraction_utils::{WaiterCallInfo, WaiterCreationInfo};
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
 use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Go;
 
-/// Information about a discovered waiter creation call
-#[derive(Debug, Clone)]
-pub(crate) struct WaiterInfo {
-    /// Variable name assigned to the waiter (e.g., "waiter", "instanceWaiter")
-    pub variable_name: String,
-    /// Clean waiter name (e.g., "InstanceTerminated")
-    pub waiter_name: String,
-    /// Client receiver variable name (e.g., "client", "ec2Client")
-    pub client_receiver: String,
-    /// Matched expression
-    pub expr: String,
-    /// Location where the waiter was created
-    pub location: Location,
-}
-
-impl WaiterInfo {
-    pub(crate) fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
-
-/// Information about a Wait method call
-#[derive(Debug, Clone)]
-pub(crate) struct WaitCallInfo {
-    /// Waiter variable being called (e.g., "waiter")
-    pub waiter_var: String,
-    /// Extracted arguments (context + input struct)
-    pub arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location where the waiter was called
-    pub location: Location,
-}
-
-impl WaitCallInfo {
-    pub(crate) fn start_line(&self) -> usize {
-        self.location.start_line()
-    }
-}
-
 // TODO: This should be refactored at a higher level, so this type can be removed.
 // See https://github.com/awslabs/iam-policy-autopilot/issues/88.
 enum CallInfo<'a> {
-    None(&'a WaiterInfo),
-    Simple(&'a WaiterInfo, &'a WaitCallInfo),
+    None(&'a WaiterCreationInfo),
+    Simple(&'a WaiterCreationInfo, &'a WaiterCallInfo),
 }
 
 impl<'a> CallInfo<'a> {
@@ -66,7 +27,7 @@ impl<'a> CallInfo<'a> {
         }
     }
 
-    fn waiter_info(&self) -> &'a WaiterInfo {
+    fn waiter_info(&self) -> &'a WaiterCreationInfo {
         match self {
             CallInfo::None(waiter_info) | CallInfo::Simple(waiter_info, _) => waiter_info,
         }
@@ -140,7 +101,7 @@ impl<'a> GoWaiterExtractor<'a> {
     }
 
     /// Find all waiter creation calls (NewXxxWaiter functions)
-    fn find_waiter_creation_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<WaiterInfo> {
+    fn find_waiter_creation_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<WaiterCreationInfo> {
         let root = ast.ast.root();
         let mut waiters = Vec::new();
 
@@ -159,7 +120,7 @@ impl<'a> GoWaiterExtractor<'a> {
     }
 
     /// Find all Wait method calls
-    fn find_wait_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<WaitCallInfo> {
+    fn find_wait_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<WaiterCallInfo> {
         let root = ast.ast.root();
         let mut wait_calls = Vec::new();
 
@@ -180,7 +141,7 @@ impl<'a> GoWaiterExtractor<'a> {
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
         file_path: &Path,
-    ) -> Option<WaiterInfo> {
+    ) -> Option<WaiterCreationInfo> {
         let env = node_match.get_env();
 
         // Extract variable name
@@ -209,7 +170,7 @@ impl<'a> GoWaiterExtractor<'a> {
             .and_then(|s| s.strip_suffix("Waiter"));
 
         if let Some(waiter_name) = waiter_name {
-            return Some(WaiterInfo {
+            return Some(WaiterCreationInfo {
                 variable_name,
                 waiter_name: waiter_name.to_string(),
                 client_receiver,
@@ -221,12 +182,12 @@ impl<'a> GoWaiterExtractor<'a> {
         None
     }
 
-    /// Parse a Wait call into WaitCallInfo
+    /// Parse a Wait call into WaiterCallInfo
     fn parse_wait_call(
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
         file_path: &Path,
-    ) -> Option<WaitCallInfo> {
+    ) -> Option<WaiterCallInfo> {
         let env = node_match.get_env();
 
         // Extract waiter variable name
@@ -236,7 +197,7 @@ impl<'a> GoWaiterExtractor<'a> {
         let args_nodes = env.get_multiple_matches("ARGS");
         let arguments = utils::extract_arguments(&args_nodes);
 
-        Some(WaitCallInfo {
+        Some(WaiterCallInfo {
             waiter_var,
             arguments,
             expr: node_match.text().to_string(),
@@ -247,9 +208,9 @@ impl<'a> GoWaiterExtractor<'a> {
     /// Match a Wait call to its corresponding waiter creation call
     fn match_wait_to_waiter<'b>(
         &self,
-        wait_call: &WaitCallInfo,
-        waiters: &'b [WaiterInfo],
-    ) -> Option<(&'b WaiterInfo, usize)> {
+        wait_call: &WaiterCallInfo,
+        waiters: &'b [WaiterCreationInfo],
+    ) -> Option<(&'b WaiterCreationInfo, usize)> {
         // Find waiter with matching variable name
         let mut best_match = None;
         let mut best_distance = usize::MAX;
@@ -258,8 +219,8 @@ impl<'a> GoWaiterExtractor<'a> {
         for (idx, waiter) in waiters.iter().enumerate() {
             if waiter.variable_name == wait_call.waiter_var {
                 // Only consider waiters that come before the wait call
-                if waiter.start_line() < wait_call.start_line() {
-                    let distance = wait_call.start_line() - waiter.start_line();
+                if waiter.location.start_line() < wait_call.location.start_line() {
+                    let distance = wait_call.location.start_line() - waiter.location.start_line();
                     if distance < best_distance {
                         best_distance = distance;
                         best_match = Some(waiter);
@@ -272,15 +233,10 @@ impl<'a> GoWaiterExtractor<'a> {
         best_match.map(|w| (w, best_idx))
     }
 
-    fn create_synthetic_call_internal(
-        &self,
-        call: CallInfo,
-        // wait_call: Option<&WaitCallInfo>,
-        // waiter_info: &WaiterInfo,
-    ) -> Vec<SdkMethodCall> {
+    fn create_synthetic_call_internal(&self, call: CallInfo) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
-        // waiter_type already contains the clean waiter name (e.g., "InstanceTerminated")
+        // waiter_name already contains the clean waiter name (e.g., "InstanceTerminated")
         if let Some(service_defs) = self.service_index.waiter_lookup.get(call.waiter_name()) {
             // Create one call per service
             for service_def in service_defs {
@@ -292,8 +248,7 @@ impl<'a> GoWaiterExtractor<'a> {
                         self.filter_waiter_parameters(wait_call.arguments.clone())
                     }
                     CallInfo::None(_) => {
-                        // Fallback:
-                        // Get required parameters for this operation
+                        // Fallback: Get required parameters for this operation
                         self.get_required_parameters(service_name, operation_name)
                     }
                 };
@@ -318,15 +273,18 @@ impl<'a> GoWaiterExtractor<'a> {
     /// Create synthetic SdkMethodCall objects from a matched waiter + wait
     fn create_synthetic_call(
         &self,
-        wait_call: &WaitCallInfo,
-        waiter_info: &WaiterInfo,
+        wait_call: &WaiterCallInfo,
+        waiter_info: &WaiterCreationInfo,
     ) -> Vec<SdkMethodCall> {
         self.create_synthetic_call_internal(CallInfo::Simple(waiter_info, wait_call))
     }
 
     /// Create fallback synthetic calls for unmatched waiter creation
     /// Returns one call per service that has the waiter, matching Python behavior
-    fn create_fallback_synthetic_call(&self, waiter_info: &WaiterInfo) -> Vec<SdkMethodCall> {
+    fn create_fallback_synthetic_call(
+        &self,
+        waiter_info: &WaiterCreationInfo,
+    ) -> Vec<SdkMethodCall> {
         self.create_synthetic_call_internal(CallInfo::None(waiter_info))
     }
 

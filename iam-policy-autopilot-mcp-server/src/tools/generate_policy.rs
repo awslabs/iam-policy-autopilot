@@ -66,7 +66,8 @@ pub async fn generate_application_policies(
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
         disable_file_system_cache: true,
-        generate_explanations: false,
+        // No explanations for MCP server by default
+        explain_filters: None,
     })
     .await?;
 

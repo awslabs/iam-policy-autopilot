@@ -7,44 +7,11 @@ use std::path::Path;
 
 use crate::extraction::go::utils;
 use crate::extraction::sdk_model::ServiceDiscovery;
-use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::shared::{ChainedPaginatorCallInfo, PaginatorCreationInfo};
+use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
 use crate::ServiceModelIndex;
 use crate::{Language, Location};
 use ast_grep_language::Go;
-
-/// Information about a discovered paginator creation call
-#[derive(Debug, Clone)]
-pub(crate) struct PaginatorInfo {
-    /// Variable name assigned to the paginator (e.g., "paginator", "instancePaginator")
-    // TODO: use the name of the paginator in analysis
-    #[allow(dead_code)]
-    pub variable_name: String,
-    /// Operation name (e.g., "ListObjectsV2")
-    pub paginator_type: String,
-    /// Client receiver variable name (e.g., "client", "s3Client")
-    pub client_receiver: String,
-    /// Extracted arguments from paginator creation (input struct)
-    pub creation_arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location of the paginator creation
-    pub location: Location,
-}
-
-/// Information about a chained paginator call
-#[derive(Debug, Clone)]
-pub(crate) struct ChainedPaginatorCallInfo {
-    /// Operation name (e.g., "ListObjectsV2")
-    pub paginator_type: String,
-    /// Client receiver variable name (e.g., "client", "s3Client")
-    pub client_receiver: String,
-    /// Extracted arguments from paginator creation (input struct)
-    pub arguments: Vec<Parameter>,
-    /// Matched expression
-    pub expr: String,
-    /// Location of the paginator was called
-    pub location: Location,
-}
 
 /// Extractor for Go AWS SDK paginator patterns
 ///
@@ -89,7 +56,10 @@ impl<'a> GoPaginatorExtractor<'a> {
     }
 
     /// Find all paginator creation calls (NewXxxPaginator functions)
-    fn find_paginator_creation_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<PaginatorInfo> {
+    fn find_paginator_creation_calls(
+        &self,
+        ast: &AstWithSourceFile<Go>,
+    ) -> Vec<PaginatorCreationInfo> {
         let root = ast.ast.root();
         let mut paginators = Vec::new();
 
@@ -134,7 +104,7 @@ impl<'a> GoPaginatorExtractor<'a> {
         &self,
         node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Go>>,
         file_path: &Path,
-    ) -> Option<PaginatorInfo> {
+    ) -> Option<PaginatorCreationInfo> {
         let env = node_match.get_env();
 
         // Extract variable name
@@ -170,13 +140,17 @@ impl<'a> GoPaginatorExtractor<'a> {
             .and_then(|s| s.strip_suffix("Paginator"));
 
         if let Some(operation_name) = operation_name {
-            return Some(PaginatorInfo {
+            let node = node_match.get_node();
+            let location = Location::from_node(file_path.to_path_buf(), node);
+            let expr = node_match.text().to_string();
+
+            return Some(PaginatorCreationInfo {
                 variable_name,
-                paginator_type: operation_name.to_string(),
+                operation_name: operation_name.to_string(),
                 client_receiver,
+                location,
                 creation_arguments,
-                expr: node_match.text().to_string(),
-                location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
+                expr,
             });
         }
 
@@ -200,10 +174,10 @@ impl<'a> GoPaginatorExtractor<'a> {
         }
 
         // Extract operation name from function name (remove "New" prefix and "Paginator" suffix)
-        let paginator_type = function_name
+        let operation_name = function_name
             .strip_prefix("New")
             .and_then(|s| s.strip_suffix("Paginator"))?;
-        let paginator_type = paginator_type.to_string();
+        let operation_name = operation_name.to_string();
 
         // Extract client parameter from creation arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
@@ -221,7 +195,7 @@ impl<'a> GoPaginatorExtractor<'a> {
         };
 
         Some(ChainedPaginatorCallInfo {
-            paginator_type,
+            operation_name,
             client_receiver,
             arguments: creation_arguments,
             expr: node_match.text().to_string(),
@@ -230,9 +204,12 @@ impl<'a> GoPaginatorExtractor<'a> {
     }
 
     /// Create a synthetic SdkMethodCall from paginator creation
-    fn create_synthetic_call_from_creation(&self, paginator_info: &PaginatorInfo) -> SdkMethodCall {
-        // paginator_type already contains the clean operation name (e.g., "ListObjectsV2")
-        let operation_name = &paginator_info.paginator_type;
+    fn create_synthetic_call_from_creation(
+        &self,
+        paginator_info: &PaginatorCreationInfo,
+    ) -> SdkMethodCall {
+        // operation_name already contains the clean operation name (e.g., "ListObjectsV2")
+        let operation_name = &paginator_info.operation_name;
 
         // Convert to method name using Go language conventions
         let method_name = ServiceDiscovery::operation_to_method_name(operation_name, Language::Go);
@@ -266,8 +243,8 @@ impl<'a> GoPaginatorExtractor<'a> {
         &self,
         chained_call: &ChainedPaginatorCallInfo,
     ) -> SdkMethodCall {
-        // paginator_type already contains the clean operation name (e.g., "ListObjectsV2")
-        let operation_name = &chained_call.paginator_type;
+        // operation_name already contains the clean operation name (e.g., "ListObjectsV2")
+        let operation_name = &chained_call.operation_name;
 
         // Convert to method name using Go language conventions
         let method_name = ServiceDiscovery::operation_to_method_name(operation_name, Language::Go);
@@ -302,6 +279,7 @@ mod tests {
     use crate::SourceFile;
 
     use super::*;
+    use crate::extraction::Parameter;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Go;
     use std::{collections::HashMap, path::PathBuf};
