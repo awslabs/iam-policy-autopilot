@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Added support for EU sovereign cloud partition. Providing `--region eusc-de-east-1` will generate policies for the EU sovereign cloud. (#103)
+
 ## [0.1.4] - 2026-01-30
 
 ### Added
