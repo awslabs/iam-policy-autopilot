@@ -180,7 +180,11 @@ impl Engine {
         }
 
         // Return the single detected language
-        Ok(detected_languages.into_iter().next().unwrap())
+        // We know there's exactly one element due to the validation above
+        Ok(detected_languages
+            .into_iter()
+            .next()
+            .expect("Should have detected exactly one language"))
     }
 }
 

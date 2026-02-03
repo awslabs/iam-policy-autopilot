@@ -610,6 +610,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test]
     fn test_get_botocore_version_info_happy_path() {
         let result = GitSubmoduleVersionInfo::get_botocore_version_info();
         assert!(result.is_ok());

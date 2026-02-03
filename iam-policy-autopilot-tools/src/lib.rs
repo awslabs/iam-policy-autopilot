@@ -118,7 +118,8 @@ impl PolicyUploader {
         }
 
         // Check for valid characters: alphanumeric + = , . @ _ -
-        let valid_chars = Regex::new(r"^[a-zA-Z0-9+=,.@_-]+$").unwrap();
+        let valid_chars = Regex::new(r"^[a-zA-Z0-9+=,.@_-]+$")
+            .expect("Valid regex pattern for policy name validation");
         if !valid_chars.is_match(name) {
             return Err(UploaderError::InvalidPolicyName(
                 name.to_string(),

@@ -67,3 +67,6 @@ iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true

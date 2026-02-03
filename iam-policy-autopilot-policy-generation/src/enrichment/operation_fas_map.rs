@@ -182,7 +182,9 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
 
     // Check cache first
     {
-        let cache_guard = cache.read().unwrap();
+        let cache_guard = cache
+            .read()
+            .expect("Failed to acquire read lock on operation FAS maps cache");
         if let Some(cached_result) = cache_guard.get(service_name) {
             return cached_result.clone();
         }
@@ -210,7 +212,9 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
 
     // Cache the result
     {
-        let mut cache_guard = cache.write().unwrap();
+        let mut cache_guard = cache
+            .write()
+            .expect("Failed to acquire write lock on operation FAS maps cache");
         cache_guard.insert(service_name.to_string(), result.clone());
     }
 

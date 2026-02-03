@@ -28,3 +28,6 @@ iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-polic
 [[bin]]
 name = "iam-policy-autopilot"
 path = "src/main.rs"
+
+[lints]
+workspace = true

@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 
 /// Compiled regex for ARN validation - only place we use regex in parsing
 static ARN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"arn:aws(?:-[a-z]+)*:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+").unwrap()
+    Regex::new(r"arn:aws(?:-[a-z]+)*:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+")
+        .expect("Valid ARN regex pattern")
 });
 
 pub fn is_account_id(value: &str) -> bool {
