@@ -6,47 +6,14 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
-use crate::extraction::shared::extraction_utils::{WaiterCallInfo, WaiterCreationInfo};
+use crate::extraction::shared::extraction_utils::{
+    WaiterCallInfo, WaiterCallPattern, WaiterCreationInfo,
+};
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
 use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Go;
-
-// TODO: This should be refactored at a higher level, so this type can be removed.
-// See https://github.com/awslabs/iam-policy-autopilot/issues/88.
-enum CallInfo<'a> {
-    None(&'a WaiterCreationInfo),
-    Simple(&'a WaiterCreationInfo, &'a WaiterCallInfo),
-}
-
-impl<'a> CallInfo<'a> {
-    fn waiter_name(&self) -> &'a str {
-        match self {
-            Self::None(waiter_info) | Self::Simple(waiter_info, ..) => &waiter_info.waiter_name,
-        }
-    }
-
-    fn waiter_info(&self) -> &'a WaiterCreationInfo {
-        match self {
-            CallInfo::None(waiter_info) | CallInfo::Simple(waiter_info, _) => waiter_info,
-        }
-    }
-
-    fn expr(&self) -> &'a str {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.expr,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.expr,
-        }
-    }
-
-    fn location(&self) -> &'a Location {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.location,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.location,
-        }
-    }
-}
 
 /// Extractor for Go AWS SDK waiter patterns
 ///
@@ -233,21 +200,29 @@ impl<'a> GoWaiterExtractor<'a> {
         best_match.map(|w| (w, best_idx))
     }
 
-    fn create_synthetic_call_internal(&self, call: CallInfo) -> Vec<SdkMethodCall> {
+    /// Create synthetic SdkMethodCalls from a waiter call pattern
+    ///
+    /// This is the unified method for creating synthetic calls from any waiter pattern:
+    /// - CreationOnly: Uses required parameters from service model
+    /// - Matched: Uses arguments from the Wait() call
+    ///
+    /// Note: Go SDK does not support the Chained variant (Python-specific pattern).
+    ///
+    /// Creates one call per candidate service with the actual operation name.
+    fn create_synthetic_call_internal(&self, pattern: WaiterCallPattern) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
         // waiter_name already contains the clean waiter name (e.g., "InstanceTerminated")
-        if let Some(service_defs) = self.service_index.waiter_lookup.get(call.waiter_name()) {
+        if let Some(service_defs) = self.service_index.waiter_lookup.get(pattern.waiter_name()) {
             // Create one call per service
             for service_def in service_defs {
                 let service_name = &service_def.service_name;
                 let operation_name = &service_def.operation_name;
 
-                let parameters = match call {
-                    CallInfo::Simple(_, wait_call) => {
-                        self.filter_waiter_parameters(wait_call.arguments.clone())
-                    }
-                    CallInfo::None(_) => {
+                // Use pattern.arguments() to determine parameter source
+                let parameters = match pattern.arguments() {
+                    Some(args) => self.filter_waiter_parameters(args.to_vec()),
+                    None => {
                         // Fallback: Get required parameters for this operation
                         self.get_required_parameters(service_name, operation_name)
                     }
@@ -259,9 +234,9 @@ impl<'a> GoWaiterExtractor<'a> {
                     metadata: Some(SdkMethodCallMetadata {
                         parameters,
                         return_type: None,
-                        expr: call.expr().to_string(),
-                        location: call.location().clone(),
-                        receiver: Some(call.waiter_info().client_receiver.clone()),
+                        expr: pattern.expr().to_string(),
+                        location: pattern.location().clone(),
+                        receiver: Some(pattern.client_receiver().to_string()),
                     }),
                 });
             }
@@ -270,22 +245,26 @@ impl<'a> GoWaiterExtractor<'a> {
         synthetic_calls
     }
 
-    /// Create synthetic SdkMethodCall objects from a matched waiter + wait
+    /// Create synthetic SdkMethodCall objects from a matched waiter + Wait call
     fn create_synthetic_call(
         &self,
         wait_call: &WaiterCallInfo,
         waiter_info: &WaiterCreationInfo,
     ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_call_internal(CallInfo::Simple(waiter_info, wait_call))
+        self.create_synthetic_call_internal(WaiterCallPattern::Matched {
+            creation: waiter_info,
+            wait: wait_call,
+        })
     }
 
     /// Create fallback synthetic calls for unmatched waiter creation
-    /// Returns one call per service that has the waiter, matching Python behavior
+    ///
+    /// Returns one call per service that has the waiter, matching Python behavior.
     fn create_fallback_synthetic_call(
         &self,
         waiter_info: &WaiterCreationInfo,
     ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_call_internal(CallInfo::None(waiter_info))
+        self.create_synthetic_call_internal(WaiterCallPattern::CreationOnly(waiter_info))
     }
 
     /// Get required parameters for an operation from the service index
