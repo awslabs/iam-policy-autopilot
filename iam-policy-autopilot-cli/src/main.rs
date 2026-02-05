@@ -406,8 +406,8 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
     });
 
     let results = extract_sdk_calls(&ExtractSdkCallsConfig {
-        source_files: config.source_files.to_owned(),
-        language: config.language.to_owned(),
+        source_files: config.source_files.clone(),
+        language: config.language.clone(),
         service_hints,
     })
     .await?;
@@ -447,8 +447,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
 
     let result = generate_policies(&GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: config.shared.source_files.to_owned(),
-            language: config.shared.language.to_owned(),
+            source_files: config.shared.source_files.clone(),
+            language: config.shared.language.clone(),
             service_hints,
         },
         aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,

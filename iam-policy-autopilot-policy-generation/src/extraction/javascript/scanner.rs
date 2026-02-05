@@ -165,7 +165,7 @@ where
                 original_name,
                 local_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         } else {
             // No rename - original name is the same as local name
@@ -174,7 +174,7 @@ where
                 import_name.clone(),
                 import_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         }
     }
@@ -206,7 +206,7 @@ where
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -233,7 +233,7 @@ where
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract parameters from second argument (ARG2 = operation params)
@@ -262,10 +262,8 @@ where
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                     let env = first_match.get_env();
 
                     // Extract parameters from second argument (ARG2 = operation params)
@@ -294,10 +292,8 @@ where
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                     let expr_text = first_match.text();
                     // TODO: Extract from variable assignments
                     let parameters = vec![];
@@ -556,7 +552,7 @@ where
                         method_name,
                         arguments,
                         location: Location::from_node(
-                            self.ast_grep.source_file.path.to_path_buf(),
+                            self.ast_grep.source_file.path.clone(),
                             node_match.get_node(),
                         ),
                     });

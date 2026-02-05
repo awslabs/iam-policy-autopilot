@@ -862,7 +862,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                             has_many_spec,
                             node_match.text().to_string(),
                             Location::from_node(
-                                ast.source_file.path.to_path_buf(),
+                                ast.source_file.path.clone(),
                                 node_match.get_node(),
                             ),
                         )
