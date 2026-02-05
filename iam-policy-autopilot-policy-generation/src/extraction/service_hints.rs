@@ -309,7 +309,6 @@ mod tests {
             },
             operations: HashMap::new(),
             shapes: HashMap::new(),
-            waiters: HashMap::new(),
         };
 
         // Create a minimal service index for testing
@@ -324,7 +323,7 @@ mod tests {
             .cloned()
             .collect(),
             method_lookup: HashMap::new(),
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         });
 
         let hints = ServiceHints {
@@ -379,7 +378,6 @@ mod tests {
             },
             operations: HashMap::new(),
             shapes: HashMap::new(),
-            waiters: HashMap::new(),
         };
 
         // Create a service index with logs service
@@ -393,7 +391,7 @@ mod tests {
             .cloned()
             .collect(),
             method_lookup: HashMap::new(),
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         });
 
         let hints = ServiceHints {
@@ -463,7 +461,6 @@ mod tests {
             },
             operations: HashMap::new(),
             shapes: HashMap::new(),
-            waiters: HashMap::new(),
         };
 
         // Create a service index with services A and B
@@ -477,7 +474,7 @@ mod tests {
             .cloned()
             .collect(),
             method_lookup: HashMap::new(),
-            waiter_to_services: HashMap::new(),
+            waiter_lookup: HashMap::new(),
         });
 
         // Service hints with both A and B

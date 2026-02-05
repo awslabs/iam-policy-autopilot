@@ -1,0 +1,4 @@
+[workspace.metadata.dylint]
+libraries = [
+    { path = "iam-policy-autopilot-lints" }
+]

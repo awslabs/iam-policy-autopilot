@@ -1,31 +1,18 @@
 //! Result type alias for operations that can fail with `ExtractorError`
-use ast_grep_core::AstGrep;
 use ast_grep_language::{Go, JavaScript, Python, TypeScript};
 use async_trait::async_trait;
 
 use crate::extraction::go::types::GoImportInfo;
-use crate::{SdkMethodCall, ServiceModelIndex};
+use crate::extraction::AstWithSourceFile;
+use crate::{SdkMethodCall, ServiceModelIndex, SourceFile};
 
 /// Enum to handle different AST types from different languages
 #[derive(Clone)]
 pub(crate) enum ExtractorResult {
-    Python(
-        AstGrep<ast_grep_core::tree_sitter::StrDoc<Python>>,
-        Vec<SdkMethodCall>,
-    ),
-    Go(
-        AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
-        Vec<SdkMethodCall>,
-        GoImportInfo,
-    ),
-    JavaScript(
-        AstGrep<ast_grep_core::tree_sitter::StrDoc<JavaScript>>,
-        Vec<SdkMethodCall>,
-    ),
-    TypeScript(
-        AstGrep<ast_grep_core::tree_sitter::StrDoc<TypeScript>>,
-        Vec<SdkMethodCall>,
-    ),
+    Python(AstWithSourceFile<Python>, Vec<SdkMethodCall>),
+    Go(AstWithSourceFile<Go>, Vec<SdkMethodCall>, GoImportInfo),
+    JavaScript(AstWithSourceFile<JavaScript>, Vec<SdkMethodCall>),
+    TypeScript(AstWithSourceFile<TypeScript>, Vec<SdkMethodCall>),
 }
 
 impl ExtractorResult {
@@ -64,7 +51,7 @@ impl ExtractorResult {
 #[async_trait]
 pub(crate) trait Extractor: Send + Sync {
     /// Parse source code into method calls and return the AST
-    async fn parse(&self, source_code: &str) -> ExtractorResult;
+    async fn parse(&self, source_file: &SourceFile) -> ExtractorResult;
 
     fn filter_map(
         &self,

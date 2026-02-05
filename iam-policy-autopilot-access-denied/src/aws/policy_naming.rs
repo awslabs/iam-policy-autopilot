@@ -6,14 +6,17 @@ use std::sync::OnceLock;
 // AWS IAM policy name character limit (128 characters)
 // Reference: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
 const MAX_POLICY_NAME_LENGTH: usize = 128;
-const POLICY_PREFIX: &str = "IamPolicyAutopilot";
+pub const POLICY_PREFIX: &str = "IamPolicyAutopilot";
 
 fn sanitize_component(component: &str) -> String {
     static SANITIZE_REGEX: OnceLock<Regex> = OnceLock::new();
-    let regex = SANITIZE_REGEX.get_or_init(|| Regex::new(r"[^a-zA-Z0-9+=,.@_-]").unwrap());
+    let regex = SANITIZE_REGEX.get_or_init(|| {
+        Regex::new(r"[^a-zA-Z0-9+=,.@_-]")
+            .expect("Valid regex pattern for policy name sanitization")
+    });
     let sanitized = regex.replace_all(component, "-").to_string();
     let cleaned = Regex::new(r"-+")
-        .unwrap()
+        .expect("Valid cleanup regex pattern")
         .replace_all(&sanitized, "-")
         .trim_matches('-')
         .to_string();
@@ -45,6 +48,7 @@ pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String 
 
 /// Generate unique Sid with format IamPolicyAutopilot{Service}{Action}{YYYYMMDD}
 /// Handles collision detection by appending counter (2, 3, etc.)
+#[allow(unknown_lints, convert_case_pascal)]
 pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -> String {
     // Falls back to "Unknown" service if format is invalid
     let parts: Vec<&str> = action.split(':').collect();
@@ -59,8 +63,8 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
     let date_no_hyphens = date.replace("-", "");
 
     let base_sid = format!(
-        "IamPolicyAutopilot{}{}{}",
-        service_cap, action_cap, date_no_hyphens
+        "{}{}{}{}",
+        POLICY_PREFIX, service_cap, action_cap, date_no_hyphens
     );
 
     let mut sid = base_sid.clone();

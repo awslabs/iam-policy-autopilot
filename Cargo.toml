@@ -6,19 +6,20 @@ members = [
     "iam-policy-autopilot-access-denied",
     "iam-policy-autopilot-cli"
 ]
+exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.1"
+version = "0.1.4"
 edition = "2021"
 license = "Apache-2.0"
 repository = "https://github.com/awslabs/iam-policy-autopilot"
-description = "VS Code extension for AWS IAM permission analysis and management"
+description = "An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster."
 
 # Shared dependency versions across workspace
 [workspace.dependencies]
 # Core serialization and utilities
-serde = { version = "1.0", features = ["derive"] }
+serde = { version = "1.0", features = ["derive", "rc"] }
 futures = "0.3"
 thiserror = "1.0"
 anyhow = "1.0"
@@ -28,6 +29,7 @@ ast-grep-core = "0.39"
 schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.9", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.12.4", features = ["rustls-tls"], default-features = false }
+derive-new = "0.7.0"
 
 # Native async runtime and parallel processing
 tokio = { version = "1.0", features = ["fs", "rt", "rt-multi-thread", "macros", "signal"] }
@@ -45,7 +47,7 @@ criterion = "0.5"
 proptest = "1.0"
 
 # CLI-specific dependencies
-clap = { version = "4.5", features = ["derive", "env"] }
+clap = { version = "4.5", features = ["derive", "env", "cargo"] }
 env_logger = "0.11"
 log = "0.4"
 walkdir = "2.0"
@@ -63,7 +65,9 @@ serial_test = "3.0"
 atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.8", features = ["v4"] }
-sha2 = "0.10"
+aws-lc-rs = "1.15.2"
+git2 = { version = "0.20.3", default-features = false, features = ["vendored-libgit2"] }
+relative-path = "2.0.1"
 url = "2.5"
 percent-encoding = "2.3"
 aws-sdk-iam = "1.89.0"
@@ -76,12 +80,59 @@ strsim = "0.11"
 # Additional workspace configuration
 [workspace.lints.rust]
 unsafe_code = "forbid"
+dead_code = "deny"
 
 [workspace.lints.clippy]
 enum_glob_use = "deny"
 pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 unwrap_used = "deny"
+# TODO: fix these lints
+uninlined_format_args = "allow"
+doc_markdown = "allow"
+missing_errors_doc = "allow"
+assigning_clones = "allow"
+bool_to_int_with_if = "allow"
+collection_is_never_read = "allow"
+doc_link_with_quotes = "allow"
+explicit_iter_loop = "allow"
+format_push_string = "allow"
+implicit_clone = "allow"
+items_after_statements = "allow"
+manual_assert = "allow"
+manual_let_else = "allow"
+map_unwrap_or = "allow"
+match_same_arms = "allow"
+match_wildcard_for_single_variants = "allow"
+missing_const_for_fn = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+needless_continue = "allow"
+needless_pass_by_ref_mut = "allow"
+needless_pass_by_value = "allow"
+needless_raw_string_hashes = "allow"
+option_as_ref_cloned = "allow"
+option_if_let_else = "allow"
+redundant_clone = "allow"
+redundant_closure_for_method_calls = "allow"
+redundant_pub_crate = "allow"
+semicolon_if_nothing_returned = "allow"
+single_match_else = "allow"
+struct_excessive_bools = "allow"
+too_long_first_doc_paragraph = "allow"
+too_many_lines = "allow"
+trivially_copy_pass_by_ref = "allow"
+tuple_array_conversions = "allow"
+unnecessary_debug_formatting = "allow"
+unnecessary_semicolon = "allow"
+unnecessary_wraps = "allow"
+unused_async = "allow"
+unused_self = "allow"
+use_self = "allow"
+single_char_pattern = "allow"
+or_fun_call = "allow"
+default_trait_access = "allow"
+unnested_or_patterns = "allow"
 
 # Workspace-level profiles
 [profile.dev]

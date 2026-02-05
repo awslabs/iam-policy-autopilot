@@ -94,7 +94,7 @@ impl Engine {
 
         for source_file in source_files {
             let extractor = extractor.clone();
-            join_set.spawn(async move { extractor.parse(&source_file.content).await });
+            join_set.spawn(async move { extractor.parse(&source_file).await });
         }
 
         // Collect results from concurrent tasks
@@ -180,7 +180,11 @@ impl Engine {
         }
 
         // Return the single detected language
-        Ok(detected_languages.into_iter().next().unwrap())
+        // We know there's exactly one element due to the validation above
+        Ok(detected_languages
+            .into_iter()
+            .next()
+            .expect("Should have detected exactly one language"))
     }
 }
 

@@ -52,7 +52,7 @@ pub async fn generate_application_policies(
         service_names: hints,
     });
 
-    let (policies, _) = api::generate_policies(&GeneratePolicyConfig {
+    let result = api::generate_policies(&GeneratePolicyConfig {
         individual_policies: false,
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: input.source_files.into_iter().map(|f| f.into()).collect(),
@@ -60,17 +60,19 @@ pub async fn generate_application_policies(
             language: None,
             service_hints,
         },
-        aws_context: AwsContext::new(region, account),
-        generate_action_mappings: false,
+        aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
 
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
         disable_file_system_cache: true,
+        // No explanations for MCP server by default
+        explain_filters: None,
     })
     .await?;
 
-    let policies = policies
+    let policies = result
+        .policies
         .into_iter()
         .map(|policy| serde_json::to_string(&policy.policy).context("Failed to serialize policy"))
         .collect::<Result<Vec<String>, Error>>()?;
@@ -82,27 +84,30 @@ pub async fn generate_application_policies(
 #[cfg(test)]
 mod api {
     use anyhow::Result;
-    use iam_policy_autopilot_policy_generation::{
-        api::model::GeneratePolicyConfig, policy_generation::PolicyWithMetadata,
-        MethodActionMapping,
+    use iam_policy_autopilot_policy_generation::api::model::{
+        GeneratePoliciesResult, GeneratePolicyConfig,
     };
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
 
-    // Static mutable return value
-    pub static mut MOCK_RETURN_VALUE: Option<
-        Result<(Vec<PolicyWithMetadata>, Vec<MethodActionMapping>)>,
-    > = None;
+    // Simple mock storage - Mutex is needed for static variables even with serial tests
+    static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
+        OnceLock::new();
 
     pub async fn generate_policies(
         _config: &GeneratePolicyConfig,
-    ) -> Result<(Vec<PolicyWithMetadata>, Vec<MethodActionMapping>)> {
-        #[allow(static_mut_refs)]
-        unsafe {
-            MOCK_RETURN_VALUE.take().unwrap()
-        }
+    ) -> Result<GeneratePoliciesResult> {
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard
+            .take()
+            .expect("Mock return value not set. Call set_mock_return() first.")
     }
 
-    pub fn set_mock_return(value: Result<(Vec<PolicyWithMetadata>, Vec<MethodActionMapping>)>) {
-        unsafe { MOCK_RETURN_VALUE = Some(value) }
+    pub fn set_mock_return(value: Result<GeneratePoliciesResult>) {
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        *guard = Some(value);
     }
 }
 
@@ -113,7 +118,7 @@ mod tests {
 
     use super::*;
     use iam_policy_autopilot_policy_generation::{
-        IamPolicy, PolicyType, PolicyWithMetadata, Statement,
+        api::model::GeneratePoliciesResult, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
     };
 
     use anyhow::anyhow;
@@ -143,7 +148,12 @@ mod tests {
             policy_type: PolicyType::Identity,
         };
 
-        api::set_mock_return(Ok((vec![policy], vec![])));
+        use iam_policy_autopilot_policy_generation::api::model::GeneratePoliciesResult;
+
+        api::set_mock_return(Ok(GeneratePoliciesResult {
+            policies: vec![policy],
+            explanations: None,
+        }));
         let result = generate_application_policies(input).await;
 
         println!("{result:?}");
@@ -223,7 +233,10 @@ mod tests {
             policy_type: PolicyType::Identity,
         };
 
-        api::set_mock_return(Ok((vec![policy], vec![])));
+        api::set_mock_return(Ok(GeneratePoliciesResult {
+            policies: vec![policy],
+            explanations: None,
+        }));
         let result = generate_application_policies(input).await;
 
         assert!(result.is_ok());

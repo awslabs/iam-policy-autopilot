@@ -1,0 +1,23 @@
+[package]
+name = "iam_policy_autopilot_lints"
+version = "0.1.0"
+description = "Custom dylint lints for IAM Policy Autopilot project"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+# clippy_utils is not published to crates.io, so we use a git dependency
+# This revision was chosen because it compiles with nightly-2025-09-18 (see rust-toolchain)
+# The revision doesn't need to exactly match the nightly date - any recent clippy commit
+# that's compatible with the nightly toolchain will work. This one was verified to build successfully.
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "20ce69b9a63bcd2756cd906fe0964d1e901e042a" }
+dylint_linting = "5.0.0"
+
+[dev-dependencies]
+dylint_testing = "5.0.0"
+
+[package.metadata.rust-analyzer]
+rustc_private = true

@@ -3,15 +3,14 @@
 //! This module contains the data structures used to represent operation
 //! action maps that are loaded from embedded JSON files and used for IAM policy enrichment.
 
-use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use rust_embed::RustEmbed;
+use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer};
 
 use crate::enrichment::Context;
-use crate::service_configuration::ServiceConfiguration;
 
 type ServiceName = String;
 type OperationName = String;
@@ -45,8 +44,8 @@ pub(crate) struct OperationFasMap {
     pub(crate) fas_operations: HashMap<OperationName, Vec<FasOperation>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct FasContext {
+#[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
+pub struct FasContext {
     pub(crate) key: String,
     pub(crate) values: Vec<String>,
 }
@@ -121,13 +120,14 @@ where
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash)]
 pub(crate) struct FasOperation {
     #[serde(rename = "Operation")]
-    operation: String,
+    pub(crate) operation: String,
     #[serde(rename = "Service")]
-    service: String,
+    pub(crate) service: String,
     #[serde(rename = "Context", deserialize_with = "deserialize_context_map")]
     pub(crate) context: Vec<FasContext>,
 }
 
+#[cfg(test)]
 impl FasOperation {
     pub(crate) fn new(operation: String, service: String, context: Vec<FasContext>) -> Self {
         FasOperation {
@@ -135,26 +135,6 @@ impl FasOperation {
             service,
             context,
         }
-    }
-
-    // TODO: I think this should be removed once we use the service reference API
-    //       The Operation -> Action map uses this format, so map lookups
-    //       need to convert to it.
-    pub(crate) fn service_operation_name(&self, service_cfg: &ServiceConfiguration) -> String {
-        let service = self.service(service_cfg);
-        format!("{}:{}", service, self.operation(&service, service_cfg))
-    }
-
-    pub(crate) fn service<'a>(&'a self, service_cfg: &ServiceConfiguration) -> Cow<'a, str> {
-        service_cfg.rename_service_service_reference(&self.service)
-    }
-
-    pub(crate) fn operation<'a>(
-        &'a self,
-        service: &str,
-        service_cfg: &ServiceConfiguration,
-    ) -> Cow<'a, str> {
-        service_cfg.rename_operation(service, &self.operation)
     }
 }
 
@@ -206,7 +186,9 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
 
     // Check cache first
     {
-        let cache_guard = cache.read().unwrap();
+        let cache_guard = cache
+            .read()
+            .expect("Failed to acquire read lock on operation FAS maps cache");
         if let Some(cached_result) = cache_guard.get(service_name) {
             return cached_result.clone();
         }
@@ -234,7 +216,9 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
 
     // Cache the result
     {
-        let mut cache_guard = cache.write().unwrap();
+        let mut cache_guard = cache
+            .write()
+            .expect("Failed to acquire write lock on operation FAS maps cache");
         cache_guard.insert(service_name.to_string(), result.clone());
     }
 
@@ -303,29 +287,6 @@ mod tests {
                 assert_eq!(first_op.operation, "Decrypt");
             }
         }
-    }
-
-    #[test]
-    fn test_fas_operation_methods() {
-        use crate::service_configuration::load_service_configuration;
-
-        let service_cfg = load_service_configuration().unwrap();
-
-        let context = vec![FasContext::new(
-            "kms:ViaService".to_string(),
-            vec!["ssm.${region}.amazonaws.com".to_string()],
-        )];
-
-        let fas_op = FasOperation::new("Decrypt".to_string(), "kms".to_string(), context);
-
-        // Test service method
-        assert_eq!(fas_op.service(&service_cfg), "kms");
-
-        // Test operation method
-        assert_eq!(fas_op.operation("kms", &service_cfg), "Decrypt");
-
-        // Test service_operation_name method
-        assert_eq!(fas_op.service_operation_name(&service_cfg), "kms:Decrypt");
     }
 
     #[test]

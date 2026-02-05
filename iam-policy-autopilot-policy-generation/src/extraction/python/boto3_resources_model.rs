@@ -2,7 +2,7 @@
 //!
 //! Parses boto3 resources JSON specifications and utility mappings for resource-based AWS SDK patterns.
 
-use crate::embedded_data::EmbeddedBoto3Data;
+use crate::embedded_data::Boto3Data;
 use convert_case::{Case, Casing};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -22,7 +22,7 @@ pub enum OperationType {
 
 /// Extract service names from embedded boto3 utilities mapping
 fn extract_services_from_embedded_utilities_mapping() -> Result<Vec<String>, String> {
-    let content_bytes = EmbeddedBoto3Data::get_utilities_mapping()
+    let content_bytes = Boto3Data::get_utilities_mapping()
         .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
 
     let content = std::str::from_utf8(&content_bytes)
@@ -302,7 +302,7 @@ impl Boto3ResourcesModel {
     /// Loads resource specifications from embedded boto3 data
     pub fn load_from_embedded(service_name: &str) -> Result<Self, String> {
         // Get service versions from embedded data
-        let service_versions = EmbeddedBoto3Data::build_service_versions_map();
+        let service_versions = Boto3Data::build_service_versions_map();
 
         // Find the service and get its latest version
         let versions = service_versions.get(service_name).ok_or_else(|| {
@@ -317,7 +317,7 @@ impl Boto3ResourcesModel {
             .ok_or_else(|| format!("No versions found for service '{}'", service_name))?;
 
         // Get the resources data
-        let resources_data = EmbeddedBoto3Data::get_resources_raw(service_name, latest_version)
+        let resources_data = Boto3Data::get_resources_raw(service_name, latest_version)
             .ok_or_else(|| {
                 format!(
                     "Resources data not found for {}/{}",
@@ -347,7 +347,7 @@ impl Boto3ResourcesModel {
 
     /// Merge utility methods from embedded mapping into model
     fn merge_utility_methods_from_embedded(model: &mut Boto3ResourcesModel) -> Result<(), String> {
-        let content_bytes = EmbeddedBoto3Data::get_utilities_mapping()
+        let content_bytes = Boto3Data::get_utilities_mapping()
             .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
 
         let content = std::str::from_utf8(&content_bytes)

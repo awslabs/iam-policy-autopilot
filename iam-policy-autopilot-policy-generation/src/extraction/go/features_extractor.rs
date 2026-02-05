@@ -6,7 +6,8 @@
 use crate::extraction::go::features::{FeatureMethod, GoSdkV2Features};
 use crate::extraction::go::types::GoImportInfo;
 use crate::extraction::go::utils;
-use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
+use crate::Location;
 use ast_grep_config::from_yaml_string;
 use ast_grep_language::Go;
 
@@ -19,10 +20,10 @@ pub(crate) struct FeatureCallInfo {
     pub(crate) receiver: Option<String>,
     /// Extracted arguments
     pub(crate) arguments: Vec<crate::extraction::Parameter>,
-    /// Start position of the call node
-    pub(crate) start_position: (usize, usize),
-    /// End position of the call node
-    pub(crate) end_position: (usize, usize),
+    /// Matched expression
+    pub(crate) expr: String,
+    /// Location of the call
+    pub(crate) location: Location,
 }
 
 /// Extractor for Go AWS SDK v2 feature methods
@@ -43,7 +44,7 @@ impl GoFeaturesExtractor {
     /// Extract feature method calls from the AST
     pub(crate) fn extract_feature_method_calls(
         &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
+        ast: &AstWithSourceFile<Go>,
         import_info: &mut GoImportInfo,
     ) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
@@ -63,11 +64,8 @@ impl GoFeaturesExtractor {
 
     /// Find all method calls that might be feature methods
     /// This matches receiver.Method(...) patterns using proper ast-grep config
-    fn find_method_calls(
-        &self,
-        ast: &ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>>,
-    ) -> Vec<FeatureCallInfo> {
-        let root = ast.root();
+    fn find_method_calls(&self, ast: &AstWithSourceFile<Go>) -> Vec<FeatureCallInfo> {
+        let root = ast.ast.root();
         let mut calls = Vec::new();
 
         // Use the same pattern as the main extractor for method calls
@@ -109,17 +107,15 @@ rule:
                 let args_nodes = env.get_multiple_matches("ARGS");
                 let arguments = utils::extract_arguments(&args_nodes);
 
-                // Get position information
-                let node = node_match.get_node();
-                let start = node.start_pos();
-                let end = node.end_pos();
-
                 calls.push(FeatureCallInfo {
                     method_name,
                     receiver: Some(receiver),
                     arguments,
-                    start_position: (start.line() + 1, start.column(node) + 1),
-                    end_position: (end.line() + 1, end.column(node) + 1),
+                    expr: node_match.text().to_string(),
+                    location: Location::from_node(
+                        ast.source_file.path.clone(),
+                        node_match.get_node(),
+                    ),
                 });
             }
         }
@@ -190,6 +186,7 @@ rule:
                     value: crate::extraction::ParameterValue::Unresolved("synthetic".to_string()),
                     position: i,
                     type_annotation: None,
+                    struct_fields: None,
                 })
                 .collect()
         } else {
@@ -223,8 +220,8 @@ rule:
                     metadata: Some(SdkMethodCallMetadata {
                         parameters: parameters.clone(),
                         return_type: None,
-                        start_position: call_info.start_position,
-                        end_position: call_info.end_position,
+                        expr: call_info.expr.clone(),
+                        location: call_info.location.clone(),
                         receiver: call_info.receiver.clone(),
                     }),
                 }
@@ -235,14 +232,19 @@ rule:
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
+    use crate::{Language, SourceFile};
+
     use super::*;
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Go;
 
-    fn create_test_ast(
-        source_code: &str,
-    ) -> ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<Go>> {
-        Go.ast_grep(source_code)
+    fn create_test_ast(source_code: &str) -> AstWithSourceFile<Go> {
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), source_code.to_string(), Language::Go);
+        let ast_grep = Go.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file)
     }
 
     fn create_test_import_info() -> GoImportInfo {

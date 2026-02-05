@@ -189,7 +189,11 @@ pub async fn begin_http_transport(
     // to recieve SIGINT for ctrl+c. If we serve on the same thread, ctrl+c does not work.
     tokio::spawn(async move {
         let _ = axum::serve(tcp_listener, router)
-            .with_graceful_shutdown(async { tokio::signal::ctrl_c().await.unwrap() })
+            .with_graceful_shutdown(async {
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("Failed to listen for CTRL+C signal")
+            })
             .await;
     });
 

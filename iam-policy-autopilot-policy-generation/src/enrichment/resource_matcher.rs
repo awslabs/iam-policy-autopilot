@@ -4,42 +4,138 @@
 //! action maps with Service Definition Files to generate enriched method calls
 //! with complete IAM metadata.
 
-use convert_case::{Case, Casing};
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Action, Context, EnrichedSdkMethodCall, Resource};
-use crate::enrichment::operation_fas_map::{FasOperation, OperationFasMap, OperationFasMaps};
+use super::{Action, Context, EnrichedSdkMethodCall, Explanation, Reason, Resource};
+use crate::enrichment::operation_fas_map::{OperationFasMap, OperationFasMaps};
 use crate::enrichment::service_reference::ServiceReference;
-use crate::enrichment::{Condition, ServiceReferenceLoader};
+use crate::enrichment::{Condition, Operation, ServiceReferenceLoader};
 use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::ServiceConfiguration;
-use crate::SdkMethodCall;
+use crate::{SdkMethodCall, SdkType};
+
+#[derive(Clone, Debug)]
+struct FasExpansion {
+    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
+}
+
+impl FasExpansion {
+    fn new(
+        service_cfg: &ServiceConfiguration,
+        fas_maps: &OperationFasMaps,
+        initial: Operation,
+    ) -> Self {
+        let mut dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>> = HashMap::new();
+        let initial_arc = Arc::new(initial);
+
+        dependency_graph.insert(Arc::clone(&initial_arc), Vec::new()); // Root has no dependencies
+
+        let mut to_process = vec![Arc::clone(&initial_arc)];
+
+        while !to_process.is_empty() {
+            let mut newly_discovered = Vec::new();
+
+            for current in &to_process {
+                let service_name = &current.service;
+
+                match Self::find_operation_fas_map_for_service(service_cfg, fas_maps, service_name)
+                {
+                    Some(operation_fas_map) => {
+                        let service_operation_name = current.service_operation_name();
+                        log::debug!("Looking up operation {}", service_operation_name);
+
+                        if let Some(additional_operations) = operation_fas_map
+                            .fas_operations
+                            .get(&service_operation_name)
+                        {
+                            for additional_op in additional_operations {
+                                let new_op = Arc::new(Operation::from(additional_op.clone()));
+
+                                if let Some(existing_deps) = dependency_graph.get_mut(&new_op) {
+                                    // Operation already exists, add this dependency relationship
+                                    existing_deps.push(Arc::clone(current));
+                                } else {
+                                    // New operation
+                                    dependency_graph
+                                        .insert(Arc::clone(&new_op), vec![Arc::clone(current)]);
+                                    newly_discovered.push(Arc::clone(&new_op));
+                                }
+                            }
+                        } else {
+                            log::debug!("Did not find {}", service_operation_name);
+                        }
+                    }
+                    None => {
+                        log::debug!("No FAS map found for service: {}", service_name);
+                    }
+                }
+            }
+
+            let newly_discovered_count = newly_discovered.len();
+            to_process = newly_discovered;
+
+            log::debug!(
+                "FAS expansion discovered {} new operations",
+                newly_discovered_count
+            );
+        }
+
+        log::debug!(
+            "FAS expansion completed with {} total operations",
+            dependency_graph.len()
+        );
+        Self { dependency_graph }
+    }
+
+    /// Find OperationFas map for a specific service
+    fn find_operation_fas_map_for_service(
+        service_cfg: &ServiceConfiguration,
+        fas_maps: &OperationFasMaps,
+        service_name: &str,
+    ) -> Option<Arc<OperationFasMap>> {
+        fas_maps
+            .get(
+                service_cfg
+                    .rename_service_operation_action_map(service_name)
+                    .as_ref(),
+            )
+            .cloned()
+    }
+
+    fn operations(&self) -> impl Iterator<Item = &Arc<Operation>> {
+        self.dependency_graph.keys()
+    }
+
+    fn complete_provenance_chain(&self, op: Arc<Operation>) -> Vec<Arc<Operation>> {
+        let mut result = vec![];
+        if let Some(deps) = self.dependency_graph.get(&op) {
+            for dep in deps {
+                result.push(Arc::clone(dep));
+            }
+        }
+        // Add the initial operation
+        result.push(Arc::clone(&op));
+        result
+    }
+}
 
 /// ResourceMatcher coordinates OperationAction maps and Service Reference data to generate enriched method calls
 ///
 /// This struct provides the core functionality for the 3-stage enrichment pipeline,
 /// combining parsed method calls with operation action maps and Service
 /// Definition Files to produce complete IAM metadata.
-#[derive(Debug, Clone)]
+#[derive(derive_new::new, Debug, Clone)]
 pub(crate) struct ResourceMatcher {
     service_cfg: Arc<ServiceConfiguration>,
     fas_maps: OperationFasMaps,
+    sdk: SdkType,
 }
 
 // TODO: Make this configurable: https://github.com/awslabs/iam-policy-autopilot/issues/19
 const RESOURCE_CUTOFF: usize = 5;
 
 impl ResourceMatcher {
-    /// Create a new ResourceMatcher instance
-    #[must_use]
-    pub(crate) fn new(service_cfg: Arc<ServiceConfiguration>, fas_maps: OperationFasMaps) -> Self {
-        Self {
-            service_cfg,
-            fas_maps,
-        }
-    }
-
     /// Enrich a parsed method call with OperationAction maps, FAS maps, and Service
     /// Reference data
     pub(crate) async fn enrich_method_call<'b>(
@@ -70,94 +166,6 @@ impl ResourceMatcher {
         Ok(enriched_calls)
     }
 
-    /// Find OperationFas map for a specific service
-    fn find_operation_fas_map_for_service(
-        &self,
-        service_name: &str,
-    ) -> Option<Arc<OperationFasMap>> {
-        self.fas_maps
-            .get(
-                self.service_cfg
-                    .rename_service_operation_action_map(service_name)
-                    .as_ref(),
-            )
-            .cloned()
-    }
-
-    /// Expand FAS operations to a fixed point, avoiding infinite loops from cycles
-    ///
-    /// This method safely expands FAS operations by iteratively processing new operations
-    /// until no more new operations are discovered (fixed point reached).
-    /// It includes cycle detection to prevent infinite loops.
-    fn expand_fas_operations_to_fixed_point(
-        &self,
-        initial: FasOperation,
-    ) -> Result<Vec<FasOperation>> {
-        let mut operations = HashSet::<FasOperation>::new();
-        operations.insert(initial);
-
-        let mut to_process = operations.clone();
-        while !to_process.is_empty() {
-            let mut newly_discovered = HashSet::<FasOperation>::new();
-
-            // Process all operations in the current batch
-            for operation in &to_process {
-                let service_name = operation.service(&self.service_cfg);
-                let operation_fas_map_option =
-                    self.find_operation_fas_map_for_service(&service_name);
-
-                match operation_fas_map_option {
-                    Some(operation_fas_map) => {
-                        let service_operation_name =
-                            operation.service_operation_name(&self.service_cfg);
-                        log::debug!("Looking up {}", service_operation_name);
-
-                        if let Some(additional_operations) = operation_fas_map
-                            .fas_operations
-                            .get(&service_operation_name)
-                        {
-                            for additional_op in additional_operations {
-                                // Only add if we haven't seen this operation before
-                                if !operations.contains(additional_op) {
-                                    newly_discovered.insert(additional_op.clone());
-                                }
-                            }
-                        } else {
-                            log::debug!("Did not find {}", service_operation_name);
-                        }
-                    }
-                    None => {
-                        log::debug!("No FAS map found for service: {}", service_name);
-                    }
-                }
-            }
-
-            // Add newly discovered operations to our complete set
-            operations.extend(newly_discovered.iter().cloned());
-
-            let newly_discovered_count = newly_discovered.len();
-
-            // Set up next iteration to process only newly discovered operations
-            to_process = newly_discovered;
-
-            log::debug!(
-                "FAS expansion discovered {} new operations",
-                newly_discovered_count
-            );
-        }
-
-        log::debug!(
-            "FAS expansion completed with {} total operations",
-            operations.len()
-        );
-
-        // Convert HashSet to Vec and sort by service_operation_name for deterministic output
-        let mut operations_vec: Vec<FasOperation> = operations.into_iter().collect();
-        operations_vec.sort_by_key(|op| op.service_operation_name(&self.service_cfg));
-
-        Ok(operations_vec)
-    }
-
     fn make_condition<T: Context>(context: &[T]) -> Vec<Condition> {
         let mut result = vec![];
         for ctx in context {
@@ -183,42 +191,52 @@ impl ResourceMatcher {
             parsed_call.name
         );
 
-        let initial = FasOperation::new(
-            parsed_call.name.to_case(Case::Pascal),
-            service_name.to_string(),
-            Vec::new(),
-        );
+        // Store the original service name from parsed_call for use in explanations
+        let original_service_name = service_name;
 
+        let initial = Operation::from_call(
+            parsed_call,
+            service_name,
+            &self.service_cfg,
+            self.sdk,
+            service_reference_loader,
+        )
+        .await?;
+
+        log::debug!("Expanded {:?}", initial);
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
-        let operations = self.expand_fas_operations_to_fixed_point(initial)?;
+        let fas_expansion = FasExpansion::new(&self.service_cfg, &self.fas_maps, initial);
+
+        log::debug!("to\n{:?}", fas_expansion.dependency_graph);
 
         let mut enriched_actions = vec![];
-        for operation in operations {
-            let service = operation.service(&self.service_cfg);
-            // Find the corresponding SDF using the cache
-            let service_reference = service_reference_loader
-                .load(&operation.service(&self.service_cfg))
-                .await?;
 
+        for op in fas_expansion.operations() {
+            log::debug!(
+                "Creating actions for operation {:?}",
+                op.service_operation_name()
+            );
+            log::debug!("  with context {:?}", op.context());
+
+            // Find the corresponding SDF using the cache
+            let service_reference = service_reference_loader.load(&op.service).await?;
             match service_reference {
                 None => {
+                    log::debug!("Skipping operation due to no service reference");
                     continue;
                 }
                 Some(service_reference) => {
-                    log::debug!("Creating actions for {:?}", operation);
-                    log::debug!("  with context {:?}", operation.context);
-                    if let Some(operation_to_authorized_actions) = service_reference_loader
-                        .get_operation_to_authorized_actions(&service)
-                        .await?
+                    if let Some(operation_to_authorized_actions) =
+                        &service_reference.operation_to_authorized_actions
                     {
-                        log::debug!(
-                            "Looking up {}",
-                            &operation.service_operation_name(&self.service_cfg)
-                        );
+                        log::debug!("Looking up {}", &op.service_operation_name());
                         if let Some(operation_to_authorized_action) =
-                            operation_to_authorized_actions
-                                .get(&operation.service_operation_name(&self.service_cfg))
+                            operation_to_authorized_actions.get(&op.service_operation_name())
                         {
+                            log::debug!(
+                                "Found operation action map for {:?}",
+                                operation_to_authorized_action.name
+                            );
                             for action in &operation_to_authorized_action.authorized_actions {
                                 let enriched_resources = self
                                     .find_resources_for_action_in_service_reference(
@@ -233,7 +251,7 @@ impl ResourceMatcher {
                                     };
 
                                 // Combine conditions from FAS operation context and AuthorizedAction context
-                                let mut conditions = Self::make_condition(&operation.context);
+                                let mut conditions = Self::make_condition(op.context());
 
                                 // Add conditions from AuthorizedAction context if present
                                 if let Some(auth_context) = &action.context {
@@ -242,29 +260,38 @@ impl ResourceMatcher {
                                     )));
                                 }
 
+                                let ops = fas_expansion.complete_provenance_chain(Arc::clone(op));
+
+                                // Create explanation for this action
+                                let explanation = Explanation {
+                                    reasons: vec![Reason::new(ops)],
+                                };
                                 let enriched_action = Action::new(
                                     action.name.clone(),
                                     enriched_resources,
                                     conditions,
+                                    explanation,
                                 );
-
+                                log::debug!("Created action: {:?}", enriched_action);
                                 enriched_actions.push(enriched_action);
                             }
                         } else {
                             // Fallback: operation not found in operation action map, create basic action
                             // This ensures we don't filter out operations, only ADD additional ones from the map
                             if let Some(a) =
-                                self.create_fallback_action(&parsed_call.name, &service_reference)?
+                                self.create_fallback_action(op, &fas_expansion, &service_reference)?
                             {
-                                enriched_actions.push(a)
+                                log::debug!("Created fallback action due to no entry in operation action map: {:?}", a);
+                                enriched_actions.push(a);
                             }
                         }
                     } else {
                         // Fallback: operation action map does not exist, create basic action
                         if let Some(a) =
-                            self.create_fallback_action(&parsed_call.name, &service_reference)?
+                            self.create_fallback_action(op, &fas_expansion, &service_reference)?
                         {
-                            enriched_actions.push(a)
+                            log::debug!("Created fallback action due to no operation action map for service: {:?}", a);
+                            enriched_actions.push(a);
                         }
                     }
                 }
@@ -277,7 +304,7 @@ impl ResourceMatcher {
 
         Ok(Some(EnrichedSdkMethodCall {
             method_name: parsed_call.name.clone(),
-            service: service_name.to_string(),
+            service: original_service_name.to_string(),
             actions: enriched_actions,
             sdk_method_call: parsed_call,
         }))
@@ -289,20 +316,18 @@ impl ResourceMatcher {
     /// corresponding resources in the SDF.
     fn create_fallback_action(
         &self,
-        method_name: &str,
+        op: &Arc<Operation>,
+        fas_expansion_result: &FasExpansion,
         service_reference: &ServiceReference,
     ) -> Result<Option<Action>> {
-        let renamed_service = self
-            .service_cfg
-            .rename_service_service_reference(&service_reference.service_name);
-        let renamed_action = &method_name.to_case(Case::Pascal);
-        let action_name = format!("{}:{}", renamed_service, renamed_action);
+        let action_name = op.service_operation_name();
 
         // Sanity check that the action exists in the SDF
-        if !service_reference
-            .actions
-            .contains_key(renamed_action.as_str())
-        {
+        if !service_reference.actions.contains_key(&op.name) {
+            log::debug!(
+                "Not creating fallback action: service reference doesn't contain key: {:?}",
+                action_name
+            );
             return Ok(None);
         }
 
@@ -310,10 +335,18 @@ impl ResourceMatcher {
         let resources =
             self.find_resources_for_action_in_service_reference(&action_name, service_reference)?;
 
+        // Create explanation for fallback action
+        let explanation = Explanation {
+            reasons: vec![Reason::new(
+                fas_expansion_result.complete_provenance_chain(Arc::clone(op)),
+            )],
+        };
+
         Ok(Some(Action::new(
             action_name.to_string(),
             resources,
             vec![],
+            explanation,
         )))
     }
 
@@ -372,9 +405,11 @@ impl ResourceMatcher {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
-    use crate::enrichment::mock_remote_service_reference;
     use crate::enrichment::operation_fas_map::{FasContext, FasOperation, OperationFasMap};
+    use crate::enrichment::{mock_remote_service_reference, OperationSource};
 
     fn create_test_parsed_method_call() -> SdkMethodCall {
         SdkMethodCall {
@@ -382,6 +417,15 @@ mod tests {
             possible_services: vec!["s3".to_string()],
             metadata: None,
         }
+    }
+
+    fn create_empty_service_config() -> Arc<ServiceConfiguration> {
+        Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: HashMap::new(),
+            rename_services_service_reference: HashMap::new(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        })
     }
 
     #[tokio::test]
@@ -397,7 +441,6 @@ mod tests {
                 "RenameServicesOperationActionMap": {},
                 "RenameServicesServiceReference": {},
                 "SmithyBotocoreServiceNameMapping": {},
-                "RenameOperations": {},
                 "ResourceOverrides": {}
             }"#;
 
@@ -410,7 +453,7 @@ mod tests {
         let (_, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
         let parsed_call = create_test_parsed_method_call();
 
         // Create operation action map file
@@ -473,20 +516,10 @@ mod tests {
             .cloned()
             .collect(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: [(
-                "s3:ListObjectsV2".to_string(),
-                crate::service_configuration::OperationRename {
-                    service: "s3".to_string(),
-                    operation: "ListObjects".to_string(),
-                },
-            )]
-            .iter()
-            .cloned()
-            .collect(),
             resource_overrides: HashMap::new(),
         };
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -550,15 +583,9 @@ mod tests {
         use std::collections::HashMap;
 
         // Service configuration without s3 in no_operation_action_map
-        let service_cfg = ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        };
+        let service_cfg = create_empty_service_config();
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(service_cfg, HashMap::new(), SdkType::Boto3);
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
@@ -618,7 +645,6 @@ mod tests {
             .cloned()
             .collect(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides: HashMap::new(),
         };
 
@@ -685,7 +711,7 @@ mod tests {
                     } ]
                 })).await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
         // Create SdkMethodCall for connectparticipant:send_message
         let parsed_call = SdkMethodCall {
@@ -728,7 +754,6 @@ mod tests {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides,
         };
 
@@ -774,7 +799,7 @@ mod tests {
         )
         .await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
         // Create parsed method call for get_user
         let parsed_call = SdkMethodCall {
@@ -842,14 +867,13 @@ mod tests {
             rename_services_operation_action_map: HashMap::new(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
             resource_overrides,
         };
 
         let (_, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new());
+        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
         // Create parsed method call for get_object
         let parsed_call = SdkMethodCall {
@@ -912,90 +936,83 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with no cycles: A -> B -> C (linear chain)
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service B: Decrypt
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "Decrypt".to_string(),
+            // Service A: GetObject -> Service B: Decrypt
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "Decrypt".to_string(),
+                    "service-b".to_string(),
+                    vec![FasContext::new(
+                        "test".to_string(),
+                        vec!["value".to_string()],
+                    )],
+                )],
+            );
+
+            // Service B: Decrypt -> Service C: Log
+            let mut service_b_operations = HashMap::new();
+            service_b_operations.insert(
+                "service-b:Decrypt".to_string(),
+                vec![FasOperation::new(
+                    "Log".to_string(),
+                    "service-c".to_string(),
+                    vec![FasContext::new(
+                        "test2".to_string(),
+                        vec!["value2".to_string()],
+                    )],
+                )],
+            );
+
+            // Service C: Log -> nothing (terminal)
+            let service_c_operations = HashMap::new();
+
+            fas_maps.insert(
+                "service-a".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps.insert(
                 "service-b".to_string(),
-                vec![FasContext::new(
-                    "test".to_string(),
-                    vec!["value".to_string()],
-                )],
-            )],
-        );
-
-        // Service B: Decrypt -> Service C: Log
-        let mut service_b_operations = HashMap::new();
-        service_b_operations.insert(
-            "service-b:Decrypt".to_string(),
-            vec![FasOperation::new(
-                "Log".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_b_operations,
+                }),
+            );
+            fas_maps.insert(
                 "service-c".to_string(),
-                vec![FasContext::new(
-                    "test2".to_string(),
-                    vec!["value2".to_string()],
-                )],
-            )],
-        );
-
-        // Service C: Log -> nothing (terminal)
-        let service_c_operations = HashMap::new();
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-b".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_b_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-c".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_c_operations,
-            }),
-        );
-
-        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+                Arc::new(OperationFasMap {
+                    fas_operations: service_c_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject
-        let initial =
-            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
-
-        let result = matcher.expand_fas_operations_to_fixed_point(initial);
-        assert!(
-            result.is_ok(),
-            "Fixed-point expansion should succeed for non-cyclic operations"
+        let initial = Operation::new(
+            "service-a".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
         );
 
-        let operations = result.unwrap();
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
+
         assert_eq!(
-            operations.len(),
+            fas_expansion.dependency_graph.len(),
             3,
             "Should have exactly 3 operations: GetObject, Decrypt, Log"
         );
 
         // Verify all expected operations are present
-        let operation_names: std::collections::HashSet<String> = operations
-            .iter()
-            .map(|op| op.service_operation_name(&service_cfg))
+        let operation_names: std::collections::HashSet<String> = fas_expansion
+            .operations()
+            .map(|op| op.service_operation_name())
             .collect();
 
         assert!(operation_names.contains("service-a:GetObject"));
@@ -1012,81 +1029,75 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a mock FAS map with a cycle: A -> B -> A
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service B: Decrypt
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "Decrypt".to_string(),
-                "service-b".to_string(),
-                vec![FasContext::new(
-                    "test".to_string(),
-                    vec!["value".to_string()],
+            // Service A: GetObject -> Service B: Decrypt
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "Decrypt".to_string(),
+                    "service-b".to_string(),
+                    vec![FasContext::new(
+                        "test".to_string(),
+                        vec!["value".to_string()],
+                    )],
                 )],
-            )],
-        );
+            );
 
-        // Service B: Decrypt -> Service A: GetObject (creates cycle!)
-        let mut service_b_operations = HashMap::new();
-        service_b_operations.insert(
-            "service-b:Decrypt".to_string(),
-            vec![FasOperation::new(
-                "GetObject".to_string(),
+            // Service B: Decrypt -> Service A: GetObject (creates cycle!)
+            let mut service_b_operations = HashMap::new();
+            service_b_operations.insert(
+                "service-b:Decrypt".to_string(),
+                vec![FasOperation::new(
+                    "GetObject".to_string(),
+                    "service-a".to_string(),
+                    vec![FasContext::new(
+                        "test2".to_string(),
+                        vec!["value2".to_string()],
+                    )],
+                )],
+            );
+
+            fas_maps.insert(
                 "service-a".to_string(),
-                vec![FasContext::new(
-                    "test2".to_string(),
-                    vec!["value2".to_string()],
-                )],
-            )],
-        );
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
-        fas_maps.insert(
-            "service-b".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_b_operations,
-            }),
-        );
-
-        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps.insert(
+                "service-b".to_string(),
+                Arc::new(OperationFasMap {
+                    fas_operations: service_b_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject - should detect cycle and terminate
-        let initial =
-            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
-
-        let result = matcher.expand_fas_operations_to_fixed_point(initial);
-
-        assert!(
-            result.is_ok(),
-            "Fixed-point expansion should handle cycles gracefully"
+        let initial = Operation::new(
+            "service-a".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
         );
 
-        let operations = result.unwrap();
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         // Debug: print what operations we actually got
-        let operation_names: std::collections::HashSet<String> = operations
-            .iter()
-            .map(|op| op.service_operation_name(&service_cfg))
+        let operation_names: std::collections::HashSet<String> = fas_expansion
+            .operations()
+            .map(|op| op.service_operation_name())
             .collect();
 
         // 3 operations, note that GetObject occurs twice, once with and once without context
-        assert!(operations.len() == 3, "Should have 3 operations");
+        assert!(
+            fas_expansion.dependency_graph.len() == 3,
+            "Should have 3 operations"
+        );
 
         // Verify expected operations are present
         assert!(operation_names.contains("service-a:GetObject"));
@@ -1102,64 +1113,54 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Create a chain that loops back: A -> B -> C -> D -> A
-        let operations_data = vec![
-            ("service-a", "GetObject", "service-b", "Decrypt"),
-            ("service-b", "Decrypt", "service-c", "Validate"),
-            ("service-c", "Validate", "service-d", "Log"),
-            ("service-d", "Log", "service-a", "GetObject"), // Back to start
-        ];
+            // Create a chain that loops back: A -> B -> C -> D -> A
+            let operations_data = vec![
+                ("service-a", "GetObject", "service-b", "Decrypt"),
+                ("service-b", "Decrypt", "service-c", "Validate"),
+                ("service-c", "Validate", "service-d", "Log"),
+                ("service-d", "Log", "service-a", "GetObject"), // Back to start
+            ];
 
-        for (from_service, from_op, to_service, to_op) in operations_data {
-            let mut operations = HashMap::new();
-            operations.insert(
-                format!("{}:{}", from_service, from_op),
-                vec![FasOperation::new(
-                    to_op.to_string(),
-                    to_service.to_string(),
-                    vec![FasContext::new(
-                        "cycle".to_string(),
-                        vec!["test".to_string()],
+            for (from_service, from_op, to_service, to_op) in operations_data {
+                let mut operations = HashMap::new();
+                operations.insert(
+                    format!("{}:{}", from_service, from_op),
+                    vec![FasOperation::new(
+                        to_op.to_string(),
+                        to_service.to_string(),
+                        vec![FasContext::new(
+                            "cycle".to_string(),
+                            vec!["test".to_string()],
+                        )],
                     )],
-                )],
-            );
+                );
 
-            fas_maps.insert(
-                from_service.to_string(),
-                Arc::new(OperationFasMap {
-                    fas_operations: operations,
-                }),
-            );
-        }
+                fas_maps.insert(
+                    from_service.to_string(),
+                    Arc::new(OperationFasMap {
+                        fas_operations: operations,
+                    }),
+                );
+            }
+            fas_maps
+        };
 
-        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
-
-        let initial =
-            FasOperation::new("GetObject".to_string(), "service-a".to_string(), Vec::new());
-
-        let result = matcher.expand_fas_operations_to_fixed_point(initial);
-
-        // Should succeed and return operations for the cycle
-        assert!(
-            result.is_ok(),
-            "Should handle complex cycles without hitting max iterations"
+        let initial = Operation::new(
+            "service-a".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
         );
 
-        let operations = result.unwrap();
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
         assert!(
-            operations.len() == 5,
+            fas_expansion.dependency_graph.len() == 5,
             "Should have 5 operations in the cycle"
         );
     }
@@ -1168,34 +1169,30 @@ mod tests {
     async fn test_fas_expansion_empty_initial() {
         use std::collections::HashMap;
 
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
+        let fas_maps = HashMap::new();
 
-        let matcher = ResourceMatcher::new(service_cfg.clone(), HashMap::new());
-
-        let initial = FasOperation::new(
-            "NonExistentOperation".to_string(),
+        let initial = Operation::new(
             "non-existent-service".to_string(),
-            Vec::new(),
+            "NonExistentOperation".to_string(),
+            OperationSource::Provided,
         );
 
-        let result = matcher.expand_fas_operations_to_fixed_point(initial.clone());
-        assert!(result.is_ok(), "Should succeed even with no FAS maps");
-
-        let operations = result.unwrap();
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial.clone());
         assert_eq!(
-            operations.len(),
+            fas_expansion.dependency_graph.len(),
             1,
             "Should contain only the initial operation"
         );
-        assert!(
-            operations.contains(&initial),
+
+        let operations: Vec<_> = fas_expansion.operations().collect();
+        assert_eq!(
+            **operations[0], initial,
             "Should contain the initial operation"
+        );
+        assert!(
+            !matches!(operations[0].source, OperationSource::Fas(_)),
+            "Initial operation should not be from FAS expansion"
         );
 
         println!("✓ Test passed: Handles case with no additional FAS operations");
@@ -1206,63 +1203,146 @@ mod tests {
         use std::collections::HashMap;
 
         // Create a simple service configuration
-        let service_cfg = Arc::new(ServiceConfiguration {
-            rename_services_operation_action_map: HashMap::new(),
-            rename_services_service_reference: HashMap::new(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        });
+        let service_cfg = create_empty_service_config();
 
         // Create a FAS map where A -> A with empty context (self-referential)
-        let mut fas_maps = HashMap::new();
+        let fas_maps = {
+            let mut fas_maps = HashMap::new();
 
-        // Service A: GetObject -> Service A: GetObject (with empty context)
-        let mut service_a_operations = HashMap::new();
-        service_a_operations.insert(
-            "service-a:GetObject".to_string(),
-            vec![FasOperation::new(
-                "GetObject".to_string(),
+            // Service A: GetObject -> Service A: GetObject (with empty context)
+            let mut service_a_operations = HashMap::new();
+            service_a_operations.insert(
+                "service-a:GetObject".to_string(),
+                vec![FasOperation::new(
+                    "GetObject".to_string(),
+                    "service-a".to_string(),
+                    Vec::new(), // Empty context - same as initial
+                )],
+            );
+
+            fas_maps.insert(
                 "service-a".to_string(),
-                Vec::new(), // Empty context - same as initial
-            )],
-        );
-
-        fas_maps.insert(
-            "service-a".to_string(),
-            Arc::new(OperationFasMap {
-                fas_operations: service_a_operations,
-            }),
-        );
-
-        let matcher = ResourceMatcher::new(service_cfg.clone(), fas_maps);
+                Arc::new(OperationFasMap {
+                    fas_operations: service_a_operations,
+                }),
+            );
+            fas_maps
+        };
 
         // Test expansion starting from GetObject with empty context
-        let initial = FasOperation::new(
-            "GetObject".to_string(),
+        let initial = Operation::new(
             "service-a".to_string(),
-            Vec::new(), // Empty context
+            "GetObject".to_string(),
+            OperationSource::Provided,
         );
 
-        let result = matcher.expand_fas_operations_to_fixed_point(initial.clone());
-        assert!(
-            result.is_ok(),
-            "Self-cycle with empty context should be handled gracefully"
-        );
-
-        let operations = result.unwrap();
+        let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial.clone());
 
         // Should have exactly 1 operation since A->A with same context creates no new operations
         assert_eq!(
-            operations.len(),
+            fas_expansion.dependency_graph.len(),
             1,
             "Self-cycle with identical context should result in exactly 1 operation"
         );
-        assert!(
-            operations.contains(&initial),
+
+        let operations: Vec<_> = fas_expansion.operations().collect();
+        assert_eq!(
+            **operations[0], initial,
             "Should contain the initial operation"
+        );
+        assert!(
+            !matches!(operations[0].source, OperationSource::Fas(_)),
+            "Initial operation should not be from FAS expansion"
         );
 
         println!("✓ Test passed: Self-cycle with empty context handled correctly");
+    }
+
+    /// Helper function to create RDS service reference mock with multiple DB operations
+    /// Includes operations with and without SDK method mappings to test different scenarios
+    async fn mock_rds_service_reference(mock_server: &wiremock::MockServer) {
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "rds",
+            serde_json::json!({
+                "Name": "rds",
+                "Resources": [
+                    {
+                        "Name": "database-cluster",
+                        "ARNFormats": ["arn:${Partition}:rds:${Region}:${Account}:cluster:${DatabaseClusterIdentifier}"]
+                    }
+                ],
+                "Actions": [
+                    {
+                        "Name": "ModifyDBCluster",
+                        "Resources": [{"Name": "database-cluster"}]
+                    }
+                ],
+                "Operations": [
+                    {
+                        "Name": "ModifyDBCluster",
+                        "AuthorizedActions": [{"Name": "ModifyDBCluster", "Service": "rds"}],
+                        "SDK": [{"Name": "rds", "Method": "modify_db_cluster", "Package": "Boto3"}]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    async fn test_boto3_method_name_requires_lookup() {
+        // Test that boto3 methods are correctly mapped using service reference SDK mapping
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+
+        mock_rds_service_reference(&mock_server).await;
+
+        let parsed_method = SdkMethodCall {
+            name: "modify_db_cluster".to_string(),
+            possible_services: vec!["rds".to_string()],
+            metadata: None,
+        };
+
+        let result = matcher.enrich_method_call(&parsed_method, &loader).await;
+        assert!(result.is_ok());
+
+        let enriched_calls = result.unwrap();
+        assert_eq!(enriched_calls.len(), 1);
+        assert_eq!(enriched_calls[0].method_name, "modify_db_cluster");
+        assert_eq!(enriched_calls[0].service, "rds");
+        assert_eq!(enriched_calls[0].actions[0].name, "rds:ModifyDBCluster");
+    }
+
+    #[tokio::test]
+    async fn test_non_boto3_sdk_uses_extracted_name_directly() {
+        // Test that non-Boto3 SDKs (e.g., Go) use the extracted operation name directly without renaming
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Other);
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+
+        mock_rds_service_reference(&mock_server).await;
+
+        // Go SDK extracts operation names in PascalCase (e.g., CreateDBCluster)
+        let parsed_method = SdkMethodCall {
+            name: "ModifyDBCluster".to_string(),
+            possible_services: vec!["rds".to_string()],
+            metadata: None,
+        };
+
+        let result = matcher.enrich_method_call(&parsed_method, &loader).await;
+        assert!(result.is_ok());
+
+        let enriched_calls = result.unwrap();
+        assert_eq!(enriched_calls.len(), 1);
+        assert_eq!(enriched_calls[0].method_name, "ModifyDBCluster");
+        assert_eq!(enriched_calls[0].service, "rds");
+        // Should use the operation name directly without any transformation
+        assert_eq!(enriched_calls[0].actions[0].name, "rds:ModifyDBCluster");
     }
 }

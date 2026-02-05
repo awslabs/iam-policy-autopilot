@@ -23,7 +23,11 @@ log = { workspace = true }
 assert_cmd = "2.0"
 predicates = "3.0"
 tempfile = "3.8"
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", features=["integ-test"] }
 
 [[bin]]
 name = "iam-policy-autopilot"
 path = "src/main.rs"
+
+[lints]
+workspace = true

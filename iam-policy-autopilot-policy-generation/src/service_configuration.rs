@@ -14,6 +14,8 @@ use std::{
 
 /// Operation rename configuration
 #[derive(Clone, Debug, Deserialize)]
+// TODO: remove
+#[allow(dead_code)]
 pub(crate) struct OperationRename {
     /// Target service name
     pub(crate) service: String,
@@ -31,8 +33,6 @@ pub(crate) struct ServiceConfiguration {
     pub(crate) rename_services_service_reference: HashMap<String, String>,
     /// Smithy to Botocore model: service renames
     pub(crate) smithy_botocore_service_name_mapping: HashMap<String, String>,
-    /// Operation renames
-    pub(crate) rename_operations: HashMap<String, OperationRename>,
     /// Resource overrides
     pub(crate) resource_overrides: HashMap<String, HashMap<String, String>>,
 }
@@ -51,22 +51,6 @@ impl ServiceConfiguration {
     pub(crate) fn rename_service_service_reference<'a>(&self, original: &'a str) -> Cow<'a, str> {
         match self.rename_services_service_reference.get(original) {
             Some(renamed) => Cow::Owned(renamed.clone()),
-            None => Cow::Borrowed(original),
-        }
-    }
-
-    pub(crate) fn rename_operation<'a>(&self, service: &str, original: &'a str) -> Cow<'a, str> {
-        let tmp = format!("{}:{}", service, original);
-        match self.rename_operations.get(&tmp) {
-            Some(operation_rename) => {
-                log::debug!(
-                    "Renamed {} to {}:{}",
-                    original,
-                    operation_rename.service,
-                    operation_rename.operation
-                );
-                Cow::Owned(operation_rename.operation.clone())
-            }
             None => Cow::Borrowed(original),
         }
     }
@@ -145,16 +129,6 @@ mod tests {
             .collect(),
             rename_services_service_reference: HashMap::new(),
             smithy_botocore_service_name_mapping: HashMap::new(),
-            rename_operations: [(
-                "old:Operation".to_string(),
-                OperationRename {
-                    service: "new".to_string(),
-                    operation: "NewOperation".to_string(),
-                },
-            )]
-            .iter()
-            .cloned()
-            .collect(),
             resource_overrides: HashMap::new(),
         };
 
@@ -166,13 +140,6 @@ mod tests {
         assert_eq!(
             config.rename_service_operation_action_map("unchanged-service"),
             "unchanged-service"
-        );
-
-        // Test operation renaming
-        assert_eq!(config.rename_operation("old", "Operation"), "NewOperation");
-        assert_eq!(
-            config.rename_operation("unchanged", "Operation"),
-            "Operation"
         );
     }
 
@@ -194,11 +161,5 @@ mod tests {
                 .get("stepfunctions"),
             Some(&"states".to_string())
         );
-
-        // Test operation rename
-        if let Some(rename_op) = config.rename_operations.get("s3:ListObjectsV2") {
-            assert_eq!(rename_op.service, "s3");
-            assert_eq!(rename_op.operation, "ListObjects");
-        }
     }
 }

@@ -2,53 +2,44 @@ name: 'PR Checks'
 
 on:
   pull_request:
-    branches: [ main, prerelease, releases/** ]
+    branches: [ main, prerelease, release/** ]
+
+permissions:
+  contents: read
 
 jobs:
-  commit-messages:
-    name: Validate Commit Messages
+  changes:
+    name: Detect Changes
     runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+      submodules: ${{ steps.filter.outputs.submodules }}
+      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.submodules == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-
-      - name: Validate commit messages
-        run: |
-          # Get all commits in the PR (excluding merge commits)
-          COMMITS=$(git log --format=%H --no-merges ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }})
-          
-          # Conventional commit pattern
-          PATTERN='^(feat|fix|docs|chore|test|refactor|perf|ci|build|style|revert)(\(.+\))?!?: .+'
-          
-          FAILED=0
-          for COMMIT in $COMMITS; do
-            MESSAGE=$(git log --format=%s -n 1 $COMMIT)
-            if ! echo "$MESSAGE" | grep -qE "$PATTERN"; then
-              echo "❌ Invalid commit message: $MESSAGE"
-              echo "   Commit: $COMMIT"
-              FAILED=1
-            else
-              echo "✅ Valid commit message: $MESSAGE"
-            fi
-          done
-          
-          if [ $FAILED -eq 1 ]; then
-            echo ""
-            echo "Commit messages must follow Conventional Commits format:"
-            echo "  <type>: <description>"
-            echo ""
-            echo "Valid types: feat, fix, docs, chore, test, refactor, perf, ci, build, style, revert"
-            echo "For breaking changes, add '!' after type: feat!: breaking change"
-            echo ""
-            echo "See CONTRIBUTING.md for more details."
-            exit 1
-          fi
+          submodules: recursive
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**/*.rs'
+              - '**/*.toml'
+              - '**/Cargo.lock'
+              - '**/rust-toolchain'
+              - '**/.cargo/**'
+            submodules:
+              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
+              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
 
   test-linux:
     name: Test Linux
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
@@ -80,8 +71,11 @@ jobs:
 
   test-windows:
     name: Test Windows
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: windows-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
@@ -101,8 +95,11 @@ jobs:
 
   test-macos:
     name: Test macOS
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.should_test == 'true'
     runs-on: macos-latest
+    permissions:
+      contents: read
     strategy:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
@@ -122,8 +119,11 @@ jobs:
 
   fmt:
     name: Format
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
 
@@ -136,8 +136,11 @@ jobs:
 
   clippy:
     name: Clippy
-    needs: commit-messages
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,3 +154,36 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
+
+  custom-lints:
+    name: Custom Lints (dylint)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustc-dev, llvm-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-directories: |
+            ~/.dylint_drivers
+
+      - name: Install dylint
+        run: cargo install cargo-dylint dylint-link
+
+      - name: Run custom lints
+        run: cargo dylint --all --workspace
+        # Note: dylint automatically uses the nightly toolchain to build the lint library
+        # (specified in iam-policy-autopilot-lints/rust-toolchain) and stable to check the workspace

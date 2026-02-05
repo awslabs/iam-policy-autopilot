@@ -33,6 +33,7 @@ git pull origin main
 # Create release branch (replace X.Y.Z with version number)
 git checkout -b release/X.Y.Z
 ```
+*Note: It's recommended to create the release branch directly in the awslabs/iam-policy-autopilot rather than in a forked repo.*
 
 #### Optional: Cherry-pick Specific Commits
 
@@ -152,49 +153,26 @@ Or manually create the PR through the GitHub web interface.
 
 ### 6. Merge and Create Release
 
-After PR approval and merge:
+#### Using the GitHub Web Interface
 
-1. **Create a Git Tag:**
-   ```bash
-   # Checkout main and pull latest
-   git checkout main
-   git status # confirm your local changes
-   git pull origin main
+It's recommended to create the new release and tag directly via the GitHub web interface, where you can automatically generate release notes, create a tag, and draft a release before publishing it.
 
-   # Create annotated tag
-   git tag -a X.Y.Z -m "Release X.Y.Z"
+Notes:
+- The new tag should be the same as the version to be released
+- Make sure to select the correct release branch as the target when creating the tag
+  - The main branch can be used if it's identical to the release branch (i.e., no cherry-picked commits in the release branch)
+- Be sure to `Save draft` and review it once before publishing the release.
 
-   # Push tag to remote
-   git push origin X.Y.Z
-   ```
 
-2. **Create GitHub Release:**
+### Automated Build and Publish 
    
-   Using GitHub CLI:
-   ```bash
-   gh release create X.Y.Z \
-     --title "Release X.Y.Z" \
-     --notes-file CHANGELOG.md \
-     --latest
-   ```
+Once a release is published, the GitHub Actions workflow (`build_and_publish.yml`) will automatically:
+- Build wheels for all supported platforms (Linux, Windows, macOS)
+- Test the wheels on each platform
+- Verify version matches the release tag
+- Publish to PyPI (if tests pass)
 
-   Or manually through GitHub web interface:
-   - Go to repository → Releases → Draft a new release
-   - Choose the tag `X.Y.Z`
-   - Set release title: `Release X.Y.Z`
-   - Copy relevant section from CHANGELOG.md to release notes
-   - Check "Set as the latest release"
-   - Click "Publish release" ***One-way Door decision, make sure to review all the details***
-
-3. **Automated Build and Publish:**
-   
-   The GitHub Actions workflow (`build_and_publish.yml`) will automatically:
-   - Build wheels for all supported platforms (Linux, Windows, macOS)
-   - Test the wheels on each platform
-   - Verify version matches the release tag
-   - Publish to PyPI (if tests pass)
-
-   Monitor the workflow progress at: `https://github.com/awslabs/iam-policy-autopilot/actions`
+Monitor the workflow progress at: `https://github.com/awslabs/iam-policy-autopilot/actions`
 
 ## Post-Release
 

@@ -3,10 +3,29 @@
 //! This module contains common functionality shared between JavaScript and TypeScript
 //! extractors.
 
-use crate::extraction::javascript::types::JavaScriptScanResults;
+use crate::extraction::javascript::types::{ImportInfo, JavaScriptScanResults};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use crate::Location;
+use rust_embed::RustEmbed;
 use serde::Deserialize;
+use std::borrow::Cow;
 use std::collections::HashMap;
+
+/// Embedded JavaScript SDK v3 libraries mapping
+///
+/// This struct provides access to the JavaScript SDK v3 libraries mapping configuration
+/// that defines how lib-* submodule commands map to client-* commands.
+#[derive(RustEmbed)]
+#[folder = "resources/config/sdks"]
+#[include = "js_v3_libraries.json"]
+struct JsV3Libraries;
+
+impl JsV3Libraries {
+    /// Get the JavaScript SDK v3 libraries mapping configuration
+    fn get_libraries_mapping() -> Option<std::borrow::Cow<'static, [u8]>> {
+        Self::get("js_v3_libraries.json").map(|file| file.data)
+    }
+}
 
 /// JSON structure for JS v3 libraries mapping
 ///
@@ -24,11 +43,50 @@ struct JsV3LibrariesMapping {
 
 /// Load JS v3 libraries mapping from embedded data
 fn load_libraries_mapping() -> Option<JsV3LibrariesMapping> {
-    let content_bytes = crate::embedded_data::JsV3Libraries::get_libraries_mapping()?;
+    let content_bytes = JsV3Libraries::get_libraries_mapping()?;
 
     let content = std::str::from_utf8(&content_bytes).ok()?;
 
     serde_json::from_str(content).ok()
+}
+
+/// Result of finding a command/function instantiation with its arguments
+#[derive(Debug, Clone)]
+pub(crate) struct CommandUsage<'a> {
+    /// The matched text from the AST
+    pub(crate) text: Cow<'a, str>,
+    /// Location where the command usage was found
+    pub(crate) location: Location,
+    /// Extracted parameters from the command/function arguments
+    pub(crate) parameters: Vec<crate::extraction::Parameter>,
+}
+
+impl<'a> CommandUsage<'a> {
+    /// Create a new CommandInstantiationResult
+    pub(crate) fn new(
+        text: Cow<'a, str>,
+        location: Location,
+        parameters: Vec<crate::extraction::Parameter>,
+    ) -> Self {
+        Self {
+            text,
+            location,
+            parameters,
+        }
+    }
+}
+
+// Used when we cannot find a method call, and fall back to adding an operation purely based on an import statement
+impl From<&ImportInfo> for CommandUsage<'_> {
+    fn from(value: &ImportInfo) -> Self {
+        Self {
+            text: Cow::Owned(value.statement.clone()),
+            location: value.location.clone(),
+            // TODO: parameters should be an Option, so we can distinguish
+            // the case where we fall back to an import statement
+            parameters: vec![],
+        }
+    }
 }
 
 /// Shared extraction utilities for JavaScript/TypeScript AWS SDK method calls
@@ -41,7 +99,7 @@ impl ExtractionUtils {
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut method_calls = Vec::new();
 
@@ -88,7 +146,7 @@ impl ExtractionUtils {
         lib_mappings: Option<&JsV3LibrariesMapping>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut operations = Vec::new();
 
@@ -107,9 +165,9 @@ impl ExtractionUtils {
                     if import_info.original_name.ends_with("Command") {
                         // Try to find the actual constructor instantiation with arguments
                         // Use the local name for the search (handles renames)
-                        let (usage_position, parameters) = scanner
+                        let result = scanner
                             .find_command_instantiation_with_args(&import_info.local_name)
-                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
+                            .unwrap_or_else(|| import_info.into()); // Fallback to import position with no params
 
                         // Check if this needs library expansion (lib-* sublibraries)
                         let expanded_command_names =
@@ -143,10 +201,10 @@ impl ExtractionUtils {
                                     name: operation_name.to_string(),
                                     possible_services: vec![service.clone()],
                                     metadata: Some(SdkMethodCallMetadata {
-                                        parameters: parameters.clone(),
+                                        parameters: result.parameters.clone(),
                                         return_type: None,
-                                        start_position: usage_position,
-                                        end_position: usage_position,
+                                        expr: result.text.to_string(),
+                                        location: result.location.clone(),
                                         receiver: None, // Commands are typically standalone
                                     }),
                                 };
@@ -168,7 +226,7 @@ impl ExtractionUtils {
         lib_mappings: Option<&JsV3LibrariesMapping>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut operations = Vec::new();
 
@@ -187,9 +245,9 @@ impl ExtractionUtils {
                     if import_info.original_name.starts_with("paginate") {
                         // Try to find the actual paginate function call with arguments
                         // Use the local name for the search (handles renames)
-                        let (usage_position, parameters) = scanner
+                        let result = scanner
                             .find_paginate_function_with_args(&import_info.local_name)
-                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
+                            .unwrap_or_else(|| import_info.into()); // Fallback to import position with no params
 
                         // Check if this needs library expansion (lib-* sublibraries)
                         let expanded_paginator_names =
@@ -232,10 +290,10 @@ impl ExtractionUtils {
                                 name: operation_name,
                                 possible_services: vec![service.clone()],
                                 metadata: Some(SdkMethodCallMetadata {
-                                    parameters: parameters.clone(), // extracted from 2nd argument!
+                                    parameters: result.parameters.clone(), // extracted from 2nd argument!
                                     return_type: None,
-                                    start_position: usage_position,
-                                    end_position: usage_position,
+                                    expr: result.text.to_string(),
+                                    location: result.location.clone(),
                                     receiver: None,
                                 }),
                             };
@@ -257,7 +315,7 @@ impl ExtractionUtils {
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut operations = Vec::new();
 
@@ -280,9 +338,9 @@ impl ExtractionUtils {
                         {
                             // Try to find the actual waiter function call with arguments
                             // Use the local name for the search (handles renames)
-                            let (usage_position, parameters) = scanner
+                            let result = scanner
                                 .find_waiter_function_with_args(&import_info.local_name)
-                                .unwrap_or_else(|| ((import_info.line, 1), Vec::new())); // Fallback to import position with no params
+                                .unwrap_or_else(|| import_info.into()); // Fallback to import position with no params
 
                             // Keep PascalCase waiter name
                             // e.g., "BucketExists" from "waitUntilBucketExists"
@@ -291,10 +349,10 @@ impl ExtractionUtils {
                                 name: waiter_name.to_string(),
                                 possible_services: vec![service.clone()],
                                 metadata: Some(SdkMethodCallMetadata {
-                                    parameters, // Extracted from 2nd argument (operation params)
+                                    parameters: result.parameters, // Extracted from 2nd argument (operation params)
                                     return_type: None,
-                                    start_position: usage_position,
-                                    end_position: usage_position,
+                                    expr: result.text.to_string(),
+                                    location: result.location.clone(),
                                     receiver: None, // Waiter functions are standalone
                                 }),
                             };
@@ -314,7 +372,7 @@ impl ExtractionUtils {
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut operations = Vec::new();
 
@@ -340,9 +398,9 @@ impl ExtractionUtils {
                     if let Some(operation_name) = operation_name {
                         // Try to find the actual CommandInput type usage position (TypeScript-specific)
                         // Use the local name for the search (handles renames)
-                        let usage_position = scanner
+                        let result = scanner
                             .find_command_input_usage_position(&import_info.local_name)
-                            .unwrap_or((import_info.line, 1)); // Fallback to import position
+                            .unwrap_or_else(|| import_info.into()); // Fallback to import position with no params
 
                         // Keep PascalCase operation name to match service index
                         // e.g., "Query" stays "Query"
@@ -350,10 +408,10 @@ impl ExtractionUtils {
                             name: operation_name.to_string(),
                             possible_services: vec![service.clone()],
                             metadata: Some(SdkMethodCallMetadata {
-                                parameters: Vec::new(), // TODO: Extract from variable assignments
+                                parameters: Vec::new(),
                                 return_type: None,
-                                start_position: usage_position, // Using enhanced position tracking
-                                end_position: usage_position,   // Using enhanced position tracking
+                                expr: result.text.to_string(),
+                                location: result.location.clone(),
                                 receiver: None,
                             }),
                         };
@@ -374,7 +432,7 @@ impl ExtractionUtils {
         lib_mappings: Option<&JsV3LibrariesMapping>,
     ) -> Vec<SdkMethodCall>
     where
-        T: ast_grep_core::Doc + Clone,
+        T: ast_grep_language::LanguageExt,
     {
         let mut operations = Vec::new();
 
@@ -410,9 +468,9 @@ impl ExtractionUtils {
                         .and_then(|lib| lib.get(&import_info.original_name))
                     {
                         // Try to find class instantiation, fallback to import position
-                        let (usage_position, parameters) = scanner
+                        let result = scanner
                             .find_command_instantiation_with_args(&import_info.local_name)
-                            .unwrap_or_else(|| ((import_info.line, 1), Vec::new()));
+                            .unwrap_or_else(|| import_info.into()); // Fallback to import position with no params
 
                         // Create operations for each expanded command
                         for command_name in expanded_commands {
@@ -422,10 +480,10 @@ impl ExtractionUtils {
                                     name: operation_name.to_string(),
                                     possible_services: vec![service.clone()],
                                     metadata: Some(SdkMethodCallMetadata {
-                                        parameters: parameters.clone(),
+                                        parameters: result.parameters.clone(),
                                         return_type: None,
-                                        start_position: usage_position,
-                                        end_position: usage_position,
+                                        expr: result.text.to_string(),
+                                        location: result.location.clone(),
                                         receiver: None,
                                     }),
                                 };
@@ -473,8 +531,8 @@ impl ExtractionUtils {
                 metadata: Some(SdkMethodCallMetadata {
                     parameters,
                     return_type: None,
-                    start_position: (method_call.line, 1),
-                    end_position: (method_call.line, 1),
+                    expr: method_call.expr.clone(),
+                    location: method_call.location.clone(),
                     receiver: Some(method_call.client_variable.clone()),
                 }),
             };

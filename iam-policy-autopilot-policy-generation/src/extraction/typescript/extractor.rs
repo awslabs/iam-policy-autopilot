@@ -10,7 +10,8 @@ use std::collections::HashSet;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::javascript::scanner::ASTScanner;
 use crate::extraction::javascript::shared::ExtractionUtils;
-use crate::ServiceModelIndex;
+use crate::extraction::AstWithSourceFile;
+use crate::{ServiceModelIndex, SourceFile};
 
 /// TypeScript extractor for AWS SDK method calls
 pub(crate) struct TypeScriptExtractor;
@@ -30,9 +31,10 @@ impl Default for TypeScriptExtractor {
 
 #[async_trait]
 impl Extractor for TypeScriptExtractor {
-    async fn parse(&self, source_code: &str) -> ExtractorResult {
+    async fn parse(&self, source_file: &SourceFile) -> ExtractorResult {
         // Create AST once and reuse it
-        let ast = TypeScript.ast_grep(source_code);
+        let ast_grep = TypeScript.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
 
         // Create scanner with the pre-built AST
         let mut scanner = ASTScanner::new(ast.clone(), TypeScript.into());
@@ -55,7 +57,7 @@ impl Extractor for TypeScriptExtractor {
             &scan_results,
         ));
 
-        // Return TypeScript variant with the same AST (no double construction)
+        // Return TypeScript variant with the same AST
         ExtractorResult::TypeScript(ast, method_calls)
     }
 
@@ -78,15 +80,23 @@ impl Extractor for TypeScriptExtractor {
 
             // For each call, check if it's a waiter name and replace with the actual operation
             for call in method_calls.iter_mut() {
-                // Try to find this name in the waiter mappings for each possible service
-                for service_name in &call.possible_services.clone() {
-                    if let Some(service_def) = service_index.services.get(service_name) {
-                        // Check if this is a waiter name in the service's waiters map
-                        if let Some(operation) = service_def.waiters.get(&call.name) {
-                            // Replace waiter name with actual operation name
-                            call.name = operation.name.clone();
-                            break; // Found the waiter, no need to check other services
-                        }
+                if let Some(service_methods) = service_index.waiter_lookup.get(&call.name) {
+                    let matching_method = service_methods
+                        .iter()
+                        .find(|sm| call.possible_services.contains(&sm.service_name));
+
+                    if let Some(method) = matching_method {
+                        call.name = method.operation_name.clone();
+                    } else {
+                        log::warn!(
+                            "Waiter '{}' found in services {:?} but imported from {:?}",
+                            call.name,
+                            service_methods
+                                .iter()
+                                .map(|sm| &sm.service_name)
+                                .collect::<Vec<_>>(),
+                            call.possible_services
+                        );
                     }
                 }
             }
@@ -199,6 +209,14 @@ mod tests {
         }
     }
 
+    fn create_source_file(source_code: &str) -> SourceFile {
+        SourceFile::with_language(
+            std::path::PathBuf::new(),
+            source_code.to_string(),
+            crate::Language::TypeScript,
+        )
+    }
+
     #[tokio::test]
     async fn test_parse_typescript_with_types() {
         let extractor = TypeScriptExtractor::new();
@@ -234,7 +252,7 @@ async function queryUsers(): Promise<User[]> {
 }
         "#;
 
-        let result = extractor.parse(typescript_code).await;
+        let result = extractor.parse(&create_source_file(typescript_code)).await;
 
         // Verify TypeScript AST is returned
         match result {
@@ -312,7 +330,7 @@ class MyS3Service<T> implements S3Service<T> {
 }
         "#;
 
-        let result = extractor.parse(typescript_code).await;
+        let result = extractor.parse(&create_source_file(typescript_code)).await;
 
         // Verify TypeScript extraction with generics
         match result {
@@ -367,7 +385,7 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         "#;
 
         // Parse the code
-        let mut results = vec![extractor.parse(typescript_code).await];
+        let mut results = vec![extractor.parse(&create_source_file(typescript_code)).await];
 
         // Build service index with all services for testing
         let service_index = ServiceDiscovery::load_service_index(Language::TypeScript)
@@ -414,6 +432,74 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
             _ => {
                 panic!("Should return TypeScript result");
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_waiter_disambiguation_with_multiple_services() {
+        use crate::extraction::sdk_model::ServiceDiscovery;
+        use crate::Language;
+
+        let extractor = TypeScriptExtractor::new();
+
+        // Code that imports Neptune client and uses DBInstanceAvailable waiter
+        let typescript_code = r#"
+    import { NeptuneClient, waitUntilDBInstanceAvailable } from '@aws-sdk/client-neptune';
+
+    const client = new NeptuneClient({ region: 'us-east-1' });
+
+    async function waitForInstance() {
+        await waitUntilDBInstanceAvailable(
+            { client, maxWaitTime: 300 },
+            { DBInstanceIdentifier: 'my-neptune-instance' }
+        );
+    }
+        "#;
+
+        // Parse the code
+        let mut results = vec![extractor.parse(&create_source_file(typescript_code)).await];
+
+        // Load service index
+        let service_index = ServiceDiscovery::load_service_index(Language::TypeScript)
+            .await
+            .expect("Failed to load service index");
+
+        // Apply filter_map which includes waiter resolution
+        extractor.filter_map(&mut results, &service_index);
+
+        // Verify the results
+        match &results[0] {
+            ExtractorResult::TypeScript(_ast, method_calls) => {
+                // Find the DBInstanceAvailable call
+                let db_instance_call = method_calls
+                    .iter()
+                    .find(|call| call.name == "DescribeDBInstances")
+                    .expect("Should find DescribeDBInstances operation after waiter resolution");
+
+                // CRITICAL: Should be associated with Neptune, not RDS or DocumentDB
+                assert!(
+                    db_instance_call
+                        .possible_services
+                        .contains(&"neptune".to_string()),
+                    "DBInstanceAvailable waiter should resolve to Neptune service, got: {:?}",
+                    db_instance_call.possible_services
+                );
+
+                // Should NOT contain RDS or DocumentDB
+                assert!(
+                    !db_instance_call
+                        .possible_services
+                        .contains(&"rds".to_string()),
+                    "Should not incorrectly resolve to RDS"
+                );
+                assert!(
+                    !db_instance_call
+                        .possible_services
+                        .contains(&"docdb".to_string()),
+                    "Should not incorrectly resolve to DocumentDB"
+                );
+            }
+            _ => panic!("Should return TypeScript result"),
         }
     }
 }
