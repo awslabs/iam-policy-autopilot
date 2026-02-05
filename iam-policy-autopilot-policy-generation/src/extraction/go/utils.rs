@@ -11,7 +11,7 @@ pub(crate) fn extract_arguments(
     let mut parameters = Vec::new();
     let mut position = 0;
 
-    for arg_node in args_nodes.iter() {
+    for arg_node in args_nodes {
         let arg_text = arg_node.text().to_string();
 
         // Skip parsing artifacts (commas, whitespace, etc.)

@@ -397,7 +397,7 @@ where
         let mut sublibrary_mappings = HashMap::new();
 
         // Process both imports and requires
-        for source_data in [imports, requires].iter() {
+        for source_data in &[imports, requires] {
             for sublibrary_info in source_data {
                 for import_info in &sublibrary_info.imports {
                     let original_name = &import_info.original_name;
