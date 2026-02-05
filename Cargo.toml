@@ -90,7 +90,6 @@ unwrap_used = "deny"
 # TODO: fix these lints
 doc_markdown = "allow"
 missing_errors_doc = "allow"
-collection_is_never_read = "allow"
 doc_link_with_quotes = "allow"
 explicit_iter_loop = "allow"
 format_push_string = "allow"

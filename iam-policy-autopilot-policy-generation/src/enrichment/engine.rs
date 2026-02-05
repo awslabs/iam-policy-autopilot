@@ -82,7 +82,6 @@ impl Engine {
         service_cfg: &Arc<ServiceConfiguration>,
     ) -> Result<OperationFasMaps> {
         let mut fas = HashMap::new();
-        let mut loaded_fas_maps = Vec::new();
 
         for service in services {
             log::debug!("FAS: processing service: {service}");
@@ -108,7 +107,6 @@ impl Engine {
                         renamed_service,
                         operation_fas_map.fas_operations.len()
                     );
-                    loaded_fas_maps.push(renamed_service.clone());
                     fas.insert(renamed_service.to_string(), operation_fas_map);
                 }
             }
