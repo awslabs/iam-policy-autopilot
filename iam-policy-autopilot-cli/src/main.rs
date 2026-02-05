@@ -392,14 +392,14 @@ fn init_logging(debug: bool) -> Result<()> {
 
 /// Handle the extract-sdk-calls subcommand
 async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
+
     info!("Running extract-sdk-calls command");
 
     // Validate configuration
     config
         .validate()
         .context("Configuration validation failed")?;
-
-    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 
     let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
         service_names: names.clone(),
@@ -428,14 +428,14 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
 
 /// Handle the generate-policies subcommand
 async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
+
     info!("Running generate-policies command");
 
     // Validate configuration
     config
         .validate()
         .context("Configuration validation failed")?;
-
-    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 
     let service_hints = config
         .shared

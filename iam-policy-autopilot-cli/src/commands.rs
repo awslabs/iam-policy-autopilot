@@ -11,12 +11,13 @@ fn is_tty() -> bool {
 
 /// Returns Some(true) if user confirmed, Some(false) if declined, None if not in TTY.
 fn prompt_yes_no() -> Option<bool> {
+    use std::io::{self, BufRead};
+
     if !is_tty() {
         return None;
     }
     output::prompt_apply_once();
     let mut s = String::new();
-    use std::io::{self, BufRead};
     let stdin = io::stdin();
     let _ = stdin.lock().read_line(&mut s);
     let line = s.lines().next().unwrap_or("").trim().to_ascii_lowercase();
@@ -111,10 +112,11 @@ async fn fix_access_denied_with_service(
             }
         }
         DenialType::ResourcePolicy => {
+            use iam_policy_autopilot_access_denied::build_single_statement;
+
             let action = plan.diagnosis.action.clone();
             let resource = plan.diagnosis.resource.clone();
 
-            use iam_policy_autopilot_access_denied::build_single_statement;
             let statement =
                 build_single_statement(action.clone(), resource.clone(), "AllowAccess".to_string());
 

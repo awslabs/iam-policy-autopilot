@@ -283,6 +283,10 @@ impl ServiceDiscovery {
         load_errors: &mut Vec<String>,
         language: Language,
     ) -> Result<()> {
+        // Import waiter types for inline loading
+        use crate::extraction::waiter_model::WaiterEntry;
+        use std::sync::Arc;
+
         #[allow(clippy::type_complexity)]
         let mut join_set: JoinSet<
             Result<(
@@ -291,10 +295,6 @@ impl ServiceDiscovery {
                 Option<HashMap<String, WaiterEntry>>,
             )>,
         > = JoinSet::new();
-
-        // Import waiter types for inline loading
-        use crate::extraction::waiter_model::WaiterEntry;
-        use std::sync::Arc;
 
         // Create semaphore to limit concurrent operations (max 50)
         let semaphore = Arc::new(Semaphore::new(50));

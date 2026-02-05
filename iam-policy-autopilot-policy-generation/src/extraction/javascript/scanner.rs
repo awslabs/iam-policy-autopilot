@@ -427,6 +427,12 @@ where
     pub(crate) fn scan_client_instantiations(
         &mut self,
     ) -> Result<Vec<ClientInstantiation>, String> {
+        // Patterns to match client instantiations
+        const PATTERNS: &[&str] = &[
+            "const $VAR = new $CLIENT($ARGS)",
+            "let $VAR = new $CLIENT($ARGS)",
+        ];
+
         let client_info = self.get_valid_client_types()?;
 
         if client_info.is_empty() {
@@ -434,12 +440,6 @@ where
         }
 
         let mut results = Vec::new();
-
-        // Patterns to match client instantiations
-        const PATTERNS: &[&str] = &[
-            "const $VAR = new $CLIENT($ARGS)",
-            "let $VAR = new $CLIENT($ARGS)",
-        ];
 
         for pattern in PATTERNS {
             let matches = self.find_all_matches(pattern)?;
