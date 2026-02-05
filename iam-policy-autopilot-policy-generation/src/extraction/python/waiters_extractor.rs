@@ -74,7 +74,7 @@ impl<'a> WaitersExtractor<'a> {
                 }
                 .create_synthetic_calls(
                     self.service_index,
-                    |params| ParameterFilter::filter_waiter_parameters(params),
+                    ParameterFilter::filter_waiter_parameters,
                     |service_name, operation_name| {
                         self.get_required_parameters(
                             service_name,
@@ -96,7 +96,7 @@ impl<'a> WaitersExtractor<'a> {
             let chained_synthetic_calls = WaiterCallPattern::Chained(&chained_call)
                 .create_synthetic_calls(
                     self.service_index,
-                    |params| ParameterFilter::filter_waiter_parameters(params),
+                    ParameterFilter::filter_waiter_parameters,
                     |service_name, operation_name| {
                         self.get_required_parameters(
                             service_name,
@@ -118,7 +118,7 @@ impl<'a> WaitersExtractor<'a> {
                 let unmatched_calls = WaiterCallPattern::CreationOnly(waiter)
                     .create_synthetic_calls(
                         self.service_index,
-                        |params| ParameterFilter::filter_waiter_parameters(params),
+                        ParameterFilter::filter_waiter_parameters,
                         |service_name, operation_name| {
                             self.get_required_parameters(
                                 service_name,
