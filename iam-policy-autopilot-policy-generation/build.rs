@@ -455,7 +455,7 @@ fn simplify_operations(
     if let Some(Value::Object(operations)) = operations_value {
         for (op_name, op_value) in operations {
             let mut simplified_op: SimplifiedOperation = serde_json::from_value(op_value.clone())?;
-            simplified_op.name = op_name.clone();
+            simplified_op.name.clone_from(op_name);
             simplified_operations.insert(op_name.clone(), simplified_op);
         }
     }
