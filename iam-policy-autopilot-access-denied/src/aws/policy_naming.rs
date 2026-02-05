@@ -42,7 +42,7 @@ fn truncate_policy_name(name: &str) -> String {
 /// TODO: Revisit policy naming based on decision on collecting analytics through policy names.
 pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String {
     let sanitized_name = sanitize_component(name);
-    let full_name = format!("{}-{}", POLICY_PREFIX, sanitized_name);
+    let full_name = format!("{POLICY_PREFIX}-{sanitized_name}");
     truncate_policy_name(&full_name)
 }
 
@@ -62,15 +62,12 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
     let action_cap = action_name.to_case(Case::Pascal);
     let date_no_hyphens = date.replace("-", "");
 
-    let base_sid = format!(
-        "{}{}{}{}",
-        POLICY_PREFIX, service_cap, action_cap, date_no_hyphens
-    );
+    let base_sid = format!("{POLICY_PREFIX}{service_cap}{action_cap}{date_no_hyphens}");
 
     let mut sid = base_sid.clone();
     let mut counter = 2;
     while existing_sids.contains(&sid) {
-        sid = format!("{}{}", base_sid, counter);
+        sid = format!("{base_sid}{counter}");
         counter += 1;
     }
 

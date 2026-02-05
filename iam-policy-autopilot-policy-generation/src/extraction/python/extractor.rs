@@ -58,7 +58,7 @@ impl PythonExtractor {
                 receiver,
             }),
         };
-        log::debug!("Found method call: {:?}", method_call);
+        log::debug!("Found method call: {method_call:?}");
 
         Some(method_call)
     }

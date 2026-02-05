@@ -85,22 +85,19 @@ impl Engine {
         let mut loaded_fas_maps = Vec::new();
 
         for service in services {
-            log::debug!("FAS: processing service: {}", service);
+            log::debug!("FAS: processing service: {service}");
 
             let renamed_service = service_cfg.rename_service_operation_action_map(service);
             if renamed_service.as_ref() != service {
                 log::debug!(
-                    "Service '{}' renamed to '{}' for operation action map lookup",
-                    service,
-                    renamed_service
+                    "Service '{service}' renamed to '{renamed_service}' for operation action map lookup"
                 );
             }
 
             match load_operation_fas_map(renamed_service.as_ref()) {
                 None => {
                     log::debug!(
-                        "No operation FAS map found for service '{}' (expected)",
-                        renamed_service
+                        "No operation FAS map found for service '{renamed_service}' (expected)"
                     );
                     // We don't expect that a service also has a FAS map
                     continue;
@@ -140,7 +137,7 @@ impl Engine {
                 Err(e) => {
                     return Err(ExtractorError::enrichment_error(
                         &method.name,
-                        format!("Failed to enrich method call: {}", e),
+                        format!("Failed to enrich method call: {e}"),
                     ));
                 }
             }

@@ -43,7 +43,7 @@ impl Extractor for JavaScriptExtractor {
             Ok(results) => results,
             Err(e) => {
                 // Log error and return empty results
-                log::warn!("JavaScript scanning failed: {}", e);
+                log::warn!("JavaScript scanning failed: {e}");
                 return ExtractorResult::JavaScript(ast, Vec::new());
             }
         };

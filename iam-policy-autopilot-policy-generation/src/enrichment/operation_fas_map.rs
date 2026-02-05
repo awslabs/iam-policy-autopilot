@@ -191,7 +191,7 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
     }
 
     // Load and parse from embedded data
-    let file_name = format!("{}.json", service_name);
+    let file_name = format!("{service_name}.json");
     let result = match EmbeddedOperationFasMaps::get(&file_name) {
         Some(embedded_file) => {
             let json_str = std::str::from_utf8(&embedded_file.data)
@@ -200,8 +200,7 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
             let operation_fas_map: OperationFasMap =
                 serde_json::from_str(json_str).unwrap_or_else(|_| {
                     panic!(
-                        "Failed to parse embedded operation FAS map JSON for service: {}",
-                        service_name
+                        "Failed to parse embedded operation FAS map JSON for service: {service_name}"
                     )
                 });
 

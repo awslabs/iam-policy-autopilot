@@ -201,7 +201,7 @@ where
     ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
-        let pattern = format!("new {}($ARGS)", command_name);
+        let pattern = format!("new {command_name}($ARGS)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
@@ -228,7 +228,7 @@ where
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Use explicit two-argument pattern
-        let pattern = format!("{}($ARG1, $ARG2)", function_name);
+        let pattern = format!("{function_name}($ARG1, $ARG2)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
@@ -255,8 +255,8 @@ where
 
         // Try patterns with and without await keyword using explicit two-argument pattern
         let patterns = [
-            format!("await {}($ARG1, $ARG2)", function_name), // With await
-            format!("{}($ARG1, $ARG2)", function_name),       // Without await
+            format!("await {function_name}($ARG1, $ARG2)"), // With await
+            format!("{function_name}($ARG1, $ARG2)"),       // Without await
         ];
 
         for pattern in &patterns {
@@ -286,9 +286,9 @@ where
     ) -> Option<CommandUsage<'_>> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
-            format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
-            format!("let $VAR: {} = $VALUE", type_name),   // let variable: Type = value
-            format!("$VAR: {} = $VALUE", type_name),       // variable: Type = value
+            format!("const $VAR: {type_name} = $VALUE"), // const variable: Type = value
+            format!("let $VAR: {type_name} = $VALUE"),   // let variable: Type = value
+            format!("$VAR: {type_name} = $VALUE"),       // variable: Type = value
         ];
 
         for pattern in &patterns {

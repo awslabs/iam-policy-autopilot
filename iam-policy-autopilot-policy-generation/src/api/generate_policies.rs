@@ -172,7 +172,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         .await?;
 
     let enrichment_duration = pipeline_start.elapsed();
-    trace!("Enrichment pipeline completed in {:?}", enrichment_duration);
+    trace!("Enrichment pipeline completed in {enrichment_duration:?}");
 
     // Create policy generation engine with AWS context and merger configuration
     let merger_config = PolicyMergerConfig {

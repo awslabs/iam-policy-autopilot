@@ -79,11 +79,11 @@ impl IamAutoPilotMcpServer {
         trace!("generate_application_policies input: {:#?}", params.0);
 
         let output = generate_application_policies(params.0).await.map_err(|e| {
-            error!("{:#?}", e);
+            error!("{e:#?}");
             self.format_mcp_error("Failed to generate policies", e)
         })?;
 
-        trace!("generate_application_policies output: {:#?}", output);
+        trace!("generate_application_policies output: {output:#?}");
 
         Ok(Json(output))
     }
@@ -102,10 +102,10 @@ impl IamAutoPilotMcpServer {
         let output = generate_policy_for_access_denied(params.0)
             .await
             .map_err(|e| {
-                error!("{:#?}", e);
+                error!("{e:#?}");
                 self.format_mcp_error("Failed to to generate policy for access denial fix", e)
             })?;
-        trace!("generate_policy_for_access_denied  output: {:#?}", output);
+        trace!("generate_policy_for_access_denied  output: {output:#?}");
         Ok(Json(output))
     }
 
@@ -129,10 +129,10 @@ impl IamAutoPilotMcpServer {
     ) -> Result<Json<FixAccessDeniedOutput>, McpError> {
         trace!("fix_access_denied input: {:#?}", params.0);
         let output = fix_access_denied(context, params.0).await.map_err(|e| {
-            error!("{:#?}", e);
+            error!("{e:#?}");
             self.format_mcp_error("Failed to apply access denial fix", e)
         })?;
-        trace!("fix_access_denied output: {:#?}", output);
+        trace!("fix_access_denied output: {output:#?}");
         Ok(Json(output))
     }
 }
@@ -178,10 +178,10 @@ pub async fn begin_http_transport(
         Default::default(),
     );
 
-    info!("Listening on {}/mcp", bind_address);
+    info!("Listening on {bind_address}/mcp");
 
     // Fine to print with http
-    println!("Listening on {}/mcp", bind_address);
+    println!("Listening on {bind_address}/mcp");
     let router = axum::Router::new().nest_service("/mcp", service);
     let tcp_listener = tokio::net::TcpListener::bind(bind_address).await?;
 

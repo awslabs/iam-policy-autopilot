@@ -146,7 +146,7 @@ pub fn extract_resource(message: &str) -> Option<String> {
                     if resource_parts.len() >= 2 {
                         let resource_name =
                             resource_parts[1].trim_end_matches(&['.', ',', ';'] as &[_]);
-                        let formatted = format!("arn:*:iam::*:{}/{}", first_part, resource_name);
+                        let formatted = format!("arn:*:iam::*:{first_part}/{resource_name}");
                         return Some(formatted);
                     }
                 }

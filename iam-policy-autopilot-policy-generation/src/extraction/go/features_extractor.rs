@@ -49,7 +49,7 @@ impl GoFeaturesExtractor {
     ) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
-        log::debug!("import_info: {:?}", import_info);
+        log::debug!("import_info: {import_info:?}");
 
         // Find all method calls (receiver.Method(...))
         let method_calls = self.find_method_calls(ast);

@@ -209,16 +209,13 @@ impl ServiceDiscovery {
         {
             let read_guard = cache.read().await;
             if let Some(cached_index) = read_guard.get(&language_key) {
-                log::debug!("Using cached service index for language '{}'", language);
+                log::debug!("Using cached service index for language '{language}'");
                 return Ok(Arc::clone(cached_index));
             }
         }
 
         // Not in cache, need to load it
-        log::debug!(
-            "Loading service index for language '{}' (not cached)",
-            language
-        );
+        log::debug!("Loading service index for language '{language}' (not cached)");
 
         // Discover all available services
         let services = Self::discover_services()?;
@@ -311,7 +308,7 @@ impl ServiceDiscovery {
 
                 // Acquire permit for concurrent operations
                 let _permit = semaphore.acquire_owned().await.map_err(|e| {
-                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {}", e))
+                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {e}"))
                 })?;
 
                 // Load service definition from embedded data

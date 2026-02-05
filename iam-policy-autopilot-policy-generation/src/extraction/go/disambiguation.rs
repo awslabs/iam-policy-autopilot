@@ -229,7 +229,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             .flatten()
             .collect();
 
-        log::debug!("Extracted parameters from code: {:?}", provided_params);
+        log::debug!("Extracted parameters from code: {provided_params:?}");
 
         // Get required parameters from the shape
         let required_params: HashSet<String> = shape
@@ -237,7 +237,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             .as_ref()
             .map(|req| req.iter().cloned().collect())
             .unwrap_or_default();
-        log::debug!("Required parameters from AWS model: {:?}", required_params);
+        log::debug!("Required parameters from AWS model: {required_params:?}");
 
         // Get all valid parameters from the shape (lowercase for case-insensitive comparison)
         // AWS models are inconsistent - some use PascalCase, some use camelCase
@@ -255,8 +255,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             let provided_lower = provided_param.to_lowercase();
             if !valid_params_lower.contains(&provided_lower) {
                 log::debug!(
-                    "Rejecting: parameter '{}' not found in AWS model (case-insensitive)",
-                    provided_param
+                    "Rejecting: parameter '{provided_param}' not found in AWS model (case-insensitive)"
                 );
                 return false; // Invalid parameter provided
             }
@@ -279,9 +278,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             let required_lower = required_param.to_lowercase();
             if !provided_params_lower.contains(&required_lower) {
                 log::debug!(
-                    "Rejecting: missing required parameter '{}' (provided: {:?})",
-                    required_param,
-                    provided_params
+                    "Rejecting: missing required parameter '{required_param}' (provided: {provided_params:?})"
                 );
                 return false; // Required parameter missing
             }

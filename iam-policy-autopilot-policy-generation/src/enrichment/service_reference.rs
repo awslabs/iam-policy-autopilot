@@ -419,7 +419,7 @@ impl RemoteServiceReferenceLoader {
     }
 
     fn get_cache_path(service_name: &str) -> PathBuf {
-        Self::get_cache_dir().join(format!("{}.json", service_name))
+        Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
     async fn is_cache_valid(path: &PathBuf) -> bool {
@@ -492,8 +492,7 @@ impl RemoteServiceReferenceLoader {
                         ExtractorError::service_reference_parse_error_with_source(
                             service_name,
                             format!(
-                                "Failed to parse service reference content. Detailed error: {}",
-                                e
+                                "Failed to parse service reference content. Detailed error: {e}"
                             ),
                             e,
                         )

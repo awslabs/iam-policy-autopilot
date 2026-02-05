@@ -30,8 +30,7 @@ impl super::service::IamPolicyAutopilotService {
 
         let mut parsed = parse(&preferred).ok_or_else(|| {
             IamPolicyAutopilotError::parsing(format!(
-                "Failed to parse AccessDenied message: {}",
-                preferred
+                "Failed to parse AccessDenied message: {preferred}"
             ))
         })?;
 

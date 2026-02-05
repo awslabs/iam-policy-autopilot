@@ -45,8 +45,7 @@ fn process_placeholder_value(
     // Check for empty placeholders like ${}
     if value.contains("${}") {
         return Err(ExtractorError::policy_generation(format!(
-            "Invalid value '{}': contains empty placeholder ${{}}",
-            value
+            "Invalid value '{value}': contains empty placeholder ${{}}"
         )));
     }
 

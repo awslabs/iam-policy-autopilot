@@ -417,7 +417,7 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
             .context("Failed to output extracted operations")?;
 
     // Output to stdout (not using println! to avoid extra newline in compact mode)
-    print!("{}", json_output);
+    print!("{json_output}");
     if config.pretty {
         println!(); // Add newline for pretty output
     }
@@ -493,7 +493,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
                 );
             }
             for (index, error) in &batch_response.failed {
-                debug!("Failed to upload policy {}: {}", index, error);
+                debug!("Failed to upload policy {index}: {error}");
             }
 
             Some(batch_response)
@@ -522,7 +522,7 @@ async fn main() {
                     match io::stdin().read_to_string(&mut buffer) {
                         Ok(_) => buffer,
                         Err(e) => {
-                            eprintln!("iam-policy-autopilot: Failed to read from stdin: {}", e);
+                            eprintln!("iam-policy-autopilot: Failed to read from stdin: {e}");
                             process::exit(ExitCode::Error.into());
                         }
                     }
@@ -543,7 +543,7 @@ async fn main() {
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
-                eprintln!("iam-policy-autopilot: Failed to initialize logging: {}", e);
+                eprintln!("iam-policy-autopilot: Failed to initialize logging: {e}");
                 process::exit(1);
             }
 
@@ -581,7 +581,7 @@ async fn main() {
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
-                eprintln!("iam-policy-autopilot: Failed to initialize logging: {}", e);
+                eprintln!("iam-policy-autopilot: Failed to initialize logging: {e}");
                 process::exit(1);
             }
 
@@ -634,10 +634,10 @@ async fn main() {
 }
 
 fn print_cli_command_error(e: anyhow::Error) {
-    eprintln!("Error: {}", e);
+    eprintln!("Error: {e}");
     let mut source = e.source();
     while let Some(err) = source {
-        eprintln!("  Caused by: {}", err);
+        eprintln!("  Caused by: {err}");
         source = err.source();
     }
 }

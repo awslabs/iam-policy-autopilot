@@ -66,18 +66,16 @@ include!("src/shared_submodule_model.rs");
 impl GitSubmoduleMetadata {
     fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleMetadata {
         let repository = Repository::open(git_path)
-            .unwrap_or_else(|_| panic!("Failed to open repository at path {:?}", git_path));
+            .unwrap_or_else(|_| panic!("Failed to open repository at path {git_path:?}"));
         GitSubmoduleMetadata {
-            git_commit_hash: get_repository_commit(&repository).unwrap_or_else(|_| {
-                panic!("Failed to get repository commit at path {:?}", git_path)
-            }),
+            git_commit_hash: get_repository_commit(&repository)
+                .unwrap_or_else(|_| panic!("Failed to get repository commit at path {git_path:?}")),
             git_tag: get_repository_tag(&repository)
-                .unwrap_or_else(|_| panic!("Failed to get repository tag at path {:?}", git_path)),
+                .unwrap_or_else(|_| panic!("Failed to get repository tag at path {git_path:?}")),
             data_hash: format!(
                 "{:?}",
                 Self::sha2sum_recursive(data_path, data_path).unwrap_or_else(|_| panic!(
-                    "Failed to compute checksum over data at path {:?}",
-                    data_path
+                    "Failed to compute checksum over data at path {data_path:?}"
                 ))
             ),
         }
@@ -126,10 +124,10 @@ fn main() {
 
     // Create the simplified directories
     if let Err(e) = fs::create_dir_all(&simplified_dir) {
-        panic!("Failed to create botocore simplified directory: {}", e);
+        panic!("Failed to create botocore simplified directory: {e}");
     }
     if let Err(e) = fs::create_dir_all(&boto3_dir) {
-        panic!("Failed to create boto3 simplified directory: {}", e);
+        panic!("Failed to create boto3 simplified directory: {e}");
     }
 
     // Process botocore data
@@ -147,7 +145,7 @@ fn main() {
             // Success
         }
         Err(e) => {
-            panic!("Failed to process botocore data: {}", e);
+            panic!("Failed to process botocore data: {e}");
         }
     }
 
@@ -175,7 +173,7 @@ fn main() {
     }
 
     if let Err(e) = process_boto3_data(boto3_data_path, &boto3_dir) {
-        panic!("Failed to process boto3 data: {}", e);
+        panic!("Failed to process boto3 data: {e}");
     }
 
     // Copy the boto3 directory to workspace-level target for rust-embed

@@ -95,8 +95,7 @@ impl PolicyMerger {
     fn calculate_policy_size(&self, policy: &IamPolicy) -> Result<usize> {
         let json = serde_json::to_string(policy).map_err(|e| {
             ExtractorError::policy_generation(format!(
-                "Failed to serialize policy for size calculation: {}",
-                e
+                "Failed to serialize policy for size calculation: {e}"
             ))
         })?;
 
@@ -178,8 +177,7 @@ impl PolicyMerger {
                 let single_statement_size = self.calculate_policy_size(&current_policy)?;
                 if single_statement_size > IAM_MANAGED_POLICY_SIZE_LIMIT {
                     log::warn!(
-                        "Single merged statement exceeds policy size limit ({} chars), including anyway",
-                        single_statement_size
+                        "Single merged statement exceeds policy size limit ({single_statement_size} chars), including anyway"
                     );
                 }
             } else {
@@ -316,8 +314,8 @@ impl PolicyMerger {
         // Conditions must be exactly the same to merge
         if stmt_conditions_set != group_conditions_set {
             log::debug!("Conditions differ, not merging:");
-            log::debug!("  Statement condition set: {:?}", stmt_conditions_set);
-            log::debug!("  Group condition set: {:?}", group_conditions_set);
+            log::debug!("  Statement condition set: {stmt_conditions_set:?}");
+            log::debug!("  Group condition set: {group_conditions_set:?}");
             return Ok(false);
         }
 
@@ -334,8 +332,7 @@ impl PolicyMerger {
                 stmt_services.union(&group_services).collect();
             if all_services.len() > 1 {
                 log::debug!(
-                    "Cross-service merging not allowed, different services detected: {:?}",
-                    all_services
+                    "Cross-service merging not allowed, different services detected: {all_services:?}"
                 );
                 return Ok(false);
             }
@@ -382,7 +379,7 @@ impl PolicyMerger {
 
         let result = Statement::allow(sorted_actions, sorted_resources).with_conditions(condition);
 
-        log::debug!("From group:\n{:?}\ncreated statement:\n{:?}", group, result);
+        log::debug!("From group:\n{group:?}\ncreated statement:\n{result:?}");
 
         Ok(result)
     }
@@ -464,10 +461,10 @@ impl PolicyMerger {
             let prefix1 = &resource1[..resource1.len() - 2];
             let prefix2 = &resource2[..resource2.len() - 2];
 
-            if prefix1.starts_with(&format!("{}/", prefix2)) || prefix1 == prefix2 {
+            if prefix1.starts_with(&format!("{prefix2}/")) || prefix1 == prefix2 {
                 return Ok(ResourceRelationship::Subsumed); // arn1 is more specific
             }
-            if prefix2.starts_with(&format!("{}/", prefix1)) || prefix2 == prefix1 {
+            if prefix2.starts_with(&format!("{prefix1}/")) || prefix2 == prefix1 {
                 return Ok(ResourceRelationship::Subsumes); // arn1 is more general
             }
         }
@@ -535,21 +532,13 @@ impl PolicyMerger {
 
         // Check if resource1's pattern would match resource2 (resource1 subsumes resource2)
         if regex1.is_match(resource2) {
-            log::debug!(
-                "check_regex_subsumption: {} subsumes {}",
-                resource1,
-                resource2
-            );
+            log::debug!("check_regex_subsumption: {resource1} subsumes {resource2}");
             return Ok(Some(ResourceRelationship::Subsumes));
         }
 
         // Check if resource2's pattern would match resource1 (resource2 subsumes resource1)
         if regex2.is_match(resource1) {
-            log::debug!(
-                "check_regex_subsumption: {} subsumes {}",
-                resource2,
-                resource1
-            );
+            log::debug!("check_regex_subsumption: {resource2} subsumes {resource1}");
             return Ok(Some(ResourceRelationship::Subsumed));
         }
 
@@ -576,12 +565,11 @@ impl PolicyMerger {
         }
 
         // Anchor the pattern to match the entire string
-        let anchored_pattern = format!("^{}$", regex_pattern);
+        let anchored_pattern = format!("^{regex_pattern}$");
 
         Regex::new(&anchored_pattern).map_err(|e| {
             ExtractorError::policy_generation(format!(
-                "Failed to compile regex for ARN pattern '{}': {}",
-                arn_pattern, e
+                "Failed to compile regex for ARN pattern '{arn_pattern}': {e}"
             ))
         })
     }

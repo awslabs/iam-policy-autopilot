@@ -24,7 +24,7 @@ impl AwsIamClient {
         policy_document: &PolicyDocument,
     ) -> AwsResult<()> {
         let policy_json = serde_json::to_string(policy_document)
-            .map_err(|e| AwsError::PolicyError(format!("Failed to serialize policy: {}", e)))?;
+            .map_err(|e| AwsError::PolicyError(format!("Failed to serialize policy: {e}")))?;
 
         self.client
             .put_role_policy()
@@ -35,8 +35,7 @@ impl AwsIamClient {
             .await
             .map_err(|e| {
                 AwsError::IamError(format!(
-                    "Failed to put role policy '{}' on role '{}': {:?}",
-                    policy_name, role_name, e
+                    "Failed to put role policy '{policy_name}' on role '{role_name}': {e:?}"
                 ))
             })?;
         Ok(())
@@ -49,7 +48,7 @@ impl AwsIamClient {
         policy_document: &PolicyDocument,
     ) -> AwsResult<()> {
         let policy_json = serde_json::to_string(policy_document)
-            .map_err(|e| AwsError::PolicyError(format!("Failed to serialize policy: {}", e)))?;
+            .map_err(|e| AwsError::PolicyError(format!("Failed to serialize policy: {e}")))?;
         self.client
             .put_user_policy()
             .user_name(user_name)
@@ -57,7 +56,7 @@ impl AwsIamClient {
             .policy_document(policy_json)
             .send()
             .await
-            .map_err(|e| AwsError::IamError(format!("Failed to put user policy: {}", e)))?;
+            .map_err(|e| AwsError::IamError(format!("Failed to put user policy: {e}")))?;
         Ok(())
     }
 }
@@ -98,7 +97,7 @@ pub(crate) async fn list_inline_policies(
                 .role_name(principal_name)
                 .send()
                 .await
-                .map_err(|e| AwsError::IamError(format!("Failed to list role policies: {}", e)))?;
+                .map_err(|e| AwsError::IamError(format!("Failed to list role policies: {e}")))?;
             Ok(response.policy_names)
         }
         PrincipalKind::User => {
@@ -107,7 +106,7 @@ pub(crate) async fn list_inline_policies(
                 .user_name(principal_name)
                 .send()
                 .await
-                .map_err(|e| AwsError::IamError(format!("Failed to list user policies: {}", e)))?;
+                .map_err(|e| AwsError::IamError(format!("Failed to list user policies: {e}")))?;
             Ok(response.policy_names)
         }
     }
@@ -128,7 +127,7 @@ pub(crate) async fn get_inline_policy(
                 .policy_name(policy_name)
                 .send()
                 .await
-                .map_err(|e| AwsError::IamError(format!("Failed to get role policy: {}", e)))?;
+                .map_err(|e| AwsError::IamError(format!("Failed to get role policy: {e}")))?;
             response.policy_document
         }
         PrincipalKind::User => {
@@ -138,7 +137,7 @@ pub(crate) async fn get_inline_policy(
                 .policy_name(policy_name)
                 .send()
                 .await
-                .map_err(|e| AwsError::IamError(format!("Failed to get user policy: {}", e)))?;
+                .map_err(|e| AwsError::IamError(format!("Failed to get user policy: {e}")))?;
             response.policy_document
         }
     };
@@ -146,13 +145,11 @@ pub(crate) async fn get_inline_policy(
     // URL decode the policy document (AWS returns URL-encoded JSON)
     let decoded = percent_encoding::percent_decode_str(&policy_json)
         .decode_utf8()
-        .map_err(|e| {
-            AwsError::PolicyError(format!("Failed to URL decode policy document: {}", e))
-        })?;
+        .map_err(|e| AwsError::PolicyError(format!("Failed to URL decode policy document: {e}")))?;
 
     // Parse JSON
     serde_json::from_str(&decoded)
-        .map_err(|e| AwsError::PolicyError(format!("Failed to parse policy document JSON: {}", e)))
+        .map_err(|e| AwsError::PolicyError(format!("Failed to parse policy document JSON: {e}")))
 }
 
 /// Find existing canonical IAM Policy Autopilot policy for a principal

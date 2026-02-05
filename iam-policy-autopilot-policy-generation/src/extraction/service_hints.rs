@@ -134,7 +134,7 @@ impl ServiceHintsProcessor {
                 }
             }
 
-            trace!("Service '{}' synonyms: {:?}", service_name, synonyms);
+            trace!("Service '{service_name}' synonyms: {synonyms:?}");
             synonyms_map.insert(service_name.clone(), synonyms);
         }
 
@@ -166,7 +166,7 @@ impl ServiceHintsProcessor {
             let mut error_msg = String::new();
             for (invalid_service, suggestions) in invalid_services {
                 if suggestions.is_empty() {
-                    error_msg.push_str(&format!("  - {}\n", invalid_service));
+                    error_msg.push_str(&format!("  - {invalid_service}\n"));
                 } else if suggestions.len() == 1 {
                     error_msg.push_str(&format!(
                         "  - {} (did you mean {}?)\n",
@@ -175,8 +175,7 @@ impl ServiceHintsProcessor {
                 } else {
                     let suggestion_list = suggestions.join(", ");
                     error_msg.push_str(&format!(
-                        "  - {} (did you mean one of: {}?)\n",
-                        invalid_service, suggestion_list
+                        "  - {invalid_service} (did you mean one of: {suggestion_list}?)\n"
                     ));
                 }
             }

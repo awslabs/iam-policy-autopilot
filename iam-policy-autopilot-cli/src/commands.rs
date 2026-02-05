@@ -31,7 +31,7 @@ pub async fn fix_access_denied(error_text: &str, yes: bool) -> ExitCode {
     let service = match iam_policy_autopilot_access_denied::IamPolicyAutopilotService::new().await {
         Ok(s) => s,
         Err(e) => {
-            output::note(&format!("Failed to initialize service: {}", e));
+            output::note(&format!("Failed to initialize service: {e}"));
             return ExitCode::Error;
         }
     };
@@ -45,7 +45,7 @@ pub async fn fix_access_denied(error_text: &str, yes: bool) -> ExitCode {
             ) {
                 output::note("No AccessDenied found in provided text");
             } else {
-                output::note(&format!("Failed to create plan: {}", e));
+                output::note(&format!("Failed to create plan: {e}"));
             }
             ExitCode::Error
         }
@@ -121,7 +121,7 @@ async fn fix_access_denied_with_service(
             let statement_json = match serde_json::to_string_pretty(&statement) {
                 Ok(json) => json,
                 Err(e) => {
-                    output::warn(&format!("Failed to serialize statement: {}", e));
+                    output::warn(&format!("Failed to serialize statement: {e}"));
                     return ExitCode::Error;
                 }
             };
@@ -188,8 +188,7 @@ fn handle_apply_error(apply_error: ApplyError) -> ExitCode {
             output::print_apply_refused(
                 "account_mismatch",
                 &format!(
-                    "principal account ({}) differs from caller account ({})",
-                    principal_account, caller_account
+                    "principal account ({principal_account}) differs from caller account ({caller_account})"
                 ),
             );
             ExitCode::Error
@@ -202,8 +201,7 @@ fn handle_apply_error(apply_error: ApplyError) -> ExitCode {
             output::print_apply_refused(
                 "multi_action_error",
                 &format!(
-                    "Expected exactly 1 action for canonical policy, got {}. This is a bug.",
-                    count
+                    "Expected exactly 1 action for canonical policy, got {count}. This is a bug."
                 ),
             );
             ExitCode::Error

@@ -45,8 +45,7 @@ pub fn resolve_principal(principal_arn: &str) -> Result<PrincipalInfo, String> {
         "iam" => resolve_iam_principal(resource),
         "sts" => resolve_sts_principal(resource),
         _ => Err(format!(
-            "unsupported service '{}': only IAM and STS principals are supported",
-            service
+            "unsupported service '{service}': only IAM and STS principals are supported"
         )),
     }
 }

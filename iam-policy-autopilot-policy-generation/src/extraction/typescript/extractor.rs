@@ -43,7 +43,7 @@ impl Extractor for TypeScriptExtractor {
             Ok(results) => results,
             Err(e) => {
                 // Log error and return empty results
-                log::warn!("TypeScript scanning failed: {}", e);
+                log::warn!("TypeScript scanning failed: {e}");
                 return ExtractorResult::TypeScript(ast, Vec::new());
             }
         };

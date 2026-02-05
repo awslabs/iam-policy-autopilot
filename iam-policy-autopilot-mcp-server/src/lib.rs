@@ -25,12 +25,12 @@ impl Display for McpTransport {
 }
 
 pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> {
-    info!("Starting MCP server with transport: {}", transport);
+    info!("Starting MCP server with transport: {transport}");
 
     let env = env_logger::Env::default().filter_or("IAMPA_LOG_LEVEL", "debug");
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string();
-    let prefix = format!("iam-policy-autopilot-mcp-{}-", timestamp);
+    let prefix = format!("iam-policy-autopilot-mcp-{timestamp}-");
 
     // Set up logging to temp file
     let path_str: Option<String> = {
@@ -62,8 +62,8 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
 
     match transport {
         McpTransport::Http => {
-            let bind_address: String = format!("{}:{}", BIND_ADDRESS, port);
-            info!("Starting HTTP MCP server at {}", bind_address);
+            let bind_address: String = format!("{BIND_ADDRESS}:{port}");
+            info!("Starting HTTP MCP server at {bind_address}");
 
             crate::mcp::begin_http_transport(bind_address.as_str(), path_str)
                 .await
