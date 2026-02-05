@@ -31,8 +31,6 @@ pub mod policy_generation;
 // Export api for public use
 pub mod api;
 
-mod deserialization_tests;
-
 use std::fmt::Display;
 use std::path::PathBuf;
 

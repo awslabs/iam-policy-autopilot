@@ -8,7 +8,7 @@ These files are used to verify that the configuration parsing logic correctly re
 
 ## How It Works
 
-The negative tests use **RustEmbed** to embed these invalid test files at compile time, just like the production code embeds valid configuration files. The key difference is:
+The negative tests use **RustEmbed** to embed the invalid test files, just like the production code embeds valid configuration files. The key difference is:
 
 1. **Production code** uses RustEmbed pointing to `resources/config/` with valid files
 2. **Test code** uses RustEmbed pointing to `tests/resources/invalid_configs/` with invalid files
