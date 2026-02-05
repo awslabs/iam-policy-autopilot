@@ -59,7 +59,7 @@ pub(crate) fn parse_struct_literal(
     let text = node.text();
 
     // Extract type name from &TypeName{...}
-    let type_start = if text.starts_with('&') { 1 } else { 0 };
+    let type_start = usize::from(text.starts_with('&'));
     let brace_pos = text.find('{')?;
     let type_name = text[type_start..brace_pos].trim().to_string();
 
