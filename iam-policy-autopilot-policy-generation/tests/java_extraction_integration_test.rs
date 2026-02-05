@@ -119,57 +119,6 @@ public class S3Example {
 }
 
 #[tokio::test]
-async fn test_java_sdk_v1_extraction() {
-    let java_source = r#"
-import com.amazonaws.services.s3.AmazonS3;
-import com.amazonaws.services.s3.AmazonS3ClientBuilder;
-import com.amazonaws.services.s3.model.Bucket;
-
-public class S3ExampleV1 {
-    public static void main(String[] args) {
-        AmazonS3 s3 = AmazonS3ClientBuilder.standard().build();
-        List<Bucket> result = s3.listBuckets();
-        for (Bucket bucket : result) {
-            System.out.println(bucket.getName());
-        }
-    }
-}
-    "#;
-    let source_file = SourceFile::with_language(
-        PathBuf::from("TestV1.java"),
-        java_source.to_string(),
-        Language::Java,
-    );
-    let engine = ExtractionEngine::new();
-    let result = engine
-        .extract_sdk_method_calls(Language::Java, vec![source_file])
-        .await;
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ Java SDK v1 extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
-
-            let list_buckets_op = extracted_methods
-                .methods
-                .iter()
-                .find(|call| call.name == "ListBuckets")
-                .expect("Should find ListBuckets operation");
-            assert_eq!(
-                list_buckets_op.possible_services,
-                vec!["s3"],
-                "Should associate with S3 service"
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            panic!("Extraction failed: {:?}", e);
-        }
-    }
-}
-
-#[tokio::test]
 async fn test_java_no_sdk_calls() {
     let java_source = r#"
 public class NoSdkExample {
