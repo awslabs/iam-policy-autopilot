@@ -179,4 +179,64 @@ impl<'a> WaiterCallPattern<'a> {
             Self::Chained(info) => Some(&info.arguments),
         }
     }
+
+    /// Create synthetic SDK method calls for this waiter pattern
+    ///
+    /// This method encapsulates the common logic for creating synthetic calls across
+    /// extractors for different languages. Language-specific behavior is provided via callbacks.
+    ///
+    /// # Arguments
+    /// * `service_index` - Service model index for waiter lookup
+    /// * `filter_params` - Callback to filter waiter-specific parameters (language-specific)
+    /// * `get_required_params` - Callback to get required parameters when no arguments available
+    /// * `operation_to_method` - Callback to convert operation name to method name (language-specific)
+    ///
+    /// # Returns
+    /// Vector of synthetic SDK method calls, one per service that defines this waiter
+    pub(crate) fn create_synthetic_calls<F, G, H>(
+        &self,
+        service_index: &crate::extraction::sdk_model::ServiceModelIndex,
+        filter_params: F,
+        get_required_params: G,
+        operation_to_method: H,
+    ) -> Vec<crate::extraction::SdkMethodCall>
+    where
+        F: Fn(Vec<Parameter>) -> Vec<Parameter>,
+        G: Fn(&str, &str) -> Vec<Parameter>,
+        H: Fn(&str) -> String,
+    {
+        use crate::extraction::SdkMethodCallMetadata;
+
+        let mut synthetic_calls = Vec::new();
+
+        if let Some(service_defs) = service_index.waiter_lookup.get(self.waiter_name()) {
+            for service_def in service_defs {
+                let service_name = &service_def.service_name;
+                let operation_name = &service_def.operation_name;
+
+                // Determine parameters based on pattern variant
+                let parameters = match self.arguments() {
+                    Some(args) => filter_params(args.to_vec()),
+                    None => get_required_params(service_name, operation_name),
+                };
+
+                // Convert operation name to method name (language-specific)
+                let method_name = operation_to_method(operation_name);
+
+                synthetic_calls.push(crate::extraction::SdkMethodCall {
+                    name: method_name,
+                    possible_services: vec![service_name.clone()],
+                    metadata: Some(SdkMethodCallMetadata {
+                        parameters,
+                        return_type: None,
+                        expr: self.expr().to_string(),
+                        location: self.location().clone(),
+                        receiver: Some(self.client_receiver().to_string()),
+                    }),
+                });
+            }
+        }
+
+        synthetic_calls
+    }
 }
