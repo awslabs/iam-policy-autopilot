@@ -259,10 +259,10 @@ impl Boto3ResourcesRegistry {
                             .resource_to_services
                             .entry(resource_type.clone())
                             .or_default()
-                            .push(service_name.to_string());
+                            .push(service_name.clone());
                     }
 
-                    registry.models.insert(service_name.to_string(), model);
+                    registry.models.insert(service_name.clone(), model);
                 }
                 Err(e) => {
                     log::debug!("Failed to load service '{service_name}': {e}");

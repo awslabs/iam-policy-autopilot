@@ -339,7 +339,7 @@ impl ResourceMatcher {
         };
 
         Ok(Some(Action::new(
-            action_name.to_string(),
+            action_name.clone(),
             resources,
             vec![],
             explanation,
