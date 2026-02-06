@@ -165,7 +165,7 @@ where
                 original_name,
                 local_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         } else {
             // No rename - original name is the same as local name
@@ -174,7 +174,7 @@ where
                 import_name.clone(),
                 import_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         }
     }
@@ -201,12 +201,12 @@ where
     ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
-        let pattern = format!("new {}($ARGS)", command_name);
+        let pattern = format!("new {command_name}($ARGS)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -228,12 +228,12 @@ where
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Use explicit two-argument pattern
-        let pattern = format!("{}($ARG1, $ARG2)", function_name);
+        let pattern = format!("{function_name}($ARG1, $ARG2)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract parameters from second argument (ARG2 = operation params)
@@ -255,17 +255,15 @@ where
 
         // Try patterns with and without await keyword using explicit two-argument pattern
         let patterns = [
-            format!("await {}($ARG1, $ARG2)", function_name), // With await
-            format!("{}($ARG1, $ARG2)", function_name),       // Without await
+            format!("await {function_name}($ARG1, $ARG2)"), // With await
+            format!("{function_name}($ARG1, $ARG2)"),       // Without await
         ];
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                     let env = first_match.get_env();
 
                     // Extract parameters from second argument (ARG2 = operation params)
@@ -286,18 +284,16 @@ where
     ) -> Option<CommandUsage<'_>> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
-            format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
-            format!("let $VAR: {} = $VALUE", type_name),   // let variable: Type = value
-            format!("$VAR: {} = $VALUE", type_name),       // variable: Type = value
+            format!("const $VAR: {type_name} = $VALUE"), // const variable: Type = value
+            format!("let $VAR: {type_name} = $VALUE"),   // let variable: Type = value
+            format!("$VAR: {type_name} = $VALUE"),       // variable: Type = value
         ];
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                     let expr_text = first_match.text();
                     // TODO: Extract from variable assignments
                     let parameters = vec![];
@@ -397,7 +393,7 @@ where
         let mut sublibrary_mappings = HashMap::new();
 
         // Process both imports and requires
-        for source_data in [imports, requires].iter() {
+        for source_data in &[imports, requires] {
             for sublibrary_info in source_data {
                 for import_info in &sublibrary_info.imports {
                     let original_name = &import_info.original_name;
@@ -431,6 +427,12 @@ where
     pub(crate) fn scan_client_instantiations(
         &mut self,
     ) -> Result<Vec<ClientInstantiation>, String> {
+        // Patterns to match client instantiations
+        const PATTERNS: &[&str] = &[
+            "const $VAR = new $CLIENT($ARGS)",
+            "let $VAR = new $CLIENT($ARGS)",
+        ];
+
         let client_info = self.get_valid_client_types()?;
 
         if client_info.is_empty() {
@@ -438,12 +440,6 @@ where
         }
 
         let mut results = Vec::new();
-
-        // Patterns to match client instantiations
-        const PATTERNS: &[&str] = &[
-            "const $VAR = new $CLIENT($ARGS)",
-            "let $VAR = new $CLIENT($ARGS)",
-        ];
 
         for pattern in PATTERNS {
             let matches = self.find_all_matches(pattern)?;
@@ -556,7 +552,7 @@ where
                         method_name,
                         arguments,
                         location: Location::from_node(
-                            self.ast_grep.source_file.path.to_path_buf(),
+                            self.ast_grep.source_file.path.clone(),
                             node_match.get_node(),
                         ),
                     });

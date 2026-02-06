@@ -518,16 +518,16 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         let constructor_pattern = "$VAR = $ANY.$RESOURCE_TYPE($$$ARGS)";
 
         for node_match in root.find_all(constructor_pattern) {
-            let env = node_match.get_env();
+            let match_env = node_match.get_env();
 
             // Extract variable name
-            let variable_name = match env.get_match("VAR") {
+            let variable_name = match match_env.get_match("VAR") {
                 Some(node) => node.text().to_string(),
                 None => continue,
             };
 
             // Extract resource type (e.g., "Table", "Bucket")
-            let resource_type = match env.get_match("RESOURCE_TYPE") {
+            let resource_type = match match_env.get_match("RESOURCE_TYPE") {
                 Some(node) => node.text().to_string(),
                 None => continue,
             };
@@ -540,7 +540,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             }
 
             // Extract arguments
-            let args_nodes = env.get_multiple_matches("ARGS");
+            let args_nodes = match_env.get_multiple_matches("ARGS");
             let constructor_args = ArgumentExtractor::extract_arguments(&args_nodes);
 
             // Get position information
@@ -862,7 +862,7 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                             has_many_spec,
                             node_match.text().to_string(),
                             Location::from_node(
-                                ast.source_file.path.to_path_buf(),
+                                ast.source_file.path.clone(),
                                 node_match.get_node(),
                             ),
                         )

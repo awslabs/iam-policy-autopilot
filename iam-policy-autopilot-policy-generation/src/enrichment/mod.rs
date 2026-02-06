@@ -100,7 +100,7 @@ impl Operation {
                         .boto3_method_to_operation
                         .get(&call.name)
                         .map(|op| {
-                            log::debug!("got {:?}", op);
+                            log::debug!("got {op:?}");
                             op.split(':').nth(1).unwrap_or(op).to_string()
                         })
                 })

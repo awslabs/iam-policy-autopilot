@@ -373,7 +373,7 @@ rule:
             }
         }
 
-        log::debug!("Field names extracted from AST: {:?}", field_names);
+        log::debug!("Field names extracted from AST: {field_names:?}");
         field_names
     }
 
@@ -495,7 +495,7 @@ rule:
                             method_calls.extend(feature_calls);
                         }
                         Err(e) => {
-                            log::debug!("Failed to create GoFeaturesExtractor: {}", e);
+                            log::debug!("Failed to create GoFeaturesExtractor: {e}");
                         }
                     }
 
@@ -552,7 +552,7 @@ impl Parameter {
             .join(", ");
 
         Parameter::Positional {
-            value: ParameterValue::Unresolved(format!("&{}{{ {} }}", type_name, fields_str)),
+            value: ParameterValue::Unresolved(format!("&{type_name}{{ {fields_str} }}")),
             position,
             type_annotation: Some(type_name),
             struct_fields: Some(fields.iter().map(|f| f.name.clone()).collect()),

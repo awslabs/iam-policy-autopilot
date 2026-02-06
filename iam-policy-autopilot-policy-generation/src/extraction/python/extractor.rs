@@ -51,14 +51,11 @@ impl PythonExtractor {
                 parameters: arguments,
                 return_type: None, // We don't know the return type from the call site
                 expr: node_match.text().to_string(),
-                location: Location::from_node(
-                    source_file.path.to_path_buf(),
-                    node_match.get_node(),
-                ),
+                location: Location::from_node(source_file.path.clone(), node_match.get_node()),
                 receiver,
             }),
         };
-        log::debug!("Found method call: {:?}", method_call);
+        log::debug!("Found method call: {method_call:?}");
 
         Some(method_call)
     }

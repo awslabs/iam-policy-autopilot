@@ -26,10 +26,10 @@ fn extract_services_from_embedded_utilities_mapping() -> Result<Vec<String>, Str
         .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
 
     let content = std::str::from_utf8(&content_bytes)
-        .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {}", e))?;
+        .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {e}"))?;
 
     let mapping: UtilityMappingJson = serde_json::from_str(content)
-        .map_err(|e| format!("Failed to parse utilities mapping: {}", e))?;
+        .map_err(|e| format!("Failed to parse utilities mapping: {e}"))?;
 
     Ok(mapping.services.keys().cloned().collect())
 }
@@ -250,10 +250,7 @@ impl Boto3ResourcesRegistry {
             // We have a unit test which runs load_common_services_with_utilities ensuring that this doesn't fail at runtime.
             let model = Boto3ResourcesModel::load_with_utilities_from_embedded(&service_name)
                 .unwrap_or_else(|e| {
-                    panic!(
-                        "Failed to load utilities for service '{}': {}",
-                        service_name, e
-                    )
+                    panic!("Failed to load utilities for service '{service_name}': {e}")
                 });
             // Index all resource types this service provides
             for resource_type in model.get_all_resource_types() {
@@ -261,10 +258,10 @@ impl Boto3ResourcesRegistry {
                     .resource_to_services
                     .entry(resource_type.clone())
                     .or_default()
-                    .push(service_name.to_string());
+                    .push(service_name.clone());
             }
 
-            registry.models.insert(service_name.to_string(), model);
+            registry.models.insert(service_name.clone(), model);
         }
 
         registry
@@ -298,29 +295,23 @@ impl Boto3ResourcesModel {
         let service_versions = Boto3Data::build_service_versions_map();
 
         // Find the service and get its latest version
-        let versions = service_versions.get(service_name).ok_or_else(|| {
-            format!(
-                "Service '{}' not found in embedded boto3 data",
-                service_name
-            )
-        })?;
+        let versions = service_versions
+            .get(service_name)
+            .ok_or_else(|| format!("Service '{service_name}' not found in embedded boto3 data"))?;
 
         let latest_version = versions
             .last()
-            .ok_or_else(|| format!("No versions found for service '{}'", service_name))?;
+            .ok_or_else(|| format!("No versions found for service '{service_name}'"))?;
 
         // Get the resources data
         let resources_data = Boto3Data::get_resources_raw(service_name, latest_version)
             .ok_or_else(|| {
-                format!(
-                    "Resources data not found for {}/{}",
-                    service_name, latest_version
-                )
+                format!("Resources data not found for {service_name}/{latest_version}")
             })?;
 
         // Parse the resource specification
         let content = std::str::from_utf8(&resources_data)
-            .map_err(|e| format!("Invalid UTF-8 in embedded boto3 data: {}", e))?;
+            .map_err(|e| format!("Invalid UTF-8 in embedded boto3 data: {e}"))?;
 
         Self::parse_resources_content(service_name, content)
     }
@@ -344,10 +335,10 @@ impl Boto3ResourcesModel {
             .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
 
         let content = std::str::from_utf8(&content_bytes)
-            .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {}", e))?;
+            .map_err(|e| format!("Invalid UTF-8 in embedded utilities mapping: {e}"))?;
 
         let mapping: UtilityMappingJson = serde_json::from_str(content)
-            .map_err(|e| format!("Failed to parse utilities mapping: {}", e))?;
+            .map_err(|e| format!("Failed to parse utilities mapping: {e}"))?;
 
         if let Some(service_utilities) = mapping.services.get(&model.service_name) {
             // Parse client utility methods
@@ -412,7 +403,7 @@ impl Boto3ResourcesModel {
     /// Parse boto3 resources JSON content
     fn parse_resources_content(service_name: &str, content: &str) -> Result<Self, String> {
         let json: Boto3ResourcesJson =
-            serde_json::from_str(content).map_err(|e| format!("Failed to parse JSON: {}", e))?;
+            serde_json::from_str(content).map_err(|e| format!("Failed to parse JSON: {e}"))?;
 
         Self::build_model_from_json(service_name, json)
     }

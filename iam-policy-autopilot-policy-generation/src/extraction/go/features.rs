@@ -84,7 +84,7 @@ impl GoSdkV2Features {
             };
 
             serde_json::from_slice::<GoSdkV2Features>(&file.data)
-                .map_err(|e| format!("Failed to parse go-sdk-v2-features.json: {}", e))
+                .map_err(|e| format!("Failed to parse go-sdk-v2-features.json: {e}"))
         });
 
         cached.as_ref().map_err(|e| e.clone().into())

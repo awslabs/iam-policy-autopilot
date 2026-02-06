@@ -121,7 +121,7 @@ impl Display for Language {
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
         };
-        write!(f, "{}", language_str)
+        write!(f, "{language_str}")
     }
 }
 
@@ -215,10 +215,7 @@ impl Location {
         let (start_line, start_col) = self.start_position;
         let (end_line, end_col) = self.end_position;
 
-        format!(
-            "{}:{}.{}-{}.{}",
-            path_str, start_line, start_col, end_line, end_col
-        )
+        format!("{path_str}:{start_line}.{start_col}-{end_line}.{end_col}")
     }
 }
 
@@ -267,16 +264,16 @@ impl Location {
         // Convert strings to numbers
         let start_line = start_line_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid start line: {}", start_line_str))?;
+            .map_err(|_| format!("Invalid start line: {start_line_str}"))?;
         let start_col = start_col_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid start column: {}", start_col_str))?;
+            .map_err(|_| format!("Invalid start column: {start_col_str}"))?;
         let end_line = end_line_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid end line: {}", end_line_str))?;
+            .map_err(|_| format!("Invalid end line: {end_line_str}"))?;
         let end_col = end_col_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid end column: {}", end_col_str))?;
+            .map_err(|_| format!("Invalid end column: {end_col_str}"))?;
 
         Ok(Location {
             file_path: PathBuf::from(file_path_str),

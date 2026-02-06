@@ -88,17 +88,9 @@ pedantic = { level = "warn", priority = -1 }
 nursery = { level = "warn", priority = -1 }
 unwrap_used = "deny"
 # TODO: fix these lints
-uninlined_format_args = "allow"
 doc_markdown = "allow"
 missing_errors_doc = "allow"
-assigning_clones = "allow"
-bool_to_int_with_if = "allow"
-collection_is_never_read = "allow"
 doc_link_with_quotes = "allow"
-explicit_iter_loop = "allow"
-format_push_string = "allow"
-implicit_clone = "allow"
-items_after_statements = "allow"
 manual_assert = "allow"
 manual_let_else = "allow"
 map_unwrap_or = "allow"

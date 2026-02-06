@@ -67,7 +67,7 @@ impl Boto3ResourcesRaw {
     fn get_resources_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
-        let json_path = format!("{}/{}/resources-1.json", service, api_version);
+        let json_path = format!("{service}/{api_version}/resources-1.json");
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
 
@@ -140,7 +140,7 @@ impl BotocoreRaw {
     fn get_service_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
-        let json_path = format!("{}/{}/service-2.json", service, api_version);
+        let json_path = format!("{service}/{api_version}/service-2.json");
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
 
@@ -163,13 +163,13 @@ impl BotocoreRaw {
 
     /// Get a waiters definition file by service name and API version
     fn get_waiters(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let path = format!("{}/{}/waiters-2.json", service, api_version);
+        let path = format!("{service}/{api_version}/waiters-2.json");
         Self::get(&path).map(|file| file.data)
     }
 
     /// Get a paginators definition file by service name and API version
     fn get_paginators(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let path = format!("{}/{}/paginators-1.json", service, api_version);
+        let path = format!("{service}/{api_version}/paginators-1.json");
         Self::get(&path).map(|file| file.data)
     }
 
@@ -308,8 +308,7 @@ impl BotocoreData {
     ) -> Result<SdkServiceDefinition> {
         let data = BotocoreRaw::get_service_definition(service, api_version).ok_or_else(|| {
             ExtractorError::validation(format!(
-                "Service definition not found for {}/{}",
-                service, api_version
+                "Service definition not found for {service}/{api_version}"
             ))
         })?;
 
