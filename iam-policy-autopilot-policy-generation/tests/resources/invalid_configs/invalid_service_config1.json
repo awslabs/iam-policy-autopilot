@@ -1,0 +1,15 @@
+{
+  "FailureReason": "Missing ResourceOverrides",
+  "RenameServicesOperationActionMap": {
+    "accessanalyzer": "access-analyzer"
+  },
+  "RenameServicesServiceReference": {
+    "accessanalyzer": "access-analyzer"
+  },
+  "RenameOperations": {
+    "s3:ListObjectsV2": {
+      "service": "s3",
+      "operation": "ListObjects"
+    }
+  }
+}

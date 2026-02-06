@@ -98,7 +98,11 @@ where
                         .into_iter()
                         .filter_map(|v| v.as_str().map(|s| s.to_string()))
                         .collect(),
-                    _ => continue, // Skip non-string/non-array values
+                    _ => {
+                        return Err(serde::de::Error::custom(
+                            format!("Expected String or String array in FAS context values for key '{}', got: {:?}", key, value)
+                        ));
+                    }
                 };
 
                 if !values.is_empty() {
@@ -223,7 +227,73 @@ pub(crate) fn load_operation_fas_map(service_name: &str) -> Option<Arc<Operation
 
 #[cfg(test)]
 mod tests {
+    use std::{fs, path::Path};
+
     use super::*;
+
+    /// Validates that all operation-fas-maps/*.json files can be parsed successfully
+    #[test]
+    fn test_validate_all_operation_fas_maps() {
+        let fas_maps_dir = Path::new("resources/config/operation-fas-maps");
+        assert!(
+            fas_maps_dir.exists(),
+            "Operation FAS maps directory not found at: {}",
+            fas_maps_dir.display()
+        );
+
+        let mut validated_count = 0;
+        let mut errors = Vec::new();
+
+        for entry in
+            fs::read_dir(fas_maps_dir).expect("Failed to read operation-fas-maps directory")
+        {
+            let entry = entry.expect("Failed to read directory entry");
+            let path = entry.path();
+
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let service_name = path
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .expect("Invalid file name");
+
+                // Use the exact same runtime deserialization
+                match load_operation_fas_map(service_name) {
+                    Some(fas_map) => {
+                        // Verify the map has content
+                        assert!(
+                            !fas_map.fas_operations.is_empty(),
+                            "FAS map for service '{}' should not be empty",
+                            service_name
+                        );
+                        validated_count += 1;
+                    }
+                    None => {
+                        errors.push(format!(
+                            "Failed to load operation FAS map for service: {}",
+                            service_name
+                        ));
+                    }
+                }
+            }
+        }
+
+        assert!(
+            errors.is_empty(),
+            "Failed to validate {} operation FAS map files:\n{}",
+            errors.len(),
+            errors.join("\n")
+        );
+
+        assert!(
+            validated_count > 0,
+            "Should have validated at least one operation FAS map file"
+        );
+
+        println!(
+            "✓ Successfully validated {} operation FAS map files",
+            validated_count
+        );
+    }
 
     #[test]
     fn test_load_operation_fas_map_existing_service() {
@@ -529,5 +599,55 @@ mod tests {
             "✅ All {} embedded FAS maps loaded and validated successfully",
             loaded_services.len()
         );
+    }
+}
+
+#[cfg(test)]
+mod negative_tests {
+    use rust_embed::RustEmbed;
+
+    use super::*;
+
+    /// Embedded invalid test configuration files for negative testing
+    /// This RustEmbed points to test resources with intentionally malformed configs
+    #[derive(RustEmbed)]
+    #[folder = "tests/resources/invalid_configs"]
+    #[include = "*.json"]
+    struct InvalidTestConfigs;
+
+    #[test]
+    fn test_invalid_operation_fas_map() {
+        let file_paths = [
+            "invalid_operation_fas_map1.json",
+            "invalid_operation_fas_map2.json",
+        ];
+        for file_path in file_paths {
+            // Test that malformed JSON (missing closing brace) is rejected
+            let file = InvalidTestConfigs::get(file_path).expect("Test file should exist");
+
+            let json_str =
+                std::str::from_utf8(&file.data).expect("Test file should be valid UTF-8");
+
+            let result: Result<OperationFasMap, _> = serde_json::from_str(json_str);
+
+            assert!(
+                result.is_err(),
+                "{}: Parsing should fail for malformed JSON",
+                file_path
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_configs_directory_exists() {
+        // Verify that the test resources directory is properly set up
+        let file_count = InvalidTestConfigs::iter().count();
+
+        assert!(
+            file_count > 0,
+            "Should have at least one invalid test configuration file"
+        );
+
+        println!("✓ Found {} invalid test configuration files", file_count);
     }
 }

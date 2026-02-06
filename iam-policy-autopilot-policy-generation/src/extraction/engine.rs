@@ -119,7 +119,7 @@ impl Engine {
         // Disambiguate and validate method calls against SDK definitions
         extractor.disambiguate(&mut all_extraction_results, &service_index);
 
-        let method_calls = all_extraction_results
+        let method_calls: Vec<crate::SdkMethodCall> = all_extraction_results
             .into_iter()
             .flat_map(|r| r.method_calls())
             .collect::<Vec<_>>();

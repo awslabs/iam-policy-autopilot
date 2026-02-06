@@ -242,36 +242,29 @@ impl Boto3ResourcesRegistry {
         };
 
         // Dynamically load services from embedded utilities mapping
-        let common_services = match extract_services_from_embedded_utilities_mapping() {
-            Ok(services) => services,
-            Err(e) => {
-                log::warn!(
-                    "Failed to extract services from embedded utilities mapping: {}",
-                    e
-                );
-                vec![]
-            }
-        };
+        // We have a unit test which runs load_common_services_with_utilities ensuring that this doesn't fail at runtime.
+        let common_services = extract_services_from_embedded_utilities_mapping()
+            .expect("Failed to extract services from embedded utilities mapping.");
 
         for service_name in common_services {
-            match Boto3ResourcesModel::load_with_utilities_from_embedded(&service_name) {
-                Ok(model) => {
-                    // Index all resource types this service provides
-                    for resource_type in model.get_all_resource_types() {
-                        registry
-                            .resource_to_services
-                            .entry(resource_type.clone())
-                            .or_default()
-                            .push(service_name.to_string());
-                    }
-
-                    registry.models.insert(service_name.to_string(), model);
-                }
-                Err(e) => {
-                    log::debug!("Failed to load service '{}': {}", service_name, e);
-                    // Silently continue on error to avoid breaking extraction
-                }
+            // We have a unit test which runs load_common_services_with_utilities ensuring that this doesn't fail at runtime.
+            let model = Boto3ResourcesModel::load_with_utilities_from_embedded(&service_name)
+                .unwrap_or_else(|e| {
+                    panic!(
+                        "Failed to load utilities for service '{}': {}",
+                        service_name, e
+                    )
+                });
+            // Index all resource types this service provides
+            for resource_type in model.get_all_resource_types() {
+                registry
+                    .resource_to_services
+                    .entry(resource_type.clone())
+                    .or_default()
+                    .push(service_name.to_string());
             }
+
+            registry.models.insert(service_name.to_string(), model);
         }
 
         registry
@@ -768,6 +761,11 @@ mod tests {
     }
 
     #[test]
+    fn test_load_common_services_with_utilities_error_free() {
+        Boto3ResourcesRegistry::load_common_services_with_utilities();
+    }
+
+    #[test]
     fn test_embedded_utilities_mapping_access() {
         // Test that we can access the embedded utilities mapping
         let result = extract_services_from_embedded_utilities_mapping();
@@ -794,5 +792,59 @@ mod tests {
             );
         }
         // If embedded data is not available, test passes (build-time dependency)
+    }
+}
+
+#[cfg(test)]
+mod negative_tests {
+    use rust_embed::RustEmbed;
+
+    use super::*;
+
+    /// Embedded invalid test configuration files for negative testing
+    /// This RustEmbed points to test resources with intentionally malformed configs
+    #[derive(RustEmbed)]
+    #[folder = "tests/resources/invalid_configs"]
+    #[include = "*.json"]
+    struct InvalidTestConfigs;
+
+    #[test]
+    fn test_invalid_boto3_utilities_mapping() {
+        let file_paths = [
+            "invalid_boto3_utilities_mapping1.json",
+            "invalid_boto3_utilities_mapping2.json",
+        ];
+        for file_path in file_paths {
+            // Test that malformed boto3 utilities mapping is rejected
+            let file = InvalidTestConfigs::get(file_path).expect("Test file should exist");
+
+            let json_str =
+                std::str::from_utf8(&file.data).expect("Test file should be valid UTF-8");
+
+            let result: Result<UtilityMappingJson, _> = serde_json::from_str(json_str);
+
+            assert!(
+                result.is_err(),
+                "{}: Parsing should fail for malformed boto3 utilities mapping",
+                file_path
+            );
+
+            let error = result.unwrap_err();
+            let error_msg = error.to_string();
+            println!("✓ {}: Correctly rejected - {}", file_path, error_msg);
+        }
+    }
+
+    #[test]
+    fn test_invalid_configs_directory_exists() {
+        // Verify that the test resources directory is properly set up
+        let file_count = InvalidTestConfigs::iter().count();
+
+        assert!(
+            file_count > 0,
+            "Should have at least one invalid test configuration file"
+        );
+
+        println!("✓ Found {} invalid test configuration files", file_count);
     }
 }
