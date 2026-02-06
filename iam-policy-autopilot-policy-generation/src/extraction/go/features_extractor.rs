@@ -69,7 +69,7 @@ impl GoFeaturesExtractor {
         let mut calls = Vec::new();
 
         // Use the same pattern as the main extractor for method calls
-        let config = r#"
+        let config = r"
 id: method_call_extraction
 language: Go
 rule:
@@ -90,7 +90,7 @@ rule:
         field: arguments
         pattern: $$$ARGS
         kind: argument_list
-        "#;
+        ";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config = &from_yaml_string::<Go>(config, &globals).expect("rule should parse")[0];
