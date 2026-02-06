@@ -1,0 +1,15 @@
+{
+  "FailureReason": "Missing required 'Name' field in operation",
+  "Name": "test-service",
+  "Operations": [
+    {
+      "FasOperations": [
+        {
+          "Operation": "Decrypt",
+          "Service": "kms",
+          "Context": {}
+        }
+      ]
+    }
+  ]
+}

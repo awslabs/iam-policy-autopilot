@@ -1,0 +1,19 @@
+{
+  "FailureReason": "accepted_params should be array not string",
+  "services": {
+    "s3": {
+      "client_methods": {
+        "upload_file": {
+          "operations": [
+            {
+              "operation": "PutObject",
+              "required_params": ["Bucket", "Key"]
+            }
+          ],
+          "accepted_params": "this should be an array not a string"
+        }
+      },
+      "resource_methods": {}
+    }
+  }
+}
