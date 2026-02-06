@@ -62,7 +62,7 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
 
     let service_cap = service.to_case(Case::Pascal);
     let action_cap = action_name.to_case(Case::Pascal);
-    let date_no_hyphens = date.replace("-", "");
+    let date_no_hyphens = date.replace('-', "");
 
     let base_sid = format!("{POLICY_PREFIX}{service_cap}{action_cap}{date_no_hyphens}");
 
