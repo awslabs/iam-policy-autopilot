@@ -132,13 +132,11 @@ fn main() {
 
     // Process botocore data
     let botocore_data_path = Path::new("resources/config/sdks/botocore-data/botocore/data");
-    if !botocore_data_path.exists() {
-        panic!(
-            "Required botocore data directory not found at: {}. Please ensure the botocore data \
-             is available by running `git submodule init && git submodule update`.",
-            botocore_data_path.display()
-        );
-    }
+    assert!(botocore_data_path.exists(), 
+        "Required botocore data directory not found at: {}. Please ensure the botocore data \
+         is available by running `git submodule init && git submodule update`.",
+        botocore_data_path.display()
+    );
 
     match process_botocore_data(botocore_data_path, &simplified_dir) {
         Ok(_processed_count) => {
@@ -164,13 +162,11 @@ fn main() {
 
     // Process boto3 data
     let boto3_data_path = Path::new("resources/config/sdks/boto3/boto3/data");
-    if !boto3_data_path.exists() {
-        panic!(
-            "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
-             is available by running `git submodule init && git submodule update`.",
-            boto3_data_path.display()
-        );
-    }
+    assert!(boto3_data_path.exists(), 
+        "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
+         is available by running `git submodule init && git submodule update`.",
+        boto3_data_path.display()
+    );
 
     if let Err(e) = process_boto3_data(boto3_data_path, &boto3_dir) {
         panic!("Failed to process boto3 data: {e}");
