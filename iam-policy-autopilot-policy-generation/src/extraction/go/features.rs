@@ -83,7 +83,7 @@ impl GoSdkV2Features {
                 None => return Err("Failed to load embedded go-sdk-v2-features.json".to_string()),
             };
 
-            serde_json::from_slice::<GoSdkV2Features>(&file.data)
+            serde_json::from_slice::<Self>(&file.data)
                 .map_err(|e| format!("Failed to parse go-sdk-v2-features.json: {e}"))
         });
 

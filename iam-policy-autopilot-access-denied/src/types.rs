@@ -60,8 +60,8 @@ pub enum ActionType {
 impl ActionType {
     pub fn as_string(&self) -> String {
         match self {
-            ActionType::Single(value) => value.clone(),
-            ActionType::Multiple(values) => values.join(","),
+            Self::Single(value) => value.clone(),
+            Self::Multiple(values) => values.join(","),
         }
     }
 }

@@ -18,8 +18,8 @@ pub enum McpTransport {
 impl Display for McpTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            McpTransport::Stdio => write!(f, "stdio"),
-            McpTransport::Http => write!(f, "http"),
+            Self::Stdio => write!(f, "stdio"),
+            Self::Http => write!(f, "http"),
         }
     }
 }

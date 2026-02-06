@@ -530,7 +530,7 @@ rule:
 impl Parameter {
     /// Create a context parameter
     pub(crate) fn context(expression: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(expression),
             position,
             type_annotation: Some("context.Context".to_string()),
@@ -551,7 +551,7 @@ impl Parameter {
             .collect::<Vec<_>>()
             .join(", ");
 
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(format!("&{type_name}{{ {fields_str} }}")),
             position,
             type_annotation: Some(type_name),
@@ -561,7 +561,7 @@ impl Parameter {
 
     /// Create an expression parameter
     pub(crate) fn expression(value: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(value),
             position,
             type_annotation: None,

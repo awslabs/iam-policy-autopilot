@@ -64,10 +64,10 @@ struct SimplifiedPartitionsDefinition {
 include!("src/shared_submodule_model.rs");
 
 impl GitSubmoduleMetadata {
-    fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleMetadata {
+    fn new(git_path: &Path, data_path: &PathBuf) -> Self {
         let repository = Repository::open(git_path)
             .unwrap_or_else(|_| panic!("Failed to open repository at path {git_path:?}"));
-        GitSubmoduleMetadata {
+        Self {
             git_commit_hash: get_repository_commit(&repository)
                 .unwrap_or_else(|_| panic!("Failed to get repository commit at path {git_path:?}")),
             git_tag: get_repository_tag(&repository)

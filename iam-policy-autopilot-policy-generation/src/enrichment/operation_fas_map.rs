@@ -152,7 +152,7 @@ impl<'de> Deserialize<'de> for OperationFasMap {
             fas_operations.insert(key, op.fas_operations);
         }
 
-        Ok(OperationFasMap { fas_operations })
+        Ok(Self { fas_operations })
     }
 }
 

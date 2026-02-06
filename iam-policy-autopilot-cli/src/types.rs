@@ -25,15 +25,15 @@ impl ExitCode {
     /// Convert to the integer exit code for process::exit()
     pub fn code(self) -> i32 {
         match self {
-            ExitCode::Success => 0,
-            ExitCode::Duplicate => 1,
-            ExitCode::Error => 2,
+            Self::Success => 0,
+            Self::Duplicate => 1,
+            Self::Error => 2,
         }
     }
 }
 
 impl From<ExitCode> for i32 {
-    fn from(exit_code: ExitCode) -> i32 {
+    fn from(exit_code: ExitCode) -> Self {
         exit_code.code()
     }
 }
