@@ -29,6 +29,7 @@ impl Default for Engine {
 
 impl Engine {
     /// Create a new SDK method extractor with the specified providers.
+    #[must_use] 
     pub fn new() -> Self {
         Self
     }
