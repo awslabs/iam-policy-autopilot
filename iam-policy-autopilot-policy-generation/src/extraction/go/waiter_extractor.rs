@@ -6,47 +6,12 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
-use crate::extraction::shared::extraction_utils::{WaiterCallInfo, WaiterCreationInfo};
-use crate::extraction::{
-    AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
+use crate::extraction::shared::extraction_utils::{
+    WaiterCallInfo, WaiterCallPattern, WaiterCreationInfo,
 };
+use crate::extraction::{AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall};
 use crate::{Location, ServiceModelIndex};
 use ast_grep_language::Go;
-
-// TODO: This should be refactored at a higher level, so this type can be removed.
-// See https://github.com/awslabs/iam-policy-autopilot/issues/88.
-enum CallInfo<'a> {
-    None(&'a WaiterCreationInfo),
-    Simple(&'a WaiterCreationInfo, &'a WaiterCallInfo),
-}
-
-impl<'a> CallInfo<'a> {
-    fn waiter_name(&self) -> &'a str {
-        match self {
-            Self::None(waiter_info) | Self::Simple(waiter_info, ..) => &waiter_info.waiter_name,
-        }
-    }
-
-    fn waiter_info(&self) -> &'a WaiterCreationInfo {
-        match self {
-            CallInfo::None(waiter_info) | CallInfo::Simple(waiter_info, _) => waiter_info,
-        }
-    }
-
-    fn expr(&self) -> &'a str {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.expr,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.expr,
-        }
-    }
-
-    fn location(&self) -> &'a Location {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.location,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.location,
-        }
-    }
-}
 
 /// Extractor for Go AWS SDK waiter patterns
 ///
@@ -83,7 +48,18 @@ impl<'a> GoWaiterExtractor<'a> {
 
         for wait_call in wait_calls {
             if let Some((waiter, waiter_idx)) = self.match_wait_to_waiter(&wait_call, &waiters) {
-                let calls = self.create_synthetic_call(&wait_call, waiter);
+                let calls = WaiterCallPattern::Matched {
+                    creation: waiter,
+                    wait: &wait_call,
+                }
+                .create_synthetic_calls(
+                    self.service_index,
+                    |params| self.filter_waiter_parameters(params),
+                    |service_name, operation_name| {
+                        self.get_required_parameters(service_name, operation_name)
+                    },
+                    |operation_name| operation_name.to_string(), // Go uses operation name directly
+                );
                 synthetic_calls.extend(calls);
                 matched_waiter_indices.insert(waiter_idx);
             }
@@ -92,7 +68,14 @@ impl<'a> GoWaiterExtractor<'a> {
         // Step 4: Handle unmatched waiter creation calls
         for (idx, waiter) in waiters.iter().enumerate() {
             if !matched_waiter_indices.contains(&idx) {
-                let calls = self.create_fallback_synthetic_call(waiter);
+                let calls = WaiterCallPattern::CreationOnly(waiter).create_synthetic_calls(
+                    self.service_index,
+                    |params| self.filter_waiter_parameters(params),
+                    |service_name, operation_name| {
+                        self.get_required_parameters(service_name, operation_name)
+                    },
+                    |operation_name| operation_name.to_string(), // Go uses operation name directly
+                );
                 synthetic_calls.extend(calls);
             }
         }
@@ -231,61 +214,6 @@ impl<'a> GoWaiterExtractor<'a> {
         }
 
         best_match.map(|w| (w, best_idx))
-    }
-
-    fn create_synthetic_call_internal(&self, call: CallInfo) -> Vec<SdkMethodCall> {
-        let mut synthetic_calls = Vec::new();
-
-        // waiter_name already contains the clean waiter name (e.g., "InstanceTerminated")
-        if let Some(service_defs) = self.service_index.waiter_lookup.get(call.waiter_name()) {
-            // Create one call per service
-            for service_def in service_defs {
-                let service_name = &service_def.service_name;
-                let operation_name = &service_def.operation_name;
-
-                let parameters = match call {
-                    CallInfo::Simple(_, wait_call) => {
-                        self.filter_waiter_parameters(wait_call.arguments.clone())
-                    }
-                    CallInfo::None(_) => {
-                        // Fallback: Get required parameters for this operation
-                        self.get_required_parameters(service_name, operation_name)
-                    }
-                };
-
-                synthetic_calls.push(SdkMethodCall {
-                    name: operation_name.clone(),
-                    possible_services: vec![service_name.clone()], // Single service per call
-                    metadata: Some(SdkMethodCallMetadata {
-                        parameters,
-                        return_type: None,
-                        expr: call.expr().to_string(),
-                        location: call.location().clone(),
-                        receiver: Some(call.waiter_info().client_receiver.clone()),
-                    }),
-                });
-            }
-        }
-
-        synthetic_calls
-    }
-
-    /// Create synthetic SdkMethodCall objects from a matched waiter + wait
-    fn create_synthetic_call(
-        &self,
-        wait_call: &WaiterCallInfo,
-        waiter_info: &WaiterCreationInfo,
-    ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_call_internal(CallInfo::Simple(waiter_info, wait_call))
-    }
-
-    /// Create fallback synthetic calls for unmatched waiter creation
-    /// Returns one call per service that has the waiter, matching Python behavior
-    fn create_fallback_synthetic_call(
-        &self,
-        waiter_info: &WaiterCreationInfo,
-    ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_call_internal(CallInfo::None(waiter_info))
     }
 
     /// Get required parameters for an operation from the service index

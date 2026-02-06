@@ -8,45 +8,12 @@ use std::path::Path;
 
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::sdk_model::ServiceDiscovery;
-use crate::extraction::shared::{ChainedWaiterCallInfo, WaiterCallInfo, WaiterCreationInfo};
-use crate::extraction::{
-    AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
+use crate::extraction::shared::{
+    ChainedWaiterCallInfo, WaiterCallInfo, WaiterCallPattern, WaiterCreationInfo,
 };
+use crate::extraction::{AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall};
 use crate::{Language, Location, ServiceModelIndex};
 use ast_grep_language::Python;
-
-// TODO: This should be refactored at a higher level, so this type can be removed.
-// See https://github.com/awslabs/iam-policy-autopilot/issues/88.
-enum CallInfo<'a> {
-    None(&'a WaiterCreationInfo),
-    Simple(&'a WaiterCreationInfo, &'a WaiterCallInfo),
-    Chained(&'a ChainedWaiterCallInfo),
-}
-
-impl<'a> CallInfo<'a> {
-    fn waiter_name(&self) -> &'a str {
-        match self {
-            Self::None(waiter_info) | Self::Simple(waiter_info, ..) => &waiter_info.waiter_name,
-            Self::Chained(waiter_call_info) => &waiter_call_info.waiter_name,
-        }
-    }
-
-    fn expr(&self) -> &'a str {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.expr,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.expr,
-            CallInfo::Chained(chained_waiter_call_info) => &chained_waiter_call_info.expr,
-        }
-    }
-
-    fn location(&self) -> &'a Location {
-        match self {
-            CallInfo::None(waiter_info) => &waiter_info.location,
-            CallInfo::Simple(_, wait_call_info) => &wait_call_info.location,
-            CallInfo::Chained(chained_waiter_call_info) => &chained_waiter_call_info.location,
-        }
-    }
-}
 
 /// Extractor for boto3 waiter patterns
 ///
@@ -101,7 +68,24 @@ impl<'a> WaitersExtractor<'a> {
         for wait_call in wait_calls {
             if let Some((waiter, waiter_idx)) = self.match_wait_to_waiter(&wait_call, &waiters) {
                 // Create synthetic calls for matched waiter + wait (one per candidate service)
-                let matched_calls = self.create_matched_synthetic_calls(&wait_call, waiter);
+                let matched_calls = WaiterCallPattern::Matched {
+                    creation: waiter,
+                    wait: &wait_call,
+                }
+                .create_synthetic_calls(
+                    self.service_index,
+                    ParameterFilter::filter_waiter_parameters,
+                    |service_name, operation_name| {
+                        self.get_required_parameters(
+                            service_name,
+                            operation_name,
+                            self.service_index,
+                        )
+                    },
+                    |operation_name| {
+                        ServiceDiscovery::operation_to_method_name(operation_name, Language::Python)
+                    },
+                );
                 synthetic_calls.extend(matched_calls);
                 matched_waiter_indices.insert(waiter_idx);
             }
@@ -109,7 +93,21 @@ impl<'a> WaitersExtractor<'a> {
 
         // Step 5: Handle chained waiter calls
         for chained_call in chained_calls {
-            let chained_synthetic_calls = self.create_chained_synthetic_calls(&chained_call);
+            let chained_synthetic_calls = WaiterCallPattern::Chained(&chained_call)
+                .create_synthetic_calls(
+                    self.service_index,
+                    ParameterFilter::filter_waiter_parameters,
+                    |service_name, operation_name| {
+                        self.get_required_parameters(
+                            service_name,
+                            operation_name,
+                            self.service_index,
+                        )
+                    },
+                    |operation_name| {
+                        ServiceDiscovery::operation_to_method_name(operation_name, Language::Python)
+                    },
+                );
             synthetic_calls.extend(chained_synthetic_calls);
         }
 
@@ -117,7 +115,24 @@ impl<'a> WaitersExtractor<'a> {
         for (idx, waiter) in waiters.iter().enumerate() {
             if !matched_waiter_indices.contains(&idx) {
                 // Create synthetic calls with required params for all candidate services
-                let unmatched_calls = self.create_unmatched_synthetic_calls(waiter);
+                let unmatched_calls = WaiterCallPattern::CreationOnly(waiter)
+                    .create_synthetic_calls(
+                        self.service_index,
+                        ParameterFilter::filter_waiter_parameters,
+                        |service_name, operation_name| {
+                            self.get_required_parameters(
+                                service_name,
+                                operation_name,
+                                self.service_index,
+                            )
+                        },
+                        |operation_name| {
+                            ServiceDiscovery::operation_to_method_name(
+                                operation_name,
+                                Language::Python,
+                            )
+                        },
+                    );
                 synthetic_calls.extend(unmatched_calls);
             }
         }
@@ -291,103 +306,6 @@ impl<'a> WaitersExtractor<'a> {
         }
 
         best_match.map(|w| (w, best_idx))
-    }
-
-    /// Create synthetic SdkMethodCalls for a matched waiter + wait
-    /// Creates one call per candidate service with the actual operation name
-    fn create_synthetic_calls_internal(
-        &self,
-        wait_call: CallInfo,
-        receiver: Option<String>,
-    ) -> Vec<SdkMethodCall> {
-        let mut synthetic_calls = Vec::new();
-
-        // Get the operation for this service+waiter combination from service definition
-        if let Some(service_defs) = self
-            .service_index
-            .waiter_lookup
-            .get(wait_call.waiter_name())
-        {
-            for service_method in service_defs {
-                let parameters = match wait_call {
-                    CallInfo::Simple(_, wait_call) => {
-                        // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                        ParameterFilter::filter_waiter_parameters(wait_call.arguments.clone())
-                    }
-                    CallInfo::Chained(chained_wait_call) => {
-                        // Filter out WaiterConfig from arguments - it's waiter-specific, not operation-specific
-                        ParameterFilter::filter_waiter_parameters(
-                            chained_wait_call.arguments.clone(),
-                        )
-                    }
-                    CallInfo::None(_waiter_info) => self.get_required_parameters(
-                        &service_method.service_name,
-                        &service_method.operation_name,
-                        self.service_index,
-                    ),
-                };
-                // We have to rename the operation to the snake_case method name for subsequently looking up the name during
-                // disambiguation. We lose the waiter name here.
-                //
-                // 1) We need the operation name to avoid the SdkMethodCall being filtered out during disambiguation.
-                // 2) Enrichment (and the SdkMethodCall type) currently does not perform waiter to operation resolution, which
-                //    means that a custom extractor (or agent or human user) needs to know how to map a waiter to its operation.
-                // TODO: Introduce a way to distinguish a waiter from a "regular" SDK call and store the waiter name here.
-                let method_name = ServiceDiscovery::operation_to_method_name(
-                    &service_method.operation_name,
-                    Language::Python,
-                );
-                let call = SdkMethodCall {
-                    name: method_name,
-                    possible_services: vec![service_method.service_name.clone()],
-                    metadata: Some(SdkMethodCallMetadata {
-                        parameters,
-                        return_type: None,
-                        expr: wait_call.expr().to_string(),
-                        location: wait_call.location().clone(),
-                        // Use client receiver from get_waiter call
-                        receiver: receiver.clone(),
-                    }),
-                };
-                synthetic_calls.push(call);
-            }
-        }
-
-        synthetic_calls
-    }
-
-    fn create_matched_synthetic_calls(
-        &self,
-        wait_call: &WaiterCallInfo,
-        waiter_info: &WaiterCreationInfo,
-    ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_calls_internal(
-            CallInfo::Simple(waiter_info, wait_call),
-            Some(waiter_info.client_receiver.clone()),
-        )
-    }
-
-    /// Create synthetic SdkMethodCalls for an unmatched get_waiter
-    fn create_unmatched_synthetic_calls(
-        &self,
-        waiter_info: &WaiterCreationInfo,
-    ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_calls_internal(
-            CallInfo::None(waiter_info),
-            Some(waiter_info.client_receiver.clone()),
-        )
-    }
-
-    /// Create synthetic SdkMethodCalls for a chained waiter call
-    /// Creates one call per candidate service with the actual operation name
-    fn create_chained_synthetic_calls(
-        &self,
-        chained_call: &ChainedWaiterCallInfo,
-    ) -> Vec<SdkMethodCall> {
-        self.create_synthetic_calls_internal(
-            CallInfo::Chained(chained_call),
-            Some(chained_call.client_receiver.clone()),
-        )
     }
 
     /// Get required parameters for an operation from the service index
