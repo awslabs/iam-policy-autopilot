@@ -7,6 +7,7 @@ pub(crate) mod disambiguation;
 pub(crate) mod node_kinds;
 pub(crate) mod paginator_extractor;
 pub(crate) mod resource_direct_calls_extractor;
+pub(crate) mod variable_type_tracker;
 pub(crate) mod waiters_extractor;
 
 #[cfg(test)]
