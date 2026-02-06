@@ -54,37 +54,34 @@ fn process_placeholder_value(
 
     let result = regex
         .replace_all(value, |caps: &Captures| {
-            match caps.get(1).map(|m| m.as_str()) {
-                Some(placeholder) => {
-                    match placeholder.to_lowercase().as_str() {
-                        "partition" => {
-                            if partition == "*" {
-                                wildcards_introduced = true;
-                            }
-                            partition
-                        }
-                        "region" => {
-                            if region == "*" {
-                                wildcards_introduced = true;
-                            }
-                            region
-                        }
-                        "account" => {
-                            if account == "*" {
-                                wildcards_introduced = true;
-                            }
-                            account
-                        }
-                        _ => {
+            if let Some(placeholder) = caps.get(1).map(|m| m.as_str()) {
+                match placeholder.to_lowercase().as_str() {
+                    "partition" => {
+                        if partition == "*" {
                             wildcards_introduced = true;
-                            "*" // All other variables become wildcards
                         }
+                        partition
+                    }
+                    "region" => {
+                        if region == "*" {
+                            wildcards_introduced = true;
+                        }
+                        region
+                    }
+                    "account" => {
+                        if account == "*" {
+                            wildcards_introduced = true;
+                        }
+                        account
+                    }
+                    _ => {
+                        wildcards_introduced = true;
+                        "*" // All other variables become wildcards
                     }
                 }
-                None => {
-                    wildcards_introduced = true;
-                    "*" // Fallback (should not happen due to validation)
-                }
+            } else {
+                wildcards_introduced = true;
+                "*" // Fallback (should not happen due to validation)
             }
         })
         .to_string();
