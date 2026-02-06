@@ -170,7 +170,7 @@ impl ResourceMatcher {
                 operator: crate::enrichment::Operator::StringEquals,
                 key: ctx.key().to_string(),
                 values: ctx.values().to_vec(),
-            })
+            });
         }
         result
     }

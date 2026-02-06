@@ -192,7 +192,7 @@ pub async fn begin_http_transport(
             .with_graceful_shutdown(async {
                 tokio::signal::ctrl_c()
                     .await
-                    .expect("Failed to listen for CTRL+C signal")
+                    .expect("Failed to listen for CTRL+C signal");
             })
             .await;
     });

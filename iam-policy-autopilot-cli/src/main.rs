@@ -502,7 +502,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         };
 
         output::output_iam_policies(result, upload_result, config.shared.pretty)
-            .context("Failed to output merged IAM policy")?
+            .context("Failed to output merged IAM policy")?;
     }
 
     Ok(())
