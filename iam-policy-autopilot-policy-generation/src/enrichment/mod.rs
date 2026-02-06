@@ -195,11 +195,9 @@ impl Serialize for OperationSource {
         S: serde::Serializer,
     {
         match self {
-            OperationSource::Extracted(metadata) => {
-                serialize_extracted_metadata(metadata, serializer)
-            }
-            OperationSource::Provided => serializer.serialize_str("Provided"),
-            OperationSource::Fas(_) => serializer.serialize_str("FAS"),
+            Self::Extracted(metadata) => serialize_extracted_metadata(metadata, serializer),
+            Self::Provided => serializer.serialize_str("Provided"),
+            Self::Fas(_) => serializer.serialize_str("FAS"),
         }
     }
 }
@@ -250,7 +248,7 @@ pub struct Explanation {
 }
 
 impl Explanation {
-    pub(crate) fn merge(&mut self, other: Explanation) {
+    pub(crate) fn merge(&mut self, other: Self) {
         let reasons_set = self.reasons.iter().cloned().collect::<HashSet<_>>();
         for new_reason in other.reasons {
             if reasons_set.contains(&new_reason) {

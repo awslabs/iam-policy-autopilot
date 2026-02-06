@@ -58,7 +58,7 @@ impl<'a> GoWaiterExtractor<'a> {
                     |service_name, operation_name| {
                         self.get_required_parameters(service_name, operation_name)
                     },
-                    |operation_name| operation_name.to_string(), // Go uses operation name directly
+                    std::string::ToString::to_string, // Go uses operation name directly
                 );
                 synthetic_calls.extend(calls);
                 matched_waiter_indices.insert(waiter_idx);
@@ -74,7 +74,7 @@ impl<'a> GoWaiterExtractor<'a> {
                     |service_name, operation_name| {
                         self.get_required_parameters(service_name, operation_name)
                     },
-                    |operation_name| operation_name.to_string(), // Go uses operation name directly
+                    std::string::ToString::to_string, // Go uses operation name directly
                 );
                 synthetic_calls.extend(calls);
             }

@@ -18,8 +18,8 @@ pub enum McpTransport {
 impl Display for McpTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            McpTransport::Stdio => write!(f, "stdio"),
-            McpTransport::Http => write!(f, "http"),
+            Self::Stdio => write!(f, "stdio"),
+            Self::Http => write!(f, "http"),
         }
     }
 }
@@ -67,16 +67,16 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
 
             crate::mcp::begin_http_transport(bind_address.as_str(), path_str)
                 .await
-                .with_context(|| format!("Failed to start HTTP Server at '{bind_address}'"))?
+                .with_context(|| format!("Failed to start HTTP Server at '{bind_address}'"))?;
         }
         McpTransport::Stdio => {
             info!("Starting STDIO MCP server");
 
             crate::mcp::begin_stdio_transport(path_str)
                 .await
-                .with_context(|| "Failed to start STDIO Server".to_string())?
+                .with_context(|| "Failed to start STDIO Server".to_string())?;
         }
-    };
+    }
 
     Ok(())
 }

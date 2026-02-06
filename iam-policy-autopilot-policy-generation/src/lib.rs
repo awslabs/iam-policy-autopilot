@@ -102,10 +102,10 @@ impl Language {
     /// ```
     pub fn try_from_str(s: &str) -> Result<Self, ExtractorError> {
         match s {
-            "python" | "py" => Ok(Language::Python),
-            "go" => Ok(Language::Go),
-            "javascript" | "js" => Ok(Language::JavaScript),
-            "typescript" | "ts" => Ok(Language::TypeScript),
+            "python" | "py" => Ok(Self::Python),
+            "go" => Ok(Self::Go),
+            "javascript" | "js" => Ok(Self::JavaScript),
+            "typescript" | "ts" => Ok(Self::TypeScript),
             _ => Err(ExtractorError::UnsupportedLanguage {
                 language: s.to_string(),
             }),
@@ -116,17 +116,17 @@ impl Language {
 impl Display for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let language_str = match self {
-            Language::Python => "python",
-            Language::Go => "go",
-            Language::JavaScript => "javascript",
-            Language::TypeScript => "typescript",
+            Self::Python => "python",
+            Self::Go => "go",
+            Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
         };
         write!(f, "{language_str}")
     }
 }
 
 impl From<Language> for String {
-    fn from(value: Language) -> String {
+    fn from(value: Language) -> Self {
         match value {
             Language::Python => "python",
             Language::Go => "go",
@@ -189,21 +189,25 @@ impl Location {
     }
 
     /// Line where the finding starts
+    #[must_use]
     pub fn start_line(&self) -> usize {
         self.start_position.0
     }
 
     /// Column where the finding starts
+    #[must_use]
     pub fn start_col(&self) -> usize {
         self.start_position.1
     }
 
     /// Line where the finding ends
+    #[must_use]
     pub fn end_line(&self) -> usize {
         self.end_position.0
     }
 
     /// Column where the finding ends
+    #[must_use]
     pub fn end_col(&self) -> usize {
         self.end_position.1
     }
@@ -275,7 +279,7 @@ impl Location {
             .parse::<usize>()
             .map_err(|_| format!("Invalid end column: {end_col_str}"))?;
 
-        Ok(Location {
+        Ok(Self {
             file_path: PathBuf::from(file_path_str),
             start_position: (start_line, start_col),
             end_position: (end_line, end_col),

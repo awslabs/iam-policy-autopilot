@@ -18,7 +18,7 @@ pub async fn caller_account_id(client: &StsClient) -> AwsResult<String> {
         .map_err(|e| AwsError::SdkError(format!("STS GetCallerIdentity failed: {e}")))?;
     let acct = out
         .account()
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
         .ok_or_else(|| AwsError::SdkError("STS GetCallerIdentity missing Account".to_string()))?;
     Ok(acct)
 }

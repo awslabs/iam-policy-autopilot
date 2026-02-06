@@ -330,7 +330,7 @@ impl Boto3ResourcesModel {
     }
 
     /// Merge utility methods from embedded mapping into model
-    fn merge_utility_methods_from_embedded(model: &mut Boto3ResourcesModel) -> Result<(), String> {
+    fn merge_utility_methods_from_embedded(model: &mut Self) -> Result<(), String> {
         let content_bytes = Boto3Data::get_utilities_mapping()
             .ok_or_else(|| "Boto3 utilities mapping not found in embedded data".to_string())?;
 
@@ -410,7 +410,7 @@ impl Boto3ResourcesModel {
 
     /// Build model from parsed JSON
     fn build_model_from_json(service_name: &str, json: Boto3ResourcesJson) -> Result<Self, String> {
-        let mut model = Boto3ResourcesModel {
+        let mut model = Self {
             service_name: service_name.to_string(),
             service_constructors: HashMap::new(),
             resource_types: HashMap::new(),
@@ -433,10 +433,7 @@ impl Boto3ResourcesModel {
     }
 
     /// Parse service.has for resource constructors and service.hasMany for service-level collections
-    fn parse_service_constructors(
-        model: &mut Boto3ResourcesModel,
-        service: ServiceSpec,
-    ) -> Result<(), String> {
+    fn parse_service_constructors(model: &mut Self, service: ServiceSpec) -> Result<(), String> {
         // Parse service.has for resource constructors
         if let Some(has) = service.has {
             for (constructor_name, has_spec) in has {
@@ -445,7 +442,7 @@ impl Boto3ResourcesModel {
                     .identifiers
                     .as_ref()
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.len())
+                    .map(std::vec::Vec::len)
                     .unwrap_or(0);
 
                 let constructor_spec = ServiceConstructorSpec {
@@ -488,7 +485,7 @@ impl Boto3ResourcesModel {
 
     /// Parse resources for resource definitions
     fn parse_resource_definitions(
-        model: &mut Boto3ResourcesModel,
+        model: &mut Self,
         resources: HashMap<String, ResourceSpec>,
     ) -> Result<(), String> {
         for (resource_name, resource_spec) in resources {

@@ -92,24 +92,23 @@ impl<'a> MethodDisambiguator<'a> {
         service_ref: &ServiceMethodRef,
     ) -> bool {
         // Get the service definition
-        let service_definition = match self.service_index.services.get(&service_ref.service_name) {
-            Some(def) => def,
-            None => {
+        let service_definition =
+            if let Some(def) = self.service_index.services.get(&service_ref.service_name) {
+                def
+            } else {
                 log::debug!("in validate_method_against_service: Service not found");
                 return false; // Service not found
-            }
-        };
+            };
 
         // Get the operation definition
-        let operation = match service_definition
+        let operation = if let Some(op) = service_definition
             .operations
             .get(&service_ref.operation_name)
         {
-            Some(op) => op,
-            None => {
-                log::debug!("in validate_method_against_service: operation not found");
-                return false; // Operation not found
-            }
+            op
+        } else {
+            log::debug!("in validate_method_against_service: operation not found");
+            return false; // Operation not found
         };
 
         // If there's no metadata, we can't validate parameters, so accept it

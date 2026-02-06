@@ -634,7 +634,12 @@ impl PolicyMerger {
     ) -> std::collections::HashSet<String> {
         actions
             .iter()
-            .filter_map(|action| action.split(':').next().map(|service| service.to_string()))
+            .filter_map(|action| {
+                action
+                    .split(':')
+                    .next()
+                    .map(std::string::ToString::to_string)
+            })
             .collect()
     }
 

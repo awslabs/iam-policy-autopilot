@@ -570,7 +570,7 @@ impl ExtractionUtils {
         } else {
             sublibrary
                 .strip_prefix("lib-")
-                .map(|service| service.to_string())
+                .map(std::string::ToString::to_string)
         }
     }
 

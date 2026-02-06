@@ -96,7 +96,7 @@ where
                     Value::String(s) => vec![s],
                     Value::Array(arr) => arr
                         .into_iter()
-                        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                        .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
                         .collect(),
                     _ => {
                         return Err(serde::de::Error::custom(
@@ -152,7 +152,7 @@ impl<'de> Deserialize<'de> for OperationFasMap {
             fas_operations.insert(key, op.fas_operations);
         }
 
-        Ok(OperationFasMap { fas_operations })
+        Ok(Self { fas_operations })
     }
 }
 

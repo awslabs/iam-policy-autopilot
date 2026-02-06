@@ -222,7 +222,7 @@ impl<'a> GoMethodDisambiguator<'a> {
                     }
 
                     // Use AST-extracted fields
-                    struct_fields.as_ref().cloned()
+                    struct_fields.clone()
                 }
                 _ => None,
             })

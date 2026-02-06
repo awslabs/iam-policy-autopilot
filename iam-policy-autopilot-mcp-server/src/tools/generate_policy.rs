@@ -55,7 +55,11 @@ pub async fn generate_application_policies(
     let result = api::generate_policies(&GeneratePolicyConfig {
         individual_policies: false,
         extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: input.source_files.into_iter().map(|f| f.into()).collect(),
+            source_files: input
+                .source_files
+                .into_iter()
+                .map(std::convert::Into::into)
+                .collect(),
             // Maybe we should let the llm figure out the language
             language: None,
             service_hints,
