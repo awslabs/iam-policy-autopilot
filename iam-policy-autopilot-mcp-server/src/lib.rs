@@ -76,7 +76,7 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
                 .await
                 .with_context(|| "Failed to start STDIO Server".to_string())?;
         }
-    };
+    }
 
     Ok(())
 }

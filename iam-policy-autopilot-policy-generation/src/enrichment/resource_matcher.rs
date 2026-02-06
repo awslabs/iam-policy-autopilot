@@ -387,7 +387,7 @@ impl ResourceMatcher {
                 };
                 result.push(service_reference_resource);
             }
-        };
+        }
 
         // If no resources found, that's still valid (some actions don't require specific resources)
         Ok(result)
