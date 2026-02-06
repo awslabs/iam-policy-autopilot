@@ -403,7 +403,7 @@ where
                     if original_name
                         .chars()
                         .next()
-                        .is_some_and(|c| c.is_uppercase())
+                        .is_some_and(char::is_uppercase)
                         && !original_name.ends_with("Command")
                         && !original_name.ends_with("CommandInput")
                     {

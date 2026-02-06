@@ -123,7 +123,7 @@ impl Engine {
 
         let method_calls: Vec<crate::SdkMethodCall> = all_extraction_results
             .into_iter()
-            .flat_map(|r| r.method_calls())
+            .flat_map(super::extractor::ExtractorResult::method_calls)
             .collect::<Vec<_>>();
 
         // Update metadata with final method count

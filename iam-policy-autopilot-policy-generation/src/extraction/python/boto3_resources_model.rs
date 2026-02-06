@@ -445,7 +445,7 @@ impl Boto3ResourcesModel {
                     .identifiers
                     .as_ref()
                     .and_then(|v| v.as_array())
-                    .map(|arr| arr.len())
+                    .map(std::vec::Vec::len)
                     .unwrap_or(0);
 
                 let constructor_spec = ServiceConstructorSpec {

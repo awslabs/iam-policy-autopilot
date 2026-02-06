@@ -281,12 +281,12 @@ fn process_partitions(
                 let id = partition
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .ok_or("expected id in partition")?;
                 let region_regex = partition
                     .get("regionRegex")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .ok_or("expected regionRegex in partition")?;
                 Ok((id, region_regex))
             })
@@ -394,7 +394,7 @@ fn process_service_definition(
     let version = original
         .get("version")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     // Extract metadata (required)
     let metadata = extract_metadata(original.get("metadata"))?;
