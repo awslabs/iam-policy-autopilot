@@ -23,7 +23,7 @@ pub struct ParsedDenial {
 }
 
 impl ParsedDenial {
-    #[must_use] 
+    #[must_use]
     pub fn new(
         principal_arn: String,
         action: String,

@@ -67,11 +67,13 @@ impl Extractor for TypeScriptExtractor {
         service_index: &ServiceModelIndex,
     ) {
         for extractor_result in extractor_results.iter_mut() {
-            let method_calls = if let ExtractorResult::TypeScript(_ast, method_calls) = extractor_result { method_calls } else {
+            let method_calls = if let ExtractorResult::TypeScript(_ast, method_calls) =
+                extractor_result
+            {
+                method_calls
+            } else {
                 // This shouldn't happen in TypeScript extractor
-                log::warn!(
-                    "Received non-TypeScript result during TypeScript method extraction."
-                );
+                log::warn!("Received non-TypeScript result during TypeScript method extraction.");
                 continue;
             };
 

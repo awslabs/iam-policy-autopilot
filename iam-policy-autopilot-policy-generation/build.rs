@@ -132,7 +132,8 @@ fn main() {
 
     // Process botocore data
     let botocore_data_path = Path::new("resources/config/sdks/botocore-data/botocore/data");
-    assert!(botocore_data_path.exists(), 
+    assert!(
+        botocore_data_path.exists(),
         "Required botocore data directory not found at: {}. Please ensure the botocore data \
          is available by running `git submodule init && git submodule update`.",
         botocore_data_path.display()
@@ -162,7 +163,8 @@ fn main() {
 
     // Process boto3 data
     let boto3_data_path = Path::new("resources/config/sdks/boto3/boto3/data");
-    assert!(boto3_data_path.exists(), 
+    assert!(
+        boto3_data_path.exists(),
         "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
          is available by running `git submodule init && git submodule update`.",
         boto3_data_path.display()

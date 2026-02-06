@@ -189,25 +189,25 @@ impl Location {
     }
 
     /// Line where the finding starts
-    #[must_use] 
+    #[must_use]
     pub fn start_line(&self) -> usize {
         self.start_position.0
     }
 
     /// Column where the finding starts
-    #[must_use] 
+    #[must_use]
     pub fn start_col(&self) -> usize {
         self.start_position.1
     }
 
     /// Line where the finding ends
-    #[must_use] 
+    #[must_use]
     pub fn end_line(&self) -> usize {
         self.end_position.0
     }
 
     /// Column where the finding ends
-    #[must_use] 
+    #[must_use]
     pub fn end_col(&self) -> usize {
         self.end_position.1
     }

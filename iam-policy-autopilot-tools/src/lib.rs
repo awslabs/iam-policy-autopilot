@@ -91,7 +91,7 @@ impl PolicyUploader {
     }
 
     /// Create a new PolicyUploader with custom AWS configuration
-    #[must_use] 
+    #[must_use]
     pub fn with_client(client: IamClient) -> Self {
         Self { client }
     }

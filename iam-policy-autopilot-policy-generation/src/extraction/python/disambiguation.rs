@@ -92,15 +92,21 @@ impl<'a> MethodDisambiguator<'a> {
         service_ref: &ServiceMethodRef,
     ) -> bool {
         // Get the service definition
-        let service_definition = if let Some(def) = self.service_index.services.get(&service_ref.service_name) { def } else {
-            log::debug!("in validate_method_against_service: Service not found");
-            return false; // Service not found
-        };
+        let service_definition =
+            if let Some(def) = self.service_index.services.get(&service_ref.service_name) {
+                def
+            } else {
+                log::debug!("in validate_method_against_service: Service not found");
+                return false; // Service not found
+            };
 
         // Get the operation definition
         let operation = if let Some(op) = service_definition
             .operations
-            .get(&service_ref.operation_name) { op } else {
+            .get(&service_ref.operation_name)
+        {
+            op
+        } else {
             log::debug!("in validate_method_against_service: operation not found");
             return false; // Operation not found
         };

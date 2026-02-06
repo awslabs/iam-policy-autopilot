@@ -195,9 +195,7 @@ impl Serialize for OperationSource {
         S: serde::Serializer,
     {
         match self {
-            Self::Extracted(metadata) => {
-                serialize_extracted_metadata(metadata, serializer)
-            }
+            Self::Extracted(metadata) => serialize_extracted_metadata(metadata, serializer),
             Self::Provided => serializer.serialize_str("Provided"),
             Self::Fas(_) => serializer.serialize_str("FAS"),
         }

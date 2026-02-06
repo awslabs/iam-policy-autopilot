@@ -111,7 +111,7 @@ pub struct PolicyWithMetadata {
 
 impl IamPolicy {
     /// Create a new IAM policy with the standard version
-    #[must_use] 
+    #[must_use]
     pub fn new() -> Self {
         Self {
             id: "IamPolicyAutopilot".to_string(),
@@ -134,7 +134,7 @@ impl Default for IamPolicy {
 
 impl Statement {
     /// Create a new IAM policy statement
-    #[must_use] 
+    #[must_use]
     pub fn new(effect: Effect, action: Vec<String>, resource: Vec<String>) -> Self {
         Self {
             sid: None,
@@ -146,7 +146,7 @@ impl Statement {
     }
 
     /// Create a new Allow statement
-    #[must_use] 
+    #[must_use]
     pub fn allow(action: Vec<String>, resource: Vec<String>) -> Self {
         Self::new(Effect::Allow, action, resource)
     }

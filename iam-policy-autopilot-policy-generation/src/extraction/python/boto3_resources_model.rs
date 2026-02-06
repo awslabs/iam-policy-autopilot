@@ -433,10 +433,7 @@ impl Boto3ResourcesModel {
     }
 
     /// Parse service.has for resource constructors and service.hasMany for service-level collections
-    fn parse_service_constructors(
-        model: &mut Self,
-        service: ServiceSpec,
-    ) -> Result<(), String> {
+    fn parse_service_constructors(model: &mut Self, service: ServiceSpec) -> Result<(), String> {
         // Parse service.has for resource constructors
         if let Some(has) = service.has {
             for (constructor_name, has_spec) in has {
