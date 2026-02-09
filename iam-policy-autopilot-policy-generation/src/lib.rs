@@ -11,8 +11,14 @@
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
-// Re-export the enrichment module for public use
-pub mod enrichment;
+// Re-export the enrichment module for internal use, but expose specific types
+pub(crate) mod enrichment;
+
+// Expose the specific types needed for API results and testing
+pub use enrichment::{
+    Action, Condition, EnrichedSdkMethodCall, Explanation, Explanations, Operation, OperationSource,
+    Operator, Reason, Resource,
+};
 
 // Re-export the providers module for public use
 pub(crate) mod providers;

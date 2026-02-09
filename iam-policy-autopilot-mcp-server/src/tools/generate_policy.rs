@@ -281,6 +281,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_generate_application_policies_with_explanations() {
+        use iam_policy_autopilot_policy_generation::{Operation, OperationSource, Reason};
+        use std::sync::Arc;
+
         // 1. INPUT
         let input = GeneratePoliciesInput {
             source_files: vec!["app.py".to_string()],
@@ -302,13 +305,29 @@ mod tests {
             policy_type: PolicyType::Identity,
         };
 
-        // 3. MOCK DATA (Manual Construction)
+        // 3. MOCK DATA (Realistic Structure)
+        // Create a 'Provided' operation (simulating a manual or inferred permission)
+        let operation = Arc::new(Operation::new(
+            "s3".to_string(),
+            "ListBucket".to_string(),
+            OperationSource::Provided,
+        ));
+
+        let reason = Reason::new(vec![operation]);
+
         let mut explanation_map = BTreeMap::new();
-        explanation_map.insert("s3:ListBucket".to_string(), Explanation { reasons: vec![] });
+        explanation_map.insert(
+            "s3:ListBucket".to_string(),
+            Explanation {
+                reasons: vec![reason],
+            },
+        );
 
         let explanations = Explanations {
             explanation_for_action: explanation_map,
-            documentation: vec![],
+            documentation: vec![
+                "https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html",
+            ],
         };
 
         // 4. INJECT MOCK
@@ -328,6 +347,9 @@ mod tests {
         let explanation_str = output.explanations.unwrap();
 
         println!("Final Output: {}", explanation_str);
+
+        // Verify Deep Serialization
         assert!(explanation_str.contains("s3:ListBucket"));
+        assert!(explanation_str.contains("Provided")); // Proves OperationSource serialized
     }
 }
