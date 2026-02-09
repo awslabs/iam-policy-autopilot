@@ -148,7 +148,7 @@ mod tests {
         api::model::GeneratePoliciesResult, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
     };
     // Need to import Explanations to construct the mock data
-    use iam_policy_autopilot_policy_generation::enrichment::{Explanation, Explanations};
+    use iam_policy_autopilot_policy_generation::{Explanation, Explanations};
     use std::collections::BTreeMap;
 
     use anyhow::anyhow;

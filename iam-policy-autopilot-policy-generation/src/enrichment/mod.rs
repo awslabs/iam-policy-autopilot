@@ -57,9 +57,11 @@ pub struct Operation {
 }
 
 impl Operation {
-    #[cfg(test)]
-    /// Convenience constructor for tests
-    pub(crate) fn new(service: String, name: String, source: OperationSource) -> Self {
+    /// Convenience constructor for tests and internal logic
+    ///
+    /// This is public to allow downstream integration tests (like in the MCP server)
+    /// to construct realistic mock data.
+    pub fn new(service: String, name: String, source: OperationSource) -> Self {
         Self {
             service,
             name,
