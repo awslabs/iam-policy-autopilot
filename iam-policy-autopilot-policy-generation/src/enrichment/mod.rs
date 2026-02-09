@@ -41,6 +41,7 @@ pub struct Reason {
     pub operations: Vec<Arc<Operation>>,
 }
 
+/// Represents a single IAM operation (Service + Action)
 #[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
@@ -178,6 +179,7 @@ where
     map.end()
 }
 
+/// The source of the operation (Extracted code, Provided manually, or FAS expansion)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub enum OperationSource {
@@ -275,9 +277,12 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) sdk_method_call: &'a SdkMethodCall,
 }
 
+/// IAM Policy Condition Operator
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
 pub enum Operator {
+    /// Exact string match (StringEquals)
     StringEquals,
+    /// Pattern match (StringLike)
     StringLike,
 }
 

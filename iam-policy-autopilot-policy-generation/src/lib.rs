@@ -12,7 +12,7 @@
 pub(crate) mod errors;
 
 // Re-export the enrichment module for public use
-pub(crate) mod enrichment;
+pub mod enrichment;
 
 // Re-export the providers module for public use
 pub(crate) mod providers;
