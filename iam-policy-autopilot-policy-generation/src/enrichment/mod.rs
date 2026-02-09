@@ -41,7 +41,7 @@ pub struct Reason {
     pub operations: Vec<Arc<Operation>>,
 }
 
-/// Represents a single IAM operation (Service + Action)
+/// Represents a single IAM operation (Service, Name, and Source)
 #[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
