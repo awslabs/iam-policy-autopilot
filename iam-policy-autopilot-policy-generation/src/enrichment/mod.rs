@@ -44,6 +44,7 @@ pub struct Reason {
 /// Represents a single IAM operation (Service, Name, and Source)
 #[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct Operation {
     /// Name of the service
     pub service: String,
@@ -51,9 +52,6 @@ pub struct Operation {
     pub name: String,
     /// Source of the operation,
     pub source: OperationSource,
-    /// Disallow struct construction, need to use Self::from_call or Operation::from(FasOperation)
-    #[serde(skip)]
-    _private: (),
 }
 
 impl Operation {
@@ -66,7 +64,6 @@ impl Operation {
             service,
             name,
             source,
-            _private: (),
         }
     }
 
@@ -123,13 +120,11 @@ impl Operation {
                 service,
                 name,
                 source: OperationSource::Provided,
-                _private: (),
             },
             Some(metadata) => Self {
                 service,
                 name,
                 source: OperationSource::Extracted(metadata.clone()),
-                _private: (),
             },
         })
     }
@@ -141,7 +136,6 @@ impl From<FasOperation> for Operation {
             service: fas_op.service,
             name: fas_op.operation,
             source: OperationSource::Fas(fas_op.context),
-            _private: (),
         }
     }
 }
