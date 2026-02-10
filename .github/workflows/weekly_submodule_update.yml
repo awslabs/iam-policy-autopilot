@@ -100,9 +100,11 @@ jobs:
         submodules: recursive
         fetch-depth: 0
 
-    - name: Update submodules and create PR
-      env:
-        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    - name: Set branch name
+      id: branch
+      run: echo "name=auto/update-submodules-$(date +%Y%m%d)" >> $GITHUB_OUTPUT
+
+    - name: Update submodules
       run: |
         cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
         git fetch --tags
@@ -112,31 +114,24 @@ jobs:
         git fetch --tags
         git checkout ${{ needs.check_versions.outputs.botocore_tag }}
 
-        cd $GITHUB_WORKSPACE
-        BRANCH="auto/update-submodules-$(date +%Y%m%d)"
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-        git checkout -b "$BRANCH"
-        git add -A
-        git commit -m "chore: update boto3/botocore submodules to latest tags"
-        git push origin "$BRANCH"
+    - name: Create Pull Request
+      uses: peter-evans/create-pull-request@v8
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        sign-commits: true  
+        commit-message: "chore: update boto3/botocore submodules to latest tags"
+        branch: ${{ steps.branch.outputs.name }}
+        title: "chore: update boto3/botocore submodules"
+        body: |
+          Automated submodule update detected version differences:
 
-        cat <<'BODY' > pr_body.md
-        Automated submodule update detected version differences:
+          **PyPI (current release):**
+          ```
+          ${{ needs.check_versions.outputs.pypi_output }}
+          ```
 
-        **PyPI (current release):**
-        ```
-        ${{ needs.check_versions.outputs.pypi_output }}
-        ```
+          **Latest submodules (this PR):**
+          ```
+          ${{ needs.check_versions.outputs.built_output }}
+          ```
 
-        **Latest submodules (this PR):**
-        ```
-        ${{ needs.check_versions.outputs.built_output }}
-        ```
-        BODY
-
-        gh pr create \
-          --title "chore: update boto3/botocore submodules" \
-          --body-file pr_body.md \
-          --base main \
-          --head "$BRANCH"
