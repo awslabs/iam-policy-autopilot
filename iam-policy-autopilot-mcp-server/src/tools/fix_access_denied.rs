@@ -115,7 +115,7 @@ pub async fn fix_access_denied(
             bail!("MCP user elicitation failed when applying policies.");
         }
         Ok(Some(UserConfirmation(true))) => { /* no-op */ }
-        Ok(Some(UserConfirmation(false))) | Ok(None) => {
+        Ok(Some(UserConfirmation(false)) | None) => {
             return Ok(FixAccessDeniedOutput {
                 policy: policy_str,
                 fix_result: None,

@@ -63,6 +63,7 @@ impl IamPolicyAutopilotError {
     pub fn validation(msg: impl Into<String>) -> Self {
         Self::Validation(msg.into())
     }
+    #[must_use]
     pub fn apply(e: ApplyError) -> Self {
         Self::Apply(e)
     }

@@ -170,7 +170,7 @@ impl ResourceMatcher {
                 operator: crate::enrichment::Operator::StringEquals,
                 key: ctx.key().to_string(),
                 values: ctx.values().to_vec(),
-            })
+            });
         }
         result
     }
@@ -387,7 +387,7 @@ impl ResourceMatcher {
                 };
                 result.push(service_reference_resource);
             }
-        };
+        }
 
         // If no resources found, that's still valid (some actions don't require specific resources)
         Ok(result)

@@ -400,10 +400,7 @@ where
                     let local_name = &import_info.local_name;
 
                     // Check if it's a client type (starts with uppercase, doesn't end with Command/CommandInput)
-                    if original_name
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_uppercase())
+                    if original_name.chars().next().is_some_and(char::is_uppercase)
                         && !original_name.ends_with("Command")
                         && !original_name.ends_with("CommandInput")
                     {

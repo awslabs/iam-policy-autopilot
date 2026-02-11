@@ -64,10 +64,10 @@ struct SimplifiedPartitionsDefinition {
 include!("src/shared_submodule_model.rs");
 
 impl GitSubmoduleMetadata {
-    fn new(git_path: &Path, data_path: &PathBuf) -> GitSubmoduleMetadata {
+    fn new(git_path: &Path, data_path: &PathBuf) -> Self {
         let repository = Repository::open(git_path)
             .unwrap_or_else(|_| panic!("Failed to open repository at path {git_path:?}"));
-        GitSubmoduleMetadata {
+        Self {
             git_commit_hash: get_repository_commit(&repository)
                 .unwrap_or_else(|_| panic!("Failed to get repository commit at path {git_path:?}")),
             git_tag: get_repository_tag(&repository)
@@ -132,13 +132,12 @@ fn main() {
 
     // Process botocore data
     let botocore_data_path = Path::new("resources/config/sdks/botocore-data/botocore/data");
-    if !botocore_data_path.exists() {
-        panic!(
-            "Required botocore data directory not found at: {}. Please ensure the botocore data \
-             is available by running `git submodule init && git submodule update`.",
-            botocore_data_path.display()
-        );
-    }
+    assert!(
+        botocore_data_path.exists(),
+        "Required botocore data directory not found at: {}. Please ensure the botocore data \
+         is available by running `git submodule init && git submodule update`.",
+        botocore_data_path.display()
+    );
 
     match process_botocore_data(botocore_data_path, &simplified_dir) {
         Ok(_processed_count) => {
@@ -164,13 +163,12 @@ fn main() {
 
     // Process boto3 data
     let boto3_data_path = Path::new("resources/config/sdks/boto3/boto3/data");
-    if !boto3_data_path.exists() {
-        panic!(
-            "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
-             is available by running `git submodule init && git submodule update`.",
-            boto3_data_path.display()
-        );
-    }
+    assert!(
+        boto3_data_path.exists(),
+        "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
+         is available by running `git submodule init && git submodule update`.",
+        boto3_data_path.display()
+    );
 
     if let Err(e) = process_boto3_data(boto3_data_path, &boto3_dir) {
         panic!("Failed to process boto3 data: {e}");
@@ -285,12 +283,12 @@ fn process_partitions(
                 let id = partition
                     .get("id")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .ok_or("expected id in partition")?;
                 let region_regex = partition
                     .get("regionRegex")
                     .and_then(|v| v.as_str())
-                    .map(|s| s.to_string())
+                    .map(std::string::ToString::to_string)
                     .ok_or("expected regionRegex in partition")?;
                 Ok((id, region_regex))
             })
@@ -398,7 +396,7 @@ fn process_service_definition(
     let version = original
         .get("version")
         .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+        .map(std::string::ToString::to_string);
 
     // Extract metadata (required)
     let metadata = extract_metadata(original.get("metadata"))?;

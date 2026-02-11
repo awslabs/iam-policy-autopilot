@@ -26,7 +26,10 @@ pub(crate) async fn process_source_files(
     }
 
     // Convert PathBuf to &Path for language detection
-    let source_file_paths: Vec<&Path> = source_files.iter().map(|p| p.as_path()).collect();
+    let source_file_paths: Vec<&Path> = source_files
+        .iter()
+        .map(std::path::PathBuf::as_path)
+        .collect();
 
     // Determine the programming language to use
     let language = if let Some(override_lang) = language_override {

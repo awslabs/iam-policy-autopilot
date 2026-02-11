@@ -117,7 +117,7 @@ impl<'de> Deserialize<'de> for ServiceReference {
             }
         }
 
-        Ok(ServiceReference {
+        Ok(Self {
             actions: temp.actions,
             service_name: temp.name,
             resources: temp.resources,

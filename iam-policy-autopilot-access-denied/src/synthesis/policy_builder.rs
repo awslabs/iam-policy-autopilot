@@ -5,6 +5,7 @@ use std::collections::HashSet;
 
 /// Build an inline IAM policy document with Allow effect, with deterministic
 /// action ordering and deduplication.
+#[must_use]
 pub fn build_inline_allow(actions: Vec<String>, resource: String) -> PolicyDocument {
     let mut unique_actions: Vec<String> = actions
         .into_iter()
@@ -65,6 +66,7 @@ pub fn sort_statements(statements: &mut [Statement]) {
 
 /// Build a single-action statement with proper Sid
 /// This is used for canonical policy consolidation
+#[must_use]
 pub fn build_single_statement(action: String, resource: String, sid: String) -> Statement {
     Statement {
         sid,

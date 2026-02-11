@@ -16,6 +16,7 @@ pub struct PrincipalInfo {
 }
 
 impl PrincipalInfo {
+    #[must_use]
     pub fn new(kind: PrincipalKind, name: &str) -> Self {
         Self {
             kind,

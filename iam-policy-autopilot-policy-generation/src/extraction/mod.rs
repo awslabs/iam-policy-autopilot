@@ -162,7 +162,7 @@ pub mod core {
     impl SdkMethodCall {
         /// Serialize a list
         pub fn serialize_list(
-            calls: &[SdkMethodCall],
+            calls: &[Self],
             include_metadata: bool,
             pretty: bool,
         ) -> serde_json::Result<String> {
@@ -202,7 +202,7 @@ pub mod core {
         /// Get the raw string value regardless of resolved/unresolved status
         pub fn as_string(&self) -> &str {
             match self {
-                ParameterValue::Resolved(s) | ParameterValue::Unresolved(s) => s,
+                Self::Resolved(s) | Self::Unresolved(s) => s,
             }
         }
     }

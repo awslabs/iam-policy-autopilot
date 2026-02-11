@@ -184,7 +184,7 @@ impl BotocoreRaw {
         > = std::collections::HashMap::new();
         let mut file_count = 0;
 
-        for file_path in BotocoreRaw::iter() {
+        for file_path in Self::iter() {
             file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {

@@ -29,11 +29,13 @@ pub struct Engine<'a> {
 
 impl<'a> Engine<'a> {
     /// Create a new policy generation engine with AWS context
+    #[must_use]
     pub fn new(partition: &'a str, region: &'a str, account: &'a str) -> Self {
         Self::with_merger_config(partition, region, account, PolicyMergerConfig::default())
     }
 
     /// Create a new policy generation engine with AWS context and merger configuration
+    #[must_use]
     pub fn with_merger_config(
         partition: &'a str,
         region: &'a str,

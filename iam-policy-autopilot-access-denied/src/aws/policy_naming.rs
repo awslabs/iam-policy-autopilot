@@ -40,6 +40,7 @@ fn truncate_policy_name(name: &str) -> String {
 /// Format is immutable; changing it would orphan existing user policies.
 /// Sanitizes input and truncates to 128-char IAM limit.
 /// TODO: Revisit policy naming based on decision on collecting analytics through policy names.
+#[must_use]
 pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String {
     let sanitized_name = sanitize_component(name);
     let full_name = format!("{POLICY_PREFIX}-{sanitized_name}");
@@ -49,6 +50,7 @@ pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String 
 /// Generate unique Sid with format IamPolicyAutopilot{Service}{Action}{YYYYMMDD}
 /// Handles collision detection by appending counter (2, 3, etc.)
 #[allow(unknown_lints, convert_case_pascal)]
+#[must_use]
 pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -> String {
     // Falls back to "Unknown" service if format is invalid
     let parts: Vec<&str> = action.split(':').collect();
@@ -60,7 +62,7 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
 
     let service_cap = service.to_case(Case::Pascal);
     let action_cap = action_name.to_case(Case::Pascal);
-    let date_no_hyphens = date.replace("-", "");
+    let date_no_hyphens = date.replace('-', "");
 
     let base_sid = format!("{POLICY_PREFIX}{service_cap}{action_cap}{date_no_hyphens}");
 

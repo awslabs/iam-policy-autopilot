@@ -279,6 +279,7 @@ pub fn is_s3_object_operation(action: &str) -> bool {
 /// let result = normalize_s3_resource("dynamodb:GetItem", "arn:aws:dynamodb:us-east-1:123:table/T");
 /// assert_eq!(result, "arn:aws:dynamodb:us-east-1:123:table/T");
 /// ```
+#[must_use]
 pub fn normalize_s3_resource(action: &str, resource: &str) -> String {
     // Only normalize for S3 object operations
     if !is_s3_object_operation(action) {

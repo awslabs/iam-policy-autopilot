@@ -30,7 +30,7 @@ impl GoExtractor {
         let root = ast.ast.root();
 
         // AST-grep configuration for extracting import statements
-        let import_config = r#"
+        let import_config = r"
 id: import_extraction
 language: Go
 rule:
@@ -39,7 +39,7 @@ rule:
     field: path
     pattern: $PATH
     kind: interpreted_string_literal
-"#;
+";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config =
@@ -53,7 +53,7 @@ rule:
         }
 
         // Also handle import declarations with aliases
-        let import_alias_config = r#"
+        let import_alias_config = r"
 id: import_alias_extraction
 language: Go
 rule:
@@ -67,7 +67,7 @@ rule:
         field: path
         pattern: $PATH
         kind: interpreted_string_literal
-"#;
+";
 
         let alias_config = &from_yaml_string::<Go>(import_alias_config, &globals)
             .expect("import alias rule should parse")[0];
@@ -424,7 +424,7 @@ impl Extractor for GoExtractor {
 
         let mut method_calls = Vec::new();
 
-        let config = r#"
+        let config = r"
 id: method_call_extraction
 language: Go
 rule:
@@ -445,7 +445,7 @@ rule:
         field: arguments
         pattern: $$$ARGS
         kind: argument_list
-        "#;
+        ";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config = &from_yaml_string::<Go>(config, &globals).expect("rule should parse")[0];
@@ -530,7 +530,7 @@ rule:
 impl Parameter {
     /// Create a context parameter
     pub(crate) fn context(expression: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(expression),
             position,
             type_annotation: Some("context.Context".to_string()),
@@ -551,7 +551,7 @@ impl Parameter {
             .collect::<Vec<_>>()
             .join(", ");
 
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(format!("&{type_name}{{ {fields_str} }}")),
             position,
             type_annotation: Some(type_name),
@@ -561,7 +561,7 @@ impl Parameter {
 
     /// Create an expression parameter
     pub(crate) fn expression(value: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(value),
             position,
             type_annotation: None,
