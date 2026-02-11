@@ -9,9 +9,9 @@ use std::path::Path;
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{
-    ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCreationInfo,
+    ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
 };
-use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall};
 use crate::ServiceModelIndex;
 use crate::{Language, Location};
 use ast_grep_language::Python;
@@ -75,24 +75,36 @@ impl<'a> PaginatorExtractor<'a> {
         let mut synthetic_calls = Vec::new();
         let mut matched_paginator_indices = std::collections::HashSet::new();
 
-        for paginate_call in paginate_calls {
+        for paginate_call in &paginate_calls {
             if let Some((paginator, paginator_idx)) =
-                self.match_paginate_to_paginator_with_index(&paginate_call, &paginators)
+                self.match_paginate_to_paginator_with_index(paginate_call, &paginators)
             {
-                synthetic_calls.push(self.create_synthetic_method_call(&paginate_call, paginator));
+                let pattern = PaginatorCallPattern::Matched {
+                    creation: paginator,
+                    paginate: paginate_call,
+                };
+                synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
+                    self.convert_paginator_operation_to_method_name(op)
+                }));
                 matched_paginator_indices.insert(paginator_idx);
             }
         }
 
         // Step 5: Handle chained paginator calls
-        for chained_call in chained_calls {
-            synthetic_calls.push(self.create_chained_synthetic_method_call(&chained_call));
+        for chained_call in &chained_calls {
+            let pattern = PaginatorCallPattern::Chained(chained_call);
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
+                self.convert_paginator_operation_to_method_name(op)
+            }));
         }
 
         // Step 6: Handle unmatched get_paginator calls by creating synthetic calls with empty parameters
         for (idx, paginator) in paginators.iter().enumerate() {
             if !matched_paginator_indices.contains(&idx) {
-                synthetic_calls.push(self.create_fallback_synthetic_method_call(paginator));
+                let pattern = PaginatorCallPattern::CreationOnly(paginator);
+                synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
+                    self.convert_paginator_operation_to_method_name(op)
+                }));
             }
         }
 
@@ -286,114 +298,6 @@ impl<'a> PaginatorExtractor<'a> {
         }
 
         best_match.map(|p| (p, best_idx))
-    }
-
-    /// Create a fallback synthetic SdkMethodCall for unmatched get_paginator calls
-    ///
-    /// This handles cases where get_paginator is found but no matching paginate call exists.
-    /// The synthetic call uses the operation name from get_paginator with empty parameters.
-    fn create_fallback_synthetic_method_call(
-        &self,
-        paginator_info: &PaginatorCreationInfo,
-    ) -> SdkMethodCall {
-        // Convert paginator operation name to match method lookup index format
-        let method_name =
-            self.convert_paginator_operation_to_method_name(&paginator_info.operation_name);
-
-        // Look up all services that provide this method
-        let possible_services =
-            if let Some(service_refs) = self.service_index.method_lookup.get(&method_name) {
-                service_refs
-                    .iter()
-                    .map(|service_ref| service_ref.service_name.clone())
-                    .collect()
-            } else {
-                Vec::new() // No services found for this method
-            };
-
-        SdkMethodCall {
-            name: method_name,
-            possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: Vec::new(), // Empty parameters for unmatched paginators
-                return_type: None,
-                expr: paginator_info.expr.clone(),
-                // Use get_paginator call position
-                location: paginator_info.location.clone(),
-                receiver: Some(paginator_info.client_receiver.clone()),
-            }),
-        }
-    }
-
-    /// Create a synthetic SdkMethodCall from a matched paginate pattern
-    fn create_synthetic_method_call(
-        &self,
-        paginate_call: &PaginatorCallInfo,
-        paginator_info: &PaginatorCreationInfo,
-    ) -> SdkMethodCall {
-        // Convert paginator operation name to match method lookup index format
-        let method_name =
-            self.convert_paginator_operation_to_method_name(&paginator_info.operation_name);
-
-        // Look up all services that provide this method
-        let possible_services =
-            if let Some(service_refs) = self.service_index.method_lookup.get(&method_name) {
-                service_refs
-                    .iter()
-                    .map(|service_ref| service_ref.service_name.clone())
-                    .collect()
-            } else {
-                Vec::new() // No services found for this method
-            };
-
-        SdkMethodCall {
-            name: method_name,
-            possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: paginate_call.arguments.clone(),
-                return_type: None,
-                expr: paginate_call.expr.clone(),
-                // Use paginate call position (most specific)
-                location: paginate_call.location.clone(),
-                // Use client receiver from get_paginator call
-                receiver: Some(paginator_info.client_receiver.clone()),
-            }),
-        }
-    }
-
-    /// Create a synthetic SdkMethodCall from a chained paginator call
-    fn create_chained_synthetic_method_call(
-        &self,
-        chained_call: &ChainedPaginatorCallInfo,
-    ) -> SdkMethodCall {
-        // Convert paginator operation name to match method lookup index format
-        let method_name =
-            self.convert_paginator_operation_to_method_name(&chained_call.operation_name);
-
-        // Look up all services that provide this method
-        let possible_services =
-            if let Some(service_refs) = self.service_index.method_lookup.get(&method_name) {
-                service_refs
-                    .iter()
-                    .map(|service_ref| service_ref.service_name.clone())
-                    .collect()
-            } else {
-                Vec::new() // No services found for this method
-            };
-
-        SdkMethodCall {
-            name: method_name,
-            possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: chained_call.arguments.clone(),
-                return_type: None,
-                expr: chained_call.expr.clone(),
-                // Use chained call position
-                location: chained_call.location.clone(),
-                // Use client receiver from chained call
-                receiver: Some(chained_call.client_receiver.clone()),
-            }),
-        }
     }
 
     /// Filter out pagination-specific parameters
