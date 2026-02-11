@@ -11,8 +11,14 @@
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
-// Re-export the enrichment module for public use
+// Re-export the enrichment module for internal use, but expose specific types
 pub(crate) mod enrichment;
+
+// Expose ONLY the specific types needed for API results and testing
+// We removed Action, Condition, and Resource because they are pub(crate) internal types.
+pub use enrichment::{
+    EnrichedSdkMethodCall, Explanation, Explanations, Operation, OperationSource, Operator, Reason,
+};
 
 // Re-export the providers module for public use
 pub(crate) mod providers;
@@ -34,7 +40,8 @@ pub mod api;
 use std::fmt::Display;
 use std::path::PathBuf;
 
-pub use enrichment::{Engine as EnrichmentEngine, Explanation};
+// REMOVED duplicate 'Explanation' from this line
+pub use enrichment::Engine as EnrichmentEngine;
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
