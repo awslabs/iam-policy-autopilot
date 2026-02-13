@@ -6,9 +6,10 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
-use crate::extraction::sdk_model::ServiceDiscovery;
-use crate::extraction::shared::{ChainedPaginatorCallInfo, PaginatorCreationInfo};
-use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
+use crate::extraction::shared::{
+    ChainedPaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
+};
+use crate::extraction::{AstWithSourceFile, SdkMethodCall};
 use crate::ServiceModelIndex;
 use crate::{Language, Location};
 use ast_grep_language::Go;
@@ -41,15 +42,15 @@ impl<'a> GoPaginatorExtractor<'a> {
         // Create synthetic calls from paginator creations
         let paginators = self.find_paginator_creation_calls(ast);
         for paginator in &paginators {
-            let synthetic_call = self.create_synthetic_call_from_creation(paginator);
-            synthetic_calls.push(synthetic_call);
+            let pattern = PaginatorCallPattern::CreationOnly(paginator);
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
         }
 
         // Create synthetic calls from chained paginator calls
         let chained_calls = self.find_chained_paginator_calls(ast);
-        for chained_call in chained_calls {
-            let synthetic_call = self.create_chained_synthetic_call(&chained_call);
-            synthetic_calls.push(synthetic_call);
+        for chained_call in &chained_calls {
+            let pattern = PaginatorCallPattern::Chained(chained_call);
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
         }
 
         synthetic_calls
@@ -201,76 +202,6 @@ impl<'a> GoPaginatorExtractor<'a> {
             expr: node_match.text().to_string(),
             location: Location::from_node(file_path.to_path_buf(), node_match.get_node()),
         })
-    }
-
-    /// Create a synthetic SdkMethodCall from paginator creation
-    fn create_synthetic_call_from_creation(
-        &self,
-        paginator_info: &PaginatorCreationInfo,
-    ) -> SdkMethodCall {
-        // operation_name already contains the clean operation name (e.g., "ListObjectsV2")
-        let operation_name = &paginator_info.operation_name;
-
-        // Convert to method name using Go language conventions
-        let method_name = ServiceDiscovery::operation_to_method_name(operation_name, Language::Go);
-
-        // Look up all services that provide this method
-        let possible_services =
-            if let Some(service_refs) = self.service_index.method_lookup.get(&method_name) {
-                service_refs
-                    .iter()
-                    .map(|service_ref| service_ref.service_name.clone())
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-        SdkMethodCall {
-            name: method_name,
-            possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: paginator_info.creation_arguments.clone(),
-                return_type: None,
-                expr: paginator_info.expr.clone(),
-                location: paginator_info.location.clone(),
-                receiver: Some(paginator_info.client_receiver.clone()),
-            }),
-        }
-    }
-
-    /// Create a synthetic SdkMethodCall from a chained paginator call
-    fn create_chained_synthetic_call(
-        &self,
-        chained_call: &ChainedPaginatorCallInfo,
-    ) -> SdkMethodCall {
-        // operation_name already contains the clean operation name (e.g., "ListObjectsV2")
-        let operation_name = &chained_call.operation_name;
-
-        // Convert to method name using Go language conventions
-        let method_name = ServiceDiscovery::operation_to_method_name(operation_name, Language::Go);
-
-        // Look up all services that provide this method
-        let possible_services =
-            if let Some(service_refs) = self.service_index.method_lookup.get(&method_name) {
-                service_refs
-                    .iter()
-                    .map(|service_ref| service_ref.service_name.clone())
-                    .collect()
-            } else {
-                Vec::new()
-            };
-
-        SdkMethodCall {
-            name: method_name,
-            possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: chained_call.arguments.clone(),
-                return_type: None,
-                expr: chained_call.expr.clone(),
-                location: chained_call.location.clone(),
-                receiver: Some(chained_call.client_receiver.clone()),
-            }),
-        }
     }
 }
 
