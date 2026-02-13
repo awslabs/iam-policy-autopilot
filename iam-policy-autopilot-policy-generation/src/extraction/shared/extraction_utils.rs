@@ -184,26 +184,25 @@ impl<'a> PaginatorCallPattern<'a> {
     /// Create synthetic SDK method call for this paginator pattern
     ///
     /// This method encapsulates the common logic for creating synthetic calls across
-    /// extractors for different languages. Language-specific behavior is provided via callbacks.
+    /// extractors for different languages.
     ///
     /// # Arguments
     /// * `service_index` - Service model index for method lookup
-    /// * `operation_to_method` - Callback to convert operation name to method name (language-specific)
+    /// * `language` - Programming language for method name conversion
     ///
     /// # Returns
     /// Synthetic SDK method call with all services that provide this operation
-    pub(crate) fn create_synthetic_call<F>(
+    pub(crate) fn create_synthetic_call(
         &self,
         service_index: &crate::extraction::sdk_model::ServiceModelIndex,
-        operation_to_method: F,
-    ) -> crate::extraction::SdkMethodCall
-    where
-        F: Fn(&str) -> String,
-    {
+        language: crate::Language,
+    ) -> crate::extraction::SdkMethodCall {
+        use crate::extraction::sdk_model::ServiceDiscovery;
         use crate::extraction::SdkMethodCallMetadata;
 
-        // Convert operation name to method name (language-specific)
-        let method_name = operation_to_method(self.operation_name());
+        // Convert operation name to method name using ServiceDiscovery
+        let method_name =
+            ServiceDiscovery::operation_to_method_name(self.operation_name(), language);
 
         // Look up all services that provide this method
         let possible_services =
@@ -323,28 +322,28 @@ impl<'a> WaiterCallPattern<'a> {
     /// Create synthetic SDK method calls for this waiter pattern
     ///
     /// This method encapsulates the common logic for creating synthetic calls across
-    /// extractors for different languages. Language-specific behavior is provided via callbacks.
+    /// extractors for different languages.
     ///
     /// # Arguments
     /// * `service_index` - Service model index for waiter lookup
+    /// * `language` - Programming language for method name conversion
     /// * `filter_params` - Callback to filter waiter-specific parameters (language-specific)
     /// * `get_required_params` - Callback to get required parameters when no arguments available
-    /// * `operation_to_method` - Callback to convert operation name to method name (language-specific)
     ///
     /// # Returns
     /// Vector of synthetic SDK method calls, one per service that defines this waiter
-    pub(crate) fn create_synthetic_calls<F, G, H>(
+    pub(crate) fn create_synthetic_calls<F, G>(
         &self,
         service_index: &crate::extraction::sdk_model::ServiceModelIndex,
+        language: crate::Language,
         filter_params: F,
         get_required_params: G,
-        operation_to_method: H,
     ) -> Vec<crate::extraction::SdkMethodCall>
     where
         F: Fn(Vec<Parameter>) -> Vec<Parameter>,
         G: Fn(&str, &str) -> Vec<Parameter>,
-        H: Fn(&str) -> String,
     {
+        use crate::extraction::sdk_model::ServiceDiscovery;
         use crate::extraction::SdkMethodCallMetadata;
 
         let mut synthetic_calls = Vec::new();
@@ -360,8 +359,9 @@ impl<'a> WaiterCallPattern<'a> {
                     None => get_required_params(service_name, operation_name),
                 };
 
-                // Convert operation name to method name (language-specific)
-                let method_name = operation_to_method(operation_name);
+                // Convert operation name to method name using ServiceDiscovery
+                let method_name =
+                    ServiceDiscovery::operation_to_method_name(operation_name, language);
 
                 synthetic_calls.push(crate::extraction::SdkMethodCall {
                     name: method_name,

@@ -6,7 +6,6 @@
 use std::path::Path;
 
 use crate::extraction::go::utils;
-use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{
     ChainedPaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
 };
@@ -33,14 +32,6 @@ impl<'a> GoPaginatorExtractor<'a> {
         Self { service_index }
     }
 
-    /// Convert paginator operation name to method name using ServiceDiscovery
-    /// This ensures consistency with the method lookup index used in disambiguation
-    fn convert_paginator_operation_to_method_name(&self, operation_name: &str) -> String {
-        // Use ServiceDiscovery to convert operation name to Go method name
-        // This should match the conversion used in the method lookup index
-        ServiceDiscovery::operation_to_method_name(operation_name, Language::Go)
-    }
-
     /// Extract paginator method calls from the AST
     pub(crate) fn extract_paginator_method_calls(
         &self,
@@ -52,18 +43,14 @@ impl<'a> GoPaginatorExtractor<'a> {
         let paginators = self.find_paginator_creation_calls(ast);
         for paginator in &paginators {
             let pattern = PaginatorCallPattern::CreationOnly(paginator);
-            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
-                self.convert_paginator_operation_to_method_name(op)
-            }));
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
         }
 
         // Create synthetic calls from chained paginator calls
         let chained_calls = self.find_chained_paginator_calls(ast);
         for chained_call in &chained_calls {
             let pattern = PaginatorCallPattern::Chained(chained_call);
-            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
-                self.convert_paginator_operation_to_method_name(op)
-            }));
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
         }
 
         synthetic_calls

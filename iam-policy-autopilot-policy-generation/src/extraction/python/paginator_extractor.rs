@@ -7,7 +7,6 @@
 use std::path::Path;
 
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
-use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{
     ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
 };
@@ -38,14 +37,6 @@ impl<'a> PaginatorExtractor<'a> {
     /// Create a new paginator extractor with a service model index
     pub(crate) fn new(service_index: &'a ServiceModelIndex) -> Self {
         Self { service_index }
-    }
-
-    /// Convert paginator operation name to method name using ServiceDiscovery
-    /// This ensures consistency with the method lookup index used in disambiguation
-    fn convert_paginator_operation_to_method_name(&self, operation_name: &str) -> String {
-        // Use ServiceDiscovery to convert operation name to Python method name
-        // This should match the conversion used in the method lookup index
-        ServiceDiscovery::operation_to_method_name(operation_name, Language::Python)
     }
 
     /// Extract paginate method calls from the AST
@@ -83,9 +74,8 @@ impl<'a> PaginatorExtractor<'a> {
                     creation: paginator,
                     paginate: paginate_call,
                 };
-                synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
-                    self.convert_paginator_operation_to_method_name(op)
-                }));
+                synthetic_calls
+                    .push(pattern.create_synthetic_call(self.service_index, Language::Python));
                 matched_paginator_indices.insert(paginator_idx);
             }
         }
@@ -93,18 +83,16 @@ impl<'a> PaginatorExtractor<'a> {
         // Step 5: Handle chained paginator calls
         for chained_call in &chained_calls {
             let pattern = PaginatorCallPattern::Chained(chained_call);
-            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
-                self.convert_paginator_operation_to_method_name(op)
-            }));
+            synthetic_calls
+                .push(pattern.create_synthetic_call(self.service_index, Language::Python));
         }
 
         // Step 6: Handle unmatched get_paginator calls by creating synthetic calls with empty parameters
         for (idx, paginator) in paginators.iter().enumerate() {
             if !matched_paginator_indices.contains(&idx) {
                 let pattern = PaginatorCallPattern::CreationOnly(paginator);
-                synthetic_calls.push(pattern.create_synthetic_call(self.service_index, |op| {
-                    self.convert_paginator_operation_to_method_name(op)
-                }));
+                synthetic_calls
+                    .push(pattern.create_synthetic_call(self.service_index, Language::Python));
             }
         }
 
