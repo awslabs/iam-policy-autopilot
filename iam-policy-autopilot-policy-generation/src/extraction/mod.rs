@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub(crate) mod engine;
 pub(crate) mod extractor;
 pub(crate) mod go;
+pub(crate) mod java;
 pub(crate) mod javascript;
 pub(crate) mod python;
 pub(crate) mod sdk_model;

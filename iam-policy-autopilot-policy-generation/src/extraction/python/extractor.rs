@@ -134,6 +134,10 @@ impl Extractor for PythonExtractor {
                     // This shouldn't happen in Python extractor, but handle gracefully
                     panic!("Received TypeScript result during Python method extraction.")
                 }
+                ExtractorResult::Java(_, _) => {
+                    // This shouldn't happen in Python extractor, but handle gracefully
+                    panic!("Received Java result during Python method extraction.");
+                }
             }
         }
     }

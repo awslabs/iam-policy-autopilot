@@ -1,5 +1,5 @@
 //! Result type alias for operations that can fail with `ExtractorError`
-use ast_grep_language::{Go, JavaScript, Python, TypeScript};
+use ast_grep_language::{Go, Java, JavaScript, Python, TypeScript};
 use async_trait::async_trait;
 
 use crate::extraction::go::types::GoImportInfo;
@@ -13,6 +13,7 @@ pub(crate) enum ExtractorResult {
     Go(AstWithSourceFile<Go>, Vec<SdkMethodCall>, GoImportInfo),
     JavaScript(AstWithSourceFile<JavaScript>, Vec<SdkMethodCall>),
     TypeScript(AstWithSourceFile<TypeScript>, Vec<SdkMethodCall>),
+    Java(AstWithSourceFile<Java>, Vec<SdkMethodCall>),
 }
 
 impl ExtractorResult {
@@ -23,6 +24,7 @@ impl ExtractorResult {
             Self::Go(_, calls, _) => calls,
             Self::JavaScript(_, calls) => calls,
             Self::TypeScript(_, calls) => calls,
+            Self::Java(_, calls) => calls,
         }
     }
 
@@ -34,6 +36,7 @@ impl ExtractorResult {
             Self::Go(_, calls, _) => calls,
             Self::JavaScript(_, calls) => calls,
             Self::TypeScript(_, calls) => calls,
+            Self::Java(_, calls) => calls,
         }
     }
 

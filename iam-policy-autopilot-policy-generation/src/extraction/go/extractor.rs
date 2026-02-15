@@ -514,6 +514,10 @@ rule:
                     // This shouldn't happen in Go extractor, but handle gracefully
                     panic!("Received TypeScript result during Go method extraction.");
                 }
+                ExtractorResult::Java(_, _) => {
+                    // This shouldn't happen in Go extractor, but handle gracefully
+                    panic!("Received Java result during Go method extraction.");
+                }
             }
         }
     }
