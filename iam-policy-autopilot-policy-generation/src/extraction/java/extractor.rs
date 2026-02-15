@@ -7,6 +7,8 @@ use convert_case::Casing;
 use std::collections::HashSet;
 
 use crate::extraction::extractor::{Extractor, ExtractorResult};
+use crate::extraction::AstWithSourceFile;
+use crate::SourceFile;
 
 /// Java extractor for AWS SDK method calls
 pub(crate) struct JavaExtractor {}
@@ -61,9 +63,10 @@ impl JavaExtractor {
 
 #[async_trait]
 impl Extractor for JavaExtractor {
-    async fn parse(&self, source_code: &str) -> ExtractorResult {
-        let ast_grep = Java.ast_grep(source_code);
-        let root = ast_grep.root();
+    async fn parse(&self, source_file: &SourceFile) -> ExtractorResult {
+        let ast_grep = Java.ast_grep(&source_file.content);
+        let ast = AstWithSourceFile::new(ast_grep, source_file.clone());
+        let root = ast.ast.root();
         let mut method_calls = Vec::new();
         let config = r#"
 id: method_call_extraction
@@ -91,7 +94,7 @@ rule:
                 method_calls.push(method_call);
             }
         }
-        crate::extraction::extractor::ExtractorResult::Java(ast_grep, method_calls)
+        crate::extraction::extractor::ExtractorResult::Java(ast, method_calls)
     }
 
     fn filter_map(
@@ -183,15 +186,19 @@ rule:
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::extraction::extractor::Extractor;
 
     #[tokio::test]
     async fn test_java_extractor() {
-        let source_code = "s3.listBuckets(request);";
+        let code = "s3.listBuckets(request);";
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), code.to_string(), crate::Language::Java);
 
         let extractor = JavaExtractor::new();
-        let result = extractor.parse(source_code).await;
+        let result = extractor.parse(&source_file).await;
         assert_eq!(result.method_calls_ref().len(), 1);
         assert_eq!(result.method_calls_ref()[0].name, "ListBuckets");
     }
