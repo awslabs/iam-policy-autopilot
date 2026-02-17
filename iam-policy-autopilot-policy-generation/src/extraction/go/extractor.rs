@@ -189,16 +189,21 @@ rule:
             vec![]
         };
 
+        let metadata = SdkMethodCallMetadata::new(
+            node_match.text().to_string(),
+            Location::from_node(source_file.path.clone(), node_match.get_node()),
+        )
+        .with_parameters(arguments);
+        let metadata = if let Some(r) = receiver {
+            metadata.with_receiver(r)
+        } else {
+            metadata
+        };
+
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: arguments,
-                return_type: None, // We don't know the return type from the call site
-                expr: node_match.text().to_string(),
-                location: Location::from_node(source_file.path.clone(), node_match.get_node()),
-                receiver,
-            }),
+            metadata: Some(metadata),
         };
 
         Some(method_call)

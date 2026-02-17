@@ -177,35 +177,36 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "create_api_mapping".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 80)),
+        )
+        .with_parameters(vec![
+            Parameter::Keyword {
+                name: "DomainName".to_string(),
+                value: ParameterValue::Resolved("example.com".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "Stage".to_string(),
+                value: ParameterValue::Resolved("prod".to_string()),
+                position: 1,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "ApiId".to_string(),
+                value: ParameterValue::Resolved("abc123".to_string()),
+                position: 2,
+                type_annotation: None,
+            },
+        ])
+        .with_receiver("apigateway_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "create_api_mapping".to_string(),
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "DomainName".to_string(),
-                        value: ParameterValue::Resolved("example.com".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "Stage".to_string(),
-                        value: ParameterValue::Resolved("prod".to_string()),
-                        position: 1,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "ApiId".to_string(),
-                        value: ParameterValue::Resolved("abc123".to_string()),
-                        position: 2,
-                        type_annotation: None,
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 80)),
-                receiver: Some("apigateway_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -219,24 +220,25 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "create_api_mapping".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 40)),
+        )
+        .with_parameters(vec![
+            Parameter::Keyword {
+                name: "DomainName".to_string(),
+                value: ParameterValue::Resolved("example.com".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            // Missing required Stage and ApiId parameters
+        ])
+        .with_receiver("apigateway_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "create_api_mapping".to_string(),
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "DomainName".to_string(),
-                        value: ParameterValue::Resolved("example.com".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                    // Missing required Stage and ApiId parameters
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 40)),
-                receiver: Some("apigateway_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -248,41 +250,42 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "create_api_mapping".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 100)),
+        )
+        .with_parameters(vec![
+            Parameter::Keyword {
+                name: "DomainName".to_string(),
+                value: ParameterValue::Resolved("example.com".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "Stage".to_string(),
+                value: ParameterValue::Resolved("prod".to_string()),
+                position: 1,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "ApiId".to_string(),
+                value: ParameterValue::Resolved("abc123".to_string()),
+                position: 2,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "InvalidParam".to_string(), // This parameter doesn't exist in the AWS API
+                value: ParameterValue::Resolved("invalid".to_string()),
+                position: 3,
+                type_annotation: None,
+            },
+        ])
+        .with_receiver("apigateway_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "create_api_mapping".to_string(),
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "DomainName".to_string(),
-                        value: ParameterValue::Resolved("example.com".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "Stage".to_string(),
-                        value: ParameterValue::Resolved("prod".to_string()),
-                        position: 1,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "ApiId".to_string(),
-                        value: ParameterValue::Resolved("abc123".to_string()),
-                        position: 2,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "InvalidParam".to_string(), // This parameter doesn't exist in the AWS API
-                        value: ParameterValue::Resolved("invalid".to_string()),
-                        position: 3,
-                        type_annotation: None,
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 100)),
-                receiver: Some("apigateway_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -294,19 +297,20 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "create_api_mapping".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![Parameter::DictionarySplat {
+            expression: "**params".to_string(),
+            position: 0,
+        }])
+        .with_receiver("apigateway_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "create_api_mapping".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "create_api_mapping".to_string(),
-                parameters: vec![Parameter::DictionarySplat {
-                    expression: "**params".to_string(),
-                    position: 0,
-                }],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                receiver: Some("apigateway_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -325,21 +329,22 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "custom_method".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 30)),
+        )
+        .with_parameters(vec![Parameter::Keyword {
+            name: "custom_param".to_string(),
+            value: ParameterValue::Resolved("value".to_string()),
+            position: 0,
+            type_annotation: None,
+        }])
+        .with_receiver("custom_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "custom_method".to_string(), // Not an AWS SDK method
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "custom_method".to_string(),
-                parameters: vec![Parameter::Keyword {
-                    name: "custom_param".to_string(),
-                    value: ParameterValue::Resolved("value".to_string()),
-                    position: 0,
-                    type_annotation: None,
-                }],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
-                receiver: Some("custom_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -351,65 +356,68 @@ mod tests {
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata1 = SdkMethodCallMetadata::new(
+            "get_object".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Keyword {
+                name: "Bucket".to_string(),
+                value: ParameterValue::Resolved("my-bucket".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "Key".to_string(),
+                value: ParameterValue::Resolved("my-key".to_string()),
+                position: 1,
+                type_annotation: None,
+            },
+        ])
+        .with_receiver("s3_client".to_string());
+
+        let metadata2 = SdkMethodCallMetadata::new(
+            "get_object".to_string(),
+            Location::new(PathBuf::new(), (2, 1), (2, 30)),
+        )
+        .with_parameters(vec![Parameter::Keyword {
+            name: "custom_param".to_string(), // Invalid parameter for AWS S3
+            value: ParameterValue::Resolved("value".to_string()),
+            position: 0,
+            type_annotation: None,
+        }])
+        .with_receiver("custom_client".to_string());
+
+        let metadata3 = SdkMethodCallMetadata::new(
+            "custom_method".to_string(),
+            Location::new(PathBuf::new(), (3, 1), (3, 25)),
+        )
+        .with_parameters(vec![Parameter::Keyword {
+            name: "param".to_string(),
+            value: ParameterValue::Resolved("value".to_string()),
+            position: 0,
+            type_annotation: None,
+        }])
+        .with_receiver("custom_client".to_string());
+
         let method_calls = vec![
             // Valid AWS SDK call
             SdkMethodCall {
                 name: "get_object".to_string(),
                 possible_services: Vec::new(),
-                metadata: Some(SdkMethodCallMetadata {
-                    expr: "get_object".to_string(),
-                    parameters: vec![
-                        Parameter::Keyword {
-                            name: "Bucket".to_string(),
-                            value: ParameterValue::Resolved("my-bucket".to_string()),
-                            position: 0,
-                            type_annotation: None,
-                        },
-                        Parameter::Keyword {
-                            name: "Key".to_string(),
-                            value: ParameterValue::Resolved("my-key".to_string()),
-                            position: 1,
-                            type_annotation: None,
-                        },
-                    ],
-                    return_type: None,
-                    location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                    receiver: Some("s3_client".to_string()),
-                }),
+                metadata: Some(metadata1),
             },
             // Non-AWS method call with same name as AWS method but different parameters
             SdkMethodCall {
                 name: "get_object".to_string(),
                 possible_services: Vec::new(),
-                metadata: Some(SdkMethodCallMetadata {
-                    expr: "get_object".to_string(),
-                    parameters: vec![Parameter::Keyword {
-                        name: "custom_param".to_string(), // Invalid parameter for AWS S3
-                        value: ParameterValue::Resolved("value".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    }],
-                    return_type: None,
-                    location: Location::new(PathBuf::new(), (2, 1), (2, 30)),
-                    receiver: Some("custom_client".to_string()),
-                }),
+                metadata: Some(metadata2),
             },
             // Completely non-AWS method
             SdkMethodCall {
                 name: "custom_method".to_string(),
                 possible_services: Vec::new(),
-                metadata: Some(SdkMethodCallMetadata {
-                    expr: "custom_method".to_string(),
-                    parameters: vec![Parameter::Keyword {
-                        name: "param".to_string(),
-                        value: ParameterValue::Resolved("value".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    }],
-                    return_type: None,
-                    location: Location::new(PathBuf::new(), (3, 1), (3, 25)),
-                    receiver: Some("custom_client".to_string()),
-                }),
+                metadata: Some(metadata3),
             },
         ];
 
@@ -507,44 +515,45 @@ def example():
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "get_object".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 80)),
+        )
+        .with_parameters(vec![
+            Parameter::Keyword {
+                name: "Bucket".to_string(),
+                value: ParameterValue::Resolved("my-bucket".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "Key".to_string(),
+                value: ParameterValue::Resolved("my-key".to_string()),
+                position: 1,
+                type_annotation: None,
+            },
+            // This keyword argument starts with "arg_" but should NOT be filtered out
+            // because it's a legitimate keyword parameter, not a positional placeholder
+            Parameter::Keyword {
+                name: "arg_custom_param".to_string(), // This would have been incorrectly filtered before the fix
+                value: ParameterValue::Resolved("custom_value".to_string()),
+                position: 2,
+                type_annotation: None,
+            },
+            // Also include a positional argument to show the difference
+            Parameter::Positional {
+                value: ParameterValue::Resolved("positional_value".to_string()),
+                position: 3,
+                type_annotation: None,
+                struct_fields: None,
+            },
+        ])
+        .with_receiver("s3_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "get_object".to_string(),
-                parameters: vec![
-                    Parameter::Keyword {
-                        name: "Bucket".to_string(),
-                        value: ParameterValue::Resolved("my-bucket".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "Key".to_string(),
-                        value: ParameterValue::Resolved("my-key".to_string()),
-                        position: 1,
-                        type_annotation: None,
-                    },
-                    // This keyword argument starts with "arg_" but should NOT be filtered out
-                    // because it's a legitimate keyword parameter, not a positional placeholder
-                    Parameter::Keyword {
-                        name: "arg_custom_param".to_string(), // This would have been incorrectly filtered before the fix
-                        value: ParameterValue::Resolved("custom_value".to_string()),
-                        position: 2,
-                        type_annotation: None,
-                    },
-                    // Also include a positional argument to show the difference
-                    Parameter::Positional {
-                        value: ParameterValue::Resolved("positional_value".to_string()),
-                        position: 3,
-                        type_annotation: None,
-                        struct_fields: None,
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 80)),
-                receiver: Some("s3_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);
@@ -565,37 +574,38 @@ def example():
         let service_index = create_comprehensive_test_service_index();
         let disambiguator = MethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "get_object".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 60)),
+        )
+        .with_parameters(vec![
+            // Valid required parameters
+            Parameter::Keyword {
+                name: "Bucket".to_string(),
+                value: ParameterValue::Resolved("my-bucket".to_string()),
+                position: 0,
+                type_annotation: None,
+            },
+            Parameter::Keyword {
+                name: "Key".to_string(),
+                value: ParameterValue::Resolved("my-key".to_string()),
+                position: 1,
+                type_annotation: None,
+            },
+            // Positional argument with arg_ prefix - should be ignored in validation
+            Parameter::Positional {
+                value: ParameterValue::Resolved("positional_value".to_string()),
+                position: 2,
+                type_annotation: None,
+                struct_fields: None,
+            },
+        ])
+        .with_receiver("s3_client".to_string());
+
         let method_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "get_object".to_string(),
-                parameters: vec![
-                    // Valid required parameters
-                    Parameter::Keyword {
-                        name: "Bucket".to_string(),
-                        value: ParameterValue::Resolved("my-bucket".to_string()),
-                        position: 0,
-                        type_annotation: None,
-                    },
-                    Parameter::Keyword {
-                        name: "Key".to_string(),
-                        value: ParameterValue::Resolved("my-key".to_string()),
-                        position: 1,
-                        type_annotation: None,
-                    },
-                    // Positional argument with arg_ prefix - should be ignored in validation
-                    Parameter::Positional {
-                        value: ParameterValue::Resolved("positional_value".to_string()),
-                        position: 2,
-                        type_annotation: None,
-                        struct_fields: None,
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 60)),
-                receiver: Some("s3_client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call]);

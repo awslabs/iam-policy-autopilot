@@ -100,31 +100,105 @@ pub mod core {
         }
     }
 
+    /// Usage of the method call result, either assigned or in a call chain.
+    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
+    pub enum MethodCallResultUsage {
+        /// Method call result assigned, e.g., ListObjectsV2Iterable listRes = s3.listObjectsV2Paginator(listReq);
+        Assigned {
+            /// The variable name
+            variable_name: String,
+            /// The type name, if present
+            type_name: Option<String>,
+        },
+        /// Method call result used in chain, e.g., s3.listObjectsV2Paginator(listReq).stream()...;
+        Chained {
+            /// The expression of the call chain
+            expr: String,
+        },
+    }
+
     /// Metadata for a parsed method call
     ///
     /// Contains detailed information about a method call including parameters,
-    /// position information, and parsing context. This is optional metadata
-    /// that can be omitted when only basic method identification is needed.
+    /// position information, and parsing context.
+    ///
+    /// # Construction
+    ///
+    /// Use [`SdkMethodCallMetadata::new()`] to create an instance with required fields,
+    /// then chain `with_*` methods to set optional fields:
+    ///
+    /// ```ignore
+    /// let metadata = SdkMethodCallMetadata::new(expr, location)
+    ///     .with_receiver("s3Client".to_string())
+    ///     .with_parameters(params)
+    /// ```
     #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
     #[serde(rename_all = "PascalCase")]
+    #[non_exhaustive]
     pub struct SdkMethodCallMetadata {
-        /// List of method parameters with their metadata
-        pub(crate) parameters: Vec<Parameter>,
-        /// Return type annotation if available
-        pub(crate) return_type: Option<String>,
-
-        /// The matched expression
+        // === Required fields (set via constructor) ===
+        /// The matched expression (the full method call expression)
         pub(crate) expr: String,
 
-        // Position information
+        /// Position information (file path, line, column)
         pub(crate) location: Location,
 
-        // SDK method call context
-        /// Receiver variable name (e.g., "`s3_client`", "ec2")
+        // === Optional fields (set via with_* methods) ===
+        /// List of method parameters with their metadata
+        #[serde(default)]
+        pub(crate) parameters: Vec<Parameter>,
+
+        /// Receiver variable name (e.g., "s3_client", "ec2Client")
+        #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) receiver: Option<String>,
+
+        /// The way the method call's result is used
+        /// Example: `RunInstancesResponse response = ec2Client.runInstances(...);` -> Assigned {...}
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pub(crate) usage: Option<MethodCallResultUsage>,
     }
 
     impl SdkMethodCallMetadata {
+        /// Create a new `SdkMethodCallMetadata` with required fields.
+        ///
+        /// Use `with_*` methods to set optional fields.
+        ///
+        /// # Arguments
+        /// * `expr` - The full method call expression as it appears in source code
+        /// * `location` - Position information (file path, line, column)
+        #[must_use]
+        pub(crate) fn new(expr: String, location: Location) -> Self {
+            Self {
+                expr,
+                location,
+                parameters: Vec::new(),
+                receiver: None,
+                usage: None,
+            }
+        }
+
+        /// Set the method parameters
+        #[must_use]
+        pub(crate) fn with_parameters(mut self, parameters: Vec<Parameter>) -> Self {
+            self.parameters = parameters;
+            self
+        }
+
+        /// Set the receiver variable name (e.g., "s3Client", "ec2")
+        #[must_use]
+        pub(crate) fn with_receiver(mut self, receiver: String) -> Self {
+            self.receiver = Some(receiver);
+            self
+        }
+
+        /// Set the assigned variable name and type, if available (e.g., Assigned { variable_name: "response", type_name: None } in `var response = client.method()`)
+        #[must_use]
+        #[allow(dead_code)]
+        pub(crate) fn with_usage(mut self, usage: MethodCallResultUsage) -> Self {
+            self.usage = Some(usage);
+            self
+        }
+
         /// Returns whether this method call uses dictionary unpacking
         /// If true, parameter validation should be skipped
         pub(crate) fn has_dictionary_unpacking(&self) -> bool {
@@ -392,19 +466,16 @@ mod tests {
 
     #[test]
     fn test_sdk_method_call_metadata_serialization() {
-        let metadata = SdkMethodCallMetadata {
-            parameters: vec![],
-            return_type: Some("Dict[str, Any]".to_string()),
-            expr: "s3_client.foo_bar".to_string(),
-            location: Location::new(PathBuf::new(), (10, 5), (10, 30)),
-            receiver: Some("s3_client".to_string()),
-        };
+        let metadata = SdkMethodCallMetadata::new(
+            "s3_client.foo_bar".to_string(),
+            Location::new(PathBuf::new(), (10, 5), (10, 30)),
+        )
+        .with_receiver("s3_client".to_string());
 
         let json = serde_json::to_string(&metadata).unwrap();
 
         // Verify PascalCase field names
         assert!(json.contains("\"Parameters\""));
-        assert!(json.contains("\"ReturnType\""));
         assert!(json.contains("\"Location\""));
         assert!(json.contains("\"Receiver\""));
     }

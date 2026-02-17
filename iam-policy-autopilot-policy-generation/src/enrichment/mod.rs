@@ -835,16 +835,16 @@ mod location_tests {
     }
 
     fn mock_sdk_method_call() -> SdkMethodCall {
+        let metadata = SdkMethodCallMetadata::new(
+            "s3.get_object(Bucket='my-bucket')".to_string(),
+            Location::new(PathBuf::from("test.py"), (10, 5), (10, 79)),
+        )
+        .with_receiver("s3".to_string());
+
         SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![],
-                return_type: None,
-                expr: "s3.get_object(Bucket='my-bucket')".to_string(),
-                location: Location::new(PathBuf::from("test.py"), (10, 5), (10, 79)),
-                receiver: Some("s3".to_string()),
-            }),
+            metadata: Some(metadata),
         }
     }
 
@@ -884,13 +884,11 @@ mod location_tests {
 
     #[test]
     fn test_operation_source_extracted_serialization() {
-        let metadata = SdkMethodCallMetadata {
-            parameters: vec![],
-            return_type: None,
-            expr: "dynamodb.get_item(\n        TableName='my-table',\n        Key={'id': {'S': '123'}}\n    )".to_string(),
-            location: Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
-            receiver: Some("dynamodb".to_string()),
-        };
+        let metadata = SdkMethodCallMetadata::new(
+            "dynamodb.get_item(\n        TableName='my-table',\n        Key={'id': {'S': '123'}}\n    )".to_string(),
+            Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
+        )
+        .with_receiver("dynamodb".to_string());
 
         let source = OperationSource::Extracted(metadata);
         let json = serde_json::to_string(&source).unwrap();
@@ -955,13 +953,11 @@ mod location_tests {
 
         {
             let expr = "kms.decrypt(...)".to_string();
-            let metadata = SdkMethodCallMetadata {
-                parameters: vec![],
-                return_type: None,
-                expr: expr.clone(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, expr.len() + 1)),
-                receiver: Some("kms".to_string()),
-            };
+            let metadata = SdkMethodCallMetadata::new(
+                expr.clone(),
+                Location::new(PathBuf::new(), (1, 1), (1, expr.len() + 1)),
+            )
+            .with_receiver("kms".to_string());
             let call = SdkMethodCall {
                 name: "decrypt".to_string(),
                 possible_services: vec!["kms".to_string()],
