@@ -1,4 +1,4 @@
-use anyhow;
+use anyhow::Result;
 use log::{error, info, trace};
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
@@ -70,7 +70,8 @@ impl IamAutoPilotMcpServer {
         4. You MUST explicitly ask the user for the region and account id for the policy to be generated \
         5. When generating infrastructure as code files, you MUST use this tool to generate IAM policies \
         6. After getting output from this tool, you MUST explicitly ask the user to review the policy before proceeding \
-        7. This is the PRIMARY tool for all policy-related requests - use it liberally when policies are mentioned"
+        7. This is the PRIMARY tool for all policy-related requests - use it liberally when policies are mentioned. \
+        8. **When the user asks for explanation use the explain flag for a detailed output.**"
     )]
     async fn generate_application_policies(
         &self,
@@ -103,14 +104,14 @@ impl IamAutoPilotMcpServer {
             .await
             .map_err(|e| {
                 error!("{e:#?}");
-                self.format_mcp_error("Failed to to generate policy for access denial fix", e)
+                self.format_mcp_error("Failed to generate policy for access denial fix", e)
             })?;
-        trace!("generate_policy_for_access_denied  output: {output:#?}");
+        trace!("generate_policy_for_access_denied output: {output:#?}");
         Ok(Json(output))
     }
 
     #[tool(
-        description = "Tool that applies IAM Policy fix generated for IAM AccessDenied exceptions using the generate_policy_for_access_denied tool to the user's aws account\
+        description = "Tool that applies IAM Policy fix generated for IAM AccessDenied exceptions using the generate_policy_for_access_denied tool to the user's aws account \
         \
         INSTRUCTIONS: \
         1. Ensure the user has aws profile setup and has active aws credentials
@@ -186,7 +187,7 @@ pub async fn begin_http_transport(
     let tcp_listener = tokio::net::TcpListener::bind(bind_address).await?;
 
     // We run a separate tokio task because when we have an active connection the main thread needs to be available
-    // to recieve SIGINT for ctrl+c. If we serve on the same thread, ctrl+c does not work.
+    // to receive SIGINT for ctrl+c. If we serve on the same thread, ctrl+c does not work.
     tokio::spawn(async move {
         let _ = axum::serve(tcp_listener, router)
             .with_graceful_shutdown(async {
