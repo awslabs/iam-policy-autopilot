@@ -406,16 +406,15 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 }
             }
 
+            let metadata =
+                SdkMethodCallMetadata::new(method_call.expr.clone(), method_call.location.clone())
+                    .with_parameters(parameters)
+                    .with_receiver(method_call.resource_var.clone());
+
             expanded_calls.push(SdkMethodCall {
                 name: operation.operation.to_case(Case::Snake),
                 possible_services: vec![constructor.service_name.clone()],
-                metadata: Some(SdkMethodCallMetadata {
-                    parameters,
-                    return_type: None,
-                    expr: method_call.expr.clone(),
-                    location: method_call.location.clone(),
-                    receiver: Some(method_call.resource_var.clone()),
-                }),
+                metadata: Some(metadata),
             });
         }
 
@@ -488,16 +487,14 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 }
             };
 
+            let metadata = SdkMethodCallMetadata::new(expr.clone(), location.clone())
+                .with_parameters(parameters)
+                .with_receiver(constructor.variable_name.clone()); // Use actual variable name from constructor
+
             synthetic_calls.push(SdkMethodCall {
                 name: method_name,
                 possible_services: vec![constructor.service_name.clone()],
-                metadata: Some(SdkMethodCallMetadata {
-                    parameters,
-                    return_type: None,
-                    expr: expr.clone(),
-                    location: location.clone(),
-                    receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
-                }),
+                metadata: Some(metadata),
             });
         }
 
@@ -790,16 +787,15 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             combined_parameters.push(adjusted_param);
         }
 
+        let metadata =
+            SdkMethodCallMetadata::new(method_call.expr.clone(), method_call.location.clone())
+                .with_parameters(combined_parameters)
+                .with_receiver(method_call.resource_var.clone());
+
         Some(SdkMethodCall {
             name: resolved_operation,
             possible_services: vec![constructor.service_name.clone()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: combined_parameters,
-                return_type: None,
-                expr: method_call.expr.clone(),
-                location: method_call.location.clone(),
-                receiver: Some(method_call.resource_var.clone()),
-            }),
+            metadata: Some(metadata),
         })
     }
 
@@ -910,16 +906,14 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             }
         }
 
+        let metadata = SdkMethodCallMetadata::new(expr.clone(), location)
+            .with_parameters(parameters)
+            .with_receiver(constructor.variable_name.clone()); // Use actual variable name from constructor
+
         Some(SdkMethodCall {
             name: has_many_spec.operation.to_case(Case::Snake),
             possible_services: vec![constructor.service_name.clone()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters,
-                return_type: None,
-                expr: expr.clone(),
-                location,
-                receiver: Some(constructor.variable_name.clone()), // Use actual variable name from constructor
-            }),
+            metadata: Some(metadata),
         })
     }
 
@@ -1082,18 +1076,20 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     for resource_def in boto3_model.get_all_resource_definitions().values() {
                         if let Some(has_many_spec) = resource_def.has_many.get(&attr_name) {
                             // Generate synthetic with all-synthetic parameters
+                            let metadata =
+                                SdkMethodCallMetadata::new(
+                                    node_match.text().to_string(),
+                                    location.clone(),
+                                )
+                                .with_parameters(self.generate_synthetic_parameters(
+                                    &has_many_spec.identifier_params,
+                                ))
+                                .with_receiver(receiver_var.clone()); // Use actual receiver from code
+
                             calls.push(SdkMethodCall {
                                 name: has_many_spec.operation.to_case(Case::Snake),
                                 possible_services: vec![service_name.clone()],
-                                metadata: Some(SdkMethodCallMetadata {
-                                    parameters: self.generate_synthetic_parameters(
-                                        &has_many_spec.identifier_params,
-                                    ),
-                                    return_type: None,
-                                    expr: node_match.text().to_string(),
-                                    location: location.clone(),
-                                    receiver: Some(receiver_var.clone()), // Use actual receiver from code
-                                }),
+                                metadata: Some(metadata),
                             });
                         }
                     }
@@ -1104,18 +1100,19 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                         .get(&attr_name)
                     {
                         // Generate synthetic with all-synthetic parameters (service-level collections typically have no identifier params)
+                        let metadata = SdkMethodCallMetadata::new(
+                            node_match.text().to_string(),
+                            location.clone(),
+                        )
+                        .with_parameters(self.generate_synthetic_parameters(
+                            &service_has_many_spec.identifier_params,
+                        ))
+                        .with_receiver(receiver_var.clone()); // Use actual receiver from code
+
                         calls.push(SdkMethodCall {
                             name: service_has_many_spec.operation.to_case(Case::Snake),
                             possible_services: vec![service_name.clone()],
-                            metadata: Some(SdkMethodCallMetadata {
-                                parameters: self.generate_synthetic_parameters(
-                                    &service_has_many_spec.identifier_params,
-                                ),
-                                return_type: None,
-                                expr: node_match.text().to_string(),
-                                location: location.clone(),
-                                receiver: Some(receiver_var.clone()), // Use actual receiver from code
-                            }),
+                            metadata: Some(metadata),
                         });
                     }
                 }
@@ -1163,16 +1160,14 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             }
         }
 
+        let metadata = SdkMethodCallMetadata::new(expr.clone(), location.clone())
+            .with_parameters(parameters)
+            .with_receiver(receiver_marker.to_string());
+
         SdkMethodCall {
             name: operation.to_case(Case::Snake),
             possible_services: vec![service_name.to_string()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters,
-                return_type: None,
-                expr: expr.clone(),
-                location: location.clone(),
-                receiver: Some(receiver_marker.to_string()),
-            }),
+            metadata: Some(metadata),
         }
     }
 

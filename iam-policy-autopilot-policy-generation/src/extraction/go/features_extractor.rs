@@ -214,16 +214,19 @@ rule:
                     operation
                 );
 
+                let metadata =
+                    SdkMethodCallMetadata::new(call_info.expr.clone(), call_info.location.clone())
+                        .with_parameters(parameters.clone());
+                let metadata = if let Some(r) = call_info.receiver.clone() {
+                    metadata.with_receiver(r)
+                } else {
+                    metadata
+                };
+
                 SdkMethodCall {
                     name: operation_name,
                     possible_services: vec![service_name.to_string()],
-                    metadata: Some(SdkMethodCallMetadata {
-                        parameters: parameters.clone(),
-                        return_type: None,
-                        expr: call_info.expr.clone(),
-                        location: call_info.location.clone(),
-                        receiver: call_info.receiver.clone(),
-                    }),
+                    metadata: Some(metadata),
                 }
             })
             .collect()

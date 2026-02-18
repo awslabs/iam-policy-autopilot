@@ -10,7 +10,7 @@ use crate::extraction::shared::extraction_utils::{
     WaiterCallInfo, WaiterCallPattern, WaiterCreationInfo,
 };
 use crate::extraction::{AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall};
-use crate::{Location, ServiceModelIndex};
+use crate::{Language, Location, ServiceModelIndex};
 use ast_grep_language::Go;
 
 /// Extractor for Go AWS SDK waiter patterns
@@ -54,11 +54,11 @@ impl<'a> GoWaiterExtractor<'a> {
                 }
                 .create_synthetic_calls(
                     self.service_index,
+                    Language::Go,
                     |params| self.filter_waiter_parameters(params),
                     |service_name, operation_name| {
                         self.get_required_parameters(service_name, operation_name)
                     },
-                    std::string::ToString::to_string, // Go uses operation name directly
                 );
                 synthetic_calls.extend(calls);
                 matched_waiter_indices.insert(waiter_idx);
@@ -70,11 +70,11 @@ impl<'a> GoWaiterExtractor<'a> {
             if !matched_waiter_indices.contains(&idx) {
                 let calls = WaiterCallPattern::CreationOnly(waiter).create_synthetic_calls(
                     self.service_index,
+                    Language::Go,
                     |params| self.filter_waiter_parameters(params),
                     |service_name, operation_name| {
                         self.get_required_parameters(service_name, operation_name)
                     },
-                    std::string::ToString::to_string, // Go uses operation name directly
                 );
                 synthetic_calls.extend(calls);
             }
