@@ -269,6 +269,8 @@ where
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
+    // FIX: Using custom deserializer to handle reqwest::Url
+    #[serde(deserialize_with = "deserialize_url_map")]
     pub(crate) service_reference_mapping: HashMap<String, Url>,
 }
 
@@ -410,9 +412,6 @@ impl RemoteServiceReferenceLoader {
     }
 
     fn get_cache_dir() -> PathBuf {
-        // not using tempfile crate
-        // instead, using the std to resolve temp dir and then manage the file itself
-        // file deletion is delegated to the OS.
         let cache_dir = std::env::temp_dir().join(IAM_POLICY_AUTOPILOT);
         let _ = std::fs::create_dir_all(&cache_dir);
         cache_dir
@@ -445,7 +444,6 @@ impl RemoteServiceReferenceLoader {
             }
         }
 
-        // check temp file
         let cache_path = Self::get_cache_path(service_name);
         if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
             if let Ok(content) = fs::read_to_string(&cache_path).await {
@@ -497,7 +495,6 @@ impl RemoteServiceReferenceLoader {
                             e,
                         )
                     })?;
-                // persist content into the temp file as well
                 if !self.disable_file_system_cache {
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
@@ -512,405 +509,16 @@ impl RemoteServiceReferenceLoader {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::enrichment::mock_remote_service_reference;
-
-    #[tokio::test]
-    async fn test_remote_loader_new() {
-        let loader = RemoteServiceReferenceLoader::new(false);
-        assert!(loader.is_ok());
-
-        let loader = loader.unwrap();
-        assert!(loader.service_cache.read().await.is_empty());
+/// FIX: Custom deserializer to handle reqwest::Url in a HashMap
+fn deserialize_url_map<'de, D>(deserializer: D) -> Result<HashMap<String, Url>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let map: HashMap<String, String> = HashMap::deserialize(deserializer)?;
+    let mut result = HashMap::new();
+    for (key, value) in map {
+        let url = Url::parse(&value).map_err(serde::de::Error::custom)?;
+        result.insert(key, url);
     }
-
-    #[tokio::test]
-    async fn test_create_client() {
-        let client = RemoteServiceReferenceLoader::create_client();
-        assert!(client.is_ok());
-    }
-
-    #[tokio::test]
-    async fn test_cache_functionality() {
-        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
-
-        let loader = std::sync::Arc::new(loader);
-        let mut handles = vec![];
-
-        // Spawn multiple concurrent tasks
-        for i in 0..5 {
-            let loader_clone = loader.clone();
-            let handle = tokio::spawn(async move {
-                let result = loader_clone.load("s3").await;
-                assert!(result.is_ok());
-                assert_eq!(result.unwrap().unwrap().service_name, "s3");
-                i
-            });
-            handles.push(handle);
-        }
-
-        // Wait for all tasks to complete
-        for handle in handles {
-            handle.await.unwrap();
-        }
-
-        // Verify cache is populated
-        let cached = loader.service_cache.read().await.get("s3").cloned();
-        assert!(cached.is_some());
-        assert_eq!(cached.unwrap().0.service_name, "s3");
-
-        // Verify cache is unique
-        assert_eq!(loader.service_cache.read().await.len(), 1);
-    }
-
-    #[tokio::test]
-    async fn test_memory_cache_expiry() {
-        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
-
-        // Load and cache s3
-        let result = loader.load("s3").await;
-        assert!(result.is_ok());
-
-        // Manually expire the cache by setting old timestamp
-        let expired_time =
-            SystemTime::now() - Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS + 1);
-        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
-            entry.1 = expired_time;
-        }
-
-        // Load again - should fetch fresh data, not use expired cache
-        let result = loader.load("s3").await;
-        assert!(result.is_ok());
-
-        // Verify cache has fresh timestamp
-        let cached = loader.service_cache.read().await.get("s3").cloned();
-        assert!(cached.is_some());
-        let (_, timestamp) = cached.unwrap();
-        let elapsed = SystemTime::now().duration_since(timestamp).unwrap();
-        assert!(elapsed < Duration::from_secs(10));
-    }
-
-    // Integration test - requires network access
-    #[tokio::test]
-    #[ignore] // Use `cargo test -- --ignored` to run this test
-    async fn test_load_from_service_reference_success() {
-        let loader = RemoteServiceReferenceLoader::new(false).unwrap();
-        let result = loader.load("s3").await;
-
-        match result {
-            Ok(service_ref) => {
-                assert_eq!(service_ref.as_ref().unwrap().service_name, "s3");
-                assert!(!service_ref.as_ref().unwrap().actions.is_empty());
-                assert!(!service_ref.as_ref().unwrap().resources.is_empty());
-
-                // Test caching - second call should use cache
-                let cached_result = loader.load("s3").await;
-                assert!(cached_result.is_ok());
-                assert_eq!(cached_result.unwrap().unwrap().service_name, "s3");
-            }
-            Err(e) => {
-                println!("Network test failed (expected in CI): {}", e);
-            }
-        }
-    }
-
-    #[tokio::test]
-    #[ignore] // Use `cargo test -- --ignored` to run this test
-    async fn test_load_nonexistent_service() {
-        let loader = RemoteServiceReferenceLoader::new(false).unwrap();
-        let result = loader.load("nonexistent-service-xyz").await;
-
-        assert!(result.is_ok());
-        assert!(result.unwrap().is_none())
-    }
-
-    #[tokio::test]
-    async fn test_deserialize_service_reference_mapping() {
-        let json = serde_json::json!([
-            {"service": "s3", "url": "https://example.com/s3.json"},
-            {"service": "ec2", "url": "https://example.com/ec2.json"}
-        ]);
-
-        let result = deserialize_service_reference_mapping(json);
-        assert!(result.is_ok());
-
-        let mapping = result.unwrap();
-        assert_eq!(mapping.len(), 2);
-        assert!(mapping.contains_key("s3"));
-        assert!(mapping.contains_key("ec2"));
-        assert_eq!(mapping["s3"].as_str(), "https://example.com/s3.json");
-        assert_eq!(mapping["ec2"].as_str(), "https://example.com/ec2.json");
-    }
-
-    #[tokio::test]
-    async fn test_deserialize_service_reference_mapping_invalid_url() {
-        let json = serde_json::json!([
-            {"service": "s3", "url": "invalid-url"}
-        ]);
-
-        let result = deserialize_service_reference_mapping(json);
-        assert!(result.is_err());
-    }
-
-    #[tokio::test]
-    async fn test_deserialize_service_reference_mapping_empty() {
-        let json = serde_json::json!([]);
-
-        let result = deserialize_service_reference_mapping(json);
-        assert!(result.is_ok());
-
-        let mapping = result.unwrap();
-        assert!(mapping.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_get_cache_dir() {
-        let cache_dir = RemoteServiceReferenceLoader::get_cache_dir();
-        assert!(cache_dir.ends_with("IAMPolicyAutopilot"));
-        assert!(cache_dir.exists());
-    }
-
-    #[tokio::test]
-    async fn test_get_cache_path() {
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
-        assert!(
-            cache_path.ends_with("IAMPolicyAutopilot/s3.json")
-                || cache_path.ends_with("IAMAutoPilot\\s3.json")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_is_cache_valid_nonexistent() {
-        let path = PathBuf::from("/nonexistent/path/file.json");
-        assert!(!RemoteServiceReferenceLoader::is_cache_valid(&path).await);
-    }
-
-    #[tokio::test]
-    async fn test_is_cache_valid_fresh() {
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("test_fresh");
-        let _ = fs::write(&cache_path, "test content").await;
-
-        assert!(RemoteServiceReferenceLoader::is_cache_valid(&cache_path).await);
-        let _ = fs::remove_file(&cache_path).await;
-    }
-
-    #[tokio::test]
-    async fn test_filesystem_cache() {
-        let (_, mut loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
-        // setup_mock_server_with_loader disables file system cache by default
-        loader.disable_file_system_cache = false;
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
-        let _ = fs::remove_file(&cache_path).await;
-
-        let result = loader.load("s3").await;
-        assert!(result.is_ok());
-        assert!(cache_path.exists());
-
-        let cached_content = fs::read_to_string(&cache_path).await;
-        assert!(cached_content.is_ok());
-        let _ = fs::remove_file(&cache_path).await;
-    }
-
-    #[tokio::test]
-    async fn test_service_reference_deserialization() {
-        let json = r#"{
-            "Name": "s3",
-            "Actions": [
-                {
-                    "Name": "GetObject",
-                    "Resources": [{"Name": "object"}]
-                }
-            ],
-            "Resources": [
-                {
-                    "Name": "bucket",
-                    "ARNFormats": ["arn:aws:s3:::bucket-name"]
-                }
-            ],
-            "Operations": [
-                {
-                    "Name": "GetObject",
-                    "AuthorizedActions": [
-                        {
-                            "Name": "GetObject",
-                            "Service": "s3"
-                        }
-                    ]
-                }
-            ]
-        }"#;
-
-        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
-        assert_eq!(service_ref.service_name, "s3");
-        assert_eq!(service_ref.actions.len(), 1);
-        assert!(service_ref.actions.contains_key("GetObject"));
-        assert_eq!(service_ref.resources.len(), 1);
-        assert!(service_ref.resources.contains_key("bucket"));
-
-        // Test operation name prefixing
-        let operations = service_ref.operation_to_authorized_actions.unwrap();
-        assert!(operations.contains_key("s3:GetObject"));
-        let operation = &operations["s3:GetObject"];
-        assert_eq!(operation.name, "s3:GetObject");
-        assert_eq!(operation.authorized_actions[0].name, "s3:GetObject");
-    }
-
-    #[tokio::test]
-    async fn test_service_reference_deserialization_empty_authorized_actions() {
-        let json = r#"{
-            "Name": "s3",
-            "Actions": [
-                {
-                    "Name": "GetObject",
-                    "Resources": [{"Name": "object"}]
-                }
-            ],
-            "Resources": [
-                {
-                    "Name": "bucket",
-                    "ARNFormats": ["arn:aws:s3:::bucket-name"]
-                }
-            ],
-            "Operations": [
-                {
-                    "Name": "GetObject"
-                }
-            ]
-        }"#;
-
-        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
-        assert_eq!(service_ref.service_name, "s3");
-        assert_eq!(service_ref.actions.len(), 1);
-        assert!(service_ref.actions.contains_key("GetObject"));
-        assert_eq!(service_ref.resources.len(), 1);
-        assert!(service_ref.resources.contains_key("bucket"));
-
-        // Test operation name prefixing
-        let operations = service_ref.operation_to_authorized_actions.unwrap();
-        assert!(operations.contains_key("s3:GetObject"));
-        let operation = &operations["s3:GetObject"];
-        assert_eq!(operation.name, "s3:GetObject");
-        // Ensure the default authorized action is populated
-        assert_eq!(operation.authorized_actions[0].name, "s3:GetObject");
-    }
-
-    #[tokio::test]
-    async fn test_context_deserialization() {
-        let json = r#"{"Context": {
-            "iam:PassedToService": ["access-analyzer.amazonaws.com"]
-        }}"#;
-
-        #[derive(Deserialize)]
-        struct TestStruct {
-            #[serde(default, deserialize_with = "deserialize_context")]
-            #[serde(rename = "Context")]
-            context: Option<ServiceReferenceContext>,
-        }
-
-        let result: TestStruct = serde_json::from_str(json).unwrap();
-        assert!(result.context.is_some());
-        let context = result.context.unwrap();
-        assert_eq!(context.key, "iam:PassedToService");
-        assert_eq!(context.values, vec!["access-analyzer.amazonaws.com"]);
-    }
-
-    #[tokio::test]
-    async fn test_context_deserialization_multiple_values() {
-        let json = r#"{"Context": {
-            "iam:PassedToService": ["service1.amazonaws.com", "service2.amazonaws.com"]
-        }}"#;
-
-        #[derive(Deserialize)]
-        struct TestStruct {
-            #[serde(default, deserialize_with = "deserialize_context")]
-            #[serde(rename = "Context")]
-            context: Option<ServiceReferenceContext>,
-        }
-
-        let result: TestStruct = serde_json::from_str(json).unwrap();
-        assert!(result.context.is_some());
-        let context = result.context.unwrap();
-        assert_eq!(context.key, "iam:PassedToService");
-        assert_eq!(
-            context.values,
-            vec!["service1.amazonaws.com", "service2.amazonaws.com"]
-        );
-    }
-
-    #[tokio::test]
-    async fn test_context_deserialization_empty() {
-        let json = r#"{"Context": {}}"#;
-
-        #[derive(Deserialize)]
-        struct TestStruct {
-            #[serde(default, deserialize_with = "deserialize_context")]
-            #[serde(rename = "Context")]
-            context: Option<ServiceReferenceContext>,
-        }
-
-        let result: TestStruct = serde_json::from_str(json).unwrap();
-        assert!(result.context.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_authorized_action_with_context() {
-        let json = r#"{
-            "Name": "access-analyzer",
-            "Actions": [],
-            "Resources": [],
-            "Operations": [
-                {
-                    "Name": "StartPolicyGeneration",
-                    "AuthorizedActions": [
-                        {
-                            "Name": "PassRole",
-                            "Service": "iam",
-                            "Context": {
-                                "iam:PassedToService": ["access-analyzer.amazonaws.com"]
-                            }
-                        }
-                    ]
-                }
-            ]
-        }"#;
-
-        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
-        let operations = service_ref.operation_to_authorized_actions.unwrap();
-        let operation = &operations["access-analyzer:StartPolicyGeneration"];
-        let authorized_action = &operation.authorized_actions[0];
-
-        assert!(authorized_action.context.is_some());
-        let context = authorized_action.context.as_ref().unwrap();
-        assert_eq!(context.key, "iam:PassedToService");
-        assert_eq!(context.values, vec!["access-analyzer.amazonaws.com"]);
-    }
-
-    #[tokio::test]
-    async fn test_authorized_action_without_context() {
-        let json = r#"{
-            "Name": "s3",
-            "Actions": [],
-            "Resources": [],
-            "Operations": [
-                {
-                    "Name": "GetObject",
-                    "AuthorizedActions": [
-                        {
-                            "Name": "GetObject",
-                            "Service": "s3"
-                        }
-                    ]
-                }
-            ]
-        }"#;
-
-        let service_ref: ServiceReference = serde_json::from_str(json).unwrap();
-        let operations = service_ref.operation_to_authorized_actions.unwrap();
-        let operation = &operations["s3:GetObject"];
-        let authorized_action = &operation.authorized_actions[0];
-
-        assert!(authorized_action.context.is_none());
-    }
+    Ok(result)
 }

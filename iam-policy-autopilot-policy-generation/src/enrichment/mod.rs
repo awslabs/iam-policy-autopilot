@@ -59,6 +59,7 @@ impl Operation {
     ///
     /// This is public to allow downstream integration tests (like in the MCP server)
     /// to construct realistic mock data.
+    #[must_use]
     pub fn new(service: String, name: String, source: OperationSource) -> Self {
         Self {
             service,
@@ -216,6 +217,7 @@ impl Explanations {
     const FAS: &str =
         "The explanation contains an operation added due to Forward Access Sessions (FAS). See https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html.";
 
+    #[must_use]
     pub(crate) fn new(explanations: BTreeMap<String, Explanation>) -> Self {
         let mut documentation: Vec<&'static str> = vec![];
         for explanation in explanations.values() {
