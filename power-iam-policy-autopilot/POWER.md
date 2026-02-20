@@ -4,6 +4,7 @@ displayName: "IAM Policy Autopilot"
 description: "AWS IAM Policy Autopilot analyzes your application code locally to generate and deploy identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time"
 keywords: ["IAM", "AWS", "policy", "policies", "identity", "identity-based", "permission", "access", "denial", "deny", "denied", "lambda"]
 mcpServers: "iam-policy-autopilot-mcp"
+author: "AWS"
 ---
 # Overview
 
