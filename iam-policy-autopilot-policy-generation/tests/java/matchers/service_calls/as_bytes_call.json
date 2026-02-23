@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["as_bytes_call.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_get_object_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "getObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.getObjectAsBytes(req)",
+        "Location": "as_bytes_call.java:5.9-5.33",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "s3"
+      }
+    }
+  ]
+}

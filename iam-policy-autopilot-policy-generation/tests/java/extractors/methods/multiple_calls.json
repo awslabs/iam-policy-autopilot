@@ -1,0 +1,41 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3Client",
+      "Parameters": [],
+      "Location": "multiple_calls.java:3.9-3.31"
+    },
+    {
+      "Expr": "s3Client.putObject(request)",
+      "Method": "putObject",
+      "Receiver": "s3Client",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "multiple_calls.java:4.9-4.36"
+    },
+    {
+      "Expr": "dynamoClient.getItem(getItemRequest)",
+      "Method": "getItem",
+      "Receiver": "dynamoClient",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "getItemRequest" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "multiple_calls.java:5.9-5.45"
+    }
+  ]
+}

@@ -1,0 +1,39 @@
+{
+  "Services": {
+    "cloudvault": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "CloudVault"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "datastore": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DataStore"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {},
+  "WaiterLookup": {
+    "resourceReady": [
+      { "service_name": "cloudvault", "operation_name": "DescribeResource" },
+      { "service_name": "datastore",  "operation_name": "DescribeResource" }
+    ]
+  }
+}

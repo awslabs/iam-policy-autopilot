@@ -413,7 +413,6 @@ impl ServiceDiscovery {
     /// - **Go**: `PascalCase` unchanged (`GetObject` → `GetObject`)
     #[must_use]
     pub(crate) fn operation_to_method_name(operation_name: &str, language: Language) -> String {
-        #[allow(unreachable_patterns)]
         match language {
             Language::Python => {
                 // Convert PascalCase to snake_case for Python (boto3)
@@ -428,9 +427,21 @@ impl ServiceDiscovery {
                 // Go uses PascalCase unchanged (GetObject -> GetObject)
                 operation_name.to_string()
             }
-            _ => {
-                // Default: use operation name as-is
-                operation_name.to_string()
+            Language::Java => {
+                // Java SDK v2 uses camelCase (e.g. `PutObject` → `putObject`,
+                // `ListObjectsV2` → `listObjectsV2`).
+                //
+                // A simple `to_case(Case::Camel)` is correct even for names that look tricky:
+                //
+                // * Version suffixes (V2, V3, …): `convert_case` keeps the digit glued to the
+                //   `V` with no extra word boundary, so `ListObjectsV2` → `listObjectsV2`
+                //   (not `listObjectsV 2`).
+                //
+                // * Mixed-case brand names (WhatsApp, DynamoDB, …): `convert_case` treats every
+                //   uppercase letter as a word boundary, so `SendWhatsAppMessage` →
+                //   `sendWhatsAppMessage` — exactly the camelCase name used by the Java SDK v2.
+                use convert_case::{Case, Casing};
+                operation_name.to_case(Case::Camel)
             }
         }
     }

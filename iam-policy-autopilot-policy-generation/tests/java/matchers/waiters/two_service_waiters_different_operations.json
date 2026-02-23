@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["two_service_waiters_different_operations.java"],
+  "ServiceIndexFile": "tests/java/service_indices/two_service_waiter_different_ops_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeCluster",
+      "PossibleServices": ["cloudcluster"],
+      "Metadata": {
+        "Expr": "cloudClusterWaiter.waitUntilClusterActive(r -> r.build())",
+        "Location": "two_service_waiters_different_operations.java:22.9-22.66",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "r -> r.build()" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "getCluster",
+      "PossibleServices": ["datacluster"],
+      "Metadata": {
+        "Expr": "dataClusterWaiter.waitUntilClusterActive(r -> r.build())",
+        "Location": "two_service_waiters_different_operations.java:23.9-23.65",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "r -> r.build()" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

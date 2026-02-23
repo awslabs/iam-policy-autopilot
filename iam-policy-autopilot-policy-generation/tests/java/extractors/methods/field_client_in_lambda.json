@@ -1,0 +1,80 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3AsyncClient.create()",
+      "Method": "create",
+      "Receiver": "S3AsyncClient",
+      "Parameters": [],
+      "Location": "field_client_in_lambda.java:4.38-4.60",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.listBuckets()\n            .thenCompose(resp -> s3.headBucket(r -> r.bucket(\"my-bucket\")))",
+      "Method": "thenCompose",
+      "Receiver": "s3.listBuckets()",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "resp -> s3.headBucket(r -> r.bucket(\"my-bucket\"))" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "field_client_in_lambda.java:7.9-8.76",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3",
+      "Parameters": [],
+      "Location": "field_client_in_lambda.java:7.9-7.25",
+      "ReceiverDeclaration": {
+        "Expr": "S3AsyncClient.create()",
+        "TypeName": "S3AsyncClient",
+        "Location": "field_client_in_lambda.java:4.38-4.60"
+      }
+    },
+    {
+      "Expr": "s3.headBucket(r -> r.bucket(\"my-bucket\"))",
+      "Method": "headBucket",
+      "Receiver": "s3",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "r -> r.bucket(\"my-bucket\")" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "field_client_in_lambda.java:8.34-8.75",
+      "ReceiverDeclaration": {
+        "Expr": "S3AsyncClient.create()",
+        "TypeName": "S3AsyncClient",
+        "Location": "field_client_in_lambda.java:4.38-4.60"
+      }
+    },
+    {
+      "Expr": "r.bucket(\"my-bucket\")",
+      "Method": "bucket",
+      "Receiver": "r",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "my-bucket" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "field_client_in_lambda.java:8.53-8.74",
+      "ReceiverDeclaration": {
+        "Expr": "r",
+        "TypeName": null,
+        "Location": "field_client_in_lambda.java:8.48-8.49"
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3Client",
+      "Parameters": [],
+      "Location": "field_without_initializer.java:11.9-11.31",
+      "ReceiverDeclaration": {
+        "Expr": "s3Client",
+        "TypeName": "S3Client",
+        "Location": "field_without_initializer.java:4.28-4.36"
+      }
+    }
+  ]
+}

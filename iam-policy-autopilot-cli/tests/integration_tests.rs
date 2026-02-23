@@ -343,6 +343,11 @@ fn test_comprehensive_real_files_extract_sdk_calls_javascript() {
     test_comprehensive_real_files_extract_sdk_calls_for_extension("js");
 }
 
+#[test]
+fn test_comprehensive_real_files_extract_sdk_calls_java() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("java");
+}
+
 fn test_comprehensive_real_files_extract_sdk_calls_for_extension(extension: &str) {
     let test_files = get_test_files(extension);
 
@@ -416,6 +421,11 @@ fn test_comprehensive_real_files_generate_policy_typescript() {
 #[test]
 fn test_comprehensive_real_files_generate_policy_javascript() {
     test_comprehensive_real_files_generate_policy_for_extension("js");
+}
+
+#[test]
+fn test_comprehensive_real_files_generate_policy_java() {
+    test_comprehensive_real_files_generate_policy_for_extension("java");
 }
 
 fn test_comprehensive_real_files_generate_policy_for_extension(extension: &str) {

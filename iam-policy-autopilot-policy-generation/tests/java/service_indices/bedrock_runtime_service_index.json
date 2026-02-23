@@ -1,0 +1,24 @@
+{
+  "Services": {
+    "bedrock-runtime": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2023-09-30",
+        "serviceId": "Bedrock Runtime"
+      },
+      "operations": {
+        "InvokeModel": {
+          "name": "InvokeModel",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "invokeModel": [
+      { "service_name": "bedrock-runtime", "operation_name": "InvokeModel" }
+    ]
+  },
+  "WaiterLookup": {}
+}

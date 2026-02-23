@@ -1,0 +1,24 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "waiter.waitUntilResourceReady(request)",
+      "WaiterType": "resourceReady",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "waiter_var_type_not_resolved.java:4.9-4.47",
+      "ReceiverDeclaration": {
+        "Expr": "cloudVaultClient.waiter()",
+        "TypeName": null,
+        "Location": "waiter_var_type_not_resolved.java:3.22-3.47"
+      }
+    }
+  ]
+}

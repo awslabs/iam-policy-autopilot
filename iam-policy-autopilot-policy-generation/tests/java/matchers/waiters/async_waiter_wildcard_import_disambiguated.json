@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["async_waiter_wildcard_import_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/two_service_async_client_clash_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilResourceReady(request)",
+        "Location": "async_waiter_wildcard_import_disambiguated.java:10.9-10.47",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

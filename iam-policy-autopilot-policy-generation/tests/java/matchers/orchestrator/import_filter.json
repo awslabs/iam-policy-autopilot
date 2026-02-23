@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["import_filter.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_full_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3Client.putObject(request)",
+        "Location": "import_filter.java:5.9-5.36",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "s3Client"
+      }
+    }
+  ]
+}

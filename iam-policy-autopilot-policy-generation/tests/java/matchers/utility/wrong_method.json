@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["wrong_method.java"],
+  "ServiceIndexFile": "tests/java/service_indices/empty_service_index.json",
+  "ExpectedSdkCalls": []
+}

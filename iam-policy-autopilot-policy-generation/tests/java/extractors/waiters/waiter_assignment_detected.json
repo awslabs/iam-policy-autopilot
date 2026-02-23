@@ -1,0 +1,25 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "waiter.waitUntilBucketExists(request)",
+      "WaiterType": "bucketExists",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "resp",
+          "type_name": "WaiterResponse<HeadBucketResponse>"
+        }
+      },
+      "Location": "waiter_assignment_detected.java:3.51-3.88",
+      "ReceiverDeclaration": null
+    }
+  ]
+}

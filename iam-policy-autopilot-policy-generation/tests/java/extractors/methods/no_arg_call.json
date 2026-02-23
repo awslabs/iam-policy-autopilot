@@ -1,0 +1,11 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3Client",
+      "Parameters": [],
+      "Location": "no_arg_call.java:3.9-3.31"
+    }
+  ]
+}

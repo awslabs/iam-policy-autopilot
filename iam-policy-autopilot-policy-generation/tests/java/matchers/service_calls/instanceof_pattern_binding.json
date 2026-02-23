@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["instanceof_pattern_binding.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_s3control_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.putObject(request)",
+        "Location": "instanceof_pattern_binding.java:6.13-6.34",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "s3"
+      }
+    }
+  ]
+}

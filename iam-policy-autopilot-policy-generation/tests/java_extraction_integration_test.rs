@@ -45,8 +45,8 @@ public class S3Example {
             let list_buckets_op = extracted_methods
                 .methods
                 .iter()
-                .find(|call| call.name == "ListBuckets")
-                .expect("Should find ListBuckets operation");
+                .find(|call| call.name == "listBuckets")
+                .expect("Should find listBuckets operation");
             assert_eq!(
                 list_buckets_op.possible_services,
                 vec!["s3"],
@@ -55,8 +55,8 @@ public class S3Example {
             let list_objects_v2_op = extracted_methods
                 .methods
                 .iter()
-                .find(|call| call.name == "ListObjectsV2")
-                .expect("Should find ListObjectsV2 operation");
+                .find(|call| call.name == "listObjectsV2")
+                .expect("Should find listObjectsV2 operation");
             assert_eq!(
                 list_objects_v2_op.possible_services,
                 vec!["s3"],
@@ -101,8 +101,8 @@ public class S3Example {
             let list_buckets_op = extracted_methods
                 .methods
                 .iter()
-                .find(|call| call.name == "ListBuckets")
-                .expect("Should find ListBuckets operation");
+                .find(|call| call.name == "listBuckets")
+                .expect("Should find listBuckets operation");
             assert_eq!(
                 list_buckets_op.possible_services,
                 vec!["s3"],

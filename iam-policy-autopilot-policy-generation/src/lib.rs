@@ -67,8 +67,25 @@ impl Language {
     fn sdk_type(&self) -> SdkType {
         match self {
             Self::Python => SdkType::Boto3,
+            Self::Java => SdkType::JavaV2,
             _ => SdkType::Other,
         }
+    }
+
+    /// Returns all supported languages.
+    ///
+    /// This is the canonical list of languages that the policy generation crate supports.
+    /// Tests that cover all languages (e.g. the waiter extraction integration test) should
+    /// iterate over this slice so that adding a new language automatically causes those tests
+    /// to fail until the new language is wired up.
+    pub fn supported() -> &'static [Language] {
+        &[
+            Language::Python,
+            Language::Go,
+            Language::JavaScript,
+            Language::TypeScript,
+            Language::Java,
+        ]
     }
 }
 
@@ -77,6 +94,9 @@ impl Language {
 #[allow(missing_docs)]
 pub enum SdkType {
     Boto3,
+    /// AWS SDK for Java v2 — method names are camelCase and must be converted to PascalCase
+    /// before looking up in the service reference (e.g. `listObjectsV2` → `ListObjectsV2`).
+    JavaV2,
     Other,
 }
 
@@ -227,6 +247,16 @@ impl Location {
     }
 }
 
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            file_path: PathBuf::new(),
+            start_position: (0, 0),
+            end_position: (0, 0),
+        }
+    }
+}
+
 impl Serialize for Location {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -301,6 +331,7 @@ mod tests {
         assert_eq!(Language::Go.to_string(), "go");
         assert_eq!(Language::JavaScript.to_string(), "javascript");
         assert_eq!(Language::TypeScript.to_string(), "typescript");
+        assert_eq!(Language::Java.to_string(), "java");
     }
 
     #[test]
@@ -309,6 +340,7 @@ mod tests {
         assert_eq!(format!("{}", Language::Go), "go");
         assert_eq!(format!("{}", Language::JavaScript), "javascript");
         assert_eq!(format!("{}", Language::TypeScript), "typescript");
+        assert_eq!(format!("{}", Language::Java), "java");
     }
 
     #[test]

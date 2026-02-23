@@ -1,0 +1,20 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "x.waiter.waitUntilResourceReady(request)",
+      "WaiterType": "resourceReady",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "waiter_field_access_type_not_resolved.java:3.9-3.49",
+      "ReceiverDeclaration": null
+    }
+  ]
+}

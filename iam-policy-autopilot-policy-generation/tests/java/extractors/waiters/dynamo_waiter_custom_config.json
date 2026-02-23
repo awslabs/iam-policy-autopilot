@@ -1,0 +1,31 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "waiter.waitUntilTableNotExists(b -> b.tableName(\"myTable\"),\n            o -> o.maxAttempts(10))",
+      "WaiterType": "tableNotExists",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "b -> b.tableName(\"myTable\")" },
+            "position": 0,
+            "type_annotation": null
+          }
+        },
+        {
+          "Positional": {
+            "value": { "Unresolved": "o -> o.maxAttempts(10)" },
+            "position": 1,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "dynamo_waiter_custom_config.java:11.9-12.36",
+      "ReceiverDeclaration": {
+        "Expr": "DynamoDbWaiter.builder()\n            .overrideConfiguration(b -> b.maxAttempts(10))\n            .client(dynamoDbClient)\n            .build()",
+        "TypeName": "DynamoDbWaiter",
+        "Location": "dynamo_waiter_custom_config.java:6.33-9.21"
+      }
+    }
+  ]
+}

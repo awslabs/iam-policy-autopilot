@@ -1,0 +1,26 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3.putObject(req)",
+      "Method": "putObject",
+      "Receiver": "s3",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": {
+              "Unresolved": "req"
+            },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "record_component_as_receiver.java:6.9-6.26",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client s3",
+        "TypeName": "S3Client",
+        "Location": "record_component_as_receiver.java:4.19-4.30"
+      }
+    }
+  ]
+}

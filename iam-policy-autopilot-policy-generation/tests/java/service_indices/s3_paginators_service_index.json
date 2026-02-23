@@ -1,0 +1,24 @@
+{
+  "Services": {
+    "s3": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2006-03-01",
+        "serviceId": "S3"
+      },
+      "operations": {
+        "ListObjectsV2": {
+          "name": "ListObjectsV2",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "listObjectsV2": [
+      { "service_name": "s3", "operation_name": "ListObjectsV2" }
+    ]
+  },
+  "WaiterLookup": {}
+}

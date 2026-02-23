@@ -1,0 +1,60 @@
+{
+  "Services": {
+    "cloudvault": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "CloudVault"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        },
+        "ListResources": {
+          "name": "ListResources",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "datastore": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DataStore"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        },
+        "ListResources": {
+          "name": "ListResources",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "describeResource": [
+      { "service_name": "cloudvault", "operation_name": "DescribeResource" },
+      { "service_name": "datastore",  "operation_name": "DescribeResource" }
+    ],
+    "listResources": [
+      { "service_name": "cloudvault", "operation_name": "ListResources" },
+      { "service_name": "datastore",  "operation_name": "ListResources" }
+    ],
+    "listResourcesPaginator": [
+      { "service_name": "cloudvault", "operation_name": "ListResources" },
+      { "service_name": "datastore",  "operation_name": "ListResources" }
+    ]
+  },
+  "WaiterLookup": {
+    "resourceReady": [
+      { "service_name": "cloudvault", "operation_name": "DescribeResource" },
+      { "service_name": "datastore",  "operation_name": "DescribeResource" }
+    ]
+  }
+}

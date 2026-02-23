@@ -1,0 +1,19 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.putObject(request)",
+      "Method": "putObject",
+      "Receiver": "s3Client",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "single_call.java:3.9-3.36"
+    }
+  ]
+}

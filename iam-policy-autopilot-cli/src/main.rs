@@ -172,7 +172,7 @@ and basic metadata without enrichment."
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1.., long_help = "One or more source code files to analyze. \
 Supports multiple programming languages including Python (.py), TypeScript (.ts), JavaScript (.js), \
-Go (.go), and others. Files are processed concurrently for better performance.")]
+Go (.go), Java (.java), and others. Files are processed concurrently for better performance.")]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)

@@ -1,0 +1,39 @@
+{
+  "Services": {
+    "resource-groups": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2017-11-27",
+        "serviceId": "Resource Groups"
+      },
+      "operations": {
+        "CreateGroup": {
+          "name": "CreateGroup",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "xray": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2016-04-12",
+        "serviceId": "XRay"
+      },
+      "operations": {
+        "CreateGroup": {
+          "name": "CreateGroup",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "createGroup": [
+      { "service_name": "resource-groups", "operation_name": "CreateGroup" },
+      { "service_name": "xray",            "operation_name": "CreateGroup" }
+    ]
+  },
+  "WaiterLookup": {}
+}

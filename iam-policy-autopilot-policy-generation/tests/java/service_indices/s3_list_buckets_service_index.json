@@ -1,0 +1,38 @@
+{
+  "Services": {
+    "s3": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2006-03-01",
+        "serviceId": "S3"
+      },
+      "operations": {
+        "PutObject": {
+          "name": "PutObject",
+          "input": null
+        },
+        "ListBuckets": {
+          "name": "ListBuckets",
+          "input": null
+        },
+        "ListObjectsV2": {
+          "name": "ListObjectsV2",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "putObject": [
+      { "service_name": "s3", "operation_name": "PutObject" }
+    ],
+    "listBuckets": [
+      { "service_name": "s3", "operation_name": "ListBuckets" }
+    ],
+    "listObjectsV2": [
+      { "service_name": "s3", "operation_name": "ListObjectsV2" }
+    ]
+  },
+  "WaiterLookup": {}
+}

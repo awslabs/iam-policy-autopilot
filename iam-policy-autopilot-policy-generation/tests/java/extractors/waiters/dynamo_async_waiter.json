@@ -1,0 +1,29 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "asyncWaiter.waitUntilTableNotExists(r -> r.tableName(\"myTable\"))",
+      "WaiterType": "tableNotExists",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "r -> r.tableName(\"myTable\")" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "waiterResponse",
+          "type_name": "CompletableFuture<WaiterResponse<DescribeTableResponse>>"
+        }
+      },
+      "Location": "dynamo_async_waiter.java:13.13-13.77",
+      "ReceiverDeclaration": {
+        "Expr": "asyncDynamo.waiter()",
+        "TypeName": "DynamoDbAsyncWaiter",
+        "Location": "dynamo_async_waiter.java:10.43-10.63"
+      }
+    }
+  ]
+}
