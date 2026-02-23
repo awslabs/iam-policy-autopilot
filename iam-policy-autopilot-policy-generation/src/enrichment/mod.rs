@@ -41,8 +41,10 @@ pub struct Reason {
     pub operations: Vec<Arc<Operation>>,
 }
 
+/// Represents a single IAM operation (Service, Name, and Source)
 #[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
+#[non_exhaustive]
 pub struct Operation {
     /// Name of the service
     pub service: String,
@@ -50,20 +52,19 @@ pub struct Operation {
     pub name: String,
     /// Source of the operation,
     pub source: OperationSource,
-    /// Disallow struct construction, need to use Self::from_call or Operation::from(FasOperation)
-    #[serde(skip)]
-    _private: (),
 }
 
 impl Operation {
-    #[cfg(test)]
-    /// Convenience constructor for tests
-    pub(crate) fn new(service: String, name: String, source: OperationSource) -> Self {
+    /// Convenience constructor for tests and internal logic
+    ///
+    /// This is public to allow downstream integration tests (like in the MCP server)
+    /// to construct realistic mock data.
+    #[must_use]
+    pub fn new(service: String, name: String, source: OperationSource) -> Self {
         Self {
             service,
             name,
             source,
-            _private: (),
         }
     }
 
@@ -120,13 +121,11 @@ impl Operation {
                 service,
                 name,
                 source: OperationSource::Provided,
-                _private: (),
             },
             Some(metadata) => Self {
                 service,
                 name,
                 source: OperationSource::Extracted(metadata.clone()),
-                _private: (),
             },
         })
     }
@@ -138,7 +137,6 @@ impl From<FasOperation> for Operation {
             service: fas_op.service,
             name: fas_op.operation,
             source: OperationSource::Fas(fas_op.context),
-            _private: (),
         }
     }
 }
@@ -178,6 +176,7 @@ where
     map.end()
 }
 
+/// The source of the operation (Extracted code, Provided manually, or FAS expansion)
 #[derive(Debug, Clone, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub enum OperationSource {
@@ -218,6 +217,7 @@ impl Explanations {
     const FAS: &str =
         "The explanation contains an operation added due to Forward Access Sessions (FAS). See https://docs.aws.amazon.com/IAM/latest/UserGuide/access_forward_access_sessions.html.";
 
+    #[must_use]
     pub(crate) fn new(explanations: BTreeMap<String, Explanation>) -> Self {
         let mut documentation: Vec<&'static str> = vec![];
         for explanation in explanations.values() {
@@ -273,9 +273,12 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) sdk_method_call: &'a SdkMethodCall,
 }
 
+/// IAM Policy Condition Operator
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
 pub enum Operator {
+    /// Exact string match (StringEquals)
     StringEquals,
+    /// Pattern match (StringLike)
     StringLike,
 }
 
