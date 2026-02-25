@@ -1,0 +1,589 @@
+//! Parser and resolver for the Terraform AWS provider `names_data.hcl`.
+//!
+//! This module parses the embedded HCL file into a structured representation
+//! that retains the `sdk.arn_namespace` and `resource_prefix` fields (both
+//! `actual` regex and `correct` prefix). It pre-computes a reversed mapping
+//! from Terraform resource types to `(arn_namespace, resource_suffix)` tuples,
+//! using exact HashMap lookups for the vast majority of patterns and falling
+//! back to regex only for the handful of patterns that require it.
+
+use std::collections::HashMap;
+use std::sync::OnceLock;
+
+use regex::Regex;
+
+/// Embedded `names_data.hcl` from the Terraform AWS provider.
+const NAMES_DATA_HCL: &str = include_str!("../../resources/names_data.hcl");
+
+// ---------------------------------------------------------------------------
+// Data model
+// ---------------------------------------------------------------------------
+
+/// A single service entry parsed from `names_data.hcl`.
+#[derive(Debug, Clone)]
+pub(crate) struct ServiceEntry {
+    /// The service block label (e.g., `"s3"`, `"dynamodb"`).
+    pub service_key: String,
+    /// IAM ARN namespace from `sdk { arn_namespace = "..." }`.
+    pub arn_namespace: String,
+    /// The `resource_prefix` block data.
+    pub resource_prefix: ResourcePrefix,
+}
+
+/// The `resource_prefix` block inside a service entry.
+///
+/// Some services only have `correct`; others also have `actual` which is a
+/// regex pattern matching the *real* Terraform resource type prefixes that
+/// map to this service (e.g., `"aws_(db_|rds_)"` for RDS).
+#[derive(Debug, Clone)]
+pub(crate) struct ResourcePrefix {
+    /// The canonical prefix (e.g., `"aws_s3_"`). Always present.
+    pub correct: String,
+    /// Optional regex pattern for the *actual* Terraform resource types.
+    /// When present, this takes precedence over `correct` for matching.
+    pub actual: Option<String>,
+}
+
+// ---------------------------------------------------------------------------
+// TypeResolver
+// ---------------------------------------------------------------------------
+
+/// Value stored in the exact-match lookup map.
+#[derive(Debug, Clone)]
+struct ResolvedEntry {
+    /// IAM ARN namespace (e.g., `"s3"`).
+    arn_namespace: String,
+}
+
+/// Pre-computed lookup structure for resolving Terraform resource types
+/// to `(arn_namespace, resource_suffix)` tuples.
+///
+/// Resolution strategy (in order):
+/// 1. Exact full-type lookup in `exact_map` — for expanded `actual` entries
+///    that represent complete resource type names (e.g., `"aws_canonical_user_id"`).
+/// 2. Regex fallback for the small number of `actual` patterns that use
+///    advanced regex features (negative lookahead, `\b`, `$`, etc.) —
+///    evaluated before prefix matching so overrides take precedence.
+/// 3. Prefix lookup in `prefix_map` — for `correct` prefixes and expanded
+///    `actual` entries that are prefixes (ending with `_`).
+pub(crate) struct TerraformServiceAndResourceResolver {
+    exact_map: HashMap<String, ResolvedEntry>,
+    prefix_map: HashMap<String, ResolvedEntry>,
+    regex_fallbacks: Vec<(Regex, String, String)>,
+}
+
+/// Single cache for the pre-computed resolver.
+static TYPE_RESOLVER: OnceLock<TerraformServiceAndResourceResolver> = OnceLock::new();
+
+impl TerraformServiceAndResourceResolver {
+    /// Build a resolver from parsed service entries.
+    ///
+    /// For each entry:
+    /// - The `correct` prefix is always inserted into the prefix map.
+    /// - If `actual` is present, we try to expand it into literal strings
+    ///   and insert those into the appropriate map. If expansion fails
+    ///   (complex regex), we compile it as a regex fallback.
+    pub fn new(entries: &[ServiceEntry]) -> Self {
+        let mut exact_map: HashMap<String, ResolvedEntry> = HashMap::new();
+        let mut prefix_map: HashMap<String, ResolvedEntry> = HashMap::new();
+        let mut regex_fallbacks = Vec::new();
+
+        for entry in entries {
+            let resolved = ResolvedEntry {
+                arn_namespace: entry.arn_namespace.clone(),
+            };
+
+            // Always add the `correct` prefix to the prefix map
+            prefix_map.insert(entry.resource_prefix.correct.clone(), resolved.clone());
+
+            // Handle `actual` pattern
+            if let Some(actual_pattern) = &entry.resource_prefix.actual {
+                if let Some(expanded) = try_expand_pattern(actual_pattern) {
+                    for candidate in expanded {
+                        if candidate.ends_with('_') {
+                            prefix_map.insert(candidate, resolved.clone());
+                        } else if candidate.starts_with(&entry.resource_prefix.correct) {
+                            // Already covered by the `correct` prefix — skip
+                        } else {
+                            exact_map.insert(candidate, resolved.clone());
+                        }
+                    }
+                } else {
+                    let anchored = format!("^(?:{actual_pattern})");
+                    match Regex::new(&anchored) {
+                        Ok(re) => {
+                            regex_fallbacks.push((
+                                re,
+                                entry.arn_namespace.clone(),
+                                entry.resource_prefix.correct.clone(),
+                            ));
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "Invalid regex in names_data.hcl for service '{}': {e}",
+                                entry.service_key
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        log::debug!(
+            "Built resolver: {} exact entries, {} prefix entries, {} regex fallbacks",
+            exact_map.len(),
+            prefix_map.len(),
+            regex_fallbacks.len()
+        );
+
+        Self {
+            exact_map,
+            prefix_map,
+            regex_fallbacks,
+        }
+    }
+
+    /// Return the lazily-initialized global resolver backed by the embedded
+    /// `names_data.hcl`.
+    pub fn global() -> &'static Self {
+        TYPE_RESOLVER.get_or_init(|| {
+            let entries = parse_names_data(NAMES_DATA_HCL);
+            Self::new(&entries)
+        })
+    }
+
+    /// Resolve a Terraform resource type like `"aws_s3_bucket"` into an
+    /// `(arn_namespace, resource_suffix)` tuple (e.g., `("s3", "bucket")`).
+    /// 
+    /// The tuple can be used to obtain necessary information from service_reference
+    /// for proper resource arn generation.
+    ///
+    /// Resolution order:
+    /// 1. Exact full-type lookup.
+    /// 2. Regex fallback for complex `actual` patterns — evaluated before
+    ///    prefix matching so overrides take precedence.
+    /// 3. Longest-prefix match.
+    ///
+    /// Returns `None` if the resource type doesn't match any known service.
+    pub fn resolve(&self, terraform_type: &str) -> Option<(String, String)> {
+        // 1. Exact full-type lookup (e.g., "aws_canonical_user_id" → s3)
+        if let Some(entry) = self.exact_map.get(terraform_type) {
+            let suffix = terraform_type.strip_prefix("aws_").unwrap_or(terraform_type);
+            return Some((entry.arn_namespace.clone(), suffix.to_string()));
+        }
+
+        // 2. Regex fallback — before prefix matching so overrides win
+        for (regex, arn_ns, correct_prefix) in &self.regex_fallbacks {
+            if regex.is_match(terraform_type) {
+                let suffix = if terraform_type.starts_with(correct_prefix.as_str()) {
+                    &terraform_type[correct_prefix.len()..]
+                } else {
+                    terraform_type.strip_prefix("aws_").unwrap_or(terraform_type)
+                };
+                return Some((arn_ns.clone(), suffix.to_string()));
+            }
+        }
+
+        // 3. Prefix lookup — find the longest matching prefix
+        if let Some((prefix, entry)) = self
+            .prefix_map
+            .iter()
+            .filter(|(prefix, _)| terraform_type.starts_with(prefix.as_str()))
+            .max_by_key(|(prefix, _)| prefix.len())
+        {
+            let suffix = &terraform_type[prefix.len()..];
+            return Some((entry.arn_namespace.clone(), suffix.to_string()));
+        }
+
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Parsing
+// ---------------------------------------------------------------------------
+
+/// Parse `names_data.hcl` into a list of [`ServiceEntry`] values.
+fn parse_names_data(content: &str) -> Vec<ServiceEntry> {
+    let body: hcl::Body = match hcl::from_str(content) {
+        Ok(body) => body,
+        Err(e) => {
+            log::error!("Failed to parse names_data.hcl: {e}");
+            return Vec::new();
+        }
+    };
+
+    let mut entries = Vec::new();
+
+    for structure in body.into_iter() {
+        let hcl::Structure::Block(block) = structure else {
+            continue;
+        };
+        if block.identifier.as_str() != "service" {
+            continue;
+        }
+
+        let service_key = block
+            .labels
+            .first()
+            .map(|l| l.as_str().to_string())
+            .unwrap_or_default();
+
+        let mut arn_namespace = String::new();
+        let mut correct = String::new();
+        let mut actual: Option<String> = None;
+
+        for inner in block.body.iter() {
+            match inner {
+                hcl::Structure::Block(inner_block) => {
+                    match inner_block.identifier.as_str() {
+                        "sdk" => {
+                            for attr in inner_block.body.iter() {
+                                if let hcl::Structure::Attribute(a) = attr {
+                                    if a.key.as_str() == "arn_namespace" {
+                                        if let hcl::Expression::String(s) = &a.expr {
+                                            arn_namespace = s.clone();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        "resource_prefix" => {
+                            for attr in inner_block.body.iter() {
+                                if let hcl::Structure::Attribute(a) = attr {
+                                    match a.key.as_str() {
+                                        "correct" => {
+                                            if let hcl::Expression::String(s) = &a.expr {
+                                                correct = s.clone();
+                                            }
+                                        }
+                                        "actual" => {
+                                            if let hcl::Expression::String(s) = &a.expr {
+                                                actual = Some(s.clone());
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                hcl::Structure::Attribute(attr) => {
+                    if attr.key.as_str() == "resource_prefix" {
+                        if let hcl::Expression::String(s) = &attr.expr {
+                            correct = s.clone();
+                        }
+                    }
+                }
+            }
+        }
+
+        if arn_namespace.is_empty() || correct.is_empty() {
+            continue;
+        }
+
+        entries.push(ServiceEntry {
+            service_key,
+            arn_namespace,
+            resource_prefix: ResourcePrefix { correct, actual },
+        });
+    }
+
+    log::debug!("Parsed {} service entries from names_data.hcl", entries.len());
+    entries
+}
+
+// ---------------------------------------------------------------------------
+// Pattern expansion helpers
+// ---------------------------------------------------------------------------
+
+const REGEX_SPECIAL_CHARS: &[char] = &['?', '+', '*', '.', '^', '$', '[', '\\'];
+const REGEX_SPECIAL_SEQUENCES: &[&str] = &["(?!", "(?:", "(?=", "(?<"];
+
+fn has_regex_chars(s: &str) -> bool {
+    s.contains(REGEX_SPECIAL_CHARS)
+}
+
+/// Try to expand an `actual` pattern into a list of literal prefix strings.
+///
+/// Handles two forms:
+/// - Plain literal prefix: `"aws_prometheus_"` → `["aws_prometheus_"]`
+/// - Simple alternation: `"aws_(db_|rds_)"` → `["aws_db_", "aws_rds_"]`
+///
+/// Returns `None` if the pattern uses advanced regex features.
+fn try_expand_pattern(pattern: &str) -> Option<Vec<String>> {
+    for seq in REGEX_SPECIAL_SEQUENCES {
+        if pattern.contains(seq) {
+            return None;
+        }
+    }
+
+    let Some(open) = pattern.find('(') else {
+        if has_regex_chars(pattern) {
+            return None;
+        }
+        return Some(vec![pattern.to_string()]);
+    };
+
+    let Some(close) = pattern.rfind(')') else {
+        return None;
+    };
+
+    let inner = &pattern[open + 1..close];
+    if inner.contains('(') || inner.contains(')') {
+        return None;
+    }
+
+    let prefix = &pattern[..open];
+    let suffix = &pattern[close + 1..];
+    if has_regex_chars(prefix) || has_regex_chars(suffix) {
+        return None;
+    }
+
+    let alternatives: Vec<&str> = inner.split('|').collect();
+    for alt in &alternatives {
+        if has_regex_chars(alt) {
+            return None;
+        }
+    }
+
+    let expanded = alternatives
+        .into_iter()
+        .map(|alt| format!("{prefix}{alt}{suffix}"))
+        .collect();
+
+    Some(expanded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- parse_names_data tests ---
+
+    #[test]
+    fn test_parse_names_data_returns_entries() {
+        let entries = parse_names_data(NAMES_DATA_HCL);
+        assert!(entries.len() > 50, "Expected >50 entries, got {}", entries.len());
+    }
+
+    #[test]
+    fn test_parse_names_data_s3_entry() {
+        let entries = parse_names_data(NAMES_DATA_HCL);
+        let s3 = entries.iter().find(|e| e.service_key == "s3").unwrap();
+        assert_eq!(s3.arn_namespace, "s3");
+        assert_eq!(s3.resource_prefix.correct, "aws_s3_");
+        assert!(s3.resource_prefix.actual.is_some());
+        assert!(s3.resource_prefix.actual.as_ref().unwrap().contains("s3_bucket"));
+    }
+
+    #[test]
+    fn test_parse_names_data_simple_service() {
+        let entries = parse_names_data(NAMES_DATA_HCL);
+        let sqs = entries.iter().find(|e| e.service_key == "sqs").unwrap();
+        assert_eq!(sqs.arn_namespace, "sqs");
+        assert_eq!(sqs.resource_prefix.correct, "aws_sqs_");
+        assert!(sqs.resource_prefix.actual.is_none());
+    }
+
+    #[test]
+    fn test_parse_names_data_retains_actual_pattern() {
+        let entries = parse_names_data(NAMES_DATA_HCL);
+        let amp = entries.iter().find(|e| e.service_key == "amp").unwrap();
+        assert_eq!(amp.arn_namespace, "aps");
+        assert_eq!(amp.resource_prefix.correct, "aws_amp_");
+        assert_eq!(amp.resource_prefix.actual.as_deref(), Some("aws_prometheus_"));
+    }
+
+    // --- try_expand_pattern tests ---
+
+    #[test]
+    fn test_expand_plain_literal() {
+        let result = try_expand_pattern("aws_prometheus_").unwrap();
+        assert_eq!(result, vec!["aws_prometheus_"]);
+    }
+
+    #[test]
+    fn test_expand_simple_alternation() {
+        let result = try_expand_pattern("aws_(db_|rds_)").unwrap();
+        assert_eq!(result, vec!["aws_db_", "aws_rds_"]);
+    }
+
+    #[test]
+    fn test_expand_s3_alternation() {
+        let result = try_expand_pattern(
+            "aws_(canonical_user_id|s3_bucket|s3_object|s3_directory_bucket)",
+        )
+        .unwrap();
+        assert_eq!(
+            result,
+            vec![
+                "aws_canonical_user_id",
+                "aws_s3_bucket",
+                "aws_s3_object",
+                "aws_s3_directory_bucket",
+            ]
+        );
+    }
+
+    #[test]
+    fn test_expand_rejects_negative_lookahead() {
+        assert!(try_expand_pattern("aws_cloudwatch_(?!(event_|log_|query_))").is_none());
+    }
+
+    #[test]
+    fn test_expand_rejects_word_boundary() {
+        assert!(try_expand_pattern(r"aws_a?lb(\b|_listener|_target_group)").is_none());
+    }
+
+    #[test]
+    fn test_expand_rejects_dollar_anchor() {
+        assert!(try_expand_pattern("aws_(arn|billing_service_account|regions?)$").is_none());
+    }
+
+    // --- TypeResolver::resolve tests ---
+
+    #[test]
+    fn test_resolve_s3_bucket() {
+        let r = TerraformServiceAndResourceResolver::global();
+        let result = r.resolve("aws_s3_bucket").unwrap();
+        assert_eq!(result.0, "s3");
+        assert_eq!(result.1, "bucket");
+    }
+
+    #[test]
+    fn test_resolve_dynamodb_table() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_dynamodb_table").unwrap();
+        assert_eq!(result.0, "dynamodb");
+        assert_eq!(result.1, "table");
+    }
+
+    #[test]
+    fn test_resolve_lambda_function() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_lambda_function").unwrap();
+        assert_eq!(result.0, "lambda");
+        assert_eq!(result.1, "function");
+    }
+
+    #[test]
+    fn test_resolve_sqs_queue() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_sqs_queue").unwrap();
+        assert_eq!(result.0, "sqs");
+        assert_eq!(result.1, "queue");
+    }
+
+    #[test]
+    fn test_resolve_unknown_returns_none() {
+        let r = TerraformServiceAndResourceResolver::global();
+        assert!(r.resolve("google_storage_bucket").is_none());
+        assert!(r.resolve("not_a_resource").is_none());
+    }
+
+    #[test]
+    fn test_resolve_s3control_bucket_policy() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_s3control_bucket_policy").unwrap();
+        assert_eq!(result.0, "s3");
+        assert_eq!(result.1, "bucket_policy");
+    }
+
+    #[test]
+    fn test_resolve_s3_bucket_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_s3_bucket").unwrap();
+        assert_eq!(result.0, "s3");
+    }
+
+    #[test]
+    fn test_resolve_canonical_user_id_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_canonical_user_id").unwrap();
+        assert_eq!(result.0, "s3");
+    }
+
+    #[test]
+    fn test_resolve_s3_directory_bucket_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_s3_directory_bucket").unwrap();
+        assert_eq!(result.0, "s3");
+    }
+
+    #[test]
+    fn test_resolve_prometheus_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_prometheus_workspace").unwrap();
+        assert_eq!(result.0, "aps");
+    }
+
+    #[test]
+    fn test_resolve_api_gateway_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_api_gateway_rest_api").unwrap();
+        assert_eq!(result.0, "apigateway");
+    }
+
+    #[test]
+    fn test_resolve_rds_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_db_instance").unwrap();
+        assert_eq!(result.0, "rds");
+    }
+
+    #[test]
+    fn test_resolve_rds_prefix_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_rds_cluster").unwrap();
+        assert_eq!(result.0, "rds");
+    }
+
+    #[test]
+    fn test_resolve_cloudwatch_event_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_cloudwatch_event_rule").unwrap();
+        assert_eq!(result.0, "events");
+    }
+
+    #[test]
+    fn test_resolve_elb_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_elb").unwrap();
+        assert_eq!(result.0, "elb");
+    }
+
+    #[test]
+    fn test_resolve_dx_via_expanded_map() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_dx_connection").unwrap();
+        assert_eq!(result.0, "directconnect");
+    }
+
+    #[test]
+    fn test_resolve_cloudwatch_metric_alarm_via_regex() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_cloudwatch_metric_alarm").unwrap();
+        assert_eq!(result.0, "cloudwatch");
+    }
+
+    #[test]
+    fn test_resolve_cloudwatch_log_goes_to_logs() {
+        let result = TerraformServiceAndResourceResolver::global().resolve("aws_cloudwatch_log_group").unwrap();
+        assert_eq!(result.0, "logs");
+    }
+
+    // --- TypeResolver internals ---
+
+    #[test]
+    fn test_resolver_has_expanded_entries() {
+        let resolver = TerraformServiceAndResourceResolver::global();
+        assert!(resolver.prefix_map.contains_key("aws_db_"));
+        assert!(resolver.prefix_map.contains_key("aws_rds_"));
+        assert!(resolver.exact_map.contains_key("aws_canonical_user_id"));
+    }
+
+    #[test]
+    fn test_resolver_has_few_regex_fallbacks() {
+        let resolver = TerraformServiceAndResourceResolver::global();
+        assert!(
+            resolver.regex_fallbacks.len() < 20,
+            "Expected <20 regex fallbacks, got {}",
+            resolver.regex_fallbacks.len()
+        );
+    }
+
+    #[test]
+    fn test_resolver_pointer_identity() {
+        let a = TerraformServiceAndResourceResolver::global();
+        let b = TerraformServiceAndResourceResolver::global();
+        assert!(std::ptr::eq(a, b), "Should return the same cached instance");
+    }
+}
