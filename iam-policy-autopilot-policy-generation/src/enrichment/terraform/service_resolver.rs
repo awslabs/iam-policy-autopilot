@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 use regex::Regex;
 
 /// Embedded `names_data.hcl` from the Terraform AWS provider.
-const NAMES_DATA_HCL: &str = include_str!("../../resources/names_data.hcl");
+const NAMES_DATA_HCL: &str = include_str!("../../../resources/config/terraform/names_data.hcl");
 
 // ---------------------------------------------------------------------------
 // Data model
@@ -21,54 +21,79 @@ const NAMES_DATA_HCL: &str = include_str!("../../resources/names_data.hcl");
 
 /// A single service entry parsed from `names_data.hcl`.
 #[derive(Debug, Clone)]
-pub(crate) struct ServiceEntry {
+struct ServiceEntry {
     /// The service block label (e.g., `"s3"`, `"dynamodb"`).
-    pub service_key: String,
-    /// IAM ARN namespace from `sdk { arn_namespace = "..." }`.
-    pub arn_namespace: String,
+    service_key: String,
+    /// ARN namespace from `sdk { arn_namespace = "..." }`.
+    arn_namespace: String,
     /// The `resource_prefix` block data.
-    pub resource_prefix: ResourcePrefix,
+    resource_prefix: ResourcePrefix,
 }
 
 /// The `resource_prefix` block inside a service entry.
 ///
 /// Some services only have `correct`; others also have `actual` which is a
 /// regex pattern matching the *real* Terraform resource type prefixes that
-/// map to this service (e.g., `"aws_(db_|rds_)"` for RDS).
+/// map to this service.
+///
+/// # Examples
+///
+/// **Simple service (SQS)** — only `correct` is set:
+/// ```text
+/// correct = "aws_sqs_"    // matches aws_sqs_queue, aws_sqs_queue_policy, …
+/// actual  = None
+/// ```
+///
+/// **Aliased service (RDS)** — `actual` captures multiple legacy prefixes:
+/// ```text
+/// correct = "aws_rds_"
+/// actual  = Some("aws_(db_|rds_)")   // matches aws_db_instance, aws_rds_cluster, …
+/// ```
+///
+/// **Aliased service (AMP / Prometheus)** — `actual` is a plain literal prefix:
+/// ```text
+/// correct = "aws_amp_"
+/// actual  = Some("aws_prometheus_")  // matches aws_prometheus_workspace, …
+/// ```
 #[derive(Debug, Clone)]
-pub(crate) struct ResourcePrefix {
+struct ResourcePrefix {
     /// The canonical prefix (e.g., `"aws_s3_"`). Always present.
-    pub correct: String,
+    correct: String,
     /// Optional regex pattern for the *actual* Terraform resource types.
     /// When present, this takes precedence over `correct` for matching.
-    pub actual: Option<String>,
+    actual: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
 // TypeResolver
 // ---------------------------------------------------------------------------
 
-/// Value stored in the exact-match lookup map.
-#[derive(Debug, Clone)]
-struct ResolvedEntry {
-    /// IAM ARN namespace (e.g., `"s3"`).
-    arn_namespace: String,
-}
-
 /// Pre-computed lookup structure for resolving Terraform resource types
 /// to `(arn_namespace, resource_suffix)` tuples.
 ///
-/// Resolution strategy (in order):
-/// 1. Exact full-type lookup in `exact_map` — for expanded `actual` entries
-///    that represent complete resource type names (e.g., `"aws_canonical_user_id"`).
-/// 2. Regex fallback for the small number of `actual` patterns that use
+/// # Examples
+///
+/// ```text
+/// resolver.resolve("aws_s3_bucket")           → Some(("s3",       "bucket"))
+/// resolver.resolve("aws_db_instance")         → Some(("rds",      "instance"))
+/// resolver.resolve("aws_lambda_function")     → Some(("lambda",   "function"))
+/// resolver.resolve("aws_canonical_user_id")   → Some(("s3",       "canonical_user_id"))
+/// ```
+///
+/// # Resolution strategy (in order)
+///
+/// 1. **Exact full-type lookup** in `exact_map` — for expanded `actual` entries
+///    that represent complete resource type names (e.g., `"aws_canonical_user_id"` → `"s3"`).
+/// 2. **Regex fallback** for the small number of `actual` patterns that use
 ///    advanced regex features (negative lookahead, `\b`, `$`, etc.) —
 ///    evaluated before prefix matching so overrides take precedence.
-/// 3. Prefix lookup in `prefix_map` — for `correct` prefixes and expanded
+/// 3. **Longest-prefix match** in `prefix_map` — for `correct` prefixes and expanded
 ///    `actual` entries that are prefixes (ending with `_`).
-pub(crate) struct TerraformServiceAndResourceResolver {
-    exact_map: HashMap<String, ResolvedEntry>,
-    prefix_map: HashMap<String, ResolvedEntry>,
+pub(super) struct TerraformServiceAndResourceResolver {
+    /// Maps exact Terraform resource type → ARN namespace.
+    exact_map: HashMap<String, String>,
+    /// Maps Terraform resource type prefix → ARN namespace.
+    prefix_map: HashMap<String, String>,
     regex_fallbacks: Vec<(Regex, String, String)>,
 }
 
@@ -83,29 +108,27 @@ impl TerraformServiceAndResourceResolver {
     /// - If `actual` is present, we try to expand it into literal strings
     ///   and insert those into the appropriate map. If expansion fails
     ///   (complex regex), we compile it as a regex fallback.
-    pub fn new(entries: &[ServiceEntry]) -> Self {
-        let mut exact_map: HashMap<String, ResolvedEntry> = HashMap::new();
-        let mut prefix_map: HashMap<String, ResolvedEntry> = HashMap::new();
+    fn new(entries: &[ServiceEntry]) -> Self {
+        let mut exact_map: HashMap<String, String> = HashMap::new();
+        let mut prefix_map: HashMap<String, String> = HashMap::new();
         let mut regex_fallbacks = Vec::new();
 
         for entry in entries {
-            let resolved = ResolvedEntry {
-                arn_namespace: entry.arn_namespace.clone(),
-            };
+            let arn_ns = &entry.arn_namespace;
 
             // Always add the `correct` prefix to the prefix map
-            prefix_map.insert(entry.resource_prefix.correct.clone(), resolved.clone());
+            prefix_map.insert(entry.resource_prefix.correct.clone(), arn_ns.clone());
 
             // Handle `actual` pattern
             if let Some(actual_pattern) = &entry.resource_prefix.actual {
                 if let Some(expanded) = try_expand_pattern(actual_pattern) {
                     for candidate in expanded {
                         if candidate.ends_with('_') {
-                            prefix_map.insert(candidate, resolved.clone());
+                            prefix_map.insert(candidate, arn_ns.clone());
                         } else if candidate.starts_with(&entry.resource_prefix.correct) {
                             // Already covered by the `correct` prefix — skip
                         } else {
-                            exact_map.insert(candidate, resolved.clone());
+                            exact_map.insert(candidate, arn_ns.clone());
                         }
                     }
                 } else {
@@ -145,7 +168,7 @@ impl TerraformServiceAndResourceResolver {
 
     /// Return the lazily-initialized global resolver backed by the embedded
     /// `names_data.hcl`.
-    pub fn global() -> &'static Self {
+    pub(super) fn global() -> &'static Self {
         TYPE_RESOLVER.get_or_init(|| {
             let entries = parse_names_data(NAMES_DATA_HCL);
             Self::new(&entries)
@@ -154,7 +177,7 @@ impl TerraformServiceAndResourceResolver {
 
     /// Resolve a Terraform resource type like `"aws_s3_bucket"` into an
     /// `(arn_namespace, resource_suffix)` tuple (e.g., `("s3", "bucket")`).
-    /// 
+    ///
     /// The tuple can be used to obtain necessary information from service_reference
     /// for proper resource arn generation.
     ///
@@ -165,11 +188,11 @@ impl TerraformServiceAndResourceResolver {
     /// 3. Longest-prefix match.
     ///
     /// Returns `None` if the resource type doesn't match any known service.
-    pub fn resolve(&self, terraform_type: &str) -> Option<(String, String)> {
+    pub(super) fn resolve(&self, terraform_type: &str) -> Option<(String, String)> {
         // 1. Exact full-type lookup (e.g., "aws_canonical_user_id" → s3)
-        if let Some(entry) = self.exact_map.get(terraform_type) {
+        if let Some(arn_ns) = self.exact_map.get(terraform_type) {
             let suffix = terraform_type.strip_prefix("aws_").unwrap_or(terraform_type);
-            return Some((entry.arn_namespace.clone(), suffix.to_string()));
+            return Some((arn_ns.clone(), suffix.to_string()));
         }
 
         // 2. Regex fallback — before prefix matching so overrides win
@@ -185,14 +208,14 @@ impl TerraformServiceAndResourceResolver {
         }
 
         // 3. Prefix lookup — find the longest matching prefix
-        if let Some((prefix, entry)) = self
+        if let Some((prefix, arn_ns)) = self
             .prefix_map
             .iter()
             .filter(|(prefix, _)| terraform_type.starts_with(prefix.as_str()))
             .max_by_key(|(prefix, _)| prefix.len())
         {
             let suffix = &terraform_type[prefix.len()..];
-            return Some((entry.arn_namespace.clone(), suffix.to_string()));
+            return Some((arn_ns.clone(), suffix.to_string()));
         }
 
         None
@@ -299,9 +322,63 @@ fn parse_names_data(content: &str) -> Vec<ServiceEntry> {
 // Pattern expansion helpers
 // ---------------------------------------------------------------------------
 
+// The two constants below define the "reject gates" for [`try_expand_pattern`].
+// Together they ensure that only plain literals and simple `(a|b|c)`
+// alternations are expanded, while anything more complex falls back to
+// runtime regex compilation.
+//
+// Cross-referencing the 51 `actual` patterns in `names_data.hcl`:
+//
+// • 34 are plain literals (no special chars, no parens) — expanded directly.
+//     e.g., `"aws_prometheus_"`, `"aws_api_gateway_"`, `"aws_cloudtrail"`
+//
+// • 10 are simple alternations — decomposed by `try_expand_pattern`.
+//     e.g., `"aws_(db_|rds_)"`, `"aws_(s3_account_|s3control_|s3_access_)"`
+//
+// • 3 are rejected by REGEX_SPECIAL_SEQUENCES (all use `(?!`):
+//     `"aws_cloudwatch_(?!(event_|log_|query_))"`
+//     `"aws_cognito_identity_(?!provider)"`
+//     `"aws_route53_(?!resolver_)"`
+//
+// • 3 are rejected by REGEX_SPECIAL_CHARS:
+//     `"aws_a?lb(\\b|...)"` — `?` and `\\`
+//     `"aws_(...|regions?|...)$"` — `?` and `$`
+//     `"aws_((...)?...|route\\b)"` — `?` and `\\`
+//
+// • 1 is rejected by the nested-parenthesis check inside try_expand_pattern:
+//     `"aws_(ami|...|ec2_(...)|...)"` — inner `(` `)` inside outer group
+
+/// Single regex metacharacters that prevent a string fragment from being
+/// treated as a literal.
+///
+/// Quantifiers (`?`, `+`, `*`), anchors (`^`, `$`), character class opener
+/// (`[`), wildcard (`.`), and escape (`\\`).
+///
+/// **Not included:** `(`, `)`, and `|` — these are the characters that
+/// [`try_expand_pattern`] explicitly decomposes when handling simple
+/// `(a|b|c)` alternations.
+///
+/// Real examples from `names_data.hcl` caught by this list:
+/// - `"aws_a?lb(\\b|...)"` — `?` triggers rejection (ELBv2 service)
+/// - `"aws_(...|regions?|...)$"` — `?` and `$` trigger rejection (meta service)
+/// - `"aws_((...)?...|route\\b)"` — `?` and `\\` trigger rejection (VPC service)
 const REGEX_SPECIAL_CHARS: &[char] = &['?', '+', '*', '.', '^', '$', '[', '\\'];
+
+/// Multi-character sequences that introduce advanced regex group types
+/// (negative lookahead `(?!`, non-capturing group `(?:`, positive lookahead
+/// `(?=`, lookbehind / named capture `(?<`).
+///
+/// These are checked *before* any parenthesis parsing in [`try_expand_pattern`]
+/// so that patterns like `"aws_cloudwatch_(?!(event_|log_))"` are immediately
+/// rejected without attempting expansion.
+///
+/// Real examples from `names_data.hcl` caught by this list (all use `(?!`):
+/// - `"aws_cloudwatch_(?!(event_|log_|query_))"` — CloudWatch service
+/// - `"aws_cognito_identity_(?!provider)"` — Cognito Identity service
+/// - `"aws_route53_(?!resolver_)"` — Route 53 service
 const REGEX_SPECIAL_SEQUENCES: &[&str] = &["(?!", "(?:", "(?=", "(?<"];
 
+/// Returns `true` if the string contains any character from [`REGEX_SPECIAL_CHARS`].
 fn has_regex_chars(s: &str) -> bool {
     s.contains(REGEX_SPECIAL_CHARS)
 }
@@ -312,7 +389,10 @@ fn has_regex_chars(s: &str) -> bool {
 /// - Plain literal prefix: `"aws_prometheus_"` → `["aws_prometheus_"]`
 /// - Simple alternation: `"aws_(db_|rds_)"` → `["aws_db_", "aws_rds_"]`
 ///
-/// Returns `None` if the pattern uses advanced regex features.
+/// Returns `None` if the pattern uses advanced regex features (detected via
+/// [`REGEX_SPECIAL_SEQUENCES`] and [`REGEX_SPECIAL_CHARS`]), or nested
+/// parentheses, in which case the caller compiles the pattern as a real
+/// [`Regex`] for runtime matching.
 fn try_expand_pattern(pattern: &str) -> Option<Vec<String>> {
     for seq in REGEX_SPECIAL_SEQUENCES {
         if pattern.contains(seq) {

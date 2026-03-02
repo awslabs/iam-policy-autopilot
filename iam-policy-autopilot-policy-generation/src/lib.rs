@@ -11,7 +11,11 @@
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
-// Re-export the enrichment module for public use
+// Enrichment module: public for integration tests, crate-internal otherwise.
+#[cfg(feature = "integ-test")]
+#[allow(missing_docs)]
+pub mod enrichment;
+#[cfg(not(feature = "integ-test"))]
 pub(crate) mod enrichment;
 
 // Re-export the providers module for public use
@@ -35,6 +39,8 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
+#[cfg(feature = "integ-test")]
+pub use enrichment::service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,

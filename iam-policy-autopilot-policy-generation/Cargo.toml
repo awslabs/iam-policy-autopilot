@@ -28,6 +28,10 @@ tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
+hcl-rs.workspace = true
+toml.workspace = true
+walkdir.workspace = true
+visibility.workspace = true
 
 
 # Build dependencies

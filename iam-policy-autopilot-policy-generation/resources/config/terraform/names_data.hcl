@@ -1,3 +1,5 @@
+# Source https://github.com/hashicorp/terraform-provider-aws/blob/5721557ec6789e1a10be65831cd7c685b3052053/names/data/names_data.hcl#L4.
+# TODO: automate the update for this file.
 # Copyright IBM Corp. 2014, 2026
 # SPDX-License-Identifier: MPL-2.0
 

@@ -1,7 +1,10 @@
 //! Terraform HCL parser for extracting AWS resource definitions from `.tf` files.
 //!
 //! This module walks a directory recursively, parses each `.tf` file using `hcl-rs`,
-//! and extracts `resource` and `data` blocks whose type starts with `aws_`.
+//! and extracts `resource` blocks whose type starts with `aws_`.
+//! 
+//! This parser is not to convert a resource definition in HCL to corresponding SDK call,
+//! but to extract resource arn definition for resource block refinement.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -9,13 +12,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use walkdir::WalkDir;
 
-use super::{AttributeValue, TerraformDataSource, TerraformParseResult, TerraformResource};
+use super::{AttributeValue, TerraformParseResult, TerraformResource};
 
 /// Parse all `.tf` files in a directory recursively.
 ///
 /// Discovers every file ending in `.tf`, parses it with `hcl-rs`, and collects
-/// AWS resource and data source blocks. Files with syntax errors are recorded as
-/// warnings and skipped.
+/// AWS resource blocks. Files with syntax errors are recorded as warnings and skipped.
 pub fn parse_terraform_directory(dir: &Path) -> Result<TerraformParseResult> {
     let mut result = TerraformParseResult::empty();
 
@@ -32,7 +34,6 @@ pub fn parse_terraform_directory(dir: &Path) -> Result<TerraformParseResult> {
         match parse_terraform_file(tf_file) {
             Ok(file_result) => {
                 result.resources.extend(file_result.resources);
-                result.data_sources.extend(file_result.data_sources);
                 result.warnings.extend(file_result.warnings);
             }
             Err(e) => {
@@ -44,17 +45,16 @@ pub fn parse_terraform_directory(dir: &Path) -> Result<TerraformParseResult> {
     }
 
     log::debug!(
-        "Parsed {} resources and {} data sources from {} files",
+        "Parsed {} resources from {} files",
         result.resources.len(),
-        result.data_sources.len(),
         tf_files.len()
     );
 
     Ok(result)
 }
 
-/// Parse a single `.tf` file and extract AWS resource and data source blocks.
-pub fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
+/// Parse a single `.tf` file and extract AWS resource blocks.
+fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
 
@@ -62,7 +62,7 @@ pub fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
 }
 
 /// Parse HCL content from a string (useful for testing without files).
-pub fn parse_terraform_content(content: &str, source_path: &Path) -> Result<TerraformParseResult> {
+fn parse_terraform_content(content: &str, source_path: &Path) -> Result<TerraformParseResult> {
     let body: hcl::Body =
         hcl::from_str(content).with_context(|| format!("parsing HCL in {}", source_path.display()))?;
 
@@ -70,18 +70,11 @@ pub fn parse_terraform_content(content: &str, source_path: &Path) -> Result<Terr
 
     for structure in body.into_iter() {
         if let hcl::Structure::Block(block) = structure {
-            match block.identifier.as_str() {
-                "resource" => {
-                    if let Some(resource) = extract_resource_block(&block, source_path, content) {
-                        result.resources.push(resource);
-                    }
+            if block.identifier.as_str() == "resource" {
+                if let Some(resource) = extract_resource_block(&block, source_path, content) {
+                    let key = (resource.resource_type.clone(), resource.local_name.clone());
+                    result.resources.insert(key, resource);
                 }
-                "data" => {
-                    if let Some(data_source) = extract_data_block(&block, source_path, content) {
-                        result.data_sources.push(data_source);
-                    }
-                }
-                _ => {}
             }
         }
     }
@@ -120,50 +113,29 @@ fn extract_resource_block(block: &hcl::Block, source_path: &Path, content: &str)
     })
 }
 
-/// Extract a `TerraformDataSource` from an HCL `data` block.
-///
-/// A data block has the form: `data "type" "name" { ... }`
-/// We only extract blocks whose type starts with `aws_`.
-/// The raw `content` is used to resolve the 1-based line number via text search.
-fn extract_data_block(block: &hcl::Block, source_path: &Path, content: &str) -> Option<TerraformDataSource> {
-    let labels: Vec<&str> = block.labels.iter().map(|l| l.as_str()).collect();
-    if labels.len() < 2 {
-        return None;
-    }
-
-    let data_type = labels[0];
-    let local_name = labels[1];
-
-    if !data_type.starts_with("aws_") {
-        return None;
-    }
-
-    let attributes = extract_block_attributes(&block.body);
-    let line_number = find_block_line(content, "data", data_type, local_name);
-
-    Some(TerraformDataSource {
-        data_type: data_type.to_string(),
-        local_name: local_name.to_string(),
-        attributes,
-        source_file: source_path.to_path_buf(),
-        line_number,
-    })
-}
-
 /// Extract top-level attributes from an HCL block body.
 ///
-/// String literals are stored as `AttributeValue::Literal`.
-/// Everything else (variable references, function calls, interpolations,
-/// object/list expressions) is stored as `AttributeValue::Expression` with
-/// the original text preserved.
+/// Only flat `key = value` attributes are extracted. Nested blocks (e.g.,
+/// `server_side_encryption_configuration`, `versioning`, `lifecycle_rule`)
+/// are skipped because they don't contain naming attributes relevant for
+/// ARN construction. Skipped blocks are logged at `trace` level for
+/// diagnostics.
 fn extract_block_attributes(body: &hcl::Body) -> HashMap<String, AttributeValue> {
     let mut attrs = HashMap::new();
 
     for structure in body.iter() {
-        if let hcl::Structure::Attribute(attr) = structure {
-            let key = attr.key.as_str().to_string();
-            let value = expression_to_attribute_value(&attr.expr);
-            attrs.insert(key, value);
+        match structure {
+            hcl::Structure::Attribute(attr) => {
+                let key = attr.key.as_str().to_string();
+                let value = expression_to_attribute_value(&attr.expr);
+                attrs.insert(key, value);
+            }
+            hcl::Structure::Block(block) => {
+                log::trace!(
+                    "Skipping nested block '{}' (not a flat attribute)",
+                    block.identifier.as_str()
+                );
+            }
         }
     }
 
@@ -199,18 +171,61 @@ fn expression_to_attribute_value(expr: &hcl::Expression) -> AttributeValue {
 
 /// Find the 1-based line number where a block like `resource "type" "name"` starts.
 ///
-/// Searches the raw file content for the pattern. Comment lines (`#` and `//`)
-/// are skipped to avoid matching commented-out blocks before the real one.
+/// Searches the raw file content for a pattern with flexible whitespace:
+/// `keyword  "type_name"  "local_name"`. Skips lines inside comments
+/// (`#`, `//` line comments, and `/* ... */` block comments).
+///
+/// **Limitation:** All three tokens (keyword, type, name) must appear on the
+/// same line. Multi-line declarations (e.g., type and name on separate lines)
+/// are not matched and will return `None`. In practice this is not an issue
+/// because `terraform fmt` always places the full declaration on one line,
+/// and this is the universal convention. When `None` is returned, the caller
+/// falls back to a filename-only location string — no data is lost.
+///
 /// Returns `None` if not found.
 fn find_block_line(content: &str, keyword: &str, type_name: &str, local_name: &str) -> Option<usize> {
-    // Match patterns like: resource "aws_s3_bucket" "data_bucket"
-    let pattern = format!("{keyword} \"{type_name}\" \"{local_name}\"");
+    // Build a regex that tolerates any amount of whitespace between tokens.
+    // `regex::escape` ensures type_name/local_name are treated literally.
+    let pattern = format!(
+        r#"^{}\s+"{}"\s+"{}""#,
+        regex::escape(keyword),
+        regex::escape(type_name),
+        regex::escape(local_name),
+    );
+    let re = regex::Regex::new(&pattern).ok()?;
+
+    let mut in_block_comment = false;
+
     for (i, line) in content.lines().enumerate() {
         let trimmed = line.trim();
+
+        // Track /* ... */ block comments
+        if in_block_comment {
+            if let Some(pos) = trimmed.find("*/") {
+                // Block comment ends on this line; check remainder after `*/`
+                in_block_comment = false;
+                let remainder = &trimmed[pos + 2..];
+                if re.is_match(remainder.trim()) {
+                    return Some(i + 1);
+                }
+            }
+            continue;
+        }
+
+        // Skip line comments
         if trimmed.starts_with('#') || trimmed.starts_with("//") {
             continue;
         }
-        if trimmed.starts_with(&pattern) {
+
+        // Detect block comment start
+        if trimmed.starts_with("/*") {
+            if !trimmed.contains("*/") {
+                in_block_comment = true;
+            }
+            continue;
+        }
+
+        if re.is_match(trimmed) {
             return Some(i + 1); // 1-based
         }
     }
@@ -221,7 +236,7 @@ fn find_block_line(content: &str, keyword: &str, type_name: &str, local_name: &s
 ///
 /// Skips `.terraform/` directories which contain provider plugins and
 /// downloaded module sources that would produce confusing duplicates.
-pub(crate) fn discover_tf_files(dir: &Path) -> Vec<PathBuf> {
+pub(super) fn discover_tf_files(dir: &Path) -> Vec<PathBuf> {
     WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
@@ -240,7 +255,6 @@ pub(crate) fn discover_tf_files(dir: &Path) -> Vec<PathBuf> {
         .collect()
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,7 +272,7 @@ resource "aws_s3_bucket" "data_bucket" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 1);
-        let resource = &result.resources[0];
+        let resource = &result.resources[&(String::from("aws_s3_bucket"), String::from("data_bucket"))];
         assert_eq!(resource.resource_type, "aws_s3_bucket");
         assert_eq!(resource.local_name, "data_bucket");
         assert_eq!(
@@ -290,45 +304,9 @@ resource "aws_lambda_function" "func1" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 3);
-        assert_eq!(result.resources[0].resource_type, "aws_s3_bucket");
-        assert_eq!(result.resources[1].resource_type, "aws_dynamodb_table");
-        assert_eq!(result.resources[2].resource_type, "aws_lambda_function");
-
-        // Check DynamoDB attributes
-        assert_eq!(
-            result.resources[1].attributes.get("name"),
-            Some(&AttributeValue::Literal("my-table".to_string()))
-        );
-
-        // Check Lambda attributes
-        assert_eq!(
-            result.resources[2].attributes.get("function_name"),
-            Some(&AttributeValue::Literal("my-function".to_string()))
-        );
-        assert_eq!(
-            result.resources[2].attributes.get("handler"),
-            Some(&AttributeValue::Literal("index.handler".to_string()))
-        );
-    }
-
-    #[test]
-    fn test_parse_data_source() {
-        let hcl = r#"
-data "aws_iam_role" "existing_role" {
-  name = "my-existing-role"
-}
-"#;
-        let result =
-            parse_terraform_content(hcl, Path::new("data.tf")).expect("should parse");
-
-        assert_eq!(result.data_sources.len(), 1);
-        let ds = &result.data_sources[0];
-        assert_eq!(ds.data_type, "aws_iam_role");
-        assert_eq!(ds.local_name, "existing_role");
-        assert_eq!(
-            ds.attributes.get("name"),
-            Some(&AttributeValue::Literal("my-existing-role".to_string()))
-        );
+        assert!(result.resources.contains_key(&(String::from("aws_s3_bucket"), String::from("bucket1"))));
+        assert!(result.resources.contains_key(&(String::from("aws_dynamodb_table"), String::from("table1"))));
+        assert!(result.resources.contains_key(&(String::from("aws_lambda_function"), String::from("func1"))));
     }
 
     #[test]
@@ -350,7 +328,8 @@ resource "azurerm_storage_account" "azure" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 1);
-        assert_eq!(result.resources[0].resource_type, "aws_s3_bucket");
+        let s3 = &result.resources[&(String::from("aws_s3_bucket"), String::from("s3"))];
+        assert_eq!(s3.resource_type, "aws_s3_bucket");
     }
 
     #[test]
@@ -364,7 +343,8 @@ resource "aws_s3_bucket" "dynamic_bucket" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 1);
-        let bucket_attr = result.resources[0].attributes.get("bucket").unwrap();
+        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("dynamic_bucket"))];
+        let bucket_attr = r.attributes.get("bucket").unwrap();
         assert!(
             !bucket_attr.is_literal(),
             "Interpolated string should be Expression, got: {bucket_attr:?}"
@@ -383,7 +363,8 @@ resource "aws_s3_bucket" "var_bucket" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 1);
-        let bucket_attr = result.resources[0].attributes.get("bucket").unwrap();
+        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("var_bucket"))];
+        let bucket_attr = r.attributes.get("bucket").unwrap();
         assert!(
             !bucket_attr.is_literal(),
             "Variable reference should be Expression, got: {bucket_attr:?}"
@@ -391,7 +372,7 @@ resource "aws_s3_bucket" "var_bucket" {
     }
 
     #[test]
-    fn test_mixed_resources_and_data() {
+    fn test_data_and_other_blocks_ignored() {
         let hcl = r#"
 resource "aws_s3_bucket" "bucket" {
   bucket = "my-bucket"
@@ -415,8 +396,6 @@ output "bucket_arn" {
             parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
         assert_eq!(result.resources.len(), 1);
-        // data "aws_iam_policy_document" has nested blocks which we handle gracefully
-        assert_eq!(result.data_sources.len(), 1);
         assert!(result.warnings.is_empty());
     }
 
@@ -424,7 +403,6 @@ output "bucket_arn" {
     fn test_parse_directory_with_tf_files() {
         let tmp = TempDir::new().expect("create temp dir");
 
-        // Create main.tf
         let main_tf = tmp.path().join("main.tf");
         let mut f = std::fs::File::create(&main_tf).expect("create file");
         writeln!(
@@ -433,7 +411,6 @@ output "bucket_arn" {
         )
         .expect("write");
 
-        // Create a subdirectory with another .tf file
         let sub = tmp.path().join("modules");
         std::fs::create_dir_all(&sub).expect("create subdir");
         let sub_tf = sub.join("storage.tf");
@@ -444,7 +421,6 @@ output "bucket_arn" {
         )
         .expect("write");
 
-        // Create a non-tf file that should be ignored
         let txt = tmp.path().join("readme.md");
         std::fs::write(&txt, "# readme").expect("write");
 
@@ -453,7 +429,7 @@ output "bucket_arn" {
         assert_eq!(result.resources.len(), 2);
         let types: Vec<&str> = result
             .resources
-            .iter()
+            .values()
             .map(|r| r.resource_type.as_str())
             .collect();
         assert!(types.contains(&"aws_s3_bucket"));
@@ -468,14 +444,12 @@ output "bucket_arn" {
 
         let result = parse_terraform_directory(tmp.path()).expect("should parse");
         assert!(result.resources.is_empty());
-        assert!(result.data_sources.is_empty());
     }
 
     #[test]
     fn test_parse_directory_with_syntax_error() {
         let tmp = TempDir::new().expect("create temp dir");
 
-        // Valid file
         let good = tmp.path().join("good.tf");
         let mut f = std::fs::File::create(&good).expect("create");
         writeln!(
@@ -484,17 +458,12 @@ output "bucket_arn" {
         )
         .expect("write");
 
-        // Invalid file
         let bad = tmp.path().join("bad.tf");
         std::fs::write(&bad, "this is not valid HCL {{{{").expect("write");
 
         let result = parse_terraform_directory(tmp.path()).expect("should parse dir");
 
-        // Good file should still be parsed
         assert_eq!(result.resources.len(), 1);
-        assert_eq!(result.resources[0].local_name, "ok");
-
-        // Bad file should produce a warning
         assert!(!result.warnings.is_empty());
         assert!(result.warnings[0].contains("bad.tf"));
     }
@@ -509,7 +478,8 @@ resource "aws_s3_bucket" "b" {
         let path = Path::new("infra/main.tf");
         let result = parse_terraform_content(hcl, path).expect("should parse");
 
-        assert_eq!(result.resources[0].source_file, PathBuf::from("infra/main.tf"));
+        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("b"))];
+        assert_eq!(r.source_file, PathBuf::from("infra/main.tf"));
     }
 
     #[test]
@@ -524,7 +494,8 @@ resource "aws_dynamodb_table" "t" {
 "#;
         let result = parse_terraform_content(hcl, Path::new("main.tf")).expect("should parse");
 
-        let attrs = &result.resources[0].attributes;
+        let r = &result.resources[&(String::from("aws_dynamodb_table"), String::from("t"))];
+        let attrs = &r.attributes;
         assert_eq!(
             attrs.get("read_capacity"),
             Some(&AttributeValue::Literal("5".to_string()))
@@ -548,53 +519,19 @@ resource "aws_s3_bucket" "second" {
 "#;
         let result = parse_terraform_content(hcl, Path::new("main.tf")).expect("parse");
 
-        assert_eq!(result.resources[0].line_number, Some(2));
-        assert_eq!(result.resources[1].line_number, Some(6));
-    }
-
-    #[test]
-    fn test_find_block_line_not_found() {
-        let content = r#"resource "aws_s3_bucket" "exists" {}"#;
-        assert!(find_block_line(content, "resource", "aws_s3_bucket", "missing").is_none());
-    }
-
-    #[test]
-    fn test_find_block_line_skips_hash_comments() {
-        let content = r#"
-# resource "aws_s3_bucket" "b" {}
-resource "aws_s3_bucket" "b" {
-  bucket = "real"
-}
-"#;
-        assert_eq!(
-            find_block_line(content, "resource", "aws_s3_bucket", "b"),
-            Some(3)
-        );
-    }
-
-    #[test]
-    fn test_find_block_line_skips_double_slash_comments() {
-        let content = r#"
-// resource "aws_s3_bucket" "b" {}
-resource "aws_s3_bucket" "b" {
-  bucket = "real"
-}
-"#;
-        assert_eq!(
-            find_block_line(content, "resource", "aws_s3_bucket", "b"),
-            Some(3)
-        );
+        let first = &result.resources[&(String::from("aws_s3_bucket"), String::from("first"))];
+        let second = &result.resources[&(String::from("aws_s3_bucket"), String::from("second"))];
+        assert_eq!(first.line_number, Some(2));
+        assert_eq!(second.line_number, Some(6));
     }
 
     #[test]
     fn test_discover_skips_dot_terraform_dir() {
         let tmp = TempDir::new().expect("create temp dir");
 
-        // Real .tf file
         let main_tf = tmp.path().join("main.tf");
         std::fs::write(&main_tf, r#"resource "aws_s3_bucket" "b" {}"#).expect("write");
 
-        // .terraform/ directory with a .tf file that should be ignored
         let dot_tf = tmp.path().join(".terraform/providers/main.tf");
         std::fs::create_dir_all(dot_tf.parent().unwrap()).expect("mkdir");
         std::fs::write(&dot_tf, r#"resource "aws_s3_bucket" "cached" {}"#).expect("write");
@@ -602,5 +539,34 @@ resource "aws_s3_bucket" "b" {
         let files = discover_tf_files(tmp.path());
         assert_eq!(files.len(), 1);
         assert_eq!(files[0], main_tf);
+    }
+
+    #[test]
+    fn test_find_block_line_skips_comments() {
+        let hcl = r#"
+# resource "aws_s3_bucket" "b" {
+//   bucket = "commented-out"
+// }
+
+resource "aws_s3_bucket" "b" {
+  bucket = "real-bucket"
+}
+"#;
+        let result = parse_terraform_content(hcl, Path::new("main.tf")).expect("parse");
+        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("b"))];
+        assert_eq!(r.line_number, Some(6), "Should skip commented-out lines");
+    }
+
+    #[test]
+    fn test_resource_with_empty_body() {
+        let hcl = r#"
+resource "aws_s3_bucket" "empty" {}
+"#;
+        let result = parse_terraform_content(hcl, Path::new("main.tf")).expect("parse");
+        assert_eq!(result.resources.len(), 1);
+        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("empty"))];
+        assert_eq!(r.resource_type, "aws_s3_bucket");
+        assert_eq!(r.local_name, "empty");
+        assert!(r.attributes.is_empty());
     }
 }

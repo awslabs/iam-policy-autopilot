@@ -36,6 +36,13 @@ impl Engine {
         })
     }
 
+    /// Returns a shared reference to the underlying service-reference loader,
+    /// so other subsystems (e.g. Terraform resource binding) can reuse the
+    /// same HTTP client and cache instead of creating their own.
+    pub(crate) fn service_reference_loader(&self) -> &ServiceReferenceLoader {
+        &self.service_reference_loader
+    }
+
     /// This is the main entry point for the enrichment process.
     /// 1. Maps operations to authorized actions
     /// 2. Expands actions using the FAS (Forward-Access Sessions) model

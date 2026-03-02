@@ -18,6 +18,13 @@ pub(crate) mod shared;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
+/// Terraform HCL parsing, variable resolution, and state parsing.
+#[cfg(feature = "integ-test")]
+pub mod terraform;
+#[cfg(not(feature = "integ-test"))]
+#[allow(dead_code)]
+pub(crate) mod terraform;
+
 // Re-export main types for convenience
 pub use engine::Engine;
 pub(crate) use sdk_model::ServiceModelIndex;

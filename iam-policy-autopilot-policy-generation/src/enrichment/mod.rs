@@ -26,12 +26,21 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod engine;
 pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
-pub(crate) mod service_reference;
+pub mod service_reference;
+
+/// Terraform resource resolution, ARN binding, and service mapping.
+#[cfg(feature = "integ-test")]
+pub mod terraform;
+#[cfg(not(feature = "integ-test"))]
+#[allow(dead_code)]
+pub(crate) mod terraform;
 
 pub use engine::Engine;
 pub(crate) use operation_fas_map::load_operation_fas_map;
 pub(crate) use resource_matcher::ResourceMatcher;
 pub(crate) use service_reference::RemoteServiceReferenceLoader as ServiceReferenceLoader;
+#[cfg(feature = "integ-test")]
+pub use service_reference::RemoteServiceReferenceLoader;
 
 /// Represents the reason why an action was added to a policy
 #[derive(derive_new::new, Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
