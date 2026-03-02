@@ -2,7 +2,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    embedded_data::BotocoreData, enrichment::Explanations, policy_generation::PolicyWithMetadata, enrichment::terraform::ResourceBindingExplanation
+    embedded_data::BotocoreData, enrichment::terraform::ResourceBindingExplanation,
+    enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
