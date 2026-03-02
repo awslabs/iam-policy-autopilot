@@ -56,7 +56,7 @@ impl VariableContext {
         // Step 3: Read *.auto.tfvars (overrides defaults, applied after terraform.tfvars)
         let mut auto_tfvars: Vec<_> = match std::fs::read_dir(dir) {
             Ok(entries) => entries
-                .filter_map(|e| e.ok())
+                .filter_map(std::result::Result::ok)
                 .filter(|e| {
                     e.file_name()
                         .to_str()
@@ -101,12 +101,12 @@ impl VariableContext {
             return;
         };
 
-        for structure in body.into_iter() {
+        for structure in body {
             if let hcl::Structure::Block(block) = structure {
                 if block.identifier.as_str() == "variable" {
                     if let Some(var_name) = block.labels.first().map(|l| l.as_str().to_string()) {
                         // Look for a "default" attribute in the block body
-                        for inner in block.body.iter() {
+                        for inner in &block.body {
                             if let hcl::Structure::Attribute(attr) = inner {
                                 if attr.key.as_str() == "default" {
                                     if let Some(val) = expr_to_string(&attr.expr) {
@@ -130,7 +130,7 @@ impl VariableContext {
             return;
         };
 
-        for structure in body.into_iter() {
+        for structure in body {
             if let hcl::Structure::Attribute(attr) = structure {
                 if let Some(val) = expr_to_string(&attr.expr) {
                     self.vars.insert(attr.key.as_str().to_string(), val);
@@ -172,7 +172,10 @@ impl VariableContext {
                 if let Some(var_name) = trimmed.strip_prefix("var.") {
                     // Handle potential trailing content (shouldn't happen for bare refs)
                     let var_name = var_name.trim();
-                    return self.vars.get(var_name).map(|v| AttributeValue::Literal(v.clone()));
+                    return self
+                        .vars
+                        .get(var_name)
+                        .map(|v| AttributeValue::Literal(v.clone()));
                 }
 
                 // Case 2: string interpolation like `"${var.prefix}-bucket"`
@@ -264,11 +267,14 @@ variable "no_default" {
         let mut ctx = VariableContext::default();
 
         // Set defaults
-        ctx.extract_variable_defaults(r#"
+        ctx.extract_variable_defaults(
+            r#"
 variable "bucket_name" {
   default = "default-bucket"
 }
-"#, Path::new("variables.tf"));
+"#,
+            Path::new("variables.tf"),
+        );
         assert_eq!(ctx.get("bucket_name"), Some("default-bucket"));
 
         // Override with tfvars
@@ -279,7 +285,8 @@ variable "bucket_name" {
     #[test]
     fn test_resolve_bare_var_reference() {
         let mut ctx = VariableContext::default();
-        ctx.vars.insert("bucket_name".to_string(), "my-bucket".to_string());
+        ctx.vars
+            .insert("bucket_name".to_string(), "my-bucket".to_string());
 
         let expr = AttributeValue::Expression("var.bucket_name".to_string());
         let resolved = ctx.try_resolve(&expr).unwrap();
@@ -319,8 +326,7 @@ variable "bucket_name" {
         ctx.vars.insert("env1".to_string(), "staging".to_string());
         ctx.vars.insert("env2".to_string(), "us-east".to_string());
 
-        let expr =
-            AttributeValue::Expression("NAME_In__${var.env1}__${var.env2}".to_string());
+        let expr = AttributeValue::Expression("NAME_In__${var.env1}__${var.env2}".to_string());
         let resolved = ctx.try_resolve(&expr).unwrap();
         assert_eq!(
             resolved,
@@ -334,8 +340,7 @@ variable "bucket_name" {
         ctx.vars.insert("env1".to_string(), "staging".to_string());
         // env2 NOT defined
 
-        let expr =
-            AttributeValue::Expression("NAME_In__${var.env1}__${var.env2}".to_string());
+        let expr = AttributeValue::Expression("NAME_In__${var.env1}__${var.env2}".to_string());
         let resolved = ctx.try_resolve(&expr).unwrap();
         // env1 resolved, env2 not — stays as Expression
         assert_eq!(
@@ -359,8 +364,7 @@ variable "bucket_name" {
         ctx.vars.insert("prefix".to_string(), "myapp".to_string());
         // var.suffix is NOT defined
 
-        let expr =
-            AttributeValue::Expression("${var.prefix}-${var.suffix}-bucket".to_string());
+        let expr = AttributeValue::Expression("${var.prefix}-${var.suffix}-bucket".to_string());
         let resolved = ctx.try_resolve(&expr).unwrap();
         // prefix resolved, suffix not — still an expression
         assert_eq!(
@@ -379,7 +383,8 @@ variable "bucket_name" {
     #[test]
     fn test_resolve_attributes_in_parse_result() {
         let mut ctx = VariableContext::default();
-        ctx.vars.insert("bucket_name".to_string(), "resolved-bucket".to_string());
+        ctx.vars
+            .insert("bucket_name".to_string(), "resolved-bucket".to_string());
 
         let resource = super::super::TerraformResource {
             resource_type: "aws_s3_bucket".to_string(),
@@ -412,17 +417,22 @@ variable "bucket_name" {
 
         // variables.tf with defaults
         let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(vars_tf, r#"
+        writeln!(
+            vars_tf,
+            r#"
 variable "bucket_name" {{
   default = "default-bucket"
 }}
 variable "table_name" {{
   default = "default-table"
 }}
-"#).expect("write");
+"#
+        )
+        .expect("write");
 
         // terraform.tfvars overrides bucket_name
-        let mut tfvars = std::fs::File::create(tmp.path().join("terraform.tfvars")).expect("create");
+        let mut tfvars =
+            std::fs::File::create(tmp.path().join("terraform.tfvars")).expect("create");
         writeln!(tfvars, r#"bucket_name = "prod-bucket""#).expect("write");
 
         let ctx = VariableContext::from_directory(tmp.path()).expect("resolve");
@@ -436,11 +446,15 @@ variable "table_name" {{
         let tmp = TempDir::new().expect("tmp");
 
         let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(vars_tf, r#"
+        writeln!(
+            vars_tf,
+            r#"
 variable "env" {{
   default = "dev"
 }}
-"#).expect("write");
+"#
+        )
+        .expect("write");
 
         let mut auto = std::fs::File::create(tmp.path().join("prod.auto.tfvars")).expect("create");
         writeln!(auto, r#"env = "prod""#).expect("write");
@@ -454,11 +468,15 @@ variable "env" {{
         let tmp = TempDir::new().expect("tmp");
 
         let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(vars_tf, r#"
+        writeln!(
+            vars_tf,
+            r#"
 variable "env" {{
   default = "dev"
 }}
-"#).expect("write");
+"#
+        )
+        .expect("write");
 
         // Two auto.tfvars — "b" should override "a" due to lexicographic order
         let mut a = std::fs::File::create(tmp.path().join("a.auto.tfvars")).expect("create");
@@ -468,7 +486,11 @@ variable "env" {{
         writeln!(b, r#"env = "from-b""#).expect("write");
 
         let ctx = VariableContext::from_directory(tmp.path()).expect("resolve");
-        assert_eq!(ctx.get("env"), Some("from-b"), "Later auto.tfvars should win");
+        assert_eq!(
+            ctx.get("env"),
+            Some("from-b"),
+            "Later auto.tfvars should win"
+        );
     }
 
     #[test]
@@ -494,7 +516,10 @@ variable "simple" {
 
         // Complex defaults (map, list) should be silently skipped
         assert!(ctx.get("tags").is_none(), "Map defaults should be skipped");
-        assert!(ctx.get("allowed_cidrs").is_none(), "List defaults should be skipped");
+        assert!(
+            ctx.get("allowed_cidrs").is_none(),
+            "List defaults should be skipped"
+        );
         // Scalar string defaults should still be captured
         assert_eq!(ctx.get("simple"), Some("kept"));
     }

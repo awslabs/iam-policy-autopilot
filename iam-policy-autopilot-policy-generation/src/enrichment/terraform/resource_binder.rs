@@ -22,8 +22,8 @@ use convert_case::{Case, Casing};
 use log::debug;
 use regex::Regex;
 
-use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 use crate::enrichment::ServiceReferenceLoader;
+use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 
 use crate::extraction::terraform::hcl_parser::parse_terraform_directory;
 use crate::extraction::terraform::state_parser::{parse_terraform_state, StateResourceMap};
@@ -170,10 +170,7 @@ impl TerraformResourceResolver {
         });
         var_ctx.resolve_attributes(&mut tf_result);
 
-        debug!(
-            "Parsed {} Terraform resources",
-            tf_result.resources.len(),
-        );
+        debug!("Parsed {} Terraform resources", tf_result.resources.len(),);
 
         // Step 3: Parse terraform.tfstate if provided
         let state_map = if let Some(state_path) = tfstate_path {
@@ -187,13 +184,8 @@ impl TerraformResourceResolver {
         };
 
         // Step 4: Resolve all resources
-        let resources = resolve_terraform_resources(
-            &tf_result.resources,
-            &state_map,
-            &var_ctx,
-            loader,
-        )
-        .await;
+        let resources =
+            resolve_terraform_resources(&tf_result.resources, &state_map, &var_ctx, loader).await;
 
         debug!(
             "Resolved {} resource groups from Terraform",
@@ -349,16 +341,12 @@ impl TerraformResourceResolver {
         {
             if !full_arns.is_empty() {
                 // For sub-resources matched via parent, append /*
-                if is_sub_resource
-                    && self
-                        .lookup_full_arns(service, resource_type_name)
-                        .is_none()
-                {
+                if is_sub_resource && self.lookup_full_arns(service, resource_type_name).is_none() {
                     let sub_arns: Vec<String> =
                         full_arns.iter().map(|a| format!("{a}/*")).collect();
                     return Some(sub_arns);
                 }
-                return Some(full_arns.to_vec());
+                return Some(full_arns.clone());
             }
         }
 
@@ -590,43 +578,37 @@ async fn resolve_terraform_resources(
     let mut results = ResolvedResourceMap::new();
 
     for resource in hcl_resources.values() {
-        let mut resolved = ResolvedTerraformResource::from_parsed(resource.clone());
+        let mut resolved_res = ResolvedTerraformResource::from_parsed(resource.clone());
         let tf_key = (resource.resource_type.clone(), resource.local_name.clone());
 
         let Some((service, suffix)) = resolver.resolve(&resource.resource_type) else {
             continue;
         };
-        resolved.service_name = Some(service.clone());
-        resolved.resource_type = Some(suffix.clone());
+        resolved_res.service_name = Some(service.clone());
+        resolved_res.resource_type = Some(suffix.clone());
 
         // Derive HCL ARN from SDF patterns + naming attribute
-        if let Some(patterns) = loader
-            .get_resource_arns(&service, &suffix)
-            .await
-        {
+        if let Some(patterns) = loader.get_resource_arns(&service, &suffix).await {
             if let Some(naming_attr) = derive_naming_attribute(&patterns, &resource.attributes) {
                 if let Some(attr_value) = resource.attributes.get(&naming_attr) {
                     let resolved_value = match attr_value {
                         AttributeValue::Literal(s) => Some(s.clone()),
-                        AttributeValue::Expression(_) => var_ctx
-                            .try_resolve(attr_value)
-                            .and_then(|v| match v {
+                        AttributeValue::Expression(_) => {
+                            var_ctx.try_resolve(attr_value).and_then(|v| match v {
                                 AttributeValue::Literal(s) => Some(s),
                                 _ => None,
-                            }),
+                            })
+                        }
                     };
                     if let Some(name) = resolved_value {
-                        resolved.binding_name = Some(name.clone());
+                        resolved_res.binding_name = Some(name.clone());
                         if let Some(pattern) = patterns.first() {
                             let re = placeholder_regex();
                             let mut replaced = false;
                             let hcl_arn = re
                                 .replace_all(pattern, |caps: &regex::Captures| {
                                     let ph = caps.get(1).map_or("", |m| m.as_str());
-                                    if AWS_PLACEHOLDERS
-                                        .iter()
-                                        .any(|p| p.eq_ignore_ascii_case(ph))
-                                    {
+                                    if AWS_PLACEHOLDERS.iter().any(|p| p.eq_ignore_ascii_case(ph)) {
                                         format!("${{{ph}}}")
                                     } else if !replaced {
                                         replaced = true;
@@ -636,11 +618,11 @@ async fn resolve_terraform_resources(
                                     }
                                 })
                                 .to_string();
-                            resolved.hcl_arn = Some(hcl_arn);
+                            resolved_res.hcl_arn = Some(hcl_arn);
                         }
                     } else {
                         // Expression couldn't be resolved — use wildcard as binding name
-                        resolved.binding_name = Some("*".to_string());
+                        resolved_res.binding_name = Some("*".to_string());
                     }
                 }
             }
@@ -649,14 +631,11 @@ async fn resolve_terraform_resources(
         // Attach state ARN if available
         if let Some(state_resources) = state_map.get(&tf_key) {
             if let Some(arn) = state_resources.iter().find_map(|s| s.arn.as_ref()) {
-                resolved.state_arn = Some(arn.clone());
+                resolved_res.state_arn = Some(arn.clone());
             }
         }
 
-        results
-            .entry((service, suffix))
-            .or_default()
-            .push(resolved);
+        results.entry((service, suffix)).or_default().push(resolved_res);
     }
 
     results
@@ -771,11 +750,11 @@ fn extract_service_from_action(action_name: &str) -> &str {
 
 #[cfg(test)]
 mod tests {
+    use super::BindingSource;
     use super::*;
     use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::extraction::terraform::state_parser::StateResource;
     use crate::extraction::terraform::{AttributeValue, TerraformResource};
-    use super::BindingSource;
     use crate::Explanation;
     use crate::SdkMethodCall;
     use std::collections::HashMap;
@@ -785,7 +764,9 @@ mod tests {
     // Test fixture helpers
     // -----------------------------------------------------------------------
 
-    fn vec_to_resource_map(resources: Vec<TerraformResource>) -> crate::extraction::terraform::TerraformResourceMap {
+    fn vec_to_resource_map(
+        resources: Vec<TerraformResource>,
+    ) -> crate::extraction::terraform::TerraformResourceMap {
         resources
             .into_iter()
             .map(|r| ((r.resource_type.clone(), r.local_name.clone()), r))
@@ -942,11 +923,7 @@ mod tests {
             "bucket",
             AttributeValue::Literal("x".into()),
         )];
-        let state = make_state_map(vec![(
-            "aws_s3_bucket",
-            "other",
-            Some("arn:aws:s3:::other"),
-        )]);
+        let state = make_state_map(vec![("aws_s3_bucket", "other", Some("arn:aws:s3:::other"))]);
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
             &vec_to_resource_map(hcl),
@@ -1247,9 +1224,8 @@ mod tests {
             ));
         let resolver = TerraformResourceResolver::from_parts(resource_map, None);
 
-        let patterns = vec![
-            "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
-        ];
+        let patterns =
+            vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
         let result = resolver
             .substitute_arn_patterns("dynamodb", "table", &patterns)
             .unwrap();
@@ -1347,10 +1323,7 @@ mod tests {
         assert_eq!(explanations.len(), 1);
         assert_eq!(explanations[0].arn, "arn:aws:s3:::my-bucket");
         assert_eq!(explanations[0].source, BindingSource::TerraformState);
-        assert_eq!(
-            explanations[0].location,
-            tfstate_path.display().to_string()
-        );
+        assert_eq!(explanations[0].location, tfstate_path.display().to_string());
     }
 
     #[test]
@@ -1399,13 +1372,9 @@ mod tests {
 
     #[test]
     fn test_derive_naming_attribute_from_dynamodb_arn() {
-        let patterns = vec![
-            "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
-        ];
-        let attrs = HashMap::from([(
-            "name".to_string(),
-            AttributeValue::Literal("x".to_string()),
-        )]);
+        let patterns =
+            vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
+        let attrs = HashMap::from([("name".to_string(), AttributeValue::Literal("x".to_string()))]);
         assert_eq!(
             derive_naming_attribute(&patterns, &attrs),
             Some("name".to_string())
@@ -1420,16 +1389,14 @@ mod tests {
 
     #[test]
     fn test_multi_placeholder_detection_double() {
-        let patterns =
-            vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()];
+        let patterns = vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()];
         assert!(arn_patterns_have_multiple_resource_placeholders(&patterns));
     }
 
     #[test]
     fn test_multi_placeholder_detection_infra_not_counted() {
-        let patterns = vec![
-            "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
-        ];
+        let patterns =
+            vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
         assert!(!arn_patterns_have_multiple_resource_placeholders(&patterns));
     }
 

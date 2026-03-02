@@ -6,16 +6,16 @@
 
 use std::path::{Path, PathBuf};
 
-use iam_policy_autopilot_policy_generation::ServiceReferenceLoader;
-use iam_policy_autopilot_policy_generation::extraction::terraform::hcl_parser::parse_terraform_directory;
 use iam_policy_autopilot_policy_generation::enrichment::terraform::resource_binder::TerraformResourceResolver;
+use iam_policy_autopilot_policy_generation::extraction::terraform::hcl_parser::parse_terraform_directory;
+use iam_policy_autopilot_policy_generation::extraction::terraform::state_parser::parse_terraform_state;
 use iam_policy_autopilot_policy_generation::extraction::terraform::{
     AttributeValue, TerraformParseResult, TerraformResource,
 };
-use iam_policy_autopilot_policy_generation::extraction::terraform::state_parser::parse_terraform_state;
+use iam_policy_autopilot_policy_generation::ServiceReferenceLoader;
 
-use wiremock::{MockServer, Mock, ResponseTemplate};
 use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 /// Mock loader with ARN patterns for the services used in the sample fixtures.
 ///
@@ -79,7 +79,9 @@ async fn mock_loader() -> (MockServer, ServiceReferenceLoader) {
         })))
         .mount(&mock_server).await;
 
-    let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap().with_mapping_url(url);
+    let loader = ServiceReferenceLoader::empty_loader_for_tests()
+        .unwrap()
+        .with_mapping_url(url);
     (mock_server, loader)
 }
 
@@ -114,11 +116,21 @@ fn test_parse_sample_terraform_directory() {
         result.resources.len()
     );
 
-    let types: Vec<&str> = result.resources.values().map(|r| r.resource_type.as_str()).collect();
+    let types: Vec<&str> = result
+        .resources
+        .values()
+        .map(|r| r.resource_type.as_str())
+        .collect();
     assert!(types.contains(&"aws_s3_bucket"), "Missing aws_s3_bucket");
-    assert!(types.contains(&"aws_dynamodb_table"), "Missing aws_dynamodb_table");
+    assert!(
+        types.contains(&"aws_dynamodb_table"),
+        "Missing aws_dynamodb_table"
+    );
     assert!(types.contains(&"aws_sqs_queue"), "Missing aws_sqs_queue");
-    assert!(types.contains(&"aws_lambda_function"), "Missing aws_lambda_function");
+    assert!(
+        types.contains(&"aws_lambda_function"),
+        "Missing aws_lambda_function"
+    );
     assert!(types.contains(&"aws_iam_role"), "Missing aws_iam_role");
 
     assert!(
@@ -174,13 +186,9 @@ fn test_parse_extracts_dynamodb_table_name() {
 #[tokio::test]
 async fn test_resource_resolver_from_sample_terraform() {
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("should resolve");
+    let resolver = TerraformResourceResolver::from_directory(&sample_dir(), None, &loader)
+        .await
+        .expect("should resolve");
 
     assert!(!resolver.is_empty(), "Resolver should have resources");
 
@@ -202,29 +210,34 @@ async fn test_resource_resolver_from_sample_terraform() {
     // Check SQS queue
     let sqs_queues = &resolver.resources()[&("sqs".to_string(), "queue".to_string())];
     assert_eq!(sqs_queues.len(), 1);
-    assert_eq!(sqs_queues[0].binding_name.as_deref(), Some("task-processing-queue"));
+    assert_eq!(
+        sqs_queues[0].binding_name.as_deref(),
+        Some("task-processing-queue")
+    );
 
     // Check Lambda function
     let lambda_fns = &resolver.resources()[&("lambda".to_string(), "function".to_string())];
     assert_eq!(lambda_fns.len(), 1);
-    assert_eq!(lambda_fns[0].binding_name.as_deref(), Some("data-processor"));
+    assert_eq!(
+        lambda_fns[0].binding_name.as_deref(),
+        Some("data-processor")
+    );
 
     // Check IAM role
     let iam_roles = &resolver.resources()[&("iam".to_string(), "role".to_string())];
     assert_eq!(iam_roles.len(), 1);
-    assert_eq!(iam_roles[0].binding_name.as_deref(), Some("data-processor-role"));
+    assert_eq!(
+        iam_roles[0].binding_name.as_deref(),
+        Some("data-processor-role")
+    );
 }
 
 #[tokio::test]
 async fn test_arn_substitution_s3_bucket() {
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(&sample_dir(), None, &loader)
+        .await
+        .expect("resolve");
 
     let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
     let substituted = resolver
@@ -239,17 +252,12 @@ async fn test_arn_substitution_s3_bucket() {
 #[tokio::test]
 async fn test_arn_substitution_dynamodb_table() {
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(&sample_dir(), None, &loader)
+        .await
+        .expect("resolve");
 
-    let patterns = vec![
-        "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
-    ];
+    let patterns =
+        vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
     let substituted = resolver
         .substitute_arn_patterns_for_test("dynamodb", "table", &patterns)
         .expect("should substitute");
@@ -264,17 +272,11 @@ async fn test_arn_substitution_dynamodb_table() {
 #[tokio::test]
 async fn test_arn_substitution_sqs_queue() {
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(&sample_dir(), None, &loader)
+        .await
+        .expect("resolve");
 
-    let patterns = vec![
-        "arn:${Partition}:sqs:${Region}:${Account}:${QueueName}".to_string(),
-    ];
+    let patterns = vec!["arn:${Partition}:sqs:${Region}:${Account}:${QueueName}".to_string()];
     let substituted = resolver
         .substitute_arn_patterns_for_test("sqs", "queue", &patterns)
         .expect("should substitute");
@@ -301,13 +303,9 @@ resource "aws_s3_bucket" "dynamic" {
     std::fs::write(tmp.path().join("main.tf"), hcl).expect("write");
 
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(tmp.path(), None, &loader)
+        .await
+        .expect("resolve");
 
     let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
     let substituted = resolver.substitute_arn_patterns_for_test("s3", "bucket", &patterns);
@@ -332,13 +330,9 @@ resource "aws_s3_bucket" "dynamic" {
     std::fs::write(tmp.path().join("main.tf"), hcl).expect("write");
 
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(tmp.path(), None, &loader)
+        .await
+        .expect("resolve");
 
     let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
     let substituted = resolver
@@ -359,8 +353,7 @@ fn test_parse_result_json_roundtrip() {
     let result = parse_terraform_directory(&sample_dir()).expect("parse");
 
     let json = serde_json::to_string_pretty(&result).expect("serialize");
-    let deserialized: TerraformParseResult =
-        serde_json::from_str(&json).expect("deserialize");
+    let deserialized: TerraformParseResult = serde_json::from_str(&json).expect("deserialize");
 
     assert_eq!(result, deserialized);
 }
@@ -383,13 +376,9 @@ async fn test_empty_directory_resolver_is_empty() {
     std::fs::write(tmp.path().join("empty.tf"), "").expect("write");
 
     let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-    let resolver = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(tmp.path(), None, &loader)
+        .await
+        .expect("resolve");
 
     assert!(resolver.is_empty());
 }
@@ -418,13 +407,9 @@ resource "aws_s3_bucket" "s3" {
     std::fs::write(tmp.path().join("main.tf"), hcl).expect("write");
 
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(tmp.path(), None, &loader)
+        .await
+        .expect("resolve");
 
     assert_eq!(resolver.len(), 1);
     let s3 = &resolver.resources()[&("s3".to_string(), "bucket".to_string())];
@@ -492,13 +477,10 @@ async fn test_state_bindings_take_precedence_over_hcl() {
     let state_path = sample_dir().join("terraform.tfstate");
 
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        Some(&state_path),
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver =
+        TerraformResourceResolver::from_directory(&sample_dir(), Some(&state_path), &loader)
+            .await
+            .expect("resolve");
 
     let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
     let substituted = resolver
@@ -526,17 +508,13 @@ async fn test_state_dynamodb_binding_is_full_arn() {
     let state_path = sample_dir().join("terraform.tfstate");
 
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        Some(&state_path),
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver =
+        TerraformResourceResolver::from_directory(&sample_dir(), Some(&state_path), &loader)
+            .await
+            .expect("resolve");
 
-    let patterns = vec![
-        "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string(),
-    ];
+    let patterns =
+        vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
     let substituted = resolver
         .substitute_arn_patterns_for_test("dynamodb", "table", &patterns)
         .expect("should substitute");
@@ -559,13 +537,9 @@ async fn test_vars_sample_resolves_interpolations() {
     //   name = var.table_name  (from tfvars: "users-prod")
     //   name = "${var.app_name}-tasks"  (app_name=myapp default)
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &vars_sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(&vars_sample_dir(), None, &loader)
+        .await
+        .expect("resolve");
 
     // S3 bucket: "${var.app_name}-${var.environment}-data" → "myapp-prod-data"
     let s3_buckets = &resolver.resources()[&("s3".to_string(), "bucket".to_string())];
@@ -602,13 +576,9 @@ async fn test_vars_sample_resolves_interpolations() {
 #[tokio::test]
 async fn test_binding_explanations_from_hcl() {
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        None,
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver = TerraformResourceResolver::from_directory(&sample_dir(), None, &loader)
+        .await
+        .expect("resolve");
 
     let explanations = resolver.build_binding_explanations();
     assert!(
@@ -635,13 +605,10 @@ async fn test_binding_explanations_from_hcl() {
 async fn test_binding_explanations_with_state_use_state_source() {
     let state_path = sample_dir().join("terraform.tfstate");
     let (_server, loader) = mock_loader().await;
-    let resolver = TerraformResourceResolver::from_directory(
-        &sample_dir(),
-        Some(&state_path),
-        &loader,
-    )
-    .await
-    .expect("resolve");
+    let resolver =
+        TerraformResourceResolver::from_directory(&sample_dir(), Some(&state_path), &loader)
+            .await
+            .expect("resolve");
 
     let explanations = resolver.build_binding_explanations();
     assert!(
@@ -676,14 +643,13 @@ async fn test_corrupt_state_file_produces_error() {
     std::fs::write(&bad_state, "this is not valid JSON").expect("write");
 
     let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-    let result = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        Some(&bad_state),
-        &loader,
-    )
-    .await;
+    let result =
+        TerraformResourceResolver::from_directory(tmp.path(), Some(&bad_state), &loader).await;
 
-    assert!(result.is_err(), "Corrupt state file should produce an error");
+    assert!(
+        result.is_err(),
+        "Corrupt state file should produce an error"
+    );
 }
 
 #[tokio::test]
@@ -697,12 +663,11 @@ async fn test_missing_state_file_produces_error() {
     let missing_state = tmp.path().join("nonexistent.tfstate");
 
     let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-    let result = TerraformResourceResolver::from_directory(
-        tmp.path(),
-        Some(&missing_state),
-        &loader,
-    )
-    .await;
+    let result =
+        TerraformResourceResolver::from_directory(tmp.path(), Some(&missing_state), &loader).await;
 
-    assert!(result.is_err(), "Missing state file should produce an error");
+    assert!(
+        result.is_err(),
+        "Missing state file should produce an error"
+    );
 }

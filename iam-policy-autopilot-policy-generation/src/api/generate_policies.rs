@@ -145,10 +145,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         )
         .await
         .context("Failed to resolve Terraform resources")?;
-        debug!(
-            "Resolved {} resource groups from Terraform",
-            resolver.len()
-        );
+        debug!("Resolved {} resource groups from Terraform", resolver.len());
         Some(resolver)
     } else {
         None
@@ -222,10 +219,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         let bound = resolver.substitute_enriched_calls(&enriched_results);
         let explanations = if config.explain_filters.is_some() {
             let expl = resolver.build_binding_explanations();
-            debug!(
-                "Terraform binding: {} binding explanations",
-                expl.len()
-            );
+            debug!("Terraform binding: {} binding explanations", expl.len());
             Some(expl)
         } else {
             None

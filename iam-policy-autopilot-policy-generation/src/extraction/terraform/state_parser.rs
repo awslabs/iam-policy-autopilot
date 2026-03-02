@@ -58,7 +58,10 @@ fn parse_terraform_state_content(content: &str) -> Result<StateResourceMap> {
             continue;
         }
 
-        let key = (raw_resource.resource_type.clone(), raw_resource.name.clone());
+        let key = (
+            raw_resource.resource_type.clone(),
+            raw_resource.name.clone(),
+        );
 
         for instance in &raw_resource.instances {
             let arn = instance
@@ -67,11 +70,14 @@ fn parse_terraform_state_content(content: &str) -> Result<StateResourceMap> {
                 .and_then(|v| v.as_str())
                 .map(String::from);
 
-            resources_map.entry(key.clone()).or_default().push(StateResource {
-                resource_type: key.0.clone(),
-                name: key.1.clone(),
-                arn,
-            });
+            resources_map
+                .entry(key.clone())
+                .or_default()
+                .push(StateResource {
+                    resource_type: key.0.clone(),
+                    name: key.1.clone(),
+                    arn,
+                });
         }
     }
 
@@ -214,7 +220,8 @@ mod tests {
 
     #[test]
     fn test_parse_state_empty_resources() {
-        let map = parse_terraform_state_content(r#"{"version": 4, "resources": []}"#).expect("parse");
+        let map =
+            parse_terraform_state_content(r#"{"version": 4, "resources": []}"#).expect("parse");
         assert!(map.is_empty());
     }
 
@@ -237,7 +244,10 @@ mod tests {
         let result = parse_terraform_state_content(r#"{"version": 3, "resources": []}"#);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("unsupported terraform state version 3"), "{err}");
+        assert!(
+            err.contains("unsupported terraform state version 3"),
+            "{err}"
+        );
     }
 
     #[test]

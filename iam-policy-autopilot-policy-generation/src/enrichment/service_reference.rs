@@ -322,7 +322,6 @@ impl RemoteServiceReferenceLoader {
         })
     }
 
-    
     /// Creates a loader that always returns `None` for any service.
     /// Useful in tests that don't need real SDF data.
     #[cfg(any(test, feature = "integ-test"))]
@@ -336,9 +335,11 @@ impl RemoteServiceReferenceLoader {
             disable_file_system_cache: true,
         };
         // Pre-initialize with an empty mapping so no network call is ever made.
-        let _ = loader.service_reference_mapping.set(ServiceReferenceMapping {
-            service_reference_mapping: HashMap::new(),
-        });
+        let _ = loader
+            .service_reference_mapping
+            .set(ServiceReferenceMapping {
+                service_reference_mapping: HashMap::new(),
+            });
         Ok(loader)
     }
 
@@ -458,7 +459,11 @@ impl RemoteServiceReferenceLoader {
         false
     }
 
-    pub(crate) async fn get_resource_arns(&self, service_name: &str, resource_type: &str) -> Option<Vec<String>> {
+    pub(crate) async fn get_resource_arns(
+        &self,
+        service_name: &str,
+        resource_type: &str,
+    ) -> Option<Vec<String>> {
         if let Ok(Some(service_ref)) = self.load(service_name).await {
             service_ref.resources.get(resource_type).cloned()
         } else {
