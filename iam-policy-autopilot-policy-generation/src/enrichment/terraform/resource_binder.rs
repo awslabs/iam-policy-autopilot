@@ -635,7 +635,10 @@ async fn resolve_terraform_resources(
             }
         }
 
-        results.entry((service, suffix)).or_default().push(resolved_res);
+        results
+            .entry((service, suffix))
+            .or_default()
+            .push(resolved_res);
     }
 
     results
