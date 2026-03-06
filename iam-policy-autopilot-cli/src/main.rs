@@ -33,7 +33,7 @@ mod commands;
 mod output;
 mod types;
 
-use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport};
+use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport, DEFAULT_BIND_ADDRESS};
 use types::ExitCode;
 
 use crate::commands::print_version_info;
@@ -356,8 +356,15 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
         /// Port number for HTTP transport (ignored for stdio transport)
         #[arg(short = 'p', long = "port", default_value_t = MCP_HTTP_DEFAULT_PORT,
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
-Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
+Only used when --transport=http. The server will bind to the specified address on the specified port.")]
         port: u16,
+
+        /// Bind address for HTTP transport (ignored for stdio transport)
+        #[arg(short = 'b', long = "bind-address", default_value_t = DEFAULT_BIND_ADDRESS.to_string(),
+              long_help = "IP address to bind the HTTP server to when using HTTP transport. \
+Only used when --transport=http. Defaults to 127.0.0.1 (localhost). \
+Use 0.0.0.0 to listen on all interfaces.")]
+        bind_address: String,
     },
 
     #[command(
@@ -611,8 +618,12 @@ async fn main() {
             }
         }
 
-        Commands::McpServer { transport, port } => {
-            match start_mcp_server(transport, port).await {
+        Commands::McpServer {
+            transport,
+            port,
+            bind_address,
+        } => {
+            match start_mcp_server(transport, port, &bind_address).await {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);

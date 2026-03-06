@@ -7,7 +7,8 @@ use log::info;
 pub mod mcp;
 pub(crate) mod tools;
 
-static BIND_ADDRESS: &str = "127.0.0.1";
+/// Default bind address for the HTTP MCP server.
+pub static DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum McpTransport {
@@ -24,7 +25,11 @@ impl Display for McpTransport {
     }
 }
 
-pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> {
+pub async fn start_mcp_server(
+    transport: McpTransport,
+    port: u16,
+    bind_address: &str,
+) -> Result<()> {
     info!("Starting MCP server with transport: {transport}");
 
     let env = env_logger::Env::default().filter_or("IAMPA_LOG_LEVEL", "debug");
@@ -62,12 +67,12 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
 
     match transport {
         McpTransport::Http => {
-            let bind_address: String = format!("{BIND_ADDRESS}:{port}");
-            info!("Starting HTTP MCP server at {bind_address}");
+            let addr: String = format!("{bind_address}:{port}");
+            info!("Starting HTTP MCP server at {addr}");
 
-            crate::mcp::begin_http_transport(bind_address.as_str(), path_str)
+            crate::mcp::begin_http_transport(addr.as_str(), path_str)
                 .await
-                .with_context(|| format!("Failed to start HTTP Server at '{bind_address}'"))?;
+                .with_context(|| format!("Failed to start HTTP Server at '{addr}'"))?;
         }
         McpTransport::Stdio => {
             info!("Starting STDIO MCP server");

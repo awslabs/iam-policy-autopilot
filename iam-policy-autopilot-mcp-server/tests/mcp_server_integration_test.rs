@@ -94,6 +94,54 @@ async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParam>, Ch
     setup_http_with_port(8001).await
 }
 
+async fn setup_http_with_bind_address(
+    port: u16,
+    bind_address: &str,
+) -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
+    let mut command = Command::new("../target/debug/iam-policy-autopilot");
+    command
+        .args(&[
+            "mcp-server",
+            "--transport",
+            "http",
+            "--port",
+            &port.to_string(),
+            "--bind-address",
+            bind_address,
+        ])
+        .stderr(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let server_process = command.spawn().expect("Failed to start HTTP server");
+
+    if !wait_for_server_ready(port, 100).await {
+        panic!(
+            "Server failed to start within timeout period on port {} with bind address {}",
+            port, bind_address
+        );
+    }
+
+    sleep(Duration::from_millis(500)).await;
+
+    let transport =
+        StreamableHttpClientTransport::from_uri(format!("http://{}:{}/mcp", bind_address, port));
+    let client_info = ClientInfo {
+        protocol_version: Default::default(),
+        capabilities: ClientCapabilities::default(),
+        client_info: Implementation {
+            name: "test http client".to_string(),
+            title: None,
+            version: "0.0.1".to_string(),
+            website_url: None,
+            icons: None,
+        },
+    };
+
+    let client = client_info.serve(transport).await.unwrap();
+
+    (client, server_process)
+}
+
 #[tokio::test]
 async fn test_stdio_list_tools() {
     let client = setup_stdio().await;
@@ -251,4 +299,24 @@ async fn test_http_generate_policy_for_access_denied() {
     // Clean up: kill the server process
     let _ = server_process.start_kill();
     let _ = server_process.wait().await;
+}
+
+#[tokio::test]
+#[serial]
+async fn test_http_custom_bind_address_list_tools() {
+    let (client, mut server_process) =
+        setup_http_with_bind_address(8004, "127.0.0.1").await;
+
+    let tools_result = client.list_tools(None).await.unwrap();
+
+    // Verify we have the expected tools
+    assert_eq!(tools_result.tools.len(), 3);
+
+    let tool_names: Vec<&str> = tools_result.tools.iter().map(|t| t.name.as_ref()).collect();
+    assert!(tool_names.contains(&"generate_application_policies"));
+    assert!(tool_names.contains(&"generate_policy_for_access_denied"));
+    assert!(tool_names.contains(&"fix_access_denied"));
+
+    // Clean up
+    let _ = server_process.kill().await;
 }
