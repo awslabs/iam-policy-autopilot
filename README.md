@@ -5,7 +5,7 @@
 
 An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports applications built in Python, Go, and TypeScript. 
 
-We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Requests](https://github.com/awslabs/iam-policy-autopilot/pulls). 
+We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls). 
 
 
 ## Table of Contents
