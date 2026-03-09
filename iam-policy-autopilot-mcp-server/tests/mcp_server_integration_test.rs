@@ -28,9 +28,9 @@ async fn setup_stdio() -> RunningService<RoleClient, ()> {
     .unwrap()
 }
 
-async fn wait_for_server_ready(port: u16, max_attempts: u32) -> bool {
+async fn wait_for_server_ready(bind_address: &str, port: u16, max_attempts: u32) -> bool {
     for _ in 0..max_attempts {
-        if TcpStream::connect(format!("127.0.0.1:{}", port))
+        if TcpStream::connect(format!("{bind_address}:{port}"))
             .await
             .is_ok()
         {
@@ -41,8 +41,9 @@ async fn wait_for_server_ready(port: u16, max_attempts: u32) -> bool {
     false
 }
 
-async fn setup_http_with_port(
+async fn setup_http_with_bind_address(
     port: u16,
+    bind_address: &str,
 ) -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
     // Start HTTP server as a background process using debug binary
     let mut command = Command::new("../target/debug/iam-policy-autopilot");
@@ -53,6 +54,8 @@ async fn setup_http_with_port(
             "http",
             "--port",
             &port.to_string(),
+            "--bind-address",
+            bind_address,
         ])
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped());
@@ -60,11 +63,8 @@ async fn setup_http_with_port(
     let server_process = command.spawn().expect("Failed to start HTTP server");
 
     // Wait for server to be ready with proper timeout
-    if !wait_for_server_ready(port, 100).await {
-        panic!(
-            "Server failed to start within timeout period on port {}",
-            port
-        );
+    if !wait_for_server_ready(bind_address, port, 100).await {
+        panic!("Server failed to start within timeout period on {bind_address}:{port}",);
     }
 
     // Give a bit more time for the MCP service to be fully initialized
@@ -72,7 +72,7 @@ async fn setup_http_with_port(
 
     // Create HTTP client transport
     let transport =
-        StreamableHttpClientTransport::from_uri(format!("http://127.0.0.1:{}/mcp", port));
+        StreamableHttpClientTransport::from_uri(format!("http://{bind_address}:{port}/mcp"));
     let client_info = ClientInfo {
         protocol_version: Default::default(),
         capabilities: ClientCapabilities::default(),
@@ -91,55 +91,7 @@ async fn setup_http_with_port(
 }
 
 async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
-    setup_http_with_port(8001).await
-}
-
-async fn setup_http_with_bind_address(
-    port: u16,
-    bind_address: &str,
-) -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
-    let mut command = Command::new("../target/debug/iam-policy-autopilot");
-    command
-        .args(&[
-            "mcp-server",
-            "--transport",
-            "http",
-            "--port",
-            &port.to_string(),
-            "--bind-address",
-            bind_address,
-        ])
-        .stderr(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped());
-
-    let server_process = command.spawn().expect("Failed to start HTTP server");
-
-    if !wait_for_server_ready(port, 100).await {
-        panic!(
-            "Server failed to start within timeout period on port {} with bind address {}",
-            port, bind_address
-        );
-    }
-
-    sleep(Duration::from_millis(500)).await;
-
-    let transport =
-        StreamableHttpClientTransport::from_uri(format!("http://{}:{}/mcp", bind_address, port));
-    let client_info = ClientInfo {
-        protocol_version: Default::default(),
-        capabilities: ClientCapabilities::default(),
-        client_info: Implementation {
-            name: "test http client".to_string(),
-            title: None,
-            version: "0.0.1".to_string(),
-            website_url: None,
-            icons: None,
-        },
-    };
-
-    let client = client_info.serve(transport).await.unwrap();
-
-    (client, server_process)
+    setup_http_with_bind_address(8001, "127.0.0.1").await
 }
 
 #[tokio::test]
@@ -257,7 +209,7 @@ async fn test_http_generate_policy() {
         .unwrap()
         .join(Path::new("tests/test_data/lambda.py"));
 
-    let (client, mut server_process) = setup_http_with_port(8002).await;
+    let (client, mut server_process) = setup_http_with_bind_address(8002, "127.0.0.1").await;
     let tool_result = client
         .call_tool(CallToolRequestParam {
             name: "generate_application_policies".into(),
@@ -281,7 +233,7 @@ async fn test_http_generate_policy() {
 #[tokio::test]
 #[serial]
 async fn test_http_generate_policy_for_access_denied() {
-    let (client, mut server_process) = setup_http_with_port(8003).await;
+    let (client, mut server_process) = setup_http_with_bind_address(8003, "127.0.0.1").await;
     let tool_result = client
         .call_tool(CallToolRequestParam {
             name: "generate_policy_for_access_denied".into(),
