@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 pub(crate) mod engine;
 pub(crate) mod extractor;
+pub(crate) mod framework;
 pub(crate) mod go;
 pub(crate) mod java;
 pub(crate) mod javascript;
