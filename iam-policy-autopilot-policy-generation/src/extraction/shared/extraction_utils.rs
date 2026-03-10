@@ -215,16 +215,14 @@ impl<'a> PaginatorCallPattern<'a> {
                 Vec::new() // No services found for this method
             };
 
+        let metadata = SdkMethodCallMetadata::new(self.expr().to_string(), self.location().clone())
+            .with_parameters(self.arguments().to_vec())
+            .with_receiver(self.client_receiver().to_string());
+
         crate::extraction::SdkMethodCall {
             name: method_name,
             possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: self.arguments().to_vec(),
-                return_type: None,
-                expr: self.expr().to_string(),
-                location: self.location().clone(),
-                receiver: Some(self.client_receiver().to_string()),
-            }),
+            metadata: Some(metadata),
         }
     }
 }
@@ -363,16 +361,15 @@ impl<'a> WaiterCallPattern<'a> {
                 let method_name =
                     ServiceDiscovery::operation_to_method_name(operation_name, language);
 
+                let metadata =
+                    SdkMethodCallMetadata::new(self.expr().to_string(), self.location().clone())
+                        .with_parameters(parameters)
+                        .with_receiver(self.client_receiver().to_string());
+
                 synthetic_calls.push(crate::extraction::SdkMethodCall {
                     name: method_name,
                     possible_services: vec![service_name.clone()],
-                    metadata: Some(SdkMethodCallMetadata {
-                        parameters,
-                        return_type: None,
-                        expr: self.expr().to_string(),
-                        location: self.location().clone(),
-                        receiver: Some(self.client_receiver().to_string()),
-                    }),
+                    metadata: Some(metadata),
                 });
             }
         }

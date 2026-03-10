@@ -20,9 +20,9 @@ use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 6 hours.
+// Cache files for 5 minutes.
 // We can allow cache duration override in future.
-const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 21600;
+const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
 /// Represents the complete service reference loaded from service reference endpoint.

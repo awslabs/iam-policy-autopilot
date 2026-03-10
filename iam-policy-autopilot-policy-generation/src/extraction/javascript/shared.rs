@@ -197,16 +197,16 @@ impl ExtractionUtils {
                             if let Some(operation_name) = command_name.strip_suffix("Command") {
                                 // Keep PascalCase operation name to match service index
                                 // e.g., "PutItem" from "PutItemCommand"
+                                let metadata = SdkMethodCallMetadata::new(
+                                    result.text.to_string(),
+                                    result.location.clone(),
+                                )
+                                .with_parameters(result.parameters.clone());
+
                                 let method_call = SdkMethodCall {
                                     name: operation_name.to_string(),
                                     possible_services: vec![service.clone()],
-                                    metadata: Some(SdkMethodCallMetadata {
-                                        parameters: result.parameters.clone(),
-                                        return_type: None,
-                                        expr: result.text.to_string(),
-                                        location: result.location.clone(),
-                                        receiver: None, // Commands are typically standalone
-                                    }),
+                                    metadata: Some(metadata),
                                 };
                                 operations.push(method_call);
                             }
@@ -286,16 +286,16 @@ impl ExtractionUtils {
                             };
 
                             // Keep PascalCase operation name to match service index
+                            let metadata = SdkMethodCallMetadata::new(
+                                result.text.to_string(),
+                                result.location.clone(),
+                            )
+                            .with_parameters(result.parameters.clone());
+
                             let method_call = SdkMethodCall {
                                 name: operation_name,
                                 possible_services: vec![service.clone()],
-                                metadata: Some(SdkMethodCallMetadata {
-                                    parameters: result.parameters.clone(), // extracted from 2nd argument!
-                                    return_type: None,
-                                    expr: result.text.to_string(),
-                                    location: result.location.clone(),
-                                    receiver: None,
-                                }),
+                                metadata: Some(metadata),
                             };
                             operations.push(method_call);
                         }
@@ -345,16 +345,16 @@ impl ExtractionUtils {
                             // Keep PascalCase waiter name
                             // e.g., "BucketExists" from "waitUntilBucketExists"
                             // This will be resolved to the actual operation (e.g., "HeadBucket") in filter_map
+                            let metadata = SdkMethodCallMetadata::new(
+                                result.text.to_string(),
+                                result.location.clone(),
+                            )
+                            .with_parameters(result.parameters);
+
                             let method_call = SdkMethodCall {
                                 name: waiter_name.to_string(),
                                 possible_services: vec![service.clone()],
-                                metadata: Some(SdkMethodCallMetadata {
-                                    parameters: result.parameters, // Extracted from 2nd argument (operation params)
-                                    return_type: None,
-                                    expr: result.text.to_string(),
-                                    location: result.location.clone(),
-                                    receiver: None, // Waiter functions are standalone
-                                }),
+                                metadata: Some(metadata),
                             };
                             operations.push(method_call);
                         }
@@ -404,16 +404,15 @@ impl ExtractionUtils {
 
                         // Keep PascalCase operation name to match service index
                         // e.g., "Query" stays "Query"
+                        let metadata = SdkMethodCallMetadata::new(
+                            result.text.to_string(),
+                            result.location.clone(),
+                        );
+
                         let method_call = SdkMethodCall {
                             name: operation_name.to_string(),
                             possible_services: vec![service.clone()],
-                            metadata: Some(SdkMethodCallMetadata {
-                                parameters: Vec::new(),
-                                return_type: None,
-                                expr: result.text.to_string(),
-                                location: result.location.clone(),
-                                receiver: None,
-                            }),
+                            metadata: Some(metadata),
                         };
                         operations.push(method_call);
                     }
@@ -476,16 +475,16 @@ impl ExtractionUtils {
                         for command_name in expanded_commands {
                             // Extract operation name by removing "Command" suffix
                             if let Some(operation_name) = command_name.strip_suffix("Command") {
+                                let metadata = SdkMethodCallMetadata::new(
+                                    result.text.to_string(),
+                                    result.location.clone(),
+                                )
+                                .with_parameters(result.parameters.clone());
+
                                 let method_call = SdkMethodCall {
                                     name: operation_name.to_string(),
                                     possible_services: vec![service.clone()],
-                                    metadata: Some(SdkMethodCallMetadata {
-                                        parameters: result.parameters.clone(),
-                                        return_type: None,
-                                        expr: result.text.to_string(),
-                                        location: result.location.clone(),
-                                        receiver: None,
-                                    }),
+                                    metadata: Some(metadata),
                                 };
                                 operations.push(method_call);
                             }
@@ -525,16 +524,15 @@ impl ExtractionUtils {
             // Convert method arguments to parameters
             let parameters = Self::convert_arguments_to_parameters(&method_call.arguments);
 
+            let metadata =
+                SdkMethodCallMetadata::new(method_call.expr.clone(), method_call.location.clone())
+                    .with_parameters(parameters)
+                    .with_receiver(method_call.client_variable.clone());
+
             let sdk_method_call = SdkMethodCall {
                 name: operation_name,
                 possible_services: vec![service],
-                metadata: Some(SdkMethodCallMetadata {
-                    parameters,
-                    return_type: None,
-                    expr: method_call.expr.clone(),
-                    location: method_call.location.clone(),
-                    receiver: Some(method_call.client_variable.clone()),
-                }),
+                metadata: Some(metadata),
             };
 
             operations.push(sdk_method_call);
