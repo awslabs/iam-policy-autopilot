@@ -2,7 +2,7 @@
   "ExpectedWaiters": [
     {
       "Expr": "waiter.waitUntilTableNotExists(b -> b.tableName(\"myTable\"),\n            o -> o.maxAttempts(10))",
-      "WaiterType": "tableNotExists",
+      "Name": "tableNotExists",
       "Parameters": [
         {
           "Positional": {

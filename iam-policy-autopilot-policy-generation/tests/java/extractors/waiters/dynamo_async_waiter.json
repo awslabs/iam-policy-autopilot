@@ -2,7 +2,7 @@
   "ExpectedWaiters": [
     {
       "Expr": "asyncWaiter.waitUntilTableNotExists(r -> r.tableName(\"myTable\"))",
-      "WaiterType": "tableNotExists",
+      "Name": "tableNotExists",
       "Parameters": [
         {
           "Positional": {

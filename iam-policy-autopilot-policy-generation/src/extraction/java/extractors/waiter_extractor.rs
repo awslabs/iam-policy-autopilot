@@ -93,7 +93,7 @@ impl SdkExtractor for JavaWaiterCallExtractor {
 
         result.waiters.push(Waiter {
             expr,
-            waiter_type,
+            name: waiter_type,
             parameters,
             usage,
             location,

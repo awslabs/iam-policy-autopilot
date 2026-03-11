@@ -2,7 +2,7 @@
   "ExpectedWaiters": [
     {
       "Expr": "waiter.waitUntilBucketExists(request)",
-      "WaiterType": "bucketExists",
+      "Name": "bucketExists",
       "Parameters": [
         {
           "Positional": {

@@ -69,7 +69,7 @@ pub(crate) fn match_waiters(
     let mut output = Vec::new();
 
     for waiter in &result.waiters {
-        let waiter_type = &waiter.waiter_type;
+        let waiter_type = &waiter.name;
 
         // waiter_type is already camelCase (converted at extraction time by the extractor).
         // The waiter_lookup is keyed by the same camelCase names, so a direct lookup suffices.

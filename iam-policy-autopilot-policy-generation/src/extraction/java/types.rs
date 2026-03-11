@@ -108,8 +108,7 @@ pub(crate) struct Waiter {
     pub(crate) expr: String,
     /// The wait method name with the `"waitUntil"` prefix stripped and converted to camelCase,
     /// e.g. `"bucketExists"` for `waitUntilBucketExists`
-    #[allow(clippy::struct_field_names)]
-    pub(crate) waiter_type: String,
+    pub(crate) name: String,
     /// Positional arguments passed to the `waitUntil*` call
     pub(crate) parameters: Vec<Parameter>,
     /// How the result is used, if at all (e.g. assigned to a variable)

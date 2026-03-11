@@ -2,7 +2,7 @@
   "ExpectedWaiters": [
     {
       "Expr": "waiter.waitUntilResourceReady(request)",
-      "WaiterType": "resourceReady",
+      "Name": "resourceReady",
       "Parameters": [
         {
           "Positional": {
