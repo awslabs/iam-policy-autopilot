@@ -78,13 +78,14 @@ impl Language {
     /// Tests that cover all languages (e.g. the waiter extraction integration test) should
     /// iterate over this slice so that adding a new language automatically causes those tests
     /// to fail until the new language is wired up.
-    pub fn supported() -> &'static [Language] {
+    #[must_use]
+    pub fn supported() -> &'static [Self] {
         &[
-            Language::Python,
-            Language::Go,
-            Language::JavaScript,
-            Language::TypeScript,
-            Language::Java,
+            Self::Python,
+            Self::Go,
+            Self::JavaScript,
+            Self::TypeScript,
+            Self::Java,
         ]
     }
 }

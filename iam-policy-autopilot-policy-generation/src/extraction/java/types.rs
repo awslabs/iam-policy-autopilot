@@ -114,6 +114,7 @@ pub(crate) struct Waiter {
     pub(crate) expr: String,
     /// The wait method name with the `"waitUntil"` prefix stripped and converted to camelCase,
     /// e.g. `"bucketExists"` for `waitUntilBucketExists`
+    #[allow(clippy::struct_field_names)]
     pub(crate) waiter_type: String,
     /// Positional arguments passed to the `waitUntil*` call
     pub(crate) parameters: Vec<Parameter>,
@@ -207,7 +208,7 @@ pub(crate) struct ExtractionResult {
 
 impl ExtractionResult {
     /// Merge another result into this one (used when combining per-extractor outputs).
-    pub(crate) fn extend(&mut self, other: ExtractionResult) {
+    pub(crate) fn extend(&mut self, other: Self) {
         self.imports.extend(other.imports);
         self.utility_imports.extend(other.utility_imports);
         self.calls.extend(other.calls);

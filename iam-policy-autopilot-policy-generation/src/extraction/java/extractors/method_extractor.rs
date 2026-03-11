@@ -59,8 +59,8 @@ impl SdkExtractor for JavaMethodCallExtractor {
         };
 
         let node = node_match.get_node();
-        let parameters = utils::extract_arguments_from_node(&node);
-        let location = Location::from_node(source_file.path.clone(), &node);
+        let parameters = utils::extract_arguments_from_node(node);
+        let location = Location::from_node(source_file.path.clone(), node);
         let expr = node.text().to_string();
 
         // Attempt to find the receiver declaration for simple identifier receivers (Tier 1).
@@ -69,7 +69,7 @@ impl SdkExtractor for JavaMethodCallExtractor {
         let receiver_declaration = match env.get_match("MC_OBJ") {
             Some(receiver_node) if receiver_node.kind().as_ref() == utils::IDENTIFIER => {
                 let receiver_name = receiver_node.text().to_string();
-                utils::find_receiver_declaration(&node, &receiver_name, source_file)
+                utils::find_receiver_declaration(node, &receiver_name, source_file)
             }
             _ => None,
         };

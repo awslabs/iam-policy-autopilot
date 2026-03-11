@@ -94,8 +94,8 @@ pub(crate) fn match_utilities(
         // For each service in the model, look for a feature whose ReceiverClass matches
         // either the matched_class or any utility import class in the same file, and whose
         // MethodName matches the call method.
-        for (_service_name, features) in &model.services {
-            for (_feature_name, feature) in features {
+        for features in model.services.values() {
+            for feature in features.values() {
                 // Check method name matches
                 if feature.method_name != call.method {
                     continue;

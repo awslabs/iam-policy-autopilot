@@ -46,7 +46,7 @@ static IMPORT_TABLE: LazyLock<Vec<ImportEntry>> = LazyLock::new(|| {
     let mut table = Vec::new();
 
     for (service_name, features) in &JAVA_UTILITIES_MODEL.services {
-        for (_feature_name, feature) in features {
+        for feature in features.values() {
             let key = (feature.import.clone(), service_name.clone());
             if seen.insert(key) {
                 table.push(ImportEntry {
@@ -72,7 +72,7 @@ static IMPORT_TABLE: LazyLock<Vec<ImportEntry>> = LazyLock::new(|| {
 /// - the import is a wildcard (`*`).
 pub(crate) fn classify_utility_import(import_path: &str) -> Option<(String, String)> {
     // Extract the simple class name (last dotted segment)
-    let class_name = import_path.split('.').last()?.to_string();
+    let class_name = import_path.split('.').next_back()?.to_string();
 
     // Wildcard imports (ending in '*') are not useful for class-name resolution
     if class_name == "*" {

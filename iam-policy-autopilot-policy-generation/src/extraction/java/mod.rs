@@ -77,13 +77,13 @@ pub(crate) enum JavaExtractionError {
 impl From<JavaExtractionError> for ExtractorError {
     fn from(e: JavaExtractionError) -> Self {
         match e {
-            JavaExtractionError::NotJavaFile { path } => ExtractorError::method_extraction(
+            JavaExtractionError::NotJavaFile { path } => Self::method_extraction(
                 "java",
                 std::path::PathBuf::from(&path),
                 format!("Source file is not Java: {path}"),
             ),
             JavaExtractionError::ParseError { path, message } => {
-                ExtractorError::method_extraction("java", std::path::PathBuf::from(&path), message)
+                Self::method_extraction("java", std::path::PathBuf::from(&path), message)
             }
         }
     }

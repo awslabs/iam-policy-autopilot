@@ -65,31 +65,28 @@ pub(crate) fn match_paginators(
             .as_ref()
             .and_then(|d| d.type_name.as_ref());
 
-        let services: Vec<String> = match resolved_type {
-            // Tier 1: receiver type resolved at extraction time.
-            Some(type_name) => {
-                let file_imports = imports_by_file
-                    .get(&paginator.location.file_path)
-                    .map(|v| v.as_slice())
-                    .unwrap_or(&[]);
+        // Tier 1: receiver type resolved at extraction time.
+        // Tier 2/3 or unresolved: fall back to file-level import filter.
+        // Derive the service-name set on-demand from the full import records.
+        let services: Vec<String> = if let Some(type_name) = resolved_type {
+            let file_imports = imports_by_file
+                .get(&paginator.location.file_path)
+                .map(std::vec::Vec::as_slice)
+                .unwrap_or(&[]);
 
-                super::resolve_services_by_type_name(
-                    type_name,
-                    &["Client", "AsyncClient"],
-                    all_services,
-                    file_imports,
-                    service_index,
-                )
-            }
-            // Tier 2/3 or unresolved: fall back to file-level import filter.
-            // Derive the service-name set on-demand from the full import records.
-            None => {
-                let imported_services: std::collections::HashSet<String> = imports_by_file
-                    .get(&paginator.location.file_path)
-                    .map(|imps| imps.iter().map(|i| i.service.clone()).collect())
-                    .unwrap_or_default();
-                super::apply_import_filter(all_services, &imported_services)
-            }
+            super::resolve_services_by_type_name(
+                type_name,
+                &["Client", "AsyncClient"],
+                all_services,
+                file_imports,
+                service_index,
+            )
+        } else {
+            let imported_services: std::collections::HashSet<String> = imports_by_file
+                .get(&paginator.location.file_path)
+                .map(|imps| imps.iter().map(|i| i.service.clone()).collect())
+                .unwrap_or_default();
+            super::apply_import_filter(all_services, &imported_services)
         };
 
         if services.is_empty() {

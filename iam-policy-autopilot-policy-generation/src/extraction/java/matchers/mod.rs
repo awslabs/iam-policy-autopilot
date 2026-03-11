@@ -74,7 +74,7 @@ pub(crate) fn resolve_services_by_type_name(
     // The import path's last segment (e.g. "S3AsyncClient") is matched against `type_name`.
     let service = file_imports
         .iter()
-        .find(|imp| imp.expr.split('.').last() == Some(type_name))
+        .find(|imp| imp.expr.split('.').next_back() == Some(type_name))
         .map(|imp| imp.service.clone());
 
     match service {
@@ -98,7 +98,7 @@ pub(crate) fn resolve_services_by_type_name(
                             let base = def.metadata.service_id.replace(' ', "");
                             type_suffixes
                                 .iter()
-                                .any(|suffix| format!("{}{}", base, suffix) == type_name)
+                                .any(|suffix| format!("{base}{suffix}") == type_name)
                         })
                         .unwrap_or(false)
                 })
@@ -120,7 +120,7 @@ pub(crate) fn extract_service_from_fqn(type_name: &str) -> Option<String> {
     type_name
         .strip_prefix("software.amazon.awssdk.services.")
         .and_then(|rest| rest.split('.').next())
-        .map(|s| s.to_string())
+        .map(std::string::ToString::to_string)
 }
 
 #[cfg(test)]

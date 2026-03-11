@@ -61,10 +61,10 @@ impl SdkExtractor for JavaPaginatorExtractor {
             .to_string();
 
         let node = node_match.get_node();
-        let location = Location::from_node(source_file.path.clone(), &node);
+        let location = Location::from_node(source_file.path.clone(), node);
         let expr = node.text().to_string();
-        let usage = detect_assignment_usage(&node);
-        let parameters = utils::extract_arguments_from_node(&node);
+        let usage = detect_assignment_usage(node);
+        let parameters = utils::extract_arguments_from_node(node);
 
         // Attempt to find the receiver declaration for simple identifier receivers (Tier 1).
         // Field-access and method-invocation receivers (Tier 2/3) cannot be resolved without
@@ -72,7 +72,7 @@ impl SdkExtractor for JavaPaginatorExtractor {
         let receiver_declaration = match env.get_match("PAG_CLIENT") {
             Some(receiver_node) if receiver_node.kind().as_ref() == utils::IDENTIFIER => {
                 let receiver_name = receiver_node.text().to_string();
-                utils::find_receiver_declaration(&node, &receiver_name, source_file)
+                utils::find_receiver_declaration(node, &receiver_name, source_file)
             }
             _ => None,
         };

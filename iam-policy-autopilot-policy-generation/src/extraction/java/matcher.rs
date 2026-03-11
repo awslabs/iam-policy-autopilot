@@ -97,7 +97,7 @@ impl<'a> JavaMatcher<'a> {
         ));
         output.extend(match_utilities(
             result,
-            &self.utility_model,
+            self.utility_model,
             self.service_index,
             &utility_imports_by_file,
         ));

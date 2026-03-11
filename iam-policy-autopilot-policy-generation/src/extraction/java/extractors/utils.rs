@@ -736,7 +736,7 @@ fn extract_declaration_from_instanceof_expr(
     // The type must be known (no `var` in instanceof patterns).
     let type_name = type_text?;
 
-    let expr = format!("{} {}", type_name, binding_name);
+    let expr = format!("{type_name} {binding_name}");
     let location = Location::from_node(source_file.path.clone(), instanceof_node);
 
     Some(ReceiverDeclaration {
