@@ -4,12 +4,6 @@
 //! They are **not** exposed outside the `extraction::java` module.
 //!
 //! [`JavaMatcher`]: super::matcher::JavaMatcher
-
-// Fields are written by extractors and read by the matcher. Rust's dead-code lint
-// does not trace through struct field accesses across module boundaries, so we suppress
-// the warning here for the data-model fields that are intentionally part of the pipeline.
-#![allow(dead_code)]
-
 use crate::extraction::{MethodCallResultUsage, Parameter};
 use crate::Location;
 

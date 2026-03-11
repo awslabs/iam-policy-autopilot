@@ -33,7 +33,6 @@ pub(crate) struct JavaUtilityOperation {
 /// A single utility feature entry from `java-sdk-v2-utilities.json`.
 // `import` and `operations` are deserialized from JSON and stored for future use
 // (e.g. policy generation); they are not yet consumed by the matching logic.
-#[allow(dead_code)]
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct JavaUtilityFeature {
