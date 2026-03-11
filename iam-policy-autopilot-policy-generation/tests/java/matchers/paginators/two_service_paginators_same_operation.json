@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["two_service_paginators_same_operation.java"],
+  "ServiceIndexFile": "tests/java/service_indices/two_service_async_client_clash_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listResources",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "cloudVaultClient.listResourcesPaginator(request)",
+        "Location": "two_service_paginators_same_operation.java:6.9-6.57",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "listResources",
+      "PossibleServices": ["datastore"],
+      "Metadata": {
+        "Expr": "dataStoreClient.listResourcesPaginator(request)",
+        "Location": "two_service_paginators_same_operation.java:7.9-7.56",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

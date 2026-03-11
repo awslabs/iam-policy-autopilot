@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["s3_presigner_get_object.java"],
+  "ServiceIndexFile": "tests/java/service_indices/empty_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "GetObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "presigner.presignGetObject(req)",
+        "Location": "s3_presigner_get_object.java:5.9-5.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "presigner"
+      }
+    }
+  ]
+}

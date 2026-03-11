@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["empty_file.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_list_buckets_service_index.json",
+  "ExpectedSdkCalls": []
+}

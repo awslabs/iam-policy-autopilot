@@ -1,0 +1,10 @@
+{
+  "ExpectedUtilityImports": [
+    {
+      "Expr": "software.amazon.awssdk.transfer.s3.S3TransferManager",
+      "UtilityName": "s3",
+      "ClassName": "S3TransferManager",
+      "Location": "s3_transfer_manager.java:1.1-1.61"
+    }
+  ]
+}

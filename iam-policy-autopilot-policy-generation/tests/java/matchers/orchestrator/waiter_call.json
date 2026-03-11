@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["waiter_call.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_waiters_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "headBucket",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilBucketExists(request)",
+        "Location": "waiter_call.java:3.9-3.46",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

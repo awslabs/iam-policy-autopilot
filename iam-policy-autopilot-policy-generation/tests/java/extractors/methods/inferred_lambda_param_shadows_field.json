@@ -1,0 +1,44 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3AsyncClient.create()",
+      "Method": "create",
+      "Receiver": "S3AsyncClient",
+      "Parameters": [],
+      "Location": "inferred_lambda_param_shadows_field.java:5.38-5.60",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "clients.forEach(s3 -> s3.listTables())",
+      "Method": "forEach",
+      "Receiver": "clients",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "s3 -> s3.listTables()" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "inferred_lambda_param_shadows_field.java:8.9-8.47",
+      "ReceiverDeclaration": {
+        "Expr": "java.util.List<DynamoDbAsyncClient> clients",
+        "TypeName": "java.util.List<DynamoDbAsyncClient>",
+        "Location": "inferred_lambda_param_shadows_field.java:7.14-7.57"
+      }
+    },
+    {
+      "Expr": "s3.listTables()",
+      "Method": "listTables",
+      "Receiver": "s3",
+      "Parameters": [],
+      "Location": "inferred_lambda_param_shadows_field.java:8.31-8.46",
+      "ReceiverDeclaration": {
+        "Expr": "s3",
+        "TypeName": null,
+        "Location": "inferred_lambda_param_shadows_field.java:8.25-8.27"
+      }
+    }
+  ]
+}

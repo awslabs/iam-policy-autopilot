@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["waiter_parameter_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/two_service_async_client_clash_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilResourceReady(request)",
+        "Location": "waiter_parameter_disambiguated.java:6.9-6.47",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["datastore"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilResourceReady(request)",
+        "Location": "waiter_parameter_disambiguated.java:10.9-10.47",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

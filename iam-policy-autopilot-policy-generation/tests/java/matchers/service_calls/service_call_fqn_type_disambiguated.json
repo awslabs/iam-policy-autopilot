@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["service_call_fqn_type_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/two_service_async_client_clash_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "client.describeResource(request)",
+        "Location": "service_call_fqn_type_disambiguated.java:7.9-7.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "client"
+      }
+    }
+  ]
+}

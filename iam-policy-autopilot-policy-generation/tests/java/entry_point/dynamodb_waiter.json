@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["dynamodb_waiter.java"],
+  "ServiceIndexFile": "tests/java/service_indices/dynamodb_waiters_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeTable",
+      "PossibleServices": ["dynamodb"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilTableExists(r -> r.tableName(\"myTable\"))",
+        "Location": "dynamodb_waiter.java:7.9-7.65",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "r -> r.tableName(\"myTable\")" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

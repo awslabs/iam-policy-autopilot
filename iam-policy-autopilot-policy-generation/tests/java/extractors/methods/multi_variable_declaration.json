@@ -1,0 +1,52 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Receiver": "S3Client",
+      "Parameters": [],
+      "Location": "multi_variable_declaration.java:3.24-3.41",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Receiver": "S3Client",
+      "Parameters": [],
+      "Location": "multi_variable_declaration.java:3.49-3.66",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3a.putObject(request)",
+      "Method": "putObject",
+      "Receiver": "s3a",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "multi_variable_declaration.java:4.9-4.31",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "multi_variable_declaration.java:3.24-3.41"
+      }
+    },
+    {
+      "Expr": "s3b.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3b",
+      "Parameters": [],
+      "Location": "multi_variable_declaration.java:5.9-5.26",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "multi_variable_declaration.java:3.49-3.66"
+      }
+    }
+  ]
+}

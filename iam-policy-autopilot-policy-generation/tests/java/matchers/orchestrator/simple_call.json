@@ -1,0 +1,18 @@
+{
+  "SourceFiles": ["simple_call.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_full_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3", "s3control"],
+      "Metadata": {
+        "Expr": "s3Client.putObject(request)",
+        "Location": "simple_call.java:3.9-3.36",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ],
+        "Receiver": "s3Client"
+      }
+    }
+  ]
+}

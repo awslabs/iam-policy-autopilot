@@ -60,14 +60,33 @@ pub enum Language {
     Go,
     JavaScript,
     TypeScript,
+    Java,
 }
 
 impl Language {
     fn sdk_type(&self) -> SdkType {
         match self {
             Self::Python => SdkType::Boto3,
+            Self::Java => SdkType::JavaV2,
             _ => SdkType::Other,
         }
+    }
+
+    /// Returns all supported languages.
+    ///
+    /// This is the canonical list of languages that the policy generation crate supports.
+    /// Tests that cover all languages (e.g. the waiter extraction integration test) should
+    /// iterate over this slice so that adding a new language automatically causes those tests
+    /// to fail until the new language is wired up.
+    #[must_use]
+    pub fn supported() -> &'static [Self] {
+        &[
+            Self::Python,
+            Self::Go,
+            Self::JavaScript,
+            Self::TypeScript,
+            Self::Java,
+        ]
     }
 }
 
@@ -76,6 +95,9 @@ impl Language {
 #[allow(missing_docs)]
 pub enum SdkType {
     Boto3,
+    /// AWS SDK for Java v2 — method names are camelCase and must be converted to PascalCase
+    /// before looking up in the service reference (e.g. `listObjectsV2` → `ListObjectsV2`).
+    JavaV2,
     Other,
 }
 
@@ -106,6 +128,7 @@ impl Language {
             "go" => Ok(Self::Go),
             "javascript" | "js" => Ok(Self::JavaScript),
             "typescript" | "ts" => Ok(Self::TypeScript),
+            "java" => Ok(Self::Java),
             _ => Err(ExtractorError::UnsupportedLanguage {
                 language: s.to_string(),
             }),
@@ -120,6 +143,7 @@ impl Display for Language {
             Self::Go => "go",
             Self::JavaScript => "javascript",
             Self::TypeScript => "typescript",
+            Self::Java => "java",
         };
         write!(f, "{language_str}")
     }
@@ -132,6 +156,7 @@ impl From<Language> for String {
             Language::Go => "go",
             Language::JavaScript => "javascript",
             Language::TypeScript => "typescript",
+            Language::Java => "java",
         }
         .to_string()
     }
@@ -223,6 +248,16 @@ impl Location {
     }
 }
 
+impl Default for Location {
+    fn default() -> Self {
+        Self {
+            file_path: PathBuf::new(),
+            start_position: (0, 0),
+            end_position: (0, 0),
+        }
+    }
+}
+
 impl Serialize for Location {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -297,6 +332,7 @@ mod tests {
         assert_eq!(Language::Go.to_string(), "go");
         assert_eq!(Language::JavaScript.to_string(), "javascript");
         assert_eq!(Language::TypeScript.to_string(), "typescript");
+        assert_eq!(Language::Java.to_string(), "java");
     }
 
     #[test]
@@ -305,6 +341,7 @@ mod tests {
         assert_eq!(format!("{}", Language::Go), "go");
         assert_eq!(format!("{}", Language::JavaScript), "javascript");
         assert_eq!(format!("{}", Language::TypeScript), "typescript");
+        assert_eq!(format!("{}", Language::Java), "java");
     }
 
     #[test]
@@ -320,10 +357,10 @@ mod tests {
             Language::try_from_str("typescript").unwrap(),
             Language::TypeScript
         );
+        assert_eq!(Language::try_from_str("java").unwrap(), Language::Java);
 
         // Test invalid language string returns error
         assert!(Language::try_from_str("unsupported").is_err());
-        assert!(Language::try_from_str("java").is_err());
         assert!(Language::try_from_str("").is_err());
     }
 

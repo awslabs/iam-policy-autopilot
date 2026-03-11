@@ -1,0 +1,9 @@
+{
+  "Services": {},
+  "MethodLookup": {},
+  "WaiterLookup": {
+    "bucketExists": [
+      { "service_name": "s3", "operation_name": "HeadBucket" }
+    ]
+  }
+}

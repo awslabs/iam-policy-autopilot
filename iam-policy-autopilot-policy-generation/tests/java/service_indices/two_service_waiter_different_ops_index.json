@@ -1,0 +1,39 @@
+{
+  "Services": {
+    "cloudcluster": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "CloudCluster"
+      },
+      "operations": {
+        "DescribeCluster": {
+          "name": "DescribeCluster",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "datacluster": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DataCluster"
+      },
+      "operations": {
+        "GetCluster": {
+          "name": "GetCluster",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {},
+  "WaiterLookup": {
+    "clusterActive": [
+      { "service_name": "cloudcluster", "operation_name": "DescribeCluster" },
+      { "service_name": "datacluster",  "operation_name": "GetCluster" }
+    ]
+  }
+}

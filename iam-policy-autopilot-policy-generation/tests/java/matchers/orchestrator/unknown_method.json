@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["unknown_method.java"],
+  "ServiceIndexFile": "tests/java/service_indices/s3_full_service_index.json",
+  "ExpectedSdkCalls": []
+}

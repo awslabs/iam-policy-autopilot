@@ -1,0 +1,16 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3.listBuckets()",
+      "Method": "listBuckets",
+      "Receiver": "s3",
+      "Parameters": [],
+      "Location": "record_compact_constructor.java:5.9-5.25",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client s3",
+        "TypeName": "S3Client",
+        "Location": "record_compact_constructor.java:3.19-3.30"
+      }
+    }
+  ]
+}

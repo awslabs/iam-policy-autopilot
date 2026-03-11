@@ -1,0 +1,31 @@
+{
+  "Services": {
+    "dynamodb": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2012-08-10",
+        "serviceId": "DynamoDB"
+      },
+      "operations": {
+        "DescribeTable": {
+          "name": "DescribeTable",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "describeTable": [
+      { "service_name": "dynamodb", "operation_name": "DescribeTable" }
+    ]
+  },
+  "WaiterLookup": {
+    "tableExists": [
+      { "service_name": "dynamodb", "operation_name": "DescribeTable" }
+    ],
+    "tableNotExists": [
+      { "service_name": "dynamodb", "operation_name": "DescribeTable" }
+    ]
+  }
+}

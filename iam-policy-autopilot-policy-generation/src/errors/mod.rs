@@ -35,7 +35,7 @@ pub enum ExtractorError {
     },
 
     /// Unsupported programming language errors
-    #[error("Unsupported language for file '{path}' with extension '{extension}'. Supported languages: Python, TypeScript, JavaScript, Go")]
+    #[error("Unsupported language for file '{path}' with extension '{extension}'. Supported languages: Python, TypeScript, JavaScript, Go, Java")]
     UnsupportedFileLanguage {
         /// Path to the file with unsupported language
         path: PathBuf,
@@ -44,7 +44,7 @@ pub enum ExtractorError {
     },
 
     /// Unsupported programming language errors
-    #[error("Unsupported language. Supported languages: Python, TypeScript, JavaScript, Go")]
+    #[error("Unsupported language. Supported languages: Python, TypeScript, JavaScript, Go, Java")]
     UnsupportedLanguage {
         /// Unsupported language
         language: String,
