@@ -1,0 +1,9 @@
+{
+  "description": "Empty directory — no .tf files, resolver should be empty",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 0,
+    "bindings": []
+  },
+  "expected_arn_substitutions": []
+}

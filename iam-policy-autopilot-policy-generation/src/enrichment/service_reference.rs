@@ -302,6 +302,7 @@ fn deserialize_service_reference_mapping(
 /// with exact service name matching and thread-safe caching. Service names
 /// must match exactly between input and Service Reference Name (case-sensitive).
 #[derive(Debug)]
+#[cfg_attr(feature = "integ-test", visibility::make(pub))]
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
@@ -321,9 +322,34 @@ impl RemoteServiceReferenceLoader {
         })
     }
 
-    #[cfg(test)]
+    /// Creates a loader that always returns `None` for any service.
+    /// Useful in tests that don't need real SDF data.
+    #[cfg(any(test, feature = "integ-test"))]
+    #[cfg_attr(feature = "integ-test", visibility::make(pub))]
+    pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
+        let loader = Self {
+            client: Self::create_client()?,
+            service_reference_mapping: OnceCell::new(),
+            service_cache: RwLock::new(HashMap::new()),
+            mapping_url: String::new(),
+            disable_file_system_cache: true,
+        };
+        // Pre-initialize with an empty mapping so no network call is ever made.
+        let _ = loader
+            .service_reference_mapping
+            .set(ServiceReferenceMapping {
+                service_reference_mapping: HashMap::new(),
+            });
+        Ok(loader)
+    }
+
+    /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
+    /// so the next call fetches from the new URL.
+    #[cfg(any(test, feature = "integ-test"))]
+    #[cfg_attr(feature = "integ-test", visibility::make(pub))]
     pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
         self.mapping_url = url;
+        self.service_reference_mapping = OnceCell::new();
         self
     }
 
@@ -431,6 +457,18 @@ impl RemoteServiceReferenceLoader {
             }
         }
         false
+    }
+
+    pub(crate) async fn get_resource_arns(
+        &self,
+        service_name: &str,
+        resource_type: &str,
+    ) -> Option<Vec<String>> {
+        if let Ok(Some(service_ref)) = self.load(service_name).await {
+            service_ref.resources.get(resource_type).cloned()
+        } else {
+            None
+        }
     }
 
     pub(crate) async fn load(

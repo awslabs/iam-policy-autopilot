@@ -1,0 +1,25 @@
+{
+  "description": "S3 object (sub-resource) falls back to parent bucket binding",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 1,
+    "bindings": [
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["my-bucket"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": ["arn:${Partition}:s3:::my-bucket"]
+    },
+    {
+      "service": "s3",
+      "resource_type": "object",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}/${ObjectName}"],
+      "expected_output": ["arn:${Partition}:s3:::my-bucket/*"],
+      "note": "Sub-resource falls back to parent bucket, appends /*"
+    }
+  ]
+}

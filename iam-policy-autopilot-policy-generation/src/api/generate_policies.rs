@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use log::{debug, info, trace};
@@ -9,7 +10,9 @@ use crate::{
         common::process_source_files,
         model::{GeneratePoliciesResult, GeneratePolicyConfig},
     },
-    enrichment::{Explanation, Explanations},
+    enrichment::{
+        terraform::resource_binder::TerraformResourceResolver, Explanation, Explanations,
+    },
     extraction::SdkMethodCall,
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, PolicyGenerationEngine,
@@ -115,7 +118,12 @@ fn filter_explanations(
     }
 }
 
-/// Generate policies for source files
+/// Generate policies for source files, with optional Terraform resource binding.
+///
+/// When `config.terraform_dir` is set, the pipeline additionally:
+/// 1. Parses `.tf` files to discover AWS resources and resolve variables
+/// 2. Resolves Terraform resource types to IAM service/resource mappings
+/// 3. Substitutes ARN placeholders with concrete Terraform resource names
 pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
     let pipeline_start = Instant::now();
 
@@ -124,13 +132,44 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         config.aws_context.partition, config.aws_context.region, config.aws_context.account
     );
 
+    let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
+
+    // --- Optional Terraform resolution ---
+    let terraform_resolver = if let Some(ref terraform_dir) = config.terraform_dir {
+        debug!("Terraform directory provided: {}", terraform_dir.display());
+        let loader = enrichment_engine.service_reference_loader();
+        let resolver = TerraformResourceResolver::from_directory(
+            terraform_dir,
+            config.tfstate_path.as_ref(),
+            loader,
+        )
+        .await
+        .context("Failed to resolve Terraform resources")?;
+        debug!("Resolved {} resource groups from Terraform", resolver.len());
+        Some(resolver)
+    } else {
+        None
+    };
+
+    // --- Determine source files ---
+    let all_source_files: Vec<PathBuf> = config.extract_sdk_calls_config.source_files.clone();
+
+    if all_source_files.is_empty() {
+        info!("No source files found to process, returning empty policy list");
+        return Ok(GeneratePoliciesResult {
+            policies: vec![],
+            explanations: None,
+            resource_binding_explanations: None,
+        });
+    }
+
     // Create the extractor
     let extractor = crate::ExtractionEngine::new();
 
     // Process source files to get extracted methods
     let extracted_methods = process_source_files(
         &extractor,
-        &config.extract_sdk_calls_config.source_files,
+        &all_source_files,
         config.extract_sdk_calls_config.language.as_deref(),
         config.extract_sdk_calls_config.service_hints.clone(),
     )
@@ -161,10 +200,9 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         return Ok(GeneratePoliciesResult {
             policies: vec![],
             explanations: None,
+            resource_binding_explanations: None,
         });
     }
-
-    let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
 
     // Run the complete enrichment pipeline
     let enriched_results = enrichment_engine
@@ -173,6 +211,24 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     let enrichment_duration = pipeline_start.elapsed();
     trace!("Enrichment pipeline completed in {enrichment_duration:?}");
+
+    // --- Optional Terraform ARN substitution ---
+    // ARN substitution always happens when terraform_dir is set.
+    // Binding explanations are only included when --explain is also provided.
+    let (final_enriched, binding_explanations) = if let Some(ref resolver) = terraform_resolver {
+        let bound = resolver.substitute_enriched_calls(&enriched_results);
+        let explanations = if config.explain_filters.is_some() {
+            let expl = resolver.build_binding_explanations();
+            debug!("Terraform binding: {} binding explanations", expl.len());
+            Some(expl)
+        } else {
+            None
+        };
+        debug!("Terraform binding: substituted {} calls", bound.len());
+        (bound, explanations)
+    } else {
+        (enriched_results, None)
+    };
 
     // Create policy generation engine with AWS context and merger configuration
     let merger_config = PolicyMergerConfig {
@@ -189,10 +245,10 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Generate IAM policies from enriched method calls
     debug!(
         "Generating IAM policies from {} enriched method calls",
-        enriched_results.len()
+        final_enriched.len()
     );
     let result = policy_engine
-        .generate_policies(&enriched_results)
+        .generate_policies(&final_enriched)
         .context("Failed to generate IAM policies")?;
 
     let total_duration = pipeline_start.elapsed();
@@ -219,6 +275,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     Ok(GeneratePoliciesResult {
         policies: final_policies,
         explanations,
+        resource_binding_explanations: binding_explanations,
     })
 }
 

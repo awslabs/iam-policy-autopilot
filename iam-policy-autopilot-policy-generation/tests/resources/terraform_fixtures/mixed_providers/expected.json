@@ -1,0 +1,18 @@
+{
+  "description": "Only AWS resources are resolved; non-AWS providers are silently ignored",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 1,
+    "bindings": [
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["my-s3-bucket"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": ["arn:${Partition}:s3:::my-s3-bucket"]
+    }
+  ]
+}

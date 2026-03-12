@@ -1,0 +1,76 @@
+{
+  "description": "State-derived ARNs take precedence over HCL-constructed ARNs",
+  "use_state_file": true,
+  "expected_resolver": {
+    "resource_group_count": 5,
+    "bindings": [
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["my-app-data-bucket", "my-app-logs-bucket"] },
+      { "service": "dynamodb", "resource_type": "table", "binding_names": ["users-table"] },
+      { "service": "sqs", "resource_type": "queue", "binding_names": ["task-processing-queue"] },
+      { "service": "lambda", "resource_type": "function", "binding_names": ["data-processor"] },
+      { "service": "iam", "resource_type": "role", "binding_names": ["data-processor-role"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": ["arn:aws:s3:::my-app-data-bucket", "arn:aws:s3:::my-app-logs-bucket"],
+      "note": "State ARNs do NOT contain ${Partition} — they are fully resolved"
+    },
+    {
+      "service": "s3",
+      "resource_type": "object",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}/${ObjectName}"],
+      "expected_output": ["arn:aws:s3:::my-app-data-bucket/*", "arn:aws:s3:::my-app-logs-bucket/*"],
+      "note": "Sub-resource falls back to parent state ARNs, appends /*"
+    },
+    {
+      "service": "dynamodb",
+      "resource_type": "table",
+      "input_patterns": ["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],
+      "expected_output": ["arn:aws:dynamodb:us-east-1:123456789012:table/users-table"]
+    },
+    {
+      "service": "sqs",
+      "resource_type": "queue",
+      "input_patterns": ["arn:${Partition}:sqs:${Region}:${Account}:${QueueName}"],
+      "expected_output": ["arn:aws:sqs:us-east-1:123456789012:task-processing-queue"]
+    },
+    {
+      "service": "lambda",
+      "resource_type": "function",
+      "input_patterns": ["arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"],
+      "expected_output": ["arn:aws:lambda:us-east-1:123456789012:function:data-processor"]
+    },
+    {
+      "service": "iam",
+      "resource_type": "role",
+      "input_patterns": ["arn:${Partition}:iam::${Account}:role/${RoleName}"],
+      "expected_output": ["arn:aws:iam::123456789012:role/data-processor-role"]
+    }
+  ],
+  "expected_state_parse": {
+    "managed_resource_count": 6,
+    "excluded_keys": ["aws_caller_identity.current"],
+    "specific_arns": {
+      "aws_s3_bucket.data_bucket": "arn:aws:s3:::my-app-data-bucket",
+      "aws_s3_bucket.logs_bucket": "arn:aws:s3:::my-app-logs-bucket",
+      "aws_dynamodb_table.users_table": "arn:aws:dynamodb:us-east-1:123456789012:table/users-table",
+      "aws_sqs_queue.task_queue": "arn:aws:sqs:us-east-1:123456789012:task-processing-queue",
+      "aws_lambda_function.processor": "arn:aws:lambda:us-east-1:123456789012:function:data-processor",
+      "aws_iam_role.lambda_role": "arn:aws:iam::123456789012:role/data-processor-role"
+    }
+  },
+  "expected_binding_explanations": {
+    "expected_arns": [
+      "arn:aws:s3:::my-app-data-bucket",
+      "arn:aws:s3:::my-app-logs-bucket",
+      "arn:aws:dynamodb:us-east-1:123456789012:table/users-table",
+      "arn:aws:sqs:us-east-1:123456789012:task-processing-queue",
+      "arn:aws:lambda:us-east-1:123456789012:function:data-processor",
+      "arn:aws:iam::123456789012:role/data-processor-role"
+    ]
+  }
+}

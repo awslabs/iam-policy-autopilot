@@ -1,0 +1,19 @@
+{
+  "description": "Unresolvable var reference produces wildcard binding — substitution returns None",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 1,
+    "bindings": [
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["*"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": null,
+      "note": "Single wildcard binding returns None (no improvement over default)"
+    }
+  ]
+}

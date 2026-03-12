@@ -116,6 +116,27 @@ impl GitSubmoduleMetadata {
 fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
+    println!("cargo:rerun-if-changed=resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl");
+
+    // --- Auto-initialize all submodules if needed ---
+    ensure_submodule_initialized(
+        "botocore",
+        Path::new("resources/config/sdks/botocore-data"),
+        Path::new("resources/config/sdks/botocore-data/botocore/data"),
+        None, // no sparse-checkout needed
+    );
+    ensure_submodule_initialized(
+        "boto3",
+        Path::new("resources/config/sdks/boto3"),
+        Path::new("resources/config/sdks/boto3/boto3/data"),
+        None, // no sparse-checkout needed
+    );
+    ensure_submodule_initialized(
+        "terraform-provider-aws",
+        Path::new("resources/config/terraform/terraform-provider-aws"),
+        Path::new("resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl"),
+        Some("/names/data/names_data.hcl"), // sparse-checkout pattern
+    );
 
     #[allow(clippy::unwrap_used)]
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -132,12 +153,6 @@ fn main() {
 
     // Process botocore data
     let botocore_data_path = Path::new("resources/config/sdks/botocore-data/botocore/data");
-    assert!(
-        botocore_data_path.exists(),
-        "Required botocore data directory not found at: {}. Please ensure the botocore data \
-         is available by running `git submodule init && git submodule update`.",
-        botocore_data_path.display()
-    );
 
     match process_botocore_data(botocore_data_path, &simplified_dir) {
         Ok(_processed_count) => {
@@ -164,7 +179,7 @@ fn main() {
     // Process boto3 data
     let boto3_data_path = Path::new("resources/config/sdks/boto3/boto3/data");
     assert!(
-        boto3_data_path.exists(),
+        boto3_data_path.exists(), // Should always pass — ensure_submodule_initialized handles init
         "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
          is available by running `git submodule init && git submodule update`.",
         boto3_data_path.display()
@@ -590,4 +605,105 @@ fn get_repository_commit(repo: &Repository) -> Result<String, Box<dyn std::error
         .expect("Failed to get HEAD commit hash")
         .id()
         .to_string())
+}
+
+/// Ensure a git submodule is initialized, and optionally configure sparse-checkout.
+///
+/// - `name`: human-readable name for error messages
+/// - `submodule_dir`: path to the submodule root (relative to crate root)
+/// - `data_path`: a file or directory that must exist after initialization
+/// - `sparse_pattern`: if `Some`, configure sparse-checkout with this pattern
+///
+/// If `data_path` already exists, this is a no-op.
+/// Otherwise, runs `git submodule update --init --depth 1` and optionally
+/// `git sparse-checkout set --no-cone <pattern>`.
+fn ensure_submodule_initialized(
+    name: &str,
+    submodule_dir: &Path,
+    data_path: &Path,
+    sparse_pattern: Option<&str>,
+) {
+    if data_path.exists() {
+        return; // Already initialized
+    }
+
+    let git_marker = submodule_dir.join(".git");
+    if git_marker.exists() {
+        // Submodule dir exists but data missing — needs sparse-checkout or is broken
+        if let Some(pattern) = sparse_pattern {
+            eprintln!("cargo:warning=Configuring sparse-checkout for {name} submodule...");
+            run_sparse_checkout(name, submodule_dir, pattern);
+        } else {
+            panic!(
+                "Submodule '{name}' appears initialized at {} but required data not found at {}. \
+                 Try: git submodule update --init",
+                submodule_dir.display(),
+                data_path.display()
+            );
+        }
+    } else {
+        // Submodule not initialized — run git submodule update
+        eprintln!("cargo:warning=Initializing {name} submodule...");
+
+        let status = std::process::Command::new("git")
+            .args(["submodule", "update", "--init", "--depth", "1", "--"])
+            .arg(submodule_dir)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                if let Some(pattern) = sparse_pattern {
+                    run_sparse_checkout(name, submodule_dir, pattern);
+                }
+            }
+            Ok(s) => {
+                panic!(
+                    "Failed to initialize '{name}' submodule (exit code: {s}). \
+                     Try: git submodule update --init"
+                );
+            }
+            Err(e) => {
+                panic!(
+                    "Failed to run git submodule update for '{name}': {e}. \
+                     Try: git submodule update --init"
+                );
+            }
+        }
+    }
+
+    // Final check
+    assert!(
+        data_path.exists(),
+        "Required data for '{name}' not found at {} after submodule initialization. \
+         Try: git submodule update --init",
+        data_path.display()
+    );
+}
+
+/// Run `git sparse-checkout set` inside a submodule directory.
+fn run_sparse_checkout(name: &str, submodule_dir: &Path, pattern: &str) {
+    let status = std::process::Command::new("git")
+        .args(["sparse-checkout", "set", "--no-cone", pattern])
+        .current_dir(submodule_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            eprintln!("cargo:warning=Sparse-checkout configured for {name}");
+        }
+        Ok(s) => {
+            panic!(
+                "git sparse-checkout failed for '{name}' (exit code: {s}). \
+                 Try: cd {dir} && git sparse-checkout set --no-cone '{pattern}'",
+                dir = submodule_dir.display()
+            );
+        }
+        Err(e) => {
+            panic!(
+                "Failed to run git sparse-checkout for '{name}': {e}. \
+                 Try: cd {dir} && git sparse-checkout set --no-cone '{pattern}'",
+                dir = submodule_dir.display()
+            );
+        }
+    }
 }

@@ -92,6 +92,10 @@ struct GeneratePolicyCliConfig {
     disable_cache: bool,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
+    /// Optional Terraform project directory
+    terraform_dir: Option<PathBuf>,
+    /// Optional path to terraform.tfstate
+    tfstate: Option<PathBuf>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -337,6 +341,25 @@ Examples:\n  \
 --explain 's3:*' 'dynamodb:*' # Explain S3 and DynamoDB actions"
         )]
         explain: Option<Vec<String>>,
+
+        /// Terraform project directory for concrete resource ARN binding
+        #[arg(
+            long = "terraform-dir",
+            long_help = "Directory containing Terraform .tf files. When provided, the tool parses \
+Terraform resources to discover AWS infrastructure, traces source code from Lambda functions, \
+and generates least-privilege IAM policies with concrete resource ARNs instead of wildcards. \
+Source files discovered in the Terraform directory are combined with explicitly provided source files."
+        )]
+        terraform_dir: Option<PathBuf>,
+
+        /// Path to terraform.tfstate file for enhanced ARN resolution
+        #[arg(
+            long = "tfstate",
+            long_help = "Path to a terraform.tfstate file. When provided alongside --terraform-dir, \
+the tool uses actual deployed resource ARNs from the state file instead of constructing them \
+from HCL attributes. State-derived ARNs take precedence over HCL-constructed ones."
+        )]
+        tfstate: Option<PathBuf>,
     },
 
     /// Start MCP server
@@ -463,6 +486,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
+        terraform_dir: config.terraform_dir.clone(),
+        tfstate_path: config.tfstate.clone(),
     })
     .await?;
 
@@ -585,6 +610,8 @@ async fn main() {
             disable_cache,
             service_hints,
             explain,
+            terraform_dir,
+            tfstate,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -607,6 +634,8 @@ async fn main() {
                 minimal_policy_size,
                 disable_cache,
                 explain,
+                terraform_dir,
+                tfstate,
             };
 
             match handle_generate_policy(&config).await {

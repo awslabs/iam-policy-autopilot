@@ -30,6 +30,16 @@ pub struct GeneratePoliciesInput {
         description = "List of AWS service names to filter SDK calls by (e.g., ['s3', 'dynamodb']). When provided, the result of source code analysis will be restricted to the provided services. The generated policy may still contain actions from a service not provided as a hint, if IAM Policy Autopilot determines that the action may be needed for the SDK call."
     )]
     pub service_hints: Option<Vec<String>>,
+
+    #[schemars(
+        description = "Absolute path to a Terraform project directory containing .tf files. When provided, the tool parses Terraform resources to discover AWS infrastructure and generates IAM policies with concrete resource ARNs instead of wildcards."
+    )]
+    pub terraform_dir: Option<String>,
+
+    #[schemars(
+        description = "Absolute path to a terraform.tfstate file for enhanced ARN resolution. When provided alongside terraform_dir, the tool uses actual deployed resource ARNs from the state file. State-derived ARNs take precedence over HCL-constructed ones."
+    )]
+    pub tfstate_path: Option<String>,
 }
 
 // Output struct for the generated IAM policy
@@ -72,6 +82,8 @@ pub async fn generate_application_policies(
         disable_file_system_cache: true,
         // No explanations for MCP server by default
         explain_filters: None,
+        terraform_dir: input.terraform_dir.map(std::path::PathBuf::from),
+        tfstate_path: input.tfstate_path.map(std::path::PathBuf::from),
     })
     .await?;
 
@@ -135,6 +147,8 @@ mod tests {
             region: Some("us-east-1".to_string()),
             account: Some("123456789012".to_string()),
             service_hints: None,
+            terraform_dir: None,
+            tfstate_path: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -157,6 +171,7 @@ mod tests {
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
             explanations: None,
+            resource_binding_explanations: None,
         }));
         let result = generate_application_policies(input).await;
 
@@ -175,6 +190,8 @@ mod tests {
             region: Some("us-east-1".to_string()),
             account: Some("123456789012".to_string()),
             service_hints: None,
+            terraform_dir: None,
+            tfstate_path: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -190,6 +207,8 @@ mod tests {
             region: Some("us-west-2".to_string()),
             account: Some("987654321098".to_string()),
             service_hints: None,
+            terraform_dir: None,
+            tfstate_path: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -221,6 +240,8 @@ mod tests {
             region: Some("us-east-1".to_string()),
             account: Some("123456789012".to_string()),
             service_hints: Some(vec!["s3".to_string(), "dynamodb".to_string()]),
+            terraform_dir: None,
+            tfstate_path: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -240,6 +261,7 @@ mod tests {
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
             explanations: None,
+            resource_binding_explanations: None,
         }));
         let result = generate_application_policies(input).await;
 

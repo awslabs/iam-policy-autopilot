@@ -1,0 +1,60 @@
+{
+  "description": "Real-world multi-service: Kinesis, SNS, S3 (3 buckets), DynamoDB, Lambda, IAM",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 6,
+    "bindings": [
+      { "service": "kinesis", "resource_type": "stream", "binding_names": ["app-events-stream"] },
+      { "service": "sns", "resource_type": "topic", "binding_names": ["app-notifications"] },
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["app-event-archive", "app-staging-data", "app-results"] },
+      { "service": "dynamodb", "resource_type": "table", "binding_names": ["events-log"] },
+      { "service": "lambda", "resource_type": "function", "binding_names": ["event-processor"] },
+      { "service": "iam", "resource_type": "role", "binding_names": ["event-processor-role"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "kinesis",
+      "resource_type": "stream",
+      "input_patterns": ["arn:${Partition}:kinesis:${Region}:${Account}:stream/${StreamName}"],
+      "expected_output": ["arn:${Partition}:kinesis:${Region}:${Account}:stream/app-events-stream"]
+    },
+    {
+      "service": "sns",
+      "resource_type": "topic",
+      "input_patterns": ["arn:${Partition}:sns:${Region}:${Account}:${TopicName}"],
+      "expected_output": ["arn:${Partition}:sns:${Region}:${Account}:app-notifications"]
+    },
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": ["arn:${Partition}:s3:::app-event-archive", "arn:${Partition}:s3:::app-staging-data", "arn:${Partition}:s3:::app-results"]
+    },
+    {
+      "service": "s3",
+      "resource_type": "object",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}/${ObjectName}"],
+      "expected_output": ["arn:${Partition}:s3:::app-event-archive/*", "arn:${Partition}:s3:::app-staging-data/*", "arn:${Partition}:s3:::app-results/*"],
+      "note": "Sub-resource falls back to parent bucket bindings, appends /*"
+    },
+    {
+      "service": "dynamodb",
+      "resource_type": "table",
+      "input_patterns": ["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],
+      "expected_output": ["arn:${Partition}:dynamodb:${Region}:${Account}:table/events-log"]
+    },
+    {
+      "service": "lambda",
+      "resource_type": "function",
+      "input_patterns": ["arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"],
+      "expected_output": ["arn:${Partition}:lambda:${Region}:${Account}:function:event-processor"]
+    },
+    {
+      "service": "iam",
+      "resource_type": "role",
+      "input_patterns": ["arn:${Partition}:iam::${Account}:role/${RoleName}"],
+      "expected_output": ["arn:${Partition}:iam::${Account}:role/event-processor-role"]
+    }
+  ]
+}

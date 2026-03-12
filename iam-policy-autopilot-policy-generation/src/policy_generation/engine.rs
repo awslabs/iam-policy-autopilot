@@ -278,6 +278,7 @@ impl<'a> Engine<'a> {
         Ok(GeneratePoliciesResult {
             policies,
             explanations: Some(explanations),
+            resource_binding_explanations: None,
         })
     }
 }

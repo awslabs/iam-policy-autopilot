@@ -1,0 +1,35 @@
+{
+  "description": "Variable resolution: interpolation + bare var references + tfvars overrides",
+  "use_state_file": false,
+  "expected_resolver": {
+    "resource_group_count": 3,
+    "bindings": [
+      { "service": "s3", "resource_type": "bucket", "binding_names": ["myapp-prod-data"] },
+      { "service": "dynamodb", "resource_type": "table", "binding_names": ["users-prod"] },
+      { "service": "sqs", "resource_type": "queue", "binding_names": ["myapp-tasks"] }
+    ]
+  },
+  "expected_arn_substitutions": [
+    {
+      "service": "s3",
+      "resource_type": "bucket",
+      "input_patterns": ["arn:${Partition}:s3:::${BucketName}"],
+      "expected_output": ["arn:${Partition}:s3:::myapp-prod-data"],
+      "note": "bucket = '${var.app_name}-${var.environment}-data' → app_name='myapp' (default from variables.tf) + environment='prod' (overridden by terraform.tfvars, default was 'dev') → 'myapp-prod-data'"
+    },
+    {
+      "service": "dynamodb",
+      "resource_type": "table",
+      "input_patterns": ["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],
+      "expected_output": ["arn:${Partition}:dynamodb:${Region}:${Account}:table/users-prod"],
+      "note": "name = var.table_name → no default in variables.tf, resolved from terraform.tfvars: table_name='users-prod'"
+    },
+    {
+      "service": "sqs",
+      "resource_type": "queue",
+      "input_patterns": ["arn:${Partition}:sqs:${Region}:${Account}:${QueueName}"],
+      "expected_output": ["arn:${Partition}:sqs:${Region}:${Account}:myapp-tasks"],
+      "note": "name = '${var.app_name}-tasks' → app_name='myapp' (default from variables.tf) → 'myapp-tasks'"
+    }
+  ]
+}
