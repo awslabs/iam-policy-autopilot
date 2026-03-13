@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "iam-policy-autopilot-common",
     "iam-policy-autopilot-policy-generation",
     "iam-policy-autopilot-tools",
     "iam-policy-autopilot-mcp-server",

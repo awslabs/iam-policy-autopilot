@@ -6,6 +6,7 @@ description = "Standalone CLI for AWS IAM Policy Autopilot: analyzes AccessDenie
 
 [dependencies]
 iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-denied" }
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 iam-policy-autopilot-mcp-server = { path = "../iam-policy-autopilot-mcp-server" }
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
 iam-policy-autopilot-tools = { path = "../iam-policy-autopilot-tools" }

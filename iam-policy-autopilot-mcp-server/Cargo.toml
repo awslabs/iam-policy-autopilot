@@ -34,6 +34,7 @@ rmcp = { version = "^0.8" , features = [
     "schemars",
 ]}  # Replace with the actual version used
 
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
 iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-denied" }
 

@@ -1,4 +1,7 @@
 use anyhow;
+use iam_policy_autopilot_common::telemetry::{
+    self, TelemetryClient, TelemetryEvent,
+};
 use log::{error, info, trace};
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
@@ -16,6 +19,15 @@ use crate::tools::{
     FixAccessDeniedInput, FixAccessDeniedOutput, GeneratePoliciesInput, GeneratePoliciesOutput,
     GeneratePolicyForAccessDeniedInput, GeneratePolicyForAccessDeniedOutput,
 };
+
+/// Spawn a fire-and-forget telemetry emission task.
+fn spawn_mcp_telemetry(event: TelemetryEvent) {
+    tokio::spawn(async move {
+        if let Some(client) = TelemetryClient::new() {
+            client.emit(&event).await;
+        }
+    });
+}
 
 // Define the server struct
 #[derive(Clone)]
@@ -78,6 +90,19 @@ impl IamAutoPilotMcpServer {
     ) -> Result<Json<GeneratePoliciesOutput>, McpError> {
         trace!("generate_application_policies input: {:#?}", params.0);
 
+        // Emit telemetry for this MCP tool invocation
+        if telemetry::is_telemetry_enabled() {
+            let event = TelemetryEvent::new("mcp:generate_application_policies")
+                .with_presence("source_files", !params.0.source_files.is_empty())
+                .with_presence("region", params.0.region.is_some())
+                .with_presence("account", params.0.account.is_some())
+                .with_list(
+                    "service_hints",
+                    params.0.service_hints.as_deref().unwrap_or(&[]),
+                );
+            spawn_mcp_telemetry(event);
+        }
+
         let output = generate_application_policies(params.0).await.map_err(|e| {
             error!("{e:#?}");
             self.format_mcp_error("Failed to generate policies", e)
@@ -99,6 +124,14 @@ impl IamAutoPilotMcpServer {
         params: Parameters<GeneratePolicyForAccessDeniedInput>,
     ) -> Result<Json<GeneratePolicyForAccessDeniedOutput>, McpError> {
         trace!("generate_policy_for_access_denied input: {:#?}", params.0);
+
+        // Emit telemetry for this MCP tool invocation
+        if telemetry::is_telemetry_enabled() {
+            let event = TelemetryEvent::new("mcp:generate_policy_for_access_denied")
+                .with_presence("error_message", true);
+            spawn_mcp_telemetry(event);
+        }
+
         let output = generate_policy_for_access_denied(params.0)
             .await
             .map_err(|e| {
@@ -128,6 +161,14 @@ impl IamAutoPilotMcpServer {
         params: Parameters<FixAccessDeniedInput>,
     ) -> Result<Json<FixAccessDeniedOutput>, McpError> {
         trace!("fix_access_denied input: {:#?}", params.0);
+
+        // Emit telemetry for this MCP tool invocation
+        if telemetry::is_telemetry_enabled() {
+            let event = TelemetryEvent::new("mcp:fix_access_denied")
+                .with_presence("error_message", true);
+            spawn_mcp_telemetry(event);
+        }
+
         let output = fix_access_denied(context, params.0).await.map_err(|e| {
             error!("{e:#?}");
             self.format_mcp_error("Failed to apply access denial fix", e)

@@ -25,6 +25,9 @@ use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
+use iam_policy_autopilot_common::telemetry::{
+    self, TelemetryClient, TelemetryEvent,
+};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
@@ -614,9 +617,107 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
     Ok(())
 }
 
+/// Build a telemetry event from the parsed CLI command.
+///
+/// Records only telemetry-safe data: boolean presence, enum values, and service names.
+/// Never records file paths, AWS account IDs, region values, or policy content.
+fn build_telemetry_event(command: &Commands) -> Option<TelemetryEvent> {
+    match command {
+        Commands::FixAccessDenied { source, yes } => Some(
+            TelemetryEvent::new("fix-access-denied")
+                .with_presence("source", source.is_some())
+                .with_bool("yes", *yes),
+        ),
+        Commands::ExtractSdkCalls {
+            source_files,
+            pretty,
+            language,
+            full_output,
+            service_hints,
+            ..
+        } => Some(
+            TelemetryEvent::new("extract-sdk-calls")
+                .with_presence("source_files", !source_files.is_empty())
+                .with_bool("pretty", *pretty)
+                .with_optional_str("language", language.as_deref())
+                .with_bool("full_output", *full_output)
+                .with_list(
+                    "service_hints",
+                    service_hints.as_deref().unwrap_or(&[]),
+                ),
+        ),
+        Commands::GeneratePolicies {
+            source_files,
+            pretty,
+            language,
+            full_output,
+            region,
+            account,
+            individual_policies,
+            upload_policies,
+            minimal_policy_size,
+            disable_cache,
+            service_hints,
+            explain,
+            ..
+        } => Some(
+            TelemetryEvent::new("generate-policies")
+                .with_presence("source_files", !source_files.is_empty())
+                .with_presence("region", region != "*")
+                .with_presence("account", account != "*")
+                .with_bool("pretty", *pretty)
+                .with_optional_str("language", language.as_deref())
+                .with_bool("full_output", *full_output)
+                .with_bool("individual_policies", *individual_policies)
+                .with_presence("upload_policies", upload_policies.is_some())
+                .with_bool("minimal_policy_size", *minimal_policy_size)
+                .with_bool("disable_cache", *disable_cache)
+                .with_list(
+                    "service_hints",
+                    service_hints.as_deref().unwrap_or(&[]),
+                )
+                .with_list(
+                    "explain",
+                    explain.as_deref().unwrap_or(&[]),
+                ),
+        ),
+        Commands::McpServer { transport, port } => Some(
+            TelemetryEvent::new("mcp-server")
+                .with_str("transport", transport.to_string())
+                .with_bool("non_default_port", *port != MCP_HTTP_DEFAULT_PORT),
+        ),
+        Commands::Version { .. } => {
+            // Don't emit telemetry for --version
+            None
+        }
+    }
+}
+
+/// Emit telemetry in the background (fire-and-forget).
+///
+/// Spawns a tokio task that sends the telemetry event. The task is detached
+/// and any failures are silently ignored.
+fn spawn_telemetry(event: TelemetryEvent) {
+    tokio::spawn(async move {
+        if let Some(client) = TelemetryClient::new() {
+            client.emit(&event).await;
+        }
+    });
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
+
+    // --- Telemetry: build event, show notice, emit ---
+    if telemetry::is_telemetry_enabled() {
+        if let Some(event) = build_telemetry_event(&cli.command) {
+            spawn_telemetry(event);
+        }
+    }
+    if let Some(notice) = telemetry::telemetry_notice_cli() {
+        eprintln!("{notice}");
+    }
 
     let code = match cli.command {
         Commands::FixAccessDenied { source, yes } => {
