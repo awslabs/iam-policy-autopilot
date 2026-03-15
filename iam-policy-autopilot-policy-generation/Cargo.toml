@@ -24,24 +24,22 @@ reqwest.workspace = true
 rust-embed.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
+lsp-types = "0.95"
+which = "6.0"
+tokio = { workspace = true, features = ["process", "io-util"] }
+tokio-util.workspace = true
 
 
 # Build dependencies
 [build-dependencies]
 serde.workspace = true
-
-# Async runtime
 tokio.workspace = true
 async-trait.workspace = true
 tokio-util.workspace = true
-
-# JSON processing
 serde_json.workspace = true
-
 aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
@@ -61,6 +59,8 @@ proptest.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"
+mockall = "0.12"
+serial_test = "3.0"
 iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]}
 
 # Documentation configuration
