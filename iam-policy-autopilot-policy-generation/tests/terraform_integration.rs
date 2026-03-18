@@ -85,6 +85,10 @@ struct ExpectedBindingExplanations {
     /// Exact list of expected explanation ARNs (order-independent).
     /// When present and non-empty, the test asserts the actual ARN set equals this set exactly.
     expected_arns: Vec<String>,
+    /// Expected locations keyed by ARN, in GNU format (e.g., "main.tf:5.1-5.39").
+    /// Paths are relative to the fixture directory.
+    #[serde(default)]
+    expected_locations: HashMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -353,16 +357,37 @@ async fn test_fixture(#[case] fixture_name: &str) {
                 "[{fixture_name}] explanation ARN should not be empty"
             );
             assert!(
-                expl.terraform_resource_type.starts_with(
+                expl.resource_type.starts_with(
                     iam_policy_autopilot_policy_generation::extraction::terraform::AWS_RESOURCE_PREFIX
                 ),
                 "[{fixture_name}] resource type should start with aws_: {}",
-                expl.terraform_resource_type
+                expl.resource_type
             );
             assert!(
-                !expl.location.is_empty(),
-                "[{fixture_name}] location should not be empty"
+                expl.location.start_line() > 0,
+                "[{fixture_name}] location should have a valid start line"
             );
+        }
+
+        // Validate exact location values when specified in the fixture
+        if !expl_expected.expected_locations.is_empty() {
+            let fixture_path = fixture_dir(fixture_name);
+            for expl in &explanations {
+                if let Some(expected_gnu) = expl_expected.expected_locations.get(&expl.arn) {
+                    // expected_gnu is relative to fixture dir (e.g., "main.tf:5.1-5.39")
+                    // actual location has an absolute path; compare using just the filename and positions
+                    let actual_gnu = expl.location.to_gnu_format();
+                    // Strip the fixture dir prefix from the actual path for comparison
+                    let actual_relative = actual_gnu
+                        .strip_prefix(&format!("{}/", fixture_path.display()))
+                        .unwrap_or(&actual_gnu);
+                    assert_eq!(
+                        actual_relative, expected_gnu,
+                        "[{fixture_name}] location mismatch for ARN {}",
+                        expl.arn
+                    );
+                }
+            }
         }
     }
 }

@@ -23,6 +23,7 @@ use log::debug;
 use regex::Regex;
 
 use crate::enrichment::ServiceReferenceLoader;
+use crate::Location;
 use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 
 use crate::extraction::terraform::hcl_parser::{
@@ -57,7 +58,7 @@ fn placeholder_regex() -> &'static Regex {
 /// A fully-resolved Terraform resource with all associated metadata.
 #[derive(Debug, Clone)]
 pub struct ResolvedTerraformResource {
-    /// The original parsed resource.
+    /// The original parsed resource (includes location).
     pub resource: TerraformResource,
     /// IAM service name derived from `names_data.hcl` (e.g. `"s3"`).
     pub service_name: Option<String>,
@@ -65,16 +66,14 @@ pub struct ResolvedTerraformResource {
     pub resource_type: Option<String>,
     /// Concrete ARN from `terraform.tfstate`. Takes precedence over `hcl_arn`.
     pub state_arn: Option<String>,
+    /// Location of the state ARN in the `.tfstate` file.
+    pub state_arn_location: Option<Location>,
     /// ARN constructed from HCL attributes + SDF patterns. Fallback when `state_arn` is absent.
     pub hcl_arn: Option<String>,
     /// The resolved naming attribute value (e.g. `"my-app-data-bucket"`).
     pub binding_name: Option<String>,
-    /// Source files traced from this resource (e.g. Lambda handler code).
-    pub traced_sources: Vec<PathBuf>,
     /// Handler entry point if applicable (e.g. `"index.handler"`).
     pub handler: Option<String>,
-    /// Human-readable source location string (e.g. `"main.tf:12"`).
-    pub location: String,
 }
 
 /// Map key: `(service_name, resource_type)` e.g. `("s3", "bucket")`.
@@ -88,20 +87,15 @@ impl ResolvedTerraformResource {
     /// Build from a parsed resource with no enrichment.
     #[must_use]
     pub fn from_parsed(resource: TerraformResource) -> Self {
-        let location = match resource.line_number {
-            Some(line) => format!("{}:{}", resource.source_file.display(), line),
-            None => resource.source_file.display().to_string(),
-        };
         Self {
             resource,
             service_name: None,
             resource_type: None,
             state_arn: None,
+            state_arn_location: None,
             hcl_arn: None,
             binding_name: None,
-            traced_sources: Vec::new(),
             handler: None,
-            location,
         }
     }
 
@@ -130,7 +124,7 @@ impl ResolvedTerraformResource {
 
 /// Consolidated Terraform resource resolver.
 ///
-/// Owns the full lifecycle: parsing HCL, resolving variables, tracing sources,
+/// Owns the full lifecycle: parsing Terraform, resolving variables, tracing sources,
 /// loading state, mapping to IAM services, deriving ARNs, and substituting
 /// concrete resource names into enriched SDK calls.
 #[derive(Debug)]
@@ -139,8 +133,6 @@ pub struct TerraformResourceResolver {
     resources: ResolvedResourceMap,
     /// Parse warnings from HCL parsing.
     warnings: Vec<String>,
-    /// Paths to `terraform.tfstate` files, if provided.
-    tfstate_paths: Vec<PathBuf>,
 }
 
 impl TerraformResourceResolver {
@@ -216,8 +208,7 @@ impl TerraformResourceResolver {
 
         Ok(Self {
             resources,
-            warnings: tf_result.warnings,
-            tfstate_paths: tfstate_paths.to_vec(),
+            warnings: tf_result.warnings
         })
     }
 
@@ -236,11 +227,10 @@ impl TerraformResourceResolver {
 
     /// Build a resolver directly from pre-computed components (useful for testing).
     #[cfg(test)]
-    pub fn from_parts(resources: ResolvedResourceMap, tfstate_path: Option<PathBuf>) -> Self {
+    pub fn from_resolved_map(resources: ResolvedResourceMap) -> Self {
         Self {
             resources,
             warnings: Vec::new(),
-            tfstate_paths: tfstate_path.into_iter().collect(),
         }
     }
 
@@ -550,7 +540,7 @@ impl TerraformResourceResolver {
 
     /// Build explanations for where resource ARNs came from.
     ///
-    /// Uses the pre-computed `hcl_arn`, `state_arn`, and `location` fields
+    /// Uses the pre-computed `hcl_arn`, `state_arn`, and resource metadata
     /// on each `ResolvedTerraformResource`, avoiding re-derivation.
     #[must_use]
     pub fn build_binding_explanations(&self) -> Vec<ResourceBindingExplanation> {
@@ -558,35 +548,40 @@ impl TerraformResourceResolver {
 
         for resources in self.resources.values() {
             for resolved in resources {
-                // HCL-derived ARN explanation
+                let resource_location = &resolved.resource.location;
+
+                // State-derived ARN explanation
+                if let Some(ref state_arn) = resolved.state_arn {
+                    let location = resolved
+                        .state_arn_location
+                        .clone()
+                        .unwrap_or_else(|| resource_location.clone());
+
+                    explanations.push(ResourceBindingExplanation {
+                        arn: state_arn.clone(),
+                        source: BindingSource::TerraformState,
+                        resource_type: resolved.resource.resource_type.clone(),
+                        resource_name: resolved.resource.local_name.clone(),
+                        location,
+                    });
+                    continue;
+                }
+
+                // Terraform-derived ARN explanation
                 if let Some(ref hcl_arn) = resolved.hcl_arn {
                     // Skip if state ARN will also be emitted (state takes precedence)
                     if resolved.state_arn.is_none() {
                         explanations.push(ResourceBindingExplanation {
                             arn: hcl_arn.clone(),
-                            source: BindingSource::Hcl,
-                            terraform_resource_type: resolved.resource.resource_type.clone(),
-                            terraform_resource_name: resolved.resource.local_name.clone(),
-                            location: resolved.location.clone(),
+                            source: BindingSource::Terraform,
+                            resource_type: resolved.resource.resource_type.clone(),
+                            resource_name: resolved.resource.local_name.clone(),
+                            location: resource_location.clone(),
                         });
                     }
                 }
 
-                // State-derived ARN explanation
-                if let Some(ref state_arn) = resolved.state_arn {
-                    let location = self
-                        .tfstate_paths
-                        .first()
-                        .map_or_else(|| resolved.location.clone(), |p| p.display().to_string());
-
-                    explanations.push(ResourceBindingExplanation {
-                        arn: state_arn.clone(),
-                        source: BindingSource::TerraformState,
-                        terraform_resource_type: resolved.resource.resource_type.clone(),
-                        terraform_resource_name: resolved.resource.local_name.clone(),
-                        location,
-                    });
-                }
+                
             }
         }
 
@@ -665,8 +660,9 @@ async fn resolve_terraform_resources(
 
         // Attach state ARN if available
         if let Some(state_resources) = state_map.get(&tf_key) {
-            if let Some(arn) = state_resources.iter().find_map(|s| s.arn.as_ref()) {
-                resolved_res.state_arn = Some(arn.clone());
+            if let Some(state_res) = state_resources.iter().find(|s| s.arn.is_some()) {
+                resolved_res.state_arn = state_res.arn.clone();
+                resolved_res.state_arn_location = state_res.arn_location.clone();
             }
         }
 
@@ -822,8 +818,7 @@ mod tests {
             resource_type: rtype.to_string(),
             local_name: name.to_string(),
             attributes: HashMap::from([(attr_key.to_string(), attr_val)]),
-            source_file: PathBuf::from("main.tf"),
-            line_number: Some(10),
+            location: Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)),
         }
     }
 
@@ -836,6 +831,7 @@ mod tests {
                     resource_type: rtype.to_string(),
                     name: name.to_string(),
                     arn: arn.map(String::from),
+                    arn_location: None,
                 });
         }
         map
@@ -861,23 +857,22 @@ mod tests {
         binding_name: Option<&str>,
         state_arn: Option<&str>,
         hcl_arn: Option<&str>,
+        state_arn_location: Option<Location>,
     ) -> ResolvedTerraformResource {
         ResolvedTerraformResource {
             resource: TerraformResource {
                 resource_type: rtype.to_string(),
                 local_name: local_name.to_string(),
                 attributes: HashMap::new(),
-                source_file: PathBuf::from("main.tf"),
-                line_number: Some(10),
+                location: Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)),
             },
             service_name: Some(service.to_string()),
             resource_type: Some(suffix.to_string()),
             state_arn: state_arn.map(String::from),
+            state_arn_location: state_arn_location,
             hcl_arn: hcl_arn.map(String::from),
             binding_name: binding_name.map(String::from),
-            traced_sources: Vec::new(),
-            handler: None,
-            location: "main.tf:10".to_string(),
+            handler: None
         }
     }
 
@@ -894,7 +889,7 @@ mod tests {
             AttributeValue::Literal("x".into()),
         );
         let resolved = ResolvedTerraformResource::from_parsed(r);
-        assert_eq!(resolved.location, "main.tf:10");
+        assert_eq!(resolved.resource.location, Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)));
         assert!(!resolved.has_service_reference_mapping());
         assert!(!resolved.has_arn());
     }
@@ -1095,8 +1090,9 @@ mod tests {
                 Some("my-app-data"),
                 None,
                 Some("arn:${Partition}:s3:::my-app-data"),
+                None
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         let result = resolver.substitute_enriched_calls(&enriched);
 
         assert_eq!(result.len(), 1);
@@ -1127,7 +1123,7 @@ mod tests {
         }];
 
         // Empty resources → no bindings
-        let resolver = TerraformResourceResolver::from_parts(ResolvedResourceMap::new(), None);
+        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
         let result = resolver.substitute_enriched_calls(&enriched);
 
         let arn_patterns = result[0].actions[0].resources[0]
@@ -1155,8 +1151,9 @@ mod tests {
                 Some("my-app-data"),
                 None,
                 Some("arn:${Partition}:s3:::my-app-data"),
+                None
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
         let result = resolver
@@ -1179,8 +1176,9 @@ mod tests {
                 Some("hcl-bucket"),
                 Some("arn:aws:s3:::state-bucket"),
                 Some("arn:${Partition}:s3:::hcl-bucket"),
+                None
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
         let result = resolver
@@ -1203,8 +1201,9 @@ mod tests {
                 Some("my-bucket"),
                 None,
                 Some("arn:${Partition}:s3:::my-bucket"),
+                None
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         // Object ARN has BucketName as first placeholder → should resolve via bucket binding
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()];
@@ -1216,7 +1215,7 @@ mod tests {
 
     #[test]
     fn test_no_bindings_returns_none() {
-        let resolver = TerraformResourceResolver::from_parts(ResolvedResourceMap::new(), None);
+        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
         assert!(resolver
             .substitute_arn_patterns("s3", "bucket", &patterns)
@@ -1237,8 +1236,9 @@ mod tests {
                 Some("*"),
                 None,
                 None,
+                None,
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
         assert!(resolver
@@ -1260,8 +1260,9 @@ mod tests {
                 Some("my-table"),
                 None,
                 None,
+                None,
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let patterns =
             vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
@@ -1288,6 +1289,7 @@ mod tests {
             Some("bucket-a"),
             None,
             None,
+            None,
         ));
         entry.push(make_resolved_resource(
             "aws_s3_bucket",
@@ -1297,8 +1299,9 @@ mod tests {
             Some("bucket-b"),
             None,
             None,
+            None,
         ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
         let result = resolver
@@ -1314,7 +1317,7 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn test_build_binding_explanations_hcl() {
+    fn test_build_binding_explanations_terraform() {
         let mut resource_map = ResolvedResourceMap::new();
         resource_map
             .entry(("s3".to_string(), "bucket".to_string()))
@@ -1327,15 +1330,20 @@ mod tests {
                 Some("my-bucket"),
                 None,
                 Some("arn:${Partition}:s3:::my-bucket"),
+                None,
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let explanations = resolver.build_binding_explanations();
         assert_eq!(explanations.len(), 1);
         assert_eq!(explanations[0].arn, "arn:${Partition}:s3:::my-bucket");
-        assert_eq!(explanations[0].source, BindingSource::Hcl);
-        assert_eq!(explanations[0].terraform_resource_type, "aws_s3_bucket");
-        assert_eq!(explanations[0].location, "main.tf:10");
+        assert_eq!(explanations[0].source, BindingSource::Terraform);
+        assert_eq!(explanations[0].resource_type, "aws_s3_bucket");
+        assert_eq!(explanations[0].resource_name, "data");
+        assert_eq!(
+            explanations[0].location,
+            Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1))
+        );
     }
 
     #[test]
@@ -1352,22 +1360,26 @@ mod tests {
                 Some("my-bucket"),
                 Some("arn:aws:s3:::my-bucket"),
                 Some("arn:${Partition}:s3:::my-bucket"),
+                Some(Location::new(PathBuf::from("terraform.tfstate"), (1, 1), (1, 1)))
             ));
         let tfstate_path = PathBuf::from("terraform.tfstate");
         let resolver =
-            TerraformResourceResolver::from_parts(resource_map, Some(tfstate_path.clone()));
+            TerraformResourceResolver::from_resolved_map(resource_map);
 
         let explanations = resolver.build_binding_explanations();
-        // State ARN present → HCL explanation is suppressed, only state explanation emitted
+        // State ARN present → Terraform explanation is suppressed, only state explanation emitted
         assert_eq!(explanations.len(), 1);
         assert_eq!(explanations[0].arn, "arn:aws:s3:::my-bucket");
         assert_eq!(explanations[0].source, BindingSource::TerraformState);
-        assert_eq!(explanations[0].location, tfstate_path.display().to_string());
+        assert_eq!(
+            explanations[0].location,
+            Location::new(tfstate_path, (1, 1), (1, 1))
+        );
     }
 
     #[test]
     fn test_build_binding_explanations_empty() {
-        let resolver = TerraformResourceResolver::from_parts(ResolvedResourceMap::new(), None);
+        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
         assert!(resolver.build_binding_explanations().is_empty());
     }
 
@@ -1447,7 +1459,7 @@ mod tests {
 
     #[test]
     fn test_resolver_empty() {
-        let resolver = TerraformResourceResolver::from_parts(ResolvedResourceMap::new(), None);
+        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
         assert!(resolver.is_empty());
         assert_eq!(resolver.len(), 0);
     }
@@ -1466,8 +1478,9 @@ mod tests {
                 Some("x"),
                 None,
                 None,
+                None,
             ));
-        let resolver = TerraformResourceResolver::from_parts(resource_map, None);
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         assert!(!resolver.is_empty());
         assert_eq!(resolver.len(), 1);
     }

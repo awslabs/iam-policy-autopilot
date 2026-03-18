@@ -7,9 +7,10 @@
 //! - Parse `terraform.tfstate` files for deployed resource ARNs
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
+
+use crate::Location;
 
 pub mod hcl_parser;
 pub mod state_parser;
@@ -57,11 +58,8 @@ pub struct TerraformResource {
     /// Key attributes relevant for ARN construction
     /// (e.g., `{"bucket": Literal("my-app-data")}`)
     pub attributes: HashMap<String, AttributeValue>,
-    /// Source `.tf` file path where this resource is defined
-    pub source_file: PathBuf,
-    /// Line number in the source file where the resource block starts (1-based)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub line_number: Option<usize>,
+    /// Location of the resource block definition in the source `.tf` file
+    pub location: Location,
 }
 
 /// Key for resource maps: `(resource_type, local_name)`.
@@ -125,6 +123,8 @@ impl<'de> Deserialize<'de> for TerraformParseResult {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
 
     #[test]
@@ -150,8 +150,7 @@ mod tests {
                 "bucket".to_string(),
                 AttributeValue::Literal("my-app-data".to_string()),
             )]),
-            source_file: PathBuf::from("main.tf"),
-            line_number: None,
+            location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
         assert_eq!(resource.resource_type, "aws_s3_bucket");
         assert_eq!(resource.local_name, "data_bucket");
@@ -183,8 +182,7 @@ mod tests {
                     AttributeValue::Expression("var.tags".to_string()),
                 ),
             ]),
-            source_file: PathBuf::from("main.tf"),
-            line_number: None,
+            location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
 
         let json = serde_json::to_string(&resource).unwrap();
@@ -202,8 +200,7 @@ mod tests {
                 "bucket".to_string(),
                 AttributeValue::Literal("test-bucket".to_string()),
             )]),
-            source_file: PathBuf::from("main.tf"),
-            line_number: None,
+            location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
         result.resources.insert(
             (resource.resource_type.clone(), resource.local_name.clone()),

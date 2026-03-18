@@ -379,8 +379,7 @@ variable "simple" {
                 "bucket".to_string(),
                 AttributeValue::Expression("var.bucket_name".to_string()),
             )]),
-            source_file: std::path::PathBuf::from("main.tf"),
-            line_number: None,
+            location: crate::Location::new(std::path::PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
         let mut result = TerraformParseResult::empty();
         result.resources.insert(

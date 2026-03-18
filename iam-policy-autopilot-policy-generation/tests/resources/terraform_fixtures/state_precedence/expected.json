@@ -71,6 +71,14 @@
       "arn:aws:sqs:us-east-1:123456789012:task-processing-queue",
       "arn:aws:lambda:us-east-1:123456789012:function:data-processor",
       "arn:aws:iam::123456789012:role/data-processor-role"
-    ]
+    ],
+    "expected_locations": {
+      "arn:aws:s3:::my-app-data-bucket": "terraform.tfstate:17.21-17.52",
+      "arn:aws:s3:::my-app-logs-bucket": "terraform.tfstate:34.21-34.52",
+      "arn:aws:dynamodb:us-east-1:123456789012:table/users-table": "terraform.tfstate:51.21-51.78",
+      "arn:aws:sqs:us-east-1:123456789012:task-processing-queue": "terraform.tfstate:68.21-68.77",
+      "arn:aws:lambda:us-east-1:123456789012:function:data-processor": "terraform.tfstate:84.21-84.82",
+      "arn:aws:iam::123456789012:role/data-processor-role": "terraform.tfstate:102.21-102.71"
+    }
   }
 }
