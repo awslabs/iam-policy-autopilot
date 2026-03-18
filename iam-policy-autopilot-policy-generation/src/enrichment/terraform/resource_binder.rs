@@ -597,7 +597,9 @@ impl TerraformResourceResolver {
 /// state data, variable resolution, and SDF ARN patterns.
 ///
 /// Keyed by `(service_name, resource_type)` for direct lookup during
-/// policy generation. Resources that don't map to an IAM service are excluded.
+/// policy generation. 
+/// 
+/// Resources that don't map to a service in names_data.hcl are excluded.
 async fn resolve_terraform_resources(
     hcl_resources: &crate::extraction::terraform::TerraformResourceMap,
     state_map: &StateResourceMap,
@@ -611,14 +613,14 @@ async fn resolve_terraform_resources(
         let mut resolved_res = ResolvedTerraformResource::from_parsed(resource.clone());
         let tf_key = (resource.resource_type.clone(), resource.local_name.clone());
 
-        let Some((service, suffix)) = resolver.resolve(&resource.resource_type) else {
+        let Some((service, resource_type)) = resolver.resolve(&resource.resource_type) else {
             continue;
         };
         resolved_res.service_name = Some(service.clone());
-        resolved_res.resource_type = Some(suffix.clone());
+        resolved_res.resource_type = Some(resource_type.clone());
 
         // Derive HCL ARN from SDF patterns + naming attribute
-        if let Some(patterns) = loader.get_resource_arns(&service, &suffix).await {
+        if let Some(patterns) = loader.get_resource_arns(&service, &resource_type).await {
             if let Some(naming_attr) = derive_naming_attribute(&patterns, &resource.attributes) {
                 if let Some(attr_value) = resource.attributes.get(&naming_attr) {
                     let resolved_value = match attr_value {
@@ -638,7 +640,7 @@ async fn resolve_terraform_resources(
                             let hcl_arn = re
                                 .replace_all(pattern, |caps: &regex::Captures| {
                                     let ph = caps.get(1).map_or("", |m| m.as_str());
-                                    if AWS_PLACEHOLDERS.iter().any(|p| p.eq_ignore_ascii_case(ph)) {
+                                    if is_aws_placeholder(ph) {
                                         format!("${{{ph}}}")
                                     } else if !replaced {
                                         replaced = true;
@@ -667,7 +669,7 @@ async fn resolve_terraform_resources(
         }
 
         results
-            .entry((service, suffix))
+            .entry((service, resource_type))
             .or_default()
             .push(resolved_res);
     }
