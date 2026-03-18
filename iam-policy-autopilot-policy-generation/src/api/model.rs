@@ -30,9 +30,12 @@ pub struct GeneratePolicyConfig {
     /// When provided, .tf files are parsed to discover AWS resources and trace source code.
     /// Source files from the terraform directory supplement the explicit source_files list.
     pub terraform_dir: Option<PathBuf>,
-    /// Optional path to a `terraform.tfstate` file for enhanced ARN resolution.
-    /// Only used when `terraform_dir` is set.
-    pub tfstate_path: Option<PathBuf>,
+    /// Optional individual Terraform `.tf` files for resource binding.
+    /// These are combined with any files discovered from `terraform_dir`.
+    pub terraform_files: Vec<PathBuf>,
+    /// Optional paths to `terraform.tfstate` files for enhanced ARN resolution.
+    /// State-derived ARNs take precedence over HCL-constructed ones.
+    pub tfstate_paths: Vec<PathBuf>,
 }
 
 /// Result of policy generation including policies, action mappings, and explanations

@@ -94,8 +94,10 @@ struct GeneratePolicyCliConfig {
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
     terraform_dir: Option<PathBuf>,
-    /// Optional path to terraform.tfstate
-    tfstate: Option<PathBuf>,
+    /// Optional individual Terraform files
+    terraform_files: Vec<PathBuf>,
+    /// Optional paths to terraform.tfstate files
+    tfstate: Vec<PathBuf>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -346,20 +348,33 @@ Examples:\n  \
         #[arg(
             long = "terraform-dir",
             long_help = "Directory containing Terraform .tf files. When provided, the tool parses \
-Terraform resources to discover AWS infrastructure, traces source code from Lambda functions, \
-and generates least-privilege IAM policies with concrete resource ARNs instead of wildcards. \
-Source files discovered in the Terraform directory are combined with explicitly provided source files."
+Terraform resources to discover AWS infrastructure and generates less permissive IAM policies with \
+concrete resource ARNs instead of wildcards. .tf files discovered in the Terraform directory are \
+combined with any files specified via --terraform-file."
         )]
         terraform_dir: Option<PathBuf>,
 
-        /// Path to terraform.tfstate file for enhanced ARN resolution
+        /// Individual Terraform .tf files for resource ARN binding
+        #[arg(
+            long = "terraform-file",
+            num_args = 1..,
+            long_help = "One or more individual Terraform .tf files to parse for AWS resource definitions. \
+Use this when your Terraform files are not in a single directory, or when you want to analyze \
+specific files rather than an entire directory. These files are combined with any directory \
+specified via --terraform-dir. Supports multiple file paths."
+        )]
+        terraform_files: Vec<PathBuf>,
+
+        /// Path to terraform.tfstate file(s) for enhanced ARN resolution
         #[arg(
             long = "tfstate",
-            long_help = "Path to a terraform.tfstate file. When provided alongside --terraform-dir, \
-the tool uses actual deployed resource ARNs from the state file instead of constructing them \
-from HCL attributes. State-derived ARNs take precedence over HCL-constructed ones."
+            num_args = 1..,
+            long_help = "One or more paths to terraform.tfstate files. When provided, the tool uses \
+actual deployed resource ARNs from the state files to generate less permissive IAM policies with \
+concrete resources ARNs instead of wildcards. State-derived ARNs take precedence over the ones dervied from .tf files. \
+Can be used with --terraform-dir, --terraform-file, or independently."
         )]
-        tfstate: Option<PathBuf>,
+        tfstate: Vec<PathBuf>,
     },
 
     /// Start MCP server
@@ -487,7 +502,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
         terraform_dir: config.terraform_dir.clone(),
-        tfstate_path: config.tfstate.clone(),
+        terraform_files: config.terraform_files.clone(),
+        tfstate_paths: config.tfstate.clone(),
     })
     .await?;
 
@@ -611,6 +627,7 @@ async fn main() {
             service_hints,
             explain,
             terraform_dir,
+            terraform_files,
             tfstate,
         } => {
             // Initialize logging
@@ -635,6 +652,7 @@ async fn main() {
                 disable_cache,
                 explain,
                 terraform_dir,
+                terraform_files,
                 tfstate,
             };
 

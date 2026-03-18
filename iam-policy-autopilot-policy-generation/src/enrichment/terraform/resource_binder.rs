@@ -25,10 +25,12 @@ use regex::Regex;
 use crate::enrichment::ServiceReferenceLoader;
 use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 
-use crate::extraction::terraform::hcl_parser::parse_terraform_directory;
+use crate::extraction::terraform::hcl_parser::{
+    parse_terraform_directory, parse_terraform_files,
+};
 use crate::extraction::terraform::state_parser::{parse_terraform_state, StateResourceMap};
 use crate::extraction::terraform::variable_resolver::VariableContext;
-use crate::extraction::terraform::{AttributeValue, TerraformResource};
+use crate::extraction::terraform::{AttributeValue, TerraformParseResult, TerraformResource};
 
 use super::{BindingSource, ResourceBindingExplanation};
 
@@ -137,55 +139,75 @@ pub struct TerraformResourceResolver {
     resources: ResolvedResourceMap,
     /// Parse warnings from HCL parsing.
     warnings: Vec<String>,
-    /// Path to the `terraform.tfstate` file, if provided.
-    tfstate_path: Option<PathBuf>,
+    /// Paths to `terraform.tfstate` files, if provided.
+    tfstate_paths: Vec<PathBuf>,
 }
 
 impl TerraformResourceResolver {
-    /// Build a resolver from a Terraform project directory.
+    /// Build a resolver from a combination of Terraform inputs.
     ///
-    /// This is the main factory method. It:
-    /// 1. Parses `.tf` files in the directory
+    /// This is the primary factory method that supports:
+    /// - An optional directory containing `.tf` files (discovered recursively)
+    /// - Individual `.tf` files (combined with directory-discovered files)
+    /// - Multiple `terraform.tfstate` files for deployed ARN resolution
+    ///
+    /// Steps:
+    /// 1. Parses `.tf` files from the directory (if provided) and individual files
     /// 2. Resolves `var.xxx` references from defaults + `.tfvars` files
     /// 3. Traces source code from compute resources (e.g. Lambda handlers)
-    /// 4. Optionally parses `terraform.tfstate` for deployed ARNs
+    /// 4. Parses `terraform.tfstate` files for deployed ARNs
     /// 5. Resolves each HCL resource to its service, ARN, and metadata
-    pub async fn from_directory(
-        directory: &Path,
-        tfstate_path: Option<&PathBuf>,
+    pub async fn new(
+        terraform_dir: Option<&Path>,
+        terraform_files: &[PathBuf],
+        tfstate_paths: &[PathBuf],
         loader: &ServiceReferenceLoader,
     ) -> Result<Self> {
-        // Step 1: Parse Terraform HCL files
-        let mut tf_result =
-            parse_terraform_directory(directory).context("Failed to parse Terraform directory")?;
+        // Step 1: Parse Terraform HCL files from directory and individual files
+        let mut tf_result = TerraformParseResult::empty();
+
+        if let Some(directory) = terraform_dir {
+            let dir_result = parse_terraform_directory(directory)
+                .context("Failed to parse Terraform directory")?;
+            tf_result.resources.extend(dir_result.resources);
+            tf_result.warnings.extend(dir_result.warnings);
+        }
+
+        if !terraform_files.is_empty() {
+            let files_result = parse_terraform_files(terraform_files)
+                .context("Failed to parse individual Terraform files")?;
+            tf_result.resources.extend(files_result.resources);
+            tf_result.warnings.extend(files_result.warnings);
+        }
 
         for warning in &tf_result.warnings {
             log::warn!("Terraform parse warning: {warning}");
         }
 
-        // Step 2: Resolve variables
-        let var_ctx = VariableContext::from_directory(directory).unwrap_or_else(|e| {
-            log::warn!("Failed to resolve Terraform variables: {e}");
-            VariableContext::default()
-        });
-        var_ctx.resolve_attributes(&mut tf_result);
+        // Step 2: Resolve variables (only when a directory is provided)
+        if let Some(directory) = terraform_dir {
+            let var_ctx = VariableContext::from_directory(directory).unwrap_or_else(|e| {
+                log::warn!("Failed to resolve Terraform variables: {e}");
+                VariableContext::default()
+            });
+            var_ctx.resolve_attributes(&mut tf_result);
+        }
 
-        debug!("Parsed {} Terraform resources", tf_result.resources.len(),);
+        debug!("Parsed {} Terraform resources", tf_result.resources.len());
 
-        // Step 3: Parse terraform.tfstate if provided
-        let state_map = if let Some(state_path) = tfstate_path {
+        // Step 3: Parse terraform.tfstate files
+        let mut state_map = StateResourceMap::new();
+        for state_path in tfstate_paths {
             debug!("Loading Terraform state from {}", state_path.display());
-            let map =
-                parse_terraform_state(state_path).context("Failed to parse terraform.tfstate")?;
-            debug!("Parsed {} state resource groups", map.len());
-            map
-        } else {
-            StateResourceMap::new()
-        };
+            let map = parse_terraform_state(state_path)
+                .with_context(|| format!("Failed to parse {}", state_path.display()))?;
+            debug!("Parsed {} state resource groups from {}", map.len(), state_path.display());
+            state_map.extend(map);
+        }
 
         // Step 4: Resolve all resources
         let resources =
-            resolve_terraform_resources(&tf_result.resources, &state_map, &var_ctx, loader).await;
+            resolve_terraform_resources(&tf_result.resources, &state_map, &VariableContext::default(), loader).await;
 
         debug!(
             "Resolved {} resource groups from Terraform",
@@ -195,8 +217,21 @@ impl TerraformResourceResolver {
         Ok(Self {
             resources,
             warnings: tf_result.warnings,
-            tfstate_path: tfstate_path.cloned(),
+            tfstate_paths: tfstate_paths.to_vec(),
         })
+    }
+
+    /// Build a resolver from a Terraform project directory.
+    ///
+    /// Convenience method that wraps [`Self::new`] for the common case of a single
+    /// directory with an optional single tfstate file.
+    pub async fn from_directory(
+        directory: &Path,
+        tfstate_path: Option<&PathBuf>,
+        loader: &ServiceReferenceLoader,
+    ) -> Result<Self> {
+        let tfstate_paths: Vec<PathBuf> = tfstate_path.into_iter().cloned().collect();
+        Self::new(Some(directory), &[], &tfstate_paths, loader).await
     }
 
     /// Build a resolver directly from pre-computed components (useful for testing).
@@ -205,7 +240,7 @@ impl TerraformResourceResolver {
         Self {
             resources,
             warnings: Vec::new(),
-            tfstate_path,
+            tfstate_paths: tfstate_path.into_iter().collect(),
         }
     }
 
@@ -540,8 +575,8 @@ impl TerraformResourceResolver {
                 // State-derived ARN explanation
                 if let Some(ref state_arn) = resolved.state_arn {
                     let location = self
-                        .tfstate_path
-                        .as_ref()
+                        .tfstate_paths
+                        .first()
                         .map_or_else(|| resolved.location.clone(), |p| p.display().to_string());
 
                     explanations.push(ResourceBindingExplanation {

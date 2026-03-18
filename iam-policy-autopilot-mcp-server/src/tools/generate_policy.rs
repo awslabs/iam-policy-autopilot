@@ -37,9 +37,14 @@ pub struct GeneratePoliciesInput {
     pub terraform_dir: Option<String>,
 
     #[schemars(
-        description = "Absolute path to a terraform.tfstate file for enhanced ARN resolution. When provided alongside terraform_dir, the tool uses actual deployed resource ARNs from the state file. State-derived ARNs take precedence over HCL-constructed ones."
+        description = "Absolute paths to individual Terraform .tf files. Use this when your Terraform files are not in a single directory. These files are combined with any directory specified via terraform_dir."
     )]
-    pub tfstate_path: Option<String>,
+    pub terraform_files: Option<Vec<String>>,
+
+    #[schemars(
+        description = "Absolute paths to terraform.tfstate files for enhanced ARN resolution. When provided, the tool uses actual deployed resource ARNs from the state files. State-derived ARNs take precedence over HCL-constructed ones. Can be used with terraform_dir, terraform_files, or independently."
+    )]
+    pub tfstate_paths: Option<Vec<String>>,
 }
 
 // Output struct for the generated IAM policy
@@ -83,7 +88,18 @@ pub async fn generate_application_policies(
         // No explanations for MCP server by default
         explain_filters: None,
         terraform_dir: input.terraform_dir.map(std::path::PathBuf::from),
-        tfstate_path: input.tfstate_path.map(std::path::PathBuf::from),
+        terraform_files: input
+            .terraform_files
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        tfstate_paths: input
+            .tfstate_paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
     })
     .await?;
 
@@ -148,7 +164,8 @@ mod tests {
             account: Some("123456789012".to_string()),
             service_hints: None,
             terraform_dir: None,
-            tfstate_path: None,
+            terraform_files: None,
+            tfstate_paths: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -191,7 +208,8 @@ mod tests {
             account: Some("123456789012".to_string()),
             service_hints: None,
             terraform_dir: None,
-            tfstate_path: None,
+            terraform_files: None,
+            tfstate_paths: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -208,7 +226,8 @@ mod tests {
             account: Some("987654321098".to_string()),
             service_hints: None,
             terraform_dir: None,
-            tfstate_path: None,
+            terraform_files: None,
+            tfstate_paths: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -241,7 +260,8 @@ mod tests {
             account: Some("123456789012".to_string()),
             service_hints: Some(vec!["s3".to_string(), "dynamodb".to_string()]),
             terraform_dir: None,
-            tfstate_path: None,
+            terraform_files: None,
+            tfstate_paths: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");

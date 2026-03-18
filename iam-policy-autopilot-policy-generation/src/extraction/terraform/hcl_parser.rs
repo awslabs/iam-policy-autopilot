@@ -53,8 +53,45 @@ pub fn parse_terraform_directory(dir: &Path) -> Result<TerraformParseResult> {
     Ok(result)
 }
 
+/// Parse a list of individual `.tf` files and extract AWS resource blocks.
+///
+/// Unlike `parse_terraform_directory`, this accepts explicit file paths rather than
+/// discovering files from a directory. Files with syntax errors are recorded as warnings
+/// and skipped.
+pub fn parse_terraform_files(files: &[PathBuf]) -> Result<TerraformParseResult> {
+    let mut result = TerraformParseResult::empty();
+
+    if files.is_empty() {
+        return Ok(result);
+    }
+
+    log::debug!("Parsing {} individual .tf files", files.len());
+
+    for tf_file in files {
+        match parse_terraform_file(tf_file) {
+            Ok(file_result) => {
+                result.resources.extend(file_result.resources);
+                result.warnings.extend(file_result.warnings);
+            }
+            Err(e) => {
+                let warning = format!("{}: {e}", tf_file.display());
+                log::warn!("Failed to parse Terraform file: {warning}");
+                result.warnings.push(warning);
+            }
+        }
+    }
+
+    log::debug!(
+        "Parsed {} resources from {} individual files",
+        result.resources.len(),
+        files.len()
+    );
+
+    Ok(result)
+}
+
 /// Parse a single `.tf` file and extract AWS resource blocks.
-fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
+pub fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
     let content =
         std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
 

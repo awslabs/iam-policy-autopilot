@@ -135,12 +135,25 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
 
     // --- Optional Terraform resolution ---
-    let terraform_resolver = if let Some(ref terraform_dir) = config.terraform_dir {
-        debug!("Terraform directory provided: {}", terraform_dir.display());
+    let has_terraform_inputs = config.terraform_dir.is_some()
+        || !config.terraform_files.is_empty()
+        || !config.tfstate_paths.is_empty();
+
+    let terraform_resolver = if has_terraform_inputs {
+        if let Some(ref terraform_dir) = config.terraform_dir {
+            debug!("Terraform directory provided: {}", terraform_dir.display());
+        }
+        if !config.terraform_files.is_empty() {
+            debug!("{} individual Terraform files provided", config.terraform_files.len());
+        }
+        if !config.tfstate_paths.is_empty() {
+            debug!("{} tfstate files provided", config.tfstate_paths.len());
+        }
         let loader = enrichment_engine.service_reference_loader();
-        let resolver = TerraformResourceResolver::from_directory(
-            terraform_dir,
-            config.tfstate_path.as_ref(),
+        let resolver = TerraformResourceResolver::new(
+            config.terraform_dir.as_deref(),
+            &config.terraform_files,
+            &config.tfstate_paths,
             loader,
         )
         .await
