@@ -16,105 +16,97 @@ use walkdir::WalkDir;
 
 use crate::Location;
 
-use super::{AttributeValue, TerraformParseResult, TerraformResource};
+use super::{AttributeValue, TerraformResources, TerraformResource};
 
-/// Parse all `.tf` files in a directory recursively.
-///
-/// Discovers every file ending in `.tf`, parses it with `hcl-rs`, and collects
-/// AWS resource blocks. Files with syntax errors are recorded as warnings and skipped.
-pub fn parse_terraform_directory(dir: &Path) -> Result<TerraformParseResult> {
-    let mut result = TerraformParseResult::empty();
+impl TerraformResources {
+    /// Parse all `.tf` files in a directory recursively and add them to this collection.
+    ///
+    /// Discovers every file ending in `.tf`, parses it with `hcl-rs`, and extends
+    /// `self` in-place. Files with syntax errors are recorded as warnings and skipped.
+    pub fn from_directory(&mut self, dir: &Path) -> Result<()> {
+        let tf_files = discover_tf_files(dir);
 
-    let tf_files = discover_tf_files(dir);
+        if tf_files.is_empty() {
+            log::debug!("No .tf files found in {}", dir.display());
+            return Ok(());
+        }
 
-    if tf_files.is_empty() {
-        log::debug!("No .tf files found in {}", dir.display());
-        return Ok(result);
-    }
+        log::debug!("Found {} .tf files in {}", tf_files.len(), dir.display());
+        let count_before = self.len();
 
-    log::debug!("Found {} .tf files in {}", tf_files.len(), dir.display());
-
-    for tf_file in &tf_files {
-        match parse_terraform_file(tf_file) {
-            Ok(file_result) => {
-                result.resources.extend(file_result.resources);
-                result.warnings.extend(file_result.warnings);
-            }
-            Err(e) => {
-                let warning = format!("{}: {e}", tf_file.display());
-                log::warn!("Failed to parse Terraform file: {warning}");
-                result.warnings.push(warning);
+        for tf_file in &tf_files {
+            match Self::parse_file(tf_file) {
+                Ok(file_result) => self.merge(file_result),
+                Err(e) => {
+                    let warning = format!("{}: {e}", tf_file.display());
+                    log::warn!("Failed to parse Terraform file: {warning}");
+                    self.add_warning(warning);
+                }
             }
         }
+
+        log::debug!(
+            "Parsed {} resources from {} files",
+            self.len() - count_before,
+            tf_files.len()
+        );
+
+        Ok(())
     }
 
-    log::debug!(
-        "Parsed {} resources from {} files",
-        result.resources.len(),
-        tf_files.len()
-    );
+    /// Parse a list of individual `.tf` files and add them to this collection.
+    ///
+    /// Extends `self` in-place. Files with syntax errors are recorded as
+    /// warnings and skipped.
+    pub fn from_files(&mut self, files: &[PathBuf]) -> Result<()> {
+        if files.is_empty() {
+            return Ok(());
+        }
 
-    Ok(result)
-}
+        log::debug!("Parsing {} individual .tf files", files.len());
+        let count_before = self.len();
 
-/// Parse a list of individual `.tf` files and extract AWS resource blocks.
-///
-/// Unlike `parse_terraform_directory`, this accepts explicit file paths rather than
-/// discovering files from a directory. Files with syntax errors are recorded as warnings
-/// and skipped.
-pub fn parse_terraform_files(files: &[PathBuf]) -> Result<TerraformParseResult> {
-    let mut result = TerraformParseResult::empty();
-
-    if files.is_empty() {
-        return Ok(result);
-    }
-
-    log::debug!("Parsing {} individual .tf files", files.len());
-
-    for tf_file in files {
-        match parse_terraform_file(tf_file) {
-            Ok(file_result) => {
-                result.resources.extend(file_result.resources);
-                result.warnings.extend(file_result.warnings);
-            }
-            Err(e) => {
-                let warning = format!("{}: {e}", tf_file.display());
-                log::warn!("Failed to parse Terraform file: {warning}");
-                result.warnings.push(warning);
+        for tf_file in files {
+            match Self::parse_file(tf_file) {
+                Ok(file_result) => self.merge(file_result),
+                Err(e) => {
+                    let warning = format!("{}: {e}", tf_file.display());
+                    log::warn!("Failed to parse Terraform file: {warning}");
+                    self.add_warning(warning);
+                }
             }
         }
+
+        log::debug!(
+            "Parsed {} resources from {} individual files",
+            self.len() - count_before,
+            files.len()
+        );
+
+        Ok(())
     }
 
-    log::debug!(
-        "Parsed {} resources from {} individual files",
-        result.resources.len(),
-        files.len()
-    );
+    /// Parse a single `.tf` file and extract AWS resource blocks.
+    fn parse_file(path: &Path) -> Result<Self> {
+        let content =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
 
-    Ok(result)
-}
-
-/// Parse a single `.tf` file and extract AWS resource blocks.
-pub fn parse_terraform_file(path: &Path) -> Result<TerraformParseResult> {
-    let content =
-        std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
-
-    parse_terraform_content(&content, path)
+        parse_terraform_content(&content, path)
+    }
 }
 
 /// Parse HCL content from a string (useful for testing without files).
-fn parse_terraform_content(content: &str, source_path: &Path) -> Result<TerraformParseResult> {
+fn parse_terraform_content(content: &str, source_path: &Path) -> Result<TerraformResources> {
     let body: hcl::Body = hcl::from_str(content)
         .with_context(|| format!("parsing HCL in {}", source_path.display()))?;
 
-    let mut result = TerraformParseResult::empty();
+    let mut result = TerraformResources::default();
 
     for structure in body {
         if let hcl::Structure::Block(block) = structure {
             if block.identifier.as_str() == "resource" {
                 if let Some(resource) = extract_resource_block(&block, source_path, content) {
-                    let key = (resource.resource_type.clone(), resource.local_name.clone());
-                    result.resources.insert(key, resource);
+                    result.insert(resource);
                 }
             }
         }
@@ -314,17 +306,13 @@ mod tests {
     ) {
         let result = parse_terraform_content(hcl, Path::new(source_path)).expect("should parse");
         assert_eq!(
-            result.resources.len(),
+            result.len(),
             expected_count,
             "resource count mismatch for HCL input"
         );
 
         for expected in expected_resources {
-            let key = (
-                expected.resource_type.to_string(),
-                expected.local_name.to_string(),
-            );
-            let resource = result.resources.get(&key).unwrap_or_else(|| {
+            let resource = result.get(expected.resource_type, expected.local_name).unwrap_or_else(|| {
                 panic!(
                     "expected resource {}.{} not found",
                     expected.resource_type, expected.local_name
@@ -616,7 +604,7 @@ resource "aws_s3_bucket" "b" {
 }
 "#;
         let result = parse_terraform_content(hcl, Path::new("infra/main.tf")).expect("parse");
-        let r = &result.resources[&(String::from("aws_s3_bucket"), String::from("b"))];
+        let r = result.get("aws_s3_bucket", "b").expect("resource should exist");
         assert_eq!(r.location.file_path, PathBuf::from("infra/main.tf"));
     }
 
@@ -649,17 +637,17 @@ resource "aws_s3_bucket" "b" {
         let txt = tmp.path().join("readme.md");
         std::fs::write(&txt, "# readme").expect("write");
 
-        let result = parse_terraform_directory(tmp.path()).expect("should parse dir");
+        let mut result = TerraformResources::default();
+        result.from_directory(tmp.path()).expect("should parse dir");
 
-        assert_eq!(result.resources.len(), 2);
+        assert_eq!(result.len(), 2);
         let types: Vec<&str> = result
-            .resources
             .values()
             .map(|r| r.resource_type.as_str())
             .collect();
         assert!(types.contains(&"aws_s3_bucket"));
         assert!(types.contains(&"aws_dynamodb_table"));
-        assert!(result.warnings.is_empty());
+        assert!(result.warnings().is_empty());
     }
 
     #[test]
@@ -667,8 +655,9 @@ resource "aws_s3_bucket" "b" {
         let tmp = TempDir::new().expect("create temp dir");
         std::fs::write(tmp.path().join("readme.md"), "hello").expect("write");
 
-        let result = parse_terraform_directory(tmp.path()).expect("should parse");
-        assert!(result.resources.is_empty());
+        let mut result = TerraformResources::default();
+        result.from_directory(tmp.path()).expect("should parse");
+        assert!(result.is_empty());
     }
 
     #[test]
@@ -686,11 +675,12 @@ resource "aws_s3_bucket" "b" {
         let bad = tmp.path().join("bad.tf");
         std::fs::write(&bad, "this is not valid HCL {{{{").expect("write");
 
-        let result = parse_terraform_directory(tmp.path()).expect("should parse dir");
+        let mut result = TerraformResources::default();
+        result.from_directory(tmp.path()).expect("should parse dir");
 
-        assert_eq!(result.resources.len(), 1);
-        assert!(!result.warnings.is_empty());
-        assert!(result.warnings[0].contains("bad.tf"));
+        assert_eq!(result.len(), 1);
+        assert!(!result.warnings().is_empty());
+        assert!(result.warnings()[0].contains("bad.tf"));
     }
 
     #[test]

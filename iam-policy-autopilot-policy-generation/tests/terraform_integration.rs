@@ -427,12 +427,12 @@ async fn test_state_arns_have_no_placeholders() {
 
 #[test]
 fn test_state_file_parsing() {
-    use iam_policy_autopilot_policy_generation::extraction::terraform::state_parser::parse_terraform_state;
+    use iam_policy_autopilot_policy_generation::extraction::terraform::state_parser::TerraformStateResources;
 
     let fixture_name = "state_precedence";
     let expected = load_expected(fixture_name);
     let state_path = fixture_dir(fixture_name).join("terraform.tfstate");
-    let map = parse_terraform_state(&state_path).expect("should parse state file");
+    let map = TerraformStateResources::from_file(&state_path).expect("should parse state file");
 
     let state_expected = expected.expected_state_parse.as_ref().unwrap_or_else(|| {
         panic!("[{fixture_name}] expected_state_parse is required for state fixtures")
@@ -453,7 +453,7 @@ fn test_state_file_parsing() {
             "excluded_keys entry must be 'type.name': {excluded_key}"
         );
         assert!(
-            !map.contains_key(&(parts[0].to_string(), parts[1].to_string())),
+            !map.contains_key(parts[0], parts[1]),
             "[{fixture_name}] {excluded_key} should have been excluded (data source)"
         );
     }
@@ -467,10 +467,12 @@ fn test_state_file_parsing() {
             "specific_arns key must be 'type.name': {key}"
         );
         let resources = map
-            .get(&(parts[0].to_string(), parts[1].to_string()))
+            .get(parts[0], parts[1])
             .unwrap_or_else(|| panic!("[{fixture_name}] state missing resource {key}"));
+        let first = resources.iter().find(|r| r.arn.is_some())
+            .unwrap_or_else(|| panic!("[{fixture_name}] no resource with ARN for {key}"));
         assert_eq!(
-            resources[0].arn.as_deref(),
+            first.arn.as_deref(),
             Some(expected_arn.as_str()),
             "[{fixture_name}] state ARN mismatch for {key}"
         );

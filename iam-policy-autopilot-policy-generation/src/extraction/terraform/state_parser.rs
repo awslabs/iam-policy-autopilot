@@ -2,7 +2,7 @@
 //!
 //! Reads the v4 JSON format and extracts deployed AWS resource ARNs.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -13,7 +13,10 @@ use serde::Deserialize;
 use crate::Location;
 
 /// A resource instance extracted from `terraform.tfstate`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+///
+/// Identity is based on `(resource_type, name, arn)` — the location is
+/// metadata for diagnostics and does not affect equality or hashing.
+#[derive(Debug, Clone)]
 pub struct StateResource {
     /// Terraform resource type (e.g., `"aws_s3_bucket"`)
     pub resource_type: String,
@@ -25,20 +28,113 @@ pub struct StateResource {
     pub arn_location: Option<Location>,
 }
 
-/// Indexed map of state resources keyed by `(resource_type, local_name)`.
+impl PartialEq for StateResource {
+    fn eq(&self, other: &Self) -> bool {
+        self.resource_type == other.resource_type
+            && self.name == other.name
+            && self.arn == other.arn
+    }
+}
+
+impl Eq for StateResource {}
+
+impl std::hash::Hash for StateResource {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.resource_type.hash(state);
+        self.name.hash(state);
+        self.arn.hash(state);
+    }
+}
+
+/// A collection of resource instances extracted from `terraform.tfstate` files.
+///
+/// Resources are keyed internally by `(resource_type, local_name)`.
 /// Multiple instances (from `count` / `for_each`) share the same key.
-pub type StateResourceMap = HashMap<(String, String), Vec<StateResource>>;
+#[derive(Debug, Clone)]
+pub struct TerraformStateResources {
+    resources: HashMap<(String, String), HashSet<StateResource>>,
+}
 
-/// Parse a `terraform.tfstate` file and extract AWS resource instances.
-pub fn parse_terraform_state(path: &Path) -> Result<StateResourceMap> {
-    let content = std::fs::read_to_string(path)
-        .with_context(|| format!("reading state file: {}", path.display()))?;
+impl TerraformStateResources {
+    /// Create an empty collection.
+    #[must_use]
+    pub fn default() -> Self {
+        Self {
+            resources: HashMap::new(),
+        }
+    }
 
-    parse_terraform_state_content(&content, path)
+    /// Parse a single `terraform.tfstate` file.
+    pub fn from_file(path: &Path) -> Result<Self> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("reading state file: {}", path.display()))?;
+
+        parse_terraform_state_content(&content, path)
+    }
+
+    /// Parse multiple `terraform.tfstate` files and merge them.
+    pub fn from_files(paths: &[std::path::PathBuf]) -> Result<Self> {
+        let mut result = Self::default();
+        for path in paths {
+            result.merge(Self::from_file(path)?);
+        }
+        Ok(result)
+    }
+
+    /// Look up state resources by `(resource_type, local_name)`.
+    /// Look up state resources by `(resource_type, local_name)`.
+    ///
+    /// Returns a reference to the set of resources, or `None` if not present.
+    #[must_use]
+    pub fn get(&self, resource_type: &str, local_name: &str) -> Option<&HashSet<StateResource>> {
+        self.resources
+            .get(&(resource_type.to_string(), local_name.to_string()))
+    }
+
+    /// Number of distinct `(resource_type, local_name)` groups.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.resources.len()
+    }
+
+    /// Returns `true` if there are no state resources.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.resources.is_empty()
+    }
+
+    /// Returns `true` if the given key is present.
+    #[must_use]
+    pub fn contains_key(&self, resource_type: &str, local_name: &str) -> bool {
+        self.resources
+            .contains_key(&(resource_type.to_string(), local_name.to_string()))
+    }
+
+    /// Merge another collection into this one.
+    /// Merge another collection into this one.
+    ///
+    /// Resources from `other` are added. Duplicates (same identity) are
+    /// automatically deduplicated by the `HashSet`.
+    pub fn merge(&mut self, other: Self) {
+        for (key, resources) in other.resources {
+            self.resources.entry(key).or_default().extend(resources);
+        }
+    }
+
+    /// Insert a resource instance into the collection.
+    ///
+    /// Duplicates are automatically ignored by the `HashSet`.
+    pub(crate) fn push(&mut self, resource: StateResource) {
+        let key = (resource.resource_type.clone(), resource.name.clone());
+        self.resources.entry(key).or_default().insert(resource);
+    }
 }
 
 /// Parse tfstate JSON content (useful for testing without files).
-fn parse_terraform_state_content(content: &str, source_path: &Path) -> Result<StateResourceMap> {
+fn parse_terraform_state_content(
+    content: &str,
+    source_path: &Path,
+) -> Result<TerraformStateResources> {
     let state: RawState =
         serde_json::from_str(content).context("parsing terraform.tfstate JSON")?;
 
@@ -50,7 +146,7 @@ fn parse_terraform_state_content(content: &str, source_path: &Path) -> Result<St
         None => anyhow::bail!("terraform state file is missing the 'version' field"),
     }
 
-    let mut resources_map = StateResourceMap::new();
+    let mut result = TerraformStateResources::default();
 
     let resources = state.resources.unwrap_or_default();
     for raw_resource in &resources {
@@ -67,11 +163,6 @@ fn parse_terraform_state_content(content: &str, source_path: &Path) -> Result<St
             continue;
         }
 
-        let key = (
-            raw_resource.resource_type.clone(),
-            raw_resource.name.clone(),
-        );
-
         for instance in &raw_resource.instances {
             let arn = instance
                 .attributes
@@ -83,19 +174,16 @@ fn parse_terraform_state_content(content: &str, source_path: &Path) -> Result<St
                 .as_deref()
                 .and_then(|arn_val| find_string_location(content, source_path, arn_val));
 
-            resources_map
-                .entry(key.clone())
-                .or_default()
-                .push(StateResource {
-                    resource_type: key.0.clone(),
-                    name: key.1.clone(),
-                    arn,
-                    arn_location,
-                });
+            result.push(StateResource {
+                resource_type: raw_resource.resource_type.clone(),
+                name: raw_resource.name.clone(),
+                arn,
+                arn_location,
+            });
         }
     }
 
-    Ok(resources_map)
+    Ok(result)
 }
 
 /// Find the location of an ARN value in JSON content using ast-grep tree-sitter parsing.
@@ -295,11 +383,12 @@ mod tests {
     fn test_parse_state_extracts_arns() {
         let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
 
-        let s3 = &map[&("aws_s3_bucket".into(), "data_bucket".into())][0];
+        let s3_set = map.get("aws_s3_bucket", "data_bucket").expect("s3");
+        let s3 = s3_set.iter().next().unwrap();
         assert_eq!(s3.arn.as_deref(), Some("arn:aws:s3:::my-app-data-bucket"));
         assert_eq!(s3.name, "data_bucket");
 
-        let ddb = &map[&("aws_dynamodb_table".into(), "users_table".into())][0];
+        let ddb = map.get("aws_dynamodb_table", "users_table").expect("ddb").iter().next().unwrap();
         assert_eq!(
             ddb.arn.as_deref(),
             Some("arn:aws:dynamodb:us-east-1:123456789012:table/users-table")
@@ -310,7 +399,7 @@ mod tests {
     fn test_parse_state_skips_data_sources() {
         let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
         assert!(
-            !map.contains_key(&("aws_caller_identity".into(), "current".into())),
+            !map.contains_key("aws_caller_identity", "current"),
             "Data sources should be skipped"
         );
     }
@@ -318,9 +407,9 @@ mod tests {
     #[test]
     fn test_resources_keyed_by_type_and_name() {
         let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
-        assert!(map.contains_key(&("aws_s3_bucket".into(), "data_bucket".into())));
-        assert!(map.contains_key(&("aws_dynamodb_table".into(), "users_table".into())));
-        assert!(map.contains_key(&("aws_sqs_queue".into(), "task_queue".into())));
+        assert!(map.contains_key("aws_s3_bucket", "data_bucket"));
+        assert!(map.contains_key("aws_dynamodb_table", "users_table"));
+        assert!(map.contains_key("aws_sqs_queue", "task_queue"));
     }
 
     #[test]
@@ -340,10 +429,11 @@ mod tests {
   ]
 }"#;
         let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
-        let buckets = &map[&("aws_s3_bucket".into(), "data".into())];
+        let buckets = map.get("aws_s3_bucket", "data").expect("buckets");
         assert_eq!(buckets.len(), 2);
-        assert_eq!(buckets[0].arn.as_deref(), Some("arn:aws:s3:::bucket-0"));
-        assert_eq!(buckets[1].arn.as_deref(), Some("arn:aws:s3:::bucket-1"));
+        let arns: std::collections::BTreeSet<_> = buckets.iter().filter_map(|b| b.arn.as_deref()).collect();
+        assert!(arns.contains("arn:aws:s3:::bucket-0"));
+        assert!(arns.contains("arn:aws:s3:::bucket-1"));
     }
 
     #[test]
@@ -367,7 +457,7 @@ mod tests {
 }"#;
         let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
         assert_eq!(map.len(), 1, "Only AWS resources should be included");
-        assert!(map.contains_key(&("aws_s3_bucket".into(), "s3".into())));
+        assert!(map.contains_key("aws_s3_bucket", "s3"));
     }
 
     #[test]
@@ -391,10 +481,11 @@ mod tests {
   ]
 }"#;
         let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
-        let resources = &map[&("aws_s3_bucket".into(), "no_arn".into())];
+        let resources = map.get("aws_s3_bucket", "no_arn").expect("no_arn");
         assert_eq!(resources.len(), 1);
-        assert!(resources[0].arn.is_none());
-        assert!(resources[0].arn_location.is_none());
+        let r = resources.iter().next().unwrap();
+        assert!(r.arn.is_none());
+        assert!(r.arn_location.is_none());
     }
 
     // -----------------------------------------------------------------------
@@ -410,7 +501,7 @@ mod tests {
         // Line 13: `            "arn": "arn:aws:s3:::my-app-data-bucket",`
         // ast-grep returns the string node including quotes
         // Value node `"arn:aws:s3:::my-app-data-bucket"` starts at col 20 (1-based, at the `"`)
-        let s3 = &map[&("aws_s3_bucket".into(), "data_bucket".into())][0];
+        let s3 = map.get("aws_s3_bucket", "data_bucket").expect("s3").iter().next().unwrap();
         let loc = s3.arn_location.as_ref().expect("S3 ARN should have location");
         assert_eq!(loc.file_path, PathBuf::from("terraform.tfstate"));
         assert_eq!(loc.start_line(), 13);
@@ -418,7 +509,7 @@ mod tests {
         assert_eq!(loc.end_col(), 53);
 
         // DynamoDB ARN on line 28
-        let ddb = &map[&("aws_dynamodb_table".into(), "users_table".into())][0];
+        let ddb = map.get("aws_dynamodb_table", "users_table").expect("ddb").iter().next().unwrap();
         let ddb_loc = ddb.arn_location.as_ref().expect("DDB ARN should have location");
         assert_eq!(ddb_loc.start_line(), 28);
     }
@@ -446,7 +537,7 @@ mod tests {
   ]
 }"#;
         let map = parse_terraform_state_content(json, Path::new("state.tfstate")).expect("parse");
-        let s3 = &map[&("aws_s3_bucket".into(), "b".into())][0];
+        let s3 = map.get("aws_s3_bucket", "b").expect("b").iter().next().unwrap();
         let loc = s3.arn_location.as_ref().expect("should have location");
 
         assert_eq!(loc.file_path, PathBuf::from("state.tfstate"));

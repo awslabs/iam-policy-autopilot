@@ -12,7 +12,7 @@ use std::sync::OnceLock;
 use anyhow::{Context, Result};
 use regex::Regex;
 
-use super::{AttributeValue, TerraformParseResult};
+use super::{AttributeValue, TerraformResources};
 
 /// Regex matching `${var.xxx}` interpolation placeholders.
 static VAR_INTERPOLATION_RE: OnceLock<Regex> = OnceLock::new();
@@ -145,8 +145,8 @@ impl VariableContext {
     /// - `var.xxx` → look up `xxx` in the context, convert to `Literal` if found
     /// - `"${var.xxx}"` → substitute the variable value in the interpolation
     /// - `"${var.prefix}-suffix"` → substitute and produce a `Literal` if all vars resolve
-    pub fn resolve_attributes(&self, result: &mut TerraformParseResult) {
-        for resource in result.resources.values_mut() {
+    pub fn resolve_attributes(&self, result: &mut TerraformResources) {
+        for resource in result.values_mut() {
             self.resolve_map(&mut resource.attributes);
         }
     }
@@ -381,15 +381,12 @@ variable "simple" {
             )]),
             location: crate::Location::new(std::path::PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
-        let mut result = TerraformParseResult::empty();
-        result.resources.insert(
-            (resource.resource_type.clone(), resource.local_name.clone()),
-            resource,
-        );
+        let mut result = TerraformResources::default();
+        result.insert(resource);
 
         ctx.resolve_attributes(&mut result);
 
-        let r = result.resources.values().next().unwrap();
+        let r = result.values().next().unwrap();
         assert_eq!(
             r.attributes.get("bucket"),
             Some(&AttributeValue::Literal("resolved-bucket".to_string()))

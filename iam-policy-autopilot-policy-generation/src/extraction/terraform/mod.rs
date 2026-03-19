@@ -60,31 +60,89 @@ pub struct TerraformResource {
     pub location: Location,
 }
 
-/// Key for resource maps: `(resource_type, local_name)`.
-pub type TerraformBlockKey = (String, String);
-
-/// Map of Terraform resource blocks keyed by `(resource_type, local_name)`.
-pub type TerraformResourceMap = HashMap<TerraformBlockKey, TerraformResource>;
-
-/// Result of parsing Terraform configuration files in a directory.
+/// A collection of parsed Terraform resource blocks with associated warnings.
 ///
-/// Resources are keyed by `(type, local_name)` for O(1) lookup.
+/// Resources are keyed internally by `(resource_type, local_name)` for O(1) lookup.
+/// Use the provided methods to query and mutate instead of accessing the map directly.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TerraformParseResult {
+pub struct TerraformResources {
     /// Discovered AWS resource blocks keyed by `(resource_type, local_name)`
-    pub resources: TerraformResourceMap,
+    resources: HashMap<(String, String), TerraformResource>,
     /// Warnings encountered during parsing (e.g., syntax errors in individual files)
-    pub warnings: Vec<String>,
+    warnings: Vec<String>,
 }
 
-impl TerraformParseResult {
-    /// Create an empty parse result
+impl TerraformResources {
+    /// Create an empty collection.
     #[must_use]
-    pub fn empty() -> Self {
+    pub fn default() -> Self {
         Self {
-            resources: TerraformResourceMap::new(),
+            resources: HashMap::new(),
             warnings: Vec::new(),
         }
+    }
+
+    /// Insert a resource, keyed by `(resource_type, local_name)`.
+    ///
+    /// If a resource with the same key already exists, it is replaced.
+    pub fn insert(&mut self, resource: TerraformResource) {
+        let key = (resource.resource_type.clone(), resource.local_name.clone());
+        self.resources.insert(key, resource);
+    }
+
+    /// Look up a resource by type and local name.
+    #[must_use]
+    pub fn get(&self, resource_type: &str, local_name: &str) -> Option<&TerraformResource> {
+        self.resources
+            .get(&(resource_type.to_string(), local_name.to_string()))
+    }
+
+    /// Number of resources.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.resources.len()
+    }
+
+    /// Returns `true` if there are no resources.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.resources.is_empty()
+    }
+
+    /// Iterate over all resources (unordered).
+    pub fn values(&self) -> impl Iterator<Item = &TerraformResource> {
+        self.resources.values()
+    }
+
+    /// Iterate mutably over all resources (unordered).
+    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut TerraformResource> {
+        self.resources.values_mut()
+    }
+
+    /// Access the warnings collected during parsing.
+    #[must_use]
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
+    }
+
+    /// Record a warning.
+    pub fn add_warning(&mut self, warning: String) {
+        self.warnings.push(warning);
+    }
+
+    /// Take ownership of the warnings, leaving an empty list behind.
+    pub fn take_warnings(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.warnings)
+    }
+
+    /// Merge another collection into this one.
+    ///
+    /// Resources and warnings from `other` are appended. If both collections
+    /// contain a resource with the same `(type, local_name)` key, the one
+    /// from `other` wins (last-write-wins).
+    pub fn merge(&mut self, other: Self) {
+        self.resources.extend(other.resources);
+        self.warnings.extend(other.warnings);
     }
 }
 
@@ -128,10 +186,25 @@ mod tests {
     }
 
     #[test]
-    fn test_terraform_parse_result_empty() {
-        let result = TerraformParseResult::empty();
-        assert!(result.resources.is_empty());
-        assert!(result.warnings.is_empty());
+    fn test_parsed_terraform_resources_empty() {
+        let result = TerraformResources::default();
+        assert!(result.is_empty());
+        assert!(result.warnings().is_empty());
     }
 
+    #[test]
+    fn test_parsed_terraform_resources_insert_and_get() {
+        let mut result = TerraformResources::default();
+        let resource = TerraformResource {
+            resource_type: "aws_s3_bucket".to_string(),
+            local_name: "b".to_string(),
+            attributes: HashMap::new(),
+            location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
+        };
+        result.insert(resource);
+        assert_eq!(result.len(), 1);
+        assert!(!result.is_empty());
+        assert!(result.get("aws_s3_bucket", "b").is_some());
+        assert!(result.get("aws_s3_bucket", "other").is_none());
+    }
 }

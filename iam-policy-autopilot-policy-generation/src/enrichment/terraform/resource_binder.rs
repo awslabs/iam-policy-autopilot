@@ -26,12 +26,9 @@ use crate::enrichment::ServiceReferenceLoader;
 use crate::Location;
 use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 
-use crate::extraction::terraform::hcl_parser::{
-    parse_terraform_directory, parse_terraform_files,
-};
-use crate::extraction::terraform::state_parser::{parse_terraform_state, StateResourceMap};
+use crate::extraction::terraform::state_parser::TerraformStateResources;
 use crate::extraction::terraform::variable_resolver::VariableContext;
-use crate::extraction::terraform::{AttributeValue, TerraformParseResult, TerraformResource};
+use crate::extraction::terraform::{AttributeValue, TerraformResources, TerraformResource};
 
 use super::{BindingSource, ResourceBindingExplanation};
 
@@ -156,23 +153,19 @@ impl TerraformResourceResolver {
         loader: &ServiceReferenceLoader,
     ) -> Result<Self> {
         // Step 1: Parse Terraform HCL files from directory and individual files
-        let mut tf_result = TerraformParseResult::empty();
+        let mut tf_result = TerraformResources::default();
 
         if let Some(directory) = terraform_dir {
-            let dir_result = parse_terraform_directory(directory)
+            tf_result
+                .from_directory(directory)
                 .context("Failed to parse Terraform directory")?;
-            tf_result.resources.extend(dir_result.resources);
-            tf_result.warnings.extend(dir_result.warnings);
         }
 
-        if !terraform_files.is_empty() {
-            let files_result = parse_terraform_files(terraform_files)
-                .context("Failed to parse individual Terraform files")?;
-            tf_result.resources.extend(files_result.resources);
-            tf_result.warnings.extend(files_result.warnings);
-        }
+        tf_result
+            .from_files(terraform_files)
+            .context("Failed to parse individual Terraform files")?;
 
-        for warning in &tf_result.warnings {
+        for warning in tf_result.warnings() {
             log::warn!("Terraform parse warning: {warning}");
         }
 
@@ -185,21 +178,16 @@ impl TerraformResourceResolver {
             var_ctx.resolve_attributes(&mut tf_result);
         }
 
-        debug!("Parsed {} Terraform resources", tf_result.resources.len());
+        debug!("Parsed {} Terraform resources", tf_result.len());
 
         // Step 3: Parse terraform.tfstate files
-        let mut state_map = StateResourceMap::new();
-        for state_path in tfstate_paths {
-            debug!("Loading Terraform state from {}", state_path.display());
-            let map = parse_terraform_state(state_path)
-                .with_context(|| format!("Failed to parse {}", state_path.display()))?;
-            debug!("Parsed {} state resource groups from {}", map.len(), state_path.display());
-            state_map.extend(map);
-        }
+        let state_resources = TerraformStateResources::from_files(tfstate_paths)
+            .context("Failed to parse Terraform state files")?;
+        debug!("Parsed {} state resource groups", state_resources.len());
 
         // Step 4: Resolve all resources
         let resources =
-            resolve_terraform_resources(&tf_result.resources, &state_map, &VariableContext::default(), loader).await;
+            resolve_terraform_resources(&tf_result, &state_resources, &VariableContext::default(), loader).await;
 
         debug!(
             "Resolved {} resource groups from Terraform",
@@ -208,7 +196,7 @@ impl TerraformResourceResolver {
 
         Ok(Self {
             resources,
-            warnings: tf_result.warnings
+            warnings: tf_result.take_warnings(),
         })
     }
 
@@ -601,15 +589,15 @@ impl TerraformResourceResolver {
 /// 
 /// Resources that don't map to a service in names_data.hcl are excluded.
 async fn resolve_terraform_resources(
-    hcl_resources: &crate::extraction::terraform::TerraformResourceMap,
-    state_map: &StateResourceMap,
+    terraform_resources: &TerraformResources,
+    state_resources: &TerraformStateResources,
     var_ctx: &VariableContext,
     loader: &ServiceReferenceLoader,
 ) -> ResolvedResourceMap {
     let resolver = super::service_resolver::TerraformServiceAndResourceResolver::global();
     let mut results = ResolvedResourceMap::new();
 
-    for resource in hcl_resources.values() {
+    for resource in terraform_resources.values() {
         let mut resolved_res = ResolvedTerraformResource::from_parsed(resource.clone());
         let tf_key = (resource.resource_type.clone(), resource.local_name.clone());
 
@@ -661,10 +649,10 @@ async fn resolve_terraform_resources(
         }
 
         // Attach state ARN if available
-        if let Some(state_resources) = state_map.get(&tf_key) {
-            if let Some(state_res) = state_resources.iter().find(|s| s.arn.is_some()) {
-                resolved_res.state_arn = state_res.arn.clone();
-                resolved_res.state_arn_location = state_res.arn_location.clone();
+        if let Some(resources) = state_resources.get(&tf_key.0, &tf_key.1) {
+            if let Some(resource) = resources.iter().find(|s| s.arn.is_some()) {
+                resolved_res.state_arn = resource.arn.clone();
+                resolved_res.state_arn_location = resource.arn_location.clone();
             }
         }
 
@@ -797,13 +785,12 @@ mod tests {
     // Test fixture helpers
     // -----------------------------------------------------------------------
 
-    fn vec_to_resource_map(
-        resources: Vec<TerraformResource>,
-    ) -> crate::extraction::terraform::TerraformResourceMap {
-        resources
-            .into_iter()
-            .map(|r| ((r.resource_type.clone(), r.local_name.clone()), r))
-            .collect()
+    fn vec_to_terraform_resources(resources: Vec<TerraformResource>) -> TerraformResources {
+        let mut terraform_resources = TerraformResources::default();
+        for r in resources {
+            terraform_resources.insert(r);
+        }
+        terraform_resources
     }
 
     fn make_hcl_resource(
@@ -820,19 +807,17 @@ mod tests {
         }
     }
 
-    fn make_state_map(entries: Vec<(&str, &str, Option<&str>)>) -> StateResourceMap {
-        let mut map = StateResourceMap::new();
+    fn make_state_resources(entries: Vec<(&str, &str, Option<&str>)>) -> TerraformStateResources {
+        let mut state_resources = TerraformStateResources::default();
         for (rtype, name, arn) in entries {
-            map.entry((rtype.to_string(), name.to_string()))
-                .or_default()
-                .push(StateResource {
-                    resource_type: rtype.to_string(),
-                    name: name.to_string(),
-                    arn: arn.map(String::from),
-                    arn_location: None,
-                });
+            state_resources.push(StateResource {
+                resource_type: rtype.to_string(),
+                name: name.to_string(),
+                arn: arn.map(String::from),
+                arn_location: None,
+            });
         }
-        map
+        state_resources
     }
 
     fn empty_var_ctx() -> VariableContext {
@@ -929,14 +914,14 @@ mod tests {
             "bucket",
             AttributeValue::Literal("my-bucket".into()),
         )];
-        let state = make_state_map(vec![(
+        let state = make_state_resources(vec![(
             "aws_s3_bucket",
             "data",
             Some("arn:aws:s3:::my-bucket"),
         )]);
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &vec_to_resource_map(hcl),
+            &vec_to_terraform_resources(hcl),
             &state,
             &empty_var_ctx(),
             &loader,
@@ -955,10 +940,10 @@ mod tests {
             "bucket",
             AttributeValue::Literal("x".into()),
         )];
-        let state = make_state_map(vec![("aws_s3_bucket", "other", Some("arn:aws:s3:::other"))]);
+        let state = make_state_resources(vec![("aws_s3_bucket", "other", Some("arn:aws:s3:::other"))]);
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &vec_to_resource_map(hcl),
+            &vec_to_terraform_resources(hcl),
             &state,
             &empty_var_ctx(),
             &loader,
@@ -978,8 +963,8 @@ mod tests {
         )];
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &vec_to_resource_map(hcl),
-            &StateResourceMap::new(),
+            &vec_to_terraform_resources(hcl),
+            &TerraformStateResources::default(),
             &empty_var_ctx(),
             &loader,
         )
@@ -997,8 +982,8 @@ mod tests {
     async fn test_resolve_empty_inputs() {
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &crate::extraction::terraform::TerraformResourceMap::new(),
-            &StateResourceMap::new(),
+            &TerraformResources::default(),
+            &TerraformStateResources::default(),
             &empty_var_ctx(),
             &loader,
         )
@@ -1016,8 +1001,8 @@ mod tests {
         )];
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &vec_to_resource_map(hcl),
-            &StateResourceMap::new(),
+            &vec_to_terraform_resources(hcl),
+            &TerraformStateResources::default(),
             &empty_var_ctx(),
             &loader,
         )
@@ -1043,8 +1028,8 @@ mod tests {
         ];
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
-            &vec_to_resource_map(hcl),
-            &StateResourceMap::new(),
+            &vec_to_terraform_resources(hcl),
+            &TerraformStateResources::default(),
             &empty_var_ctx(),
             &loader,
         )
