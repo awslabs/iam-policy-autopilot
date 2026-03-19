@@ -609,7 +609,9 @@ async fn resolve_terraform_resources(
 
         // Derive HCL ARN from SDF patterns + naming attribute
         if let Some(patterns) = loader.get_resource_arns(&service, &resource_type).await {
-            if let Some(naming_attr) = derive_naming_attribute(&patterns, &resource.attributes) {
+            if let Some((naming_attr, matched_pattern)) =
+                derive_naming_attribute(&patterns, &resource.attributes)
+            {
                 if let Some(attr_value) = resource.attributes.get(&naming_attr) {
                     let resolved_value = match attr_value {
                         AttributeValue::Literal(s) => Some(s.clone()),
@@ -622,24 +624,22 @@ async fn resolve_terraform_resources(
                     };
                     if let Some(name) = resolved_value {
                         resolved_res.binding_name = Some(name.clone());
-                        if let Some(pattern) = patterns.first() {
-                            let re = placeholder_regex();
-                            let mut replaced = false;
-                            let hcl_arn = re
-                                .replace_all(pattern, |caps: &regex::Captures| {
-                                    let ph = caps.get(1).map_or("", |m| m.as_str());
-                                    if is_aws_placeholder(ph) {
-                                        format!("${{{ph}}}")
-                                    } else if !replaced {
-                                        replaced = true;
-                                        name.clone()
-                                    } else {
-                                        "*".to_string()
-                                    }
-                                })
-                                .to_string();
-                            resolved_res.hcl_arn = Some(hcl_arn);
-                        }
+                        let re = placeholder_regex();
+                        let mut replaced = false;
+                        let hcl_arn = re
+                            .replace_all(&matched_pattern, |caps: &regex::Captures| {
+                                let ph = caps.get(1).map_or("", |m| m.as_str());
+                                if is_aws_placeholder(ph) {
+                                    format!("${{{ph}}}")
+                                } else if !replaced {
+                                    replaced = true;
+                                    name.clone()
+                                } else {
+                                    "*".to_string()
+                                }
+                            })
+                            .to_string();
+                        resolved_res.hcl_arn = Some(hcl_arn);
                     } else {
                         // Expression couldn't be resolved — use wildcard as binding name
                         resolved_res.binding_name = Some("*".to_string());
@@ -712,14 +712,15 @@ fn first_resource_placeholder(arn_patterns: &[String]) -> Option<String> {
 /// Given ARN patterns like `["arn:${Partition}:s3:::${BucketName}"]`, extracts
 /// the first resource-specific placeholder (`BucketName`), converts it to
 /// snake_case candidates (`bucket_name`, `bucket`), and returns the first one
-/// that exists in the resource's attributes.
+/// that exists in the resource's attributes, along with the ARN pattern that
+/// matched.
 ///
 /// Returns `None` if no matching attribute is found — callers should treat this
 /// as "unknown" and skip the resource rather than guessing.
 pub(crate) fn derive_naming_attribute(
     arn_patterns: &[String],
     attributes: &HashMap<String, AttributeValue>,
-) -> Option<String> {
+) -> Option<(String, String)> {
     let regex = placeholder_regex();
 
     for pattern in arn_patterns {
@@ -732,7 +733,7 @@ pub(crate) fn derive_naming_attribute(
             let candidates = placeholder_to_attribute_candidates(placeholder);
             for candidate in &candidates {
                 if attributes.contains_key(candidate) {
-                    return Some(candidate.clone());
+                    return Some((candidate.clone(), pattern.clone()));
                 }
             }
         }
@@ -1397,13 +1398,23 @@ mod tests {
     }
 
     #[rstest]
-    #[case("s3_arn",      &["arn:${Partition}:s3:::${BucketName}"],                                      &["bucket"],  Some("bucket"))]
-    #[case("dynamodb_arn", &["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],        &["name"],    Some("name"))]
+    #[case("s3_arn",       &["arn:${Partition}:s3:::${BucketName}"],                                      &["bucket"],  Some(("bucket", "arn:${Partition}:s3:::${BucketName}")))]
+    #[case("dynamodb_arn", &["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],         &["name"],    Some(("name",   "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}")))]
+    #[case("match_second_pattern_different_resource",
+        &["arn:${Partition}:iam::${Account}:role/${RoleName}",
+          "arn:${Partition}:iam::${Account}:policy/${PolicyName}"],
+        &["policy_name"],
+        Some(("policy_name", "arn:${Partition}:iam::${Account}:policy/${PolicyName}")))]
+    #[case("match_second_pattern_deeper_arn",
+        &["arn:${Partition}:kinesis:${Region}:${Account}:stream/${StreamName}",
+          "arn:${Partition}:kinesis:${Region}:${Account}:stream/${StreamName}/consumer/${ConsumerName}"],
+        &["consumer_name"],
+        Some(("consumer_name", "arn:${Partition}:kinesis:${Region}:${Account}:stream/${StreamName}/consumer/${ConsumerName}")))]
     fn test_derive_naming_attribute(
         #[case] _name: &str,
         #[case] patterns: &[&str],
         #[case] attr_keys: &[&str],
-        #[case] expected: Option<&str>,
+        #[case] expected: Option<(&str, &str)>,
     ) {
         let pattern_strings: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
         let attrs: HashMap<String, AttributeValue> = attr_keys
@@ -1412,7 +1423,7 @@ mod tests {
             .collect();
         assert_eq!(
             derive_naming_attribute(&pattern_strings, &attrs),
-            expected.map(String::from),
+            expected.map(|(attr, pat)| (String::from(attr), String::from(pat))),
         );
     }
 
