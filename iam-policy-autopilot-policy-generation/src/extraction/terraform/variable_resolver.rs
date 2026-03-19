@@ -227,6 +227,10 @@ impl VariableContext {
 /// Returns `Some` for strings, numbers, and bools (converted to string).
 /// Returns `None` for complex types (lists, maps, objects, function calls,
 /// variable references) — these are not useful for ARN construction.
+///
+/// NOTE: We intentionally don't use `hcl::Expression`'s `Display` impl here
+/// because it formats *all* variants (e.g., function call `upper(var.name)` → `"upper(var.name)"`),
+/// producing nonsensical ARN values. This function acts as both a filter and extractor.
 fn expr_to_string(expr: &hcl::Expression) -> Option<String> {
     match expr {
         hcl::Expression::String(s) => Some(s.clone()),
