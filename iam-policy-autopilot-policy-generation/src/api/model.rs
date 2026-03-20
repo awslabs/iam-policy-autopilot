@@ -36,6 +36,10 @@ pub struct GeneratePolicyConfig {
     /// Optional paths to `terraform.tfstate` files for enhanced ARN resolution.
     /// State-derived ARNs take precedence over HCL-constructed ones.
     pub tfstate_paths: Vec<PathBuf>,
+    /// Optional explicit `.tfvars` file paths for variable overrides.
+    /// When provided, these take precedence over auto-discovered `.tfvars` files
+    /// from the terraform directory. Applied in order (later files override earlier).
+    pub tfvars_files: Vec<PathBuf>,
 }
 
 /// Result of policy generation including policies, action mappings, and explanations

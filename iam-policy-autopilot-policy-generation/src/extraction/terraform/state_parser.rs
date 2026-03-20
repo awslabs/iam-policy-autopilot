@@ -365,203 +365,207 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Sample state file tests
+    // State parsing tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_parse_state_extracts_resources() {
-        let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
-        assert_eq!(map.len(), 3, "3 managed resources (data source skipped)");
+    /// Expected resource for parameterized state parsing tests.
+    struct ExpectedStateResource {
+        resource_type: &'static str,
+        name: &'static str,
+        arn: Option<&'static str>,
+        instance_count: usize,
     }
 
-    #[test]
-    fn test_parse_state_extracts_arns() {
-        let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
-
-        let s3_set = map.get("aws_s3_bucket", "data_bucket").expect("s3");
-        let s3 = s3_set.iter().next().unwrap();
-        assert_eq!(s3.arn.as_deref(), Some("arn:aws:s3:::my-app-data-bucket"));
-        assert_eq!(s3.name, "data_bucket");
-
-        let ddb = map.get("aws_dynamodb_table", "users_table").expect("ddb").iter().next().unwrap();
-        assert_eq!(
-            ddb.arn.as_deref(),
-            Some("arn:aws:dynamodb:us-east-1:123456789012:table/users-table")
-        );
-    }
-
-    #[test]
-    fn test_parse_state_skips_data_sources() {
-        let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
-        assert!(
-            !map.contains_key("aws_caller_identity", "current"),
-            "Data sources should be skipped"
-        );
-    }
-
-    #[test]
-    fn test_resources_keyed_by_type_and_name() {
-        let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate")).expect("parse");
-        assert!(map.contains_key("aws_s3_bucket", "data_bucket"));
-        assert!(map.contains_key("aws_dynamodb_table", "users_table"));
-        assert!(map.contains_key("aws_sqs_queue", "task_queue"));
-    }
-
-    #[test]
-    fn test_multiple_instances_grouped_under_one_key() {
-        let json = r#"{
-  "version": 4,
-  "resources": [
-    {
-      "mode": "managed",
-      "type": "aws_s3_bucket",
-      "name": "data",
-      "instances": [
-        { "attributes": { "arn": "arn:aws:s3:::bucket-0" } },
-        { "attributes": { "arn": "arn:aws:s3:::bucket-1" } }
-      ]
-    }
-  ]
-}"#;
+    /// Shared harness for state file content parsing tests.
+    fn assert_state_parse(
+        json: &str,
+        expected_count: usize,
+        expected_resources: &[ExpectedStateResource],
+        expected_absent: &[(&str, &str)],
+    ) {
         let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
-        let buckets = map.get("aws_s3_bucket", "data").expect("buckets");
-        assert_eq!(buckets.len(), 2);
-        let arns: std::collections::BTreeSet<_> = buckets.iter().filter_map(|b| b.arn.as_deref()).collect();
-        assert!(arns.contains("arn:aws:s3:::bucket-0"));
-        assert!(arns.contains("arn:aws:s3:::bucket-1"));
-    }
+        assert_eq!(map.len(), expected_count, "resource group count mismatch");
 
-    #[test]
-    fn test_non_aws_resources_skipped() {
-        let json = r#"{
-  "version": 4,
-  "resources": [
-    {
-      "mode": "managed",
-      "type": "google_storage_bucket",
-      "name": "gcs",
-      "instances": [{ "attributes": { "name": "my-gcs-bucket" } }]
-    },
-    {
-      "mode": "managed",
-      "type": "aws_s3_bucket",
-      "name": "s3",
-      "instances": [{ "attributes": { "arn": "arn:aws:s3:::my-s3-bucket" } }]
-    }
-  ]
-}"#;
-        let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
-        assert_eq!(map.len(), 1, "Only AWS resources should be included");
-        assert!(map.contains_key("aws_s3_bucket", "s3"));
-    }
-
-    #[test]
-    fn test_resource_without_arn() {
-        let json = r#"{
-  "version": 4,
-  "resources": [
-    {
-      "mode": "managed",
-      "type": "aws_s3_bucket",
-      "name": "no_arn",
-      "instances": [
-        {
-          "attributes": {
-            "bucket": "my-bucket",
-            "id": "my-bucket"
-          }
+        for exp in expected_resources {
+            let resources = map
+                .get(exp.resource_type, exp.name)
+                .unwrap_or_else(|| panic!("{}.{} not found", exp.resource_type, exp.name));
+            assert_eq!(
+                resources.len(),
+                exp.instance_count,
+                "instance count mismatch for {}.{}",
+                exp.resource_type,
+                exp.name
+            );
+            if let Some(expected_arn) = exp.arn {
+                let r = resources.iter().next().unwrap();
+                assert_eq!(
+                    r.arn.as_deref(),
+                    Some(expected_arn),
+                    "ARN mismatch for {}.{}",
+                    exp.resource_type,
+                    exp.name
+                );
+            }
         }
-      ]
-    }
-  ]
-}"#;
-        let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
-        let resources = map.get("aws_s3_bucket", "no_arn").expect("no_arn");
-        assert_eq!(resources.len(), 1);
-        let r = resources.iter().next().unwrap();
-        assert!(r.arn.is_none());
-        assert!(r.arn_location.is_none());
-    }
 
-    // -----------------------------------------------------------------------
-    // ARN location tracking tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_arn_location_computed_for_state_resources() {
-        let map = parse_terraform_state_content(sample_state_json(), Path::new("terraform.tfstate"))
-            .expect("parse");
-
-        // S3 bucket ARN: "arn:aws:s3:::my-app-data-bucket" on line 13 of sample JSON
-        // Line 13: `            "arn": "arn:aws:s3:::my-app-data-bucket",`
-        // ast-grep returns the string node including quotes
-        // Value node `"arn:aws:s3:::my-app-data-bucket"` starts at col 20 (1-based, at the `"`)
-        let s3 = map.get("aws_s3_bucket", "data_bucket").expect("s3").iter().next().unwrap();
-        let loc = s3.arn_location.as_ref().expect("S3 ARN should have location");
-        assert_eq!(loc.file_path, PathBuf::from("terraform.tfstate"));
-        assert_eq!(loc.start_line(), 13);
-        assert_eq!(loc.start_col(), 20);
-        assert_eq!(loc.end_col(), 53);
-
-        // DynamoDB ARN on line 28
-        let ddb = map.get("aws_dynamodb_table", "users_table").expect("ddb").iter().next().unwrap();
-        let ddb_loc = ddb.arn_location.as_ref().expect("DDB ARN should have location");
-        assert_eq!(ddb_loc.start_line(), 28);
-    }
-
-    #[test]
-    fn test_arn_location_line_and_col_accuracy() {
-        // Minimal JSON where we can count positions exactly
-        // line 11: `            "arn": "arn:aws:s3:::test-bucket"`
-        //          123456789012345678901234567890
-        let json = r#"{
-  "version": 4,
-  "resources": [
-    {
-      "mode": "managed",
-      "type": "aws_s3_bucket",
-      "name": "b",
-      "instances": [
-        {
-          "attributes": {
-            "arn": "arn:aws:s3:::test-bucket"
-          }
+        for (rtype, name) in expected_absent {
+            assert!(
+                !map.contains_key(rtype, name),
+                "{rtype}.{name} should be absent"
+            );
         }
-      ]
-    }
-  ]
-}"#;
-        let map = parse_terraform_state_content(json, Path::new("state.tfstate")).expect("parse");
-        let s3 = map.get("aws_s3_bucket", "b").expect("b").iter().next().unwrap();
-        let loc = s3.arn_location.as_ref().expect("should have location");
-
-        assert_eq!(loc.file_path, PathBuf::from("state.tfstate"));
-        assert_eq!(loc.start_line(), 11);
-        assert_eq!(loc.start_col(), 20); 
-        assert_eq!(loc.end_col(), 46);
     }
 
-    #[test]
-    fn test_find_string_location_arn_pattern() {
-        let content = r#"{"arn": "arn:aws:s3:::my-bucket"}"#;
-        let loc = find_string_location(content, Path::new("s.json"), "arn:aws:s3:::my-bucket")
-            .expect("should find");
-        assert_eq!(loc.start_line(), 1);
-        // `{"arn": "arn:aws:s3:::my-bucket"}` — value starts at col 9 (1-based, at `"`)
-        assert_eq!(loc.start_col(), 9);
+    #[rstest]
+    // Sample state: 3 managed resources, data source skipped, ARNs extracted
+    #[case(
+        "sample_state",
+        None, // use sample_state_json()
+        3,
+        vec![
+            ExpectedStateResource { resource_type: "aws_s3_bucket", name: "data_bucket", arn: Some("arn:aws:s3:::my-app-data-bucket"), instance_count: 1 },
+            ExpectedStateResource { resource_type: "aws_dynamodb_table", name: "users_table", arn: Some("arn:aws:dynamodb:us-east-1:123456789012:table/users-table"), instance_count: 1 },
+            ExpectedStateResource { resource_type: "aws_sqs_queue", name: "task_queue", arn: Some("arn:aws:sqs:us-east-1:123456789012:task-processing-queue"), instance_count: 1 },
+        ],
+        vec![("aws_caller_identity", "current")]
+    )]
+    // Multiple instances grouped under one key
+    #[case(
+        "multiple_instances",
+        Some(r#"{"version": 4, "resources": [{"mode": "managed", "type": "aws_s3_bucket", "name": "data", "instances": [{"attributes": {"arn": "arn:aws:s3:::bucket-0"}}, {"attributes": {"arn": "arn:aws:s3:::bucket-1"}}]}]}"#),
+        1,
+        vec![ExpectedStateResource { resource_type: "aws_s3_bucket", name: "data", arn: None, instance_count: 2 }],
+        vec![]
+    )]
+    // Non-AWS resources skipped
+    #[case(
+        "non_aws_skipped",
+        Some(r#"{"version": 4, "resources": [{"mode": "managed", "type": "google_storage_bucket", "name": "gcs", "instances": [{"attributes": {"name": "my-gcs-bucket"}}]}, {"mode": "managed", "type": "aws_s3_bucket", "name": "s3", "instances": [{"attributes": {"arn": "arn:aws:s3:::my-s3-bucket"}}]}]}"#),
+        1,
+        vec![ExpectedStateResource { resource_type: "aws_s3_bucket", name: "s3", arn: Some("arn:aws:s3:::my-s3-bucket"), instance_count: 1 }],
+        vec![]
+    )]
+    // Resource without ARN
+    #[case(
+        "resource_without_arn",
+        Some(r#"{"version": 4, "resources": [{"mode": "managed", "type": "aws_s3_bucket", "name": "no_arn", "instances": [{"attributes": {"bucket": "my-bucket", "id": "my-bucket"}}]}]}"#),
+        1,
+        vec![ExpectedStateResource { resource_type: "aws_s3_bucket", name: "no_arn", arn: None, instance_count: 1 }],
+        vec![]
+    )]
+    fn test_state_content_parsing(
+        #[case] _name: &str,
+        #[case] json_override: Option<&str>,
+        #[case] expected_count: usize,
+        #[case] expected_resources: Vec<ExpectedStateResource>,
+        #[case] expected_absent: Vec<(&str, &str)>,
+    ) {
+        let json = json_override.unwrap_or_else(|| sample_state_json());
+        assert_state_parse(json, expected_count, &expected_resources, &expected_absent);
     }
 
-    #[test]
-    fn test_find_string_location_not_found() {
-        let content = r#"{"bucket": "my-bucket"}"#;
-        assert!(find_string_location(content, Path::new("s.json"), "nonexistent").is_none());
+    // -----------------------------------------------------------------------
+    // ARN location tracking tests (shared harness)
+    // -----------------------------------------------------------------------
+
+    /// Shared harness for ARN location tests.
+    fn assert_arn_location(
+        json: &str,
+        file_name: &str,
+        resource_type: &str,
+        name: &str,
+        expected_line: usize,
+        expected_start_col: usize,
+        expected_end_col: usize,
+    ) {
+        let map = parse_terraform_state_content(json, Path::new(file_name)).expect("parse");
+        let r = map
+            .get(resource_type, name)
+            .unwrap_or_else(|| panic!("{resource_type}.{name} not found"))
+            .iter()
+            .next()
+            .unwrap();
+        let loc = r.arn_location.as_ref().expect("should have location");
+        assert_eq!(loc.file_path, PathBuf::from(file_name), "file_path mismatch");
+        assert_eq!(loc.start_line(), expected_line, "start_line mismatch");
+        assert_eq!(loc.start_col(), expected_start_col, "start_col mismatch");
+        assert_eq!(loc.end_col(), expected_end_col, "end_col mismatch");
     }
 
-    #[test]
-    fn test_find_string_location_multiline() {
-        let content = "{\n  \"name\": \"test\",\n  \"arn\": \"arn:aws:s3:::b\"\n}";
-        let loc = find_string_location(content, Path::new("s.json"), "arn:aws:s3:::b")
-            .expect("should find");
-        assert_eq!(loc.start_line(), 3);
+    #[rstest]
+    // S3 bucket in sample state: line 13, col 20-53
+    #[case(
+        "sample_s3",
+        None,
+        "terraform.tfstate", "aws_s3_bucket", "data_bucket",
+        13, 20, 53
+    )]
+    // DynamoDB in sample state: line 28
+    #[case(
+        "sample_dynamodb",
+        None,
+        "terraform.tfstate", "aws_dynamodb_table", "users_table",
+        28, 20, 79
+    )]
+    // Minimal state with exact positions
+    #[case(
+        "minimal_exact_positions",
+        Some("{\n  \"version\": 4,\n  \"resources\": [\n    {\n      \"mode\": \"managed\",\n      \"type\": \"aws_s3_bucket\",\n      \"name\": \"b\",\n      \"instances\": [\n        {\n          \"attributes\": {\n            \"arn\": \"arn:aws:s3:::test-bucket\"\n          }\n        }\n      ]\n    }\n  ]\n}"),
+        "state.tfstate", "aws_s3_bucket", "b",
+        11, 20, 46
+    )]
+    fn test_arn_location(
+        #[case] _name: &str,
+        #[case] json_override: Option<&str>,
+        #[case] file_name: &str,
+        #[case] resource_type: &str,
+        #[case] name: &str,
+        #[case] expected_line: usize,
+        #[case] expected_start_col: usize,
+        #[case] expected_end_col: usize,
+    ) {
+        let json = json_override.unwrap_or_else(|| sample_state_json());
+        assert_arn_location(json, file_name, resource_type, name, expected_line, expected_start_col, expected_end_col);
+    }
+
+    // -----------------------------------------------------------------------
+    // find_string_location tests (shared harness)
+    // -----------------------------------------------------------------------
+
+    #[rstest]
+    #[case(
+        "arn_pattern",
+        r#"{"arn": "arn:aws:s3:::my-bucket"}"#,
+        "arn:aws:s3:::my-bucket",
+        Some((1, 9))
+    )]
+    #[case(
+        "not_found",
+        r#"{"bucket": "my-bucket"}"#,
+        "nonexistent",
+        None
+    )]
+    #[case(
+        "multiline",
+        "{\n  \"name\": \"test\",\n  \"arn\": \"arn:aws:s3:::b\"\n}",
+        "arn:aws:s3:::b",
+        Some((3, 10))
+    )]
+    fn test_find_string_location(
+        #[case] _name: &str,
+        #[case] content: &str,
+        #[case] search_value: &str,
+        #[case] expected: Option<(usize, usize)>,
+    ) {
+        let result = find_string_location(content, Path::new("s.json"), search_value);
+        match expected {
+            None => assert!(result.is_none(), "expected None"),
+            Some((line, col)) => {
+                let loc = result.expect("expected Some");
+                assert_eq!(loc.start_line(), line, "line mismatch");
+                assert_eq!(loc.start_col(), col, "col mismatch");
+            }
+        }
     }
 }

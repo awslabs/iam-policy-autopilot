@@ -262,8 +262,12 @@ fn find_block_location(
 ///
 /// Skips `.terraform/` directories which contain provider plugins and
 /// downloaded module sources that would produce confusing duplicates.
+///
+/// Results are sorted lexicographically to match Terraform's processing
+/// order and ensure deterministic behavior when multiple files define the
+/// same variable defaults.
 pub(super) fn discover_tf_files(dir: &Path) -> Vec<PathBuf> {
-    WalkDir::new(dir)
+    let mut files: Vec<PathBuf> = WalkDir::new(dir)
         .follow_links(true)
         .into_iter()
         .filter_entry(|entry| !(entry.file_type().is_dir() && entry.file_name() == ".terraform"))
@@ -272,14 +276,15 @@ pub(super) fn discover_tf_files(dir: &Path) -> Vec<PathBuf> {
             entry.file_type().is_file() && entry.path().extension().is_some_and(|ext| ext == "tf")
         })
         .map(walkdir::DirEntry::into_path)
-        .collect()
+        .collect();
+    files.sort();
+    files
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::rstest;
-    use std::io::Write;
     use tempfile::TempDir;
 
     // -----------------------------------------------------------------------
@@ -335,6 +340,15 @@ mod tests {
                 );
             }
 
+            // Always verify file_path is preserved from source_path
+            assert_eq!(
+                resource.location.file_path,
+                PathBuf::from(source_path),
+                "file_path mismatch for {}.{}",
+                expected.resource_type,
+                expected.local_name
+            );
+
             if let Some((start_line, start_col, end_line, end_col)) = expected.expected_location {
                 let loc = &resource.location;
                 assert_eq!(
@@ -377,6 +391,7 @@ mod tests {
     // Simple S3 bucket with literal attribute
     #[case(
         "simple_s3_bucket",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "data_bucket" {
   bucket = "my-app-data"
@@ -394,6 +409,7 @@ resource "aws_s3_bucket" "data_bucket" {
     // Multiple resources: S3 + DynamoDB + Lambda
     #[case(
         "multiple_resources",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "bucket1" {
   bucket = "first-bucket"
@@ -433,6 +449,7 @@ resource "aws_lambda_function" "func1" {
     // Non-AWS resources are ignored
     #[case(
         "non_aws_ignored",
+        "main.tf",
         r#"
 resource "google_storage_bucket" "gcs" { name = "my-gcs-bucket" }
 resource "aws_s3_bucket" "s3" { bucket = "my-s3-bucket" }
@@ -449,6 +466,7 @@ resource "azurerm_storage_account" "azure" { name = "myazurestorage" }
     // Interpolation preserved as Expression
     #[case(
         "expression_interpolation",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "dynamic_bucket" {
   bucket = "${var.prefix}-data-bucket"
@@ -465,6 +483,7 @@ resource "aws_s3_bucket" "dynamic_bucket" {
     // Bare variable reference preserved as Expression
     #[case(
         "expression_bare_var",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "var_bucket" {
   bucket = var.bucket_name
@@ -481,6 +500,7 @@ resource "aws_s3_bucket" "var_bucket" {
     // Data, variable, output blocks are ignored
     #[case(
         "non_resource_blocks_ignored",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "bucket" { bucket = "my-bucket" }
 data "aws_iam_policy_document" "policy" {
@@ -502,6 +522,7 @@ output "bucket_arn" { value = aws_s3_bucket.bucket.arn }
     // Numeric and bool attributes stored as Literal strings
     #[case(
         "numeric_and_bool_attrs",
+        "main.tf",
         r#"
 resource "aws_dynamodb_table" "t" {
   name           = "my-table"
@@ -525,6 +546,7 @@ resource "aws_dynamodb_table" "t" {
     // Location tracking with line and column
     #[case(
         "location_tracking",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "first" {
   bucket = "first-bucket"
@@ -552,6 +574,7 @@ resource "aws_s3_bucket" "second" {
     // Comments skipped for location resolution
     #[case(
         "comments_skipped",
+        "main.tf",
         r#"
 # resource "aws_s3_bucket" "b" {
 //   bucket = "commented-out"
@@ -572,6 +595,7 @@ resource "aws_s3_bucket" "b" {
     // Empty body resource
     #[case(
         "empty_body",
+        "main.tf",
         r#"
 resource "aws_s3_bucket" "empty" {}
 "#,
@@ -583,120 +607,138 @@ resource "aws_s3_bucket" "empty" {}
             expected_location: Some((2, 1, 2, 36)),
         }],
     )]
+    // Source file path preserved in location (non-default path)
+    #[case(
+        "source_file_path_preserved",
+        "infra/main.tf",
+        r#"
+resource "aws_s3_bucket" "b" {
+  bucket = "test"
+}
+"#,
+        1,
+        vec![ExpectedResource {
+            resource_type: "aws_s3_bucket", local_name: "b",
+            attributes: vec![("bucket", AttributeValue::Literal("test".into()))],
+            expected_location: Some((2, 1, 4, 2)),
+        }],
+    )]
     fn test_parse_hcl_content(
         #[case] _name: &str,
+        #[case] source_path: &str,
         #[case] hcl: &str,
         #[case] expected_count: usize,
         #[case] expected_resources: Vec<ExpectedResource>,
     ) {
-        assert_parse(hcl, "main.tf", expected_count, &expected_resources);
+        assert_parse(hcl, source_path, expected_count, &expected_resources);
     }
 
     // -----------------------------------------------------------------------
-    // Source file path preservation
+    // Directory-based tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_source_file_path_preserved() {
-        let hcl = r#"
-resource "aws_s3_bucket" "b" {
-  bucket = "test"
-}
-"#;
-        let result = parse_terraform_content(hcl, Path::new("infra/main.tf")).expect("parse");
-        let r = result.get("aws_s3_bucket", "b").expect("resource should exist");
-        assert_eq!(r.location.file_path, PathBuf::from("infra/main.tf"));
-    }
-
-    // -----------------------------------------------------------------------
-    // Directory-based tests (require temp dirs, not parameterizable)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_parse_directory_with_tf_files() {
+    /// Shared harness for directory-based HCL parsing tests.
+    ///
+    /// Creates a temp directory, writes the given files (supporting nested paths),
+    /// parses the directory, and asserts resource count, expected resource types,
+    /// and optional warning content.
+    fn assert_directory_parse(
+        files: &[(&str, &str)],
+        expected_count: usize,
+        expected_types: &[&str],
+        expected_warning_contains: Option<&str>,
+    ) {
         let tmp = TempDir::new().expect("create temp dir");
 
-        let main_tf = tmp.path().join("main.tf");
-        let mut f = std::fs::File::create(&main_tf).expect("create file");
-        writeln!(
-            f,
-            r#"resource "aws_s3_bucket" "b1" {{ bucket = "bucket-one" }}"#
-        )
-        .expect("write");
-
-        let sub = tmp.path().join("modules");
-        std::fs::create_dir_all(&sub).expect("create subdir");
-        let sub_tf = sub.join("storage.tf");
-        let mut f2 = std::fs::File::create(&sub_tf).expect("create file");
-        writeln!(
-            f2,
-            r#"resource "aws_dynamodb_table" "t1" {{ name = "table-one" }}"#
-        )
-        .expect("write");
-
-        let txt = tmp.path().join("readme.md");
-        std::fs::write(&txt, "# readme").expect("write");
+        for (rel_path, content) in files {
+            let path = tmp.path().join(rel_path);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("create parent dirs");
+            }
+            std::fs::write(&path, content).expect("write file");
+        }
 
         let mut result = TerraformResources::default();
         result.from_directory(tmp.path()).expect("should parse dir");
 
-        assert_eq!(result.len(), 2);
-        let types: Vec<&str> = result
-            .values()
-            .map(|r| r.resource_type.as_str())
-            .collect();
-        assert!(types.contains(&"aws_s3_bucket"));
-        assert!(types.contains(&"aws_dynamodb_table"));
-        assert!(result.warnings().is_empty());
+        assert_eq!(
+            result.len(),
+            expected_count,
+            "resource count mismatch"
+        );
+
+        let types: Vec<&str> = result.values().map(|r| r.resource_type.as_str()).collect();
+        for expected_type in expected_types {
+            assert!(
+                types.contains(expected_type),
+                "expected resource type '{expected_type}' not found in {types:?}"
+            );
+        }
+
+        match expected_warning_contains {
+            None => assert!(result.warnings().is_empty(), "expected no warnings"),
+            Some(substr) => {
+                assert!(!result.warnings().is_empty(), "expected warnings but got none");
+                assert!(
+                    result.warnings().iter().any(|w| w.contains(substr)),
+                    "no warning contains '{substr}', got: {:?}",
+                    result.warnings()
+                );
+            }
+        }
     }
 
-    #[test]
-    fn test_parse_directory_no_tf_files() {
-        let tmp = TempDir::new().expect("create temp dir");
-        std::fs::write(tmp.path().join("readme.md"), "hello").expect("write");
-
-        let mut result = TerraformResources::default();
-        result.from_directory(tmp.path()).expect("should parse");
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn test_parse_directory_with_syntax_error() {
-        let tmp = TempDir::new().expect("create temp dir");
-
-        let good = tmp.path().join("good.tf");
-        let mut f = std::fs::File::create(&good).expect("create");
-        writeln!(
-            f,
-            r#"resource "aws_s3_bucket" "ok" {{ bucket = "good-bucket" }}"#
-        )
-        .expect("write");
-
-        let bad = tmp.path().join("bad.tf");
-        std::fs::write(&bad, "this is not valid HCL {{{{").expect("write");
-
-        let mut result = TerraformResources::default();
-        result.from_directory(tmp.path()).expect("should parse dir");
-
-        assert_eq!(result.len(), 1);
-        assert!(!result.warnings().is_empty());
-        assert!(result.warnings()[0].contains("bad.tf"));
-    }
-
-    #[test]
-    fn test_discover_skips_dot_terraform_dir() {
-        let tmp = TempDir::new().expect("create temp dir");
-
-        let main_tf = tmp.path().join("main.tf");
-        std::fs::write(&main_tf, r#"resource "aws_s3_bucket" "b" {}"#).expect("write");
-
-        let dot_tf = tmp.path().join(".terraform/providers/main.tf");
-        std::fs::create_dir_all(dot_tf.parent().unwrap()).expect("mkdir");
-        std::fs::write(&dot_tf, r#"resource "aws_s3_bucket" "cached" {}"#).expect("write");
-
-        let files = discover_tf_files(tmp.path());
-        assert_eq!(files.len(), 1);
-        assert_eq!(files[0], main_tf);
+    #[rstest]
+    // Multiple .tf files across subdirectories, non-tf files ignored
+    #[case(
+        "multiple_tf_files",
+        &[
+            ("main.tf", "resource \"aws_s3_bucket\" \"b1\" { bucket = \"bucket-one\" }"),
+            ("modules/storage.tf", "resource \"aws_dynamodb_table\" \"t1\" { name = \"table-one\" }"),
+            ("readme.md", "# readme"),
+        ],
+        2,
+        &["aws_s3_bucket", "aws_dynamodb_table"],
+        None
+    )]
+    // No .tf files → empty result
+    #[case(
+        "no_tf_files",
+        &[("readme.md", "hello")],
+        0,
+        &[],
+        None
+    )]
+    // Syntax error in one file → good file parsed, warning for bad file
+    #[case(
+        "syntax_error_partial_parse",
+        &[
+            ("good.tf", "resource \"aws_s3_bucket\" \"ok\" { bucket = \"good-bucket\" }"),
+            ("bad.tf", "this is not valid HCL {{{{"),
+        ],
+        1,
+        &["aws_s3_bucket"],
+        Some("bad.tf")
+    )]
+    // .terraform directory is skipped (only root main.tf found)
+    #[case(
+        "dot_terraform_skipped",
+        &[
+            ("main.tf", "resource \"aws_s3_bucket\" \"b\" {}"),
+            (".terraform/providers/main.tf", "resource \"aws_s3_bucket\" \"cached\" {}"),
+        ],
+        1,
+        &["aws_s3_bucket"],
+        None
+    )]
+    fn test_parse_directory(
+        #[case] _name: &str,
+        #[case] files: &[(&str, &str)],
+        #[case] expected_count: usize,
+        #[case] expected_types: &[&str],
+        #[case] expected_warning_contains: Option<&str>,
+    ) {
+        assert_directory_parse(files, expected_count, expected_types, expected_warning_contains);
     }
 
     // -----------------------------------------------------------------------
@@ -707,68 +749,66 @@ resource "aws_s3_bucket" "b" {
     #[case(
         "basic_at_line_1",
         "resource \"aws_s3_bucket\" \"b\" {\n  bucket = \"x\"\n}",
-        (1, 1, 3, 2) // ast-grep spans entire block: line 1 to closing `}` on line 3
+        Some((1, 1, 3, 2))
     )]
     #[case(
         "with_leading_blank_line",
         "\nresource \"aws_s3_bucket\" \"b\" {\n}",
-        (2, 1, 3, 2) // block spans line 2 to closing `}` on line 3
+        Some((2, 1, 3, 2))
     )]
     #[case(
         "indented_2_spaces",
         "  resource \"aws_s3_bucket\" \"b\" {\n}",
-        (1, 3, 2, 2) // starts at col 3 (indented), ends at `}` on line 2
+        Some((1, 3, 2, 2))
     )]
     #[case(
         "indented_4_spaces",
         "    resource \"aws_s3_bucket\" \"b\" {\n}",
-        (1, 5, 2, 2) // starts at col 5 (indented), ends at `}` on line 2
+        Some((1, 5, 2, 2))
     )]
     #[case(
         "after_comment_lines",
         "# comment\n// another comment\nresource \"aws_s3_bucket\" \"b\" {\n}",
-        (3, 1, 4, 2) // block at line 3, closing `}` on line 4
+        Some((3, 1, 4, 2))
     )]
     #[case(
         "after_block_comment",
         "/* block\ncomment */\nresource \"aws_s3_bucket\" \"b\" {\n}",
-        (3, 1, 4, 2) // block at line 3, closing `}` on line 4
+        Some((3, 1, 4, 2))
     )]
     #[case(
         "extra_whitespace_between_tokens",
         "resource   \"aws_s3_bucket\"   \"b\" {\n}",
-        (1, 1, 2, 2) // ast-grep spans entire block
+        Some((1, 1, 2, 2))
+    )]
+    // Block not found → None
+    #[case(
+        "not_found_different_type",
+        "resource \"aws_dynamodb_table\" \"t\" {\n}",
+        None
+    )]
+    // Inside comment → not matched
+    #[case(
+        "inside_comment_not_matched",
+        "# resource \"aws_s3_bucket\" \"b\" {\n# }",
+        None
     )]
     fn test_find_block_location(
         #[case] _name: &str,
         #[case] content: &str,
-        #[case] expected: (usize, usize, usize, usize),
+        #[case] expected: Option<(usize, usize, usize, usize)>,
     ) {
-        let loc = find_block_location(content, Path::new("test.tf"), "resource", "aws_s3_bucket", "b")
-            .unwrap_or_else(|| panic!("[{_name}] expected location to be found"));
-        let (start_line, start_col, end_line, end_col) = expected;
-        assert_eq!(loc.start_line(), start_line, "[{_name}] start_line");
-        assert_eq!(loc.start_col(), start_col, "[{_name}] start_col");
-        assert_eq!(loc.end_line(), end_line, "[{_name}] end_line");
-        assert_eq!(loc.end_col(), end_col, "[{_name}] end_col");
-        assert_eq!(loc.file_path, PathBuf::from("test.tf"), "[{_name}] file_path");
-    }
-
-    #[test]
-    fn test_find_block_location_not_found() {
-        let content = "resource \"aws_dynamodb_table\" \"t\" {\n}";
-        assert!(
-            find_block_location(content, Path::new("test.tf"), "resource", "aws_s3_bucket", "b").is_none(),
-            "Should return None when block not found"
-        );
-    }
-
-    #[test]
-    fn test_find_block_location_inside_comment_not_matched() {
-        let content = "# resource \"aws_s3_bucket\" \"b\" {\n# }";
-        assert!(
-            find_block_location(content, Path::new("test.tf"), "resource", "aws_s3_bucket", "b").is_none(),
-            "Should not match a resource inside a line comment"
-        );
+        let result = find_block_location(content, Path::new("test.tf"), "resource", "aws_s3_bucket", "b");
+        match expected {
+            None => assert!(result.is_none(), "[{_name}] expected None"),
+            Some((start_line, start_col, end_line, end_col)) => {
+                let loc = result.unwrap_or_else(|| panic!("[{_name}] expected location to be found"));
+                assert_eq!(loc.start_line(), start_line, "[{_name}] start_line");
+                assert_eq!(loc.start_col(), start_col, "[{_name}] start_col");
+                assert_eq!(loc.end_line(), end_line, "[{_name}] end_line");
+                assert_eq!(loc.end_col(), end_col, "[{_name}] end_col");
+                assert_eq!(loc.file_path, PathBuf::from("test.tf"), "[{_name}] file_path");
+            }
+        }
     }
 }

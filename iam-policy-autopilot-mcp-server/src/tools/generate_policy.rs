@@ -45,6 +45,11 @@ pub struct GeneratePoliciesInput {
         description = "Absolute paths to terraform.tfstate files for enhanced ARN resolution. When provided, the tool uses actual deployed resource ARNs from the state files. State-derived ARNs take precedence over HCL-constructed ones. Can be used with terraform_dir, terraform_files, or independently."
     )]
     pub tfstate_paths: Option<Vec<String>>,
+
+    #[schemars(
+        description = "Absolute paths to .tfvars files for Terraform variable overrides. When provided, these take precedence over auto-discovered .tfvars files from the terraform directory. Applied in order (later files override earlier). Equivalent to Terraform's -var-file= flag."
+    )]
+    pub tfvars_files: Option<Vec<String>>,
 }
 
 // Output struct for the generated IAM policy
@@ -96,6 +101,12 @@ pub async fn generate_application_policies(
             .collect(),
         tfstate_paths: input
             .tfstate_paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        tfvars_files: input
+            .tfvars_files
             .unwrap_or_default()
             .into_iter()
             .map(std::path::PathBuf::from)
@@ -166,6 +177,7 @@ mod tests {
             terraform_dir: None,
             terraform_files: None,
             tfstate_paths: None,
+            tfvars_files: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -210,6 +222,7 @@ mod tests {
             terraform_dir: None,
             terraform_files: None,
             tfstate_paths: None,
+            tfvars_files: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -228,6 +241,7 @@ mod tests {
             terraform_dir: None,
             terraform_files: None,
             tfstate_paths: None,
+            tfvars_files: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -262,6 +276,7 @@ mod tests {
             terraform_dir: None,
             terraform_files: None,
             tfstate_paths: None,
+            tfvars_files: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");

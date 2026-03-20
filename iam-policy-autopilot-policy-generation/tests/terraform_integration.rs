@@ -1,10 +1,10 @@
 //! Integration tests for Terraform resource binding.
 //!
-//! Each fixture is a directory under `tests/resources/terraform_fixtures/` containing:
+//! Each fixture is a directory under `tests/resources/terraform/` containing:
 //! - `.tf` files (Terraform configuration)
 //! - `app.py` (Python source with SDK calls)
 //! - `expected_policies.json` (expected `generate_policies` output)
-//! - Optionally `terraform.tfstate`, `variables.tf`, `terraform.tfvars`
+//! - Optionally `terraform.tfstate`, `variables.tf`, `terraform.tfvars`, `*.auto.tfvars`
 //!
 //! The test calls `generate_policies` and compares the output against
 //! `expected_policies.json`.
@@ -63,6 +63,7 @@ fn config(name: &str) -> GeneratePolicyConfig {
         terraform_dir: Some(fixture_dir(name)),
         terraform_files: vec![],
         tfstate_paths: discover_tfstate(name),
+        tfvars_files: vec![],
     }
 }
 
@@ -122,6 +123,8 @@ fn load_expected(name: &str) -> serde_json::Value {
 #[case("multi_service_real_world")]
 #[case("state_precedence")]
 #[case("expression_unresolvable")]
+#[case("multi_file_resources")]
+#[case("multiple_tfvars")]
 #[tokio::test]
 async fn test_fixture(#[case] name: &str) {
     let cfg = config(name);

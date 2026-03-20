@@ -98,6 +98,8 @@ struct GeneratePolicyCliConfig {
     terraform_files: Vec<PathBuf>,
     /// Optional paths to terraform.tfstate files
     tfstate: Vec<PathBuf>,
+    /// Optional explicit .tfvars file paths
+    tfvars: Vec<PathBuf>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -365,6 +367,17 @@ specified via --terraform-dir. Supports multiple file paths."
         )]
         terraform_files: Vec<PathBuf>,
 
+        /// Explicit .tfvars file(s) for variable overrides
+        #[arg(
+            long = "tfvars",
+            num_args = 1..,
+            long_help = "One or more paths to .tfvars files for Terraform variable overrides. \
+When provided, these files take precedence over auto-discovered terraform.tfvars and *.auto.tfvars \
+files from the Terraform directory. Applied in order (later files override earlier ones). \
+This is equivalent to Terraform's -var-file= CLI flag."
+        )]
+        tfvars: Vec<PathBuf>,
+
         /// Path to terraform.tfstate file(s) for enhanced ARN resolution
         #[arg(
             long = "tfstate",
@@ -504,6 +517,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         terraform_dir: config.terraform_dir.clone(),
         terraform_files: config.terraform_files.clone(),
         tfstate_paths: config.tfstate.clone(),
+        tfvars_files: config.tfvars.clone(),
     })
     .await?;
 
@@ -629,6 +643,7 @@ async fn main() {
             terraform_dir,
             terraform_files,
             tfstate,
+            tfvars,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -654,6 +669,7 @@ async fn main() {
                 terraform_dir,
                 terraform_files,
                 tfstate,
+                tfvars,
             };
 
             match handle_generate_policy(&config).await {

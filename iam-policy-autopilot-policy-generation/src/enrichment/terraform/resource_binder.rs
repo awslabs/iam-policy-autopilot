@@ -107,12 +107,6 @@ impl ResolvedTerraformResource {
         self.effective_arn().is_some()
     }
 
-    /// Whether this resource was mapped to an IAM service.
-    #[must_use]
-    #[cfg(test)] 
-    pub(crate) fn has_service_reference_mapping(&self) -> bool {
-        self.service_name.is_some()
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +145,7 @@ impl TerraformResourceResolver {
         terraform_dir: Option<&Path>,
         terraform_files: &[PathBuf],
         tfstate_paths: &[PathBuf],
+        tfvars_paths: &[PathBuf],
         loader: &ServiceReferenceLoader,
     ) -> Result<Self> {
         // Step 1: Parse Terraform HCL files from directory and individual files
@@ -170,14 +165,22 @@ impl TerraformResourceResolver {
             log::warn!("Terraform parse warning: {warning}");
         }
 
-        // Step 2: Resolve variables (only when a directory is provided)
-        if let Some(directory) = terraform_dir {
-            let var_ctx = VariableContext::from_directory(directory).unwrap_or_else(|e| {
-                log::warn!("Failed to resolve Terraform variables: {e}");
-                VariableContext::default()
-            });
-            var_ctx.resolve_attributes(&mut tf_result);
-        }
+        // Step 2: Resolve variables
+        // When a directory is provided: extract defaults + auto-discover tfvars + explicit tfvars
+        // When only terraform files are given with explicit tfvars: apply tfvars directly
+        // When neither dir nor tfvars: no variable resolution
+        let var_ctx = if let Some(directory) = terraform_dir {
+            VariableContext::from_directory_with_explicit_tfvars(directory, tfvars_paths)
+                .unwrap_or_else(|e| {
+                    log::warn!("Failed to resolve Terraform variables: {e}");
+                    VariableContext::default()
+                })
+        } else if !tfvars_paths.is_empty() && !terraform_files.is_empty() {
+            VariableContext::from_explicit_tfvars(tfvars_paths)
+        } else {
+            VariableContext::default()
+        };
+        var_ctx.resolve_attributes(&mut tf_result);
 
         debug!("Parsed {} Terraform resources", tf_result.len());
 
@@ -827,65 +830,48 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // ResolvedTerraformResource tests
+    // ResolvedTerraformResource tests (parameterized)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_from_parsed_sets_location() {
-        let r = make_hcl_resource(
-            "aws_s3_bucket",
-            "data",
-            "bucket",
-            AttributeValue::Literal("x".into()),
-        );
-        let resolved = ResolvedTerraformResource::from_parsed(r);
-        assert_eq!(resolved.resource.location, Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)));
-        assert!(!resolved.has_service_reference_mapping());
-        assert!(!resolved.has_arn());
-    }
-
-    #[test]
-    fn test_effective_arn_prefers_state() {
+    #[rstest]
+    // Freshly parsed: no service mapping, no ARN
+    #[case("from_parsed",       None,                                   None,                                   false, false, None)]
+    // State ARN takes precedence over HCL ARN
+    #[case("prefers_state",     Some("arn:${Partition}:s3:::x"),         Some("arn:aws:s3:::real-bucket"),        true,  true,  Some("arn:aws:s3:::real-bucket"))]
+    // HCL ARN used when no state ARN
+    #[case("falls_back_to_hcl", Some("arn:${Partition}:s3:::x"),         None,                                   true,  false, Some("arn:${Partition}:s3:::x"))]
+    fn test_resolved_resource_properties(
+        #[case] _name: &str,
+        #[case] hcl_arn: Option<&str>,
+        #[case] state_arn: Option<&str>,
+        #[case] has_arn: bool,
+        #[case] has_state: bool,
+        #[case] effective: Option<&str>,
+    ) {
         let mut r = ResolvedTerraformResource::from_parsed(make_hcl_resource(
-            "aws_s3_bucket",
-            "b",
-            "bucket",
-            AttributeValue::Literal("x".into()),
+            "aws_s3_bucket", "b", "bucket", AttributeValue::Literal("x".into()),
         ));
-        r.hcl_arn = Some("arn:${Partition}:s3:::x".into());
-        r.state_arn = Some("arn:aws:s3:::real-bucket".into());
-        assert_eq!(r.effective_arn(), Some("arn:aws:s3:::real-bucket"));
-    }
-
-    #[test]
-    fn test_effective_arn_falls_back_to_hcl() {
-        let mut r = ResolvedTerraformResource::from_parsed(make_hcl_resource(
-            "aws_s3_bucket",
-            "b",
-            "bucket",
-            AttributeValue::Literal("x".into()),
-        ));
-        r.hcl_arn = Some("arn:${Partition}:s3:::x".into());
-        assert_eq!(r.effective_arn(), Some("arn:${Partition}:s3:::x"));
+        r.hcl_arn = hcl_arn.map(String::from);
+        r.state_arn = state_arn.map(String::from);
+        assert_eq!(r.has_arn(), has_arn, "[{_name}] has_arn");
+        assert_eq!(r.state_arn.is_some(), has_state, "[{_name}] has_state");
+        assert_eq!(r.effective_arn(), effective, "[{_name}] effective_arn");
     }
 
     // -----------------------------------------------------------------------
-    // resolve_terraform_resources tests
+    // resolve_terraform_resources tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[tokio::test]
-    async fn test_resolve_attaches_state_arn() {
-        let hcl = vec![make_hcl_resource(
-            "aws_s3_bucket",
-            "data",
-            "bucket",
-            AttributeValue::Literal("my-bucket".into()),
-        )];
-        let state = make_state_resources(vec![(
-            "aws_s3_bucket",
-            "data",
-            Some("arn:aws:s3:::my-bucket"),
-        )]);
+    /// Shared harness for resolve_terraform_resources tests.
+    async fn assert_resolve(
+        hcl: Vec<TerraformResource>,
+        state_entries: Vec<(&str, &str, Option<&str>)>,
+        expected_key: Option<(&str, &str)>,
+        expected_count: Option<usize>,
+        expected_state_arn: Option<Option<&str>>,
+        expected_service: Option<&str>,
+    ) {
+        let state = make_state_resources(state_entries);
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
         let resolved = resolve_terraform_resources(
             &vec_to_terraform_resources(hcl),
@@ -894,123 +880,100 @@ mod tests {
             &loader,
         )
         .await;
-        let s3 = &resolved[&("s3".into(), "bucket".into())];
-        assert_eq!(s3.len(), 1);
-        assert_eq!(s3[0].state_arn.as_deref(), Some("arn:aws:s3:::my-bucket"));
+
+        match expected_key {
+            None => assert!(resolved.is_empty(), "expected empty resolved map"),
+            Some((svc, rtype)) => {
+                let key = (svc.to_string(), rtype.to_string());
+                assert!(resolved.contains_key(&key), "key {svc}/{rtype} not found");
+                if let Some(count) = expected_count {
+                    assert_eq!(resolved[&key].len(), count, "count mismatch for {svc}/{rtype}");
+                }
+                if let Some(arn) = expected_state_arn {
+                    assert_eq!(resolved[&key][0].state_arn.as_deref(), arn, "state_arn mismatch");
+                }
+                if let Some(service) = expected_service {
+                    assert_eq!(resolved[&key][0].service_name.as_deref(), Some(service), "service mismatch");
+                }
+            }
+        }
     }
 
+    #[rstest]
+    // State ARN attached when matching by type + name
+    #[case(
+        "attaches_state_arn",
+        vec![("aws_s3_bucket", "data", "bucket", "my-bucket")],
+        vec![("aws_s3_bucket", "data", Some("arn:aws:s3:::my-bucket"))],
+        Some(("s3", "bucket")), Some(1), Some(Some("arn:aws:s3:::my-bucket")), None
+    )]
+    // No state match → state_arn is None
+    #[case(
+        "no_state_match",
+        vec![("aws_s3_bucket", "data", "bucket", "x")],
+        vec![("aws_s3_bucket", "other", Some("arn:aws:s3:::other"))],
+        Some(("s3", "bucket")), Some(1), Some(None), None
+    )]
+    // IAM mapping resolves service name
+    #[case(
+        "iam_mapping",
+        vec![("aws_s3_bucket", "data", "bucket", "x")],
+        vec![],
+        Some(("s3", "bucket")), None, None, Some("s3")
+    )]
+    // Empty inputs → empty result
+    #[case(
+        "empty_inputs",
+        vec![],
+        vec![],
+        None, None, None, None
+    )]
+    // Non-AWS resources excluded
+    #[case(
+        "non_aws_excluded",
+        vec![("null_resource", "x", "name", "y")],
+        vec![],
+        None, None, None, None
+    )]
+    // Multiple resources of same IAM type grouped together
+    #[case(
+        "multiple_same_type",
+        vec![("aws_s3_bucket", "a", "bucket", "bucket-a"), ("aws_s3_bucket", "b", "bucket", "bucket-b")],
+        vec![],
+        Some(("s3", "bucket")), Some(2), None, None
+    )]
     #[tokio::test]
-    async fn test_resolve_no_state_match() {
-        let hcl = vec![make_hcl_resource(
-            "aws_s3_bucket",
-            "data",
-            "bucket",
-            AttributeValue::Literal("x".into()),
-        )];
-        let state = make_state_resources(vec![("aws_s3_bucket", "other", Some("arn:aws:s3:::other"))]);
-        let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &vec_to_terraform_resources(hcl),
-            &state,
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
-        let s3 = &resolved[&("s3".into(), "bucket".into())];
-        assert!(s3[0].state_arn.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_resolve_iam_mapping() {
-        let hcl = vec![make_hcl_resource(
-            "aws_s3_bucket",
-            "data",
-            "bucket",
-            AttributeValue::Literal("x".into()),
-        )];
-        let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &vec_to_terraform_resources(hcl),
-            &TerraformStateResources::default(),
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
-        assert!(resolved.contains_key(&("s3".into(), "bucket".into())));
-        assert_eq!(
-            resolved[&("s3".into(), "bucket".into())][0]
-                .service_name
-                .as_deref(),
-            Some("s3")
-        );
-    }
-
-    #[tokio::test]
-    async fn test_resolve_empty_inputs() {
-        let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &TerraformResources::default(),
-            &TerraformStateResources::default(),
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
-        assert!(resolved.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_non_aws_resources_excluded() {
-        let hcl = vec![make_hcl_resource(
-            "null_resource",
-            "x",
-            "name",
-            AttributeValue::Literal("y".into()),
-        )];
-        let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &vec_to_terraform_resources(hcl),
-            &TerraformStateResources::default(),
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
-        assert!(resolved.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_multiple_resources_same_iam_type() {
-        let hcl = vec![
-            make_hcl_resource(
-                "aws_s3_bucket",
-                "a",
-                "bucket",
-                AttributeValue::Literal("bucket-a".into()),
-            ),
-            make_hcl_resource(
-                "aws_s3_bucket",
-                "b",
-                "bucket",
-                AttributeValue::Literal("bucket-b".into()),
-            ),
-        ];
-        let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &vec_to_terraform_resources(hcl),
-            &TerraformStateResources::default(),
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
-        let s3 = &resolved[&("s3".into(), "bucket".into())];
-        assert_eq!(s3.len(), 2);
+    async fn test_resolve_terraform_resources(
+        #[case] _name: &str,
+        #[case] hcl_input: Vec<(&str, &str, &str, &str)>,
+        #[case] state_entries: Vec<(&str, &str, Option<&str>)>,
+        #[case] expected_key: Option<(&str, &str)>,
+        #[case] expected_count: Option<usize>,
+        #[case] expected_state_arn: Option<Option<&str>>,
+        #[case] expected_service: Option<&str>,
+    ) {
+        let hcl: Vec<TerraformResource> = hcl_input
+            .into_iter()
+            .map(|(rtype, name, attr_key, attr_val)| {
+                make_hcl_resource(rtype, name, attr_key, AttributeValue::Literal(attr_val.into()))
+            })
+            .collect();
+        assert_resolve(hcl, state_entries, expected_key, expected_count, expected_state_arn, expected_service).await;
     }
 
     // -----------------------------------------------------------------------
-    // substitute_enriched_calls tests
+    // substitute_enriched_calls tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_substitute_enriched_calls_replaces_arns() {
+    /// Shared harness for substitute_enriched_calls tests.
+    ///
+    /// Builds an `EnrichedSdkMethodCall` for s3:GetObject with the given ARN
+    /// patterns, resolves it against the provided resource map entries, and
+    /// asserts the resulting ARN patterns match `expected_arns`.
+    fn assert_substitute_enriched_calls(
+        resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        expected_arns: &[&str],
+    ) {
         let sdk_call = make_sdk_call();
 
         let enriched = vec![EnrichedSdkMethodCall {
@@ -1029,19 +992,21 @@ mod tests {
         }];
 
         let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "data",
-                "s3",
-                "bucket",
-                Some("my-app-data"),
-                None,
-                Some("arn:${Partition}:s3:::my-app-data"),
-                None
-            ));
+        for &(rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn) in resources {
+            resource_map
+                .entry((service.to_string(), suffix.to_string()))
+                .or_default()
+                .push(make_resolved_resource(
+                    rtype,
+                    local_name,
+                    service,
+                    suffix,
+                    binding_name,
+                    state_arn,
+                    hcl_arn,
+                    None,
+                ));
+        }
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         let result = resolver.substitute_enriched_calls(&enriched);
 
@@ -1050,287 +1015,201 @@ mod tests {
             .arn_patterns
             .as_ref()
             .unwrap();
-        assert_eq!(arn_patterns, &["arn:${Partition}:s3:::my-app-data"]);
+        let expected: Vec<String> = expected_arns.iter().map(|s| s.to_string()).collect();
+        assert_eq!(arn_patterns, &expected);
     }
 
-    #[tokio::test]
-    async fn test_substitute_enriched_calls_no_match_keeps_original() {
-        let sdk_call = make_sdk_call();
-
-        let enriched = vec![EnrichedSdkMethodCall {
-            method_name: "get_object".to_string(),
-            service: "s3".to_string(),
-            actions: vec![Action::new(
-                "s3:GetObject".to_string(),
-                vec![Resource::new(
-                    "bucket".to_string(),
-                    Some(vec!["arn:${Partition}:s3:::${BucketName}".to_string()]),
-                )],
-                vec![],
-                Explanation::default(),
-            )],
-            sdk_method_call: &sdk_call,
-        }];
-
-        // Empty resources → no bindings
-        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
-        let result = resolver.substitute_enriched_calls(&enriched);
-
-        let arn_patterns = result[0].actions[0].resources[0]
-            .arn_patterns
-            .as_ref()
-            .unwrap();
-        assert_eq!(arn_patterns, &["arn:${Partition}:s3:::${BucketName}"]);
+    #[rstest]
+    #[case(
+        "replaces_arns",
+        &[("aws_s3_bucket", "data", "s3", "bucket", Some("my-app-data"), None, Some("arn:${Partition}:s3:::my-app-data"))],
+        &["arn:${Partition}:s3:::my-app-data"]
+    )]
+    #[case(
+        "no_match_keeps_original",
+        &[],
+        &["arn:${Partition}:s3:::${BucketName}"]
+    )]
+    fn test_substitute_enriched_calls(
+        #[case] _name: &str,
+        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] expected_arns: &[&str],
+    ) {
+        assert_substitute_enriched_calls(resources, expected_arns);
     }
 
     // -----------------------------------------------------------------------
-    // substitute_arn_patterns tests
+    // substitute_arn_patterns tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_substitute_s3_bucket_arn() {
+    /// Shared harness for substitute_arn_patterns tests.
+    ///
+    /// Builds a `TerraformResourceResolver` from the given resource entries,
+    /// calls `substitute_arn_patterns`, and compares the result against expected.
+    /// For multi-resource cases (where order is non-deterministic), the results
+    /// are sorted before comparison.
+    fn assert_substitute_arn_patterns(
+        resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        query_service: &str,
+        query_resource_type: &str,
+        patterns: &[&str],
+        expected: Option<&[&str]>,
+    ) {
         let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "b",
-                "s3",
-                "bucket",
-                Some("my-app-data"),
-                None,
-                Some("arn:${Partition}:s3:::my-app-data"),
-                None
-            ));
+        for &(rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn) in resources {
+            resource_map
+                .entry((service.to_string(), suffix.to_string()))
+                .or_default()
+                .push(make_resolved_resource(
+                    rtype,
+                    local_name,
+                    service,
+                    suffix,
+                    binding_name,
+                    state_arn,
+                    hcl_arn,
+                    None,
+                ));
+        }
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
-        let result = resolver
-            .substitute_arn_patterns("s3", "bucket", &patterns)
-            .unwrap();
-        assert_eq!(result, vec!["arn:${Partition}:s3:::my-app-data"]);
+        let pattern_strings: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
+        let result = resolver.substitute_arn_patterns(query_service, query_resource_type, &pattern_strings);
+
+        match expected {
+            None => assert!(result.is_none(), "expected None but got {result:?}"),
+            Some(exp) => {
+                let mut actual = result.expect("expected Some but got None");
+                actual.sort();
+                let mut expected_sorted: Vec<String> = exp.iter().map(|s| s.to_string()).collect();
+                expected_sorted.sort();
+                assert_eq!(actual, expected_sorted);
+            }
+        }
     }
 
-    #[test]
-    fn test_state_arns_take_precedence() {
-        let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "b",
-                "s3",
-                "bucket",
-                Some("hcl-bucket"),
-                Some("arn:aws:s3:::state-bucket"),
-                Some("arn:${Partition}:s3:::hcl-bucket"),
-                None
-            ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
-        let result = resolver
-            .substitute_arn_patterns("s3", "bucket", &patterns)
-            .unwrap();
-        assert_eq!(result, vec!["arn:aws:s3:::state-bucket"]);
-    }
-
-    #[test]
-    fn test_sub_resource_falls_back_to_parent() {
-        let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "b",
-                "s3",
-                "bucket",
-                Some("my-bucket"),
-                None,
-                Some("arn:${Partition}:s3:::my-bucket"),
-                None
-            ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        // Object ARN has BucketName as first placeholder → should resolve via bucket binding
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()];
-        let result = resolver
-            .substitute_arn_patterns("s3", "object", &patterns)
-            .unwrap();
-        assert_eq!(result, vec!["arn:${Partition}:s3:::my-bucket/*"]);
-    }
-
-    #[test]
-    fn test_no_bindings_returns_none() {
-        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
-        assert!(resolver
-            .substitute_arn_patterns("s3", "bucket", &patterns)
-            .is_none());
-    }
-
-    #[test]
-    fn test_wildcard_only_binding_returns_none() {
-        let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "d",
-                "s3",
-                "bucket",
-                Some("*"),
-                None,
-                None,
-                None,
-            ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
-        assert!(resolver
-            .substitute_arn_patterns("s3", "bucket", &patterns)
-            .is_none());
-    }
-
-    #[test]
-    fn test_preserves_infra_placeholders() {
-        let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("dynamodb".to_string(), "table".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_dynamodb_table",
-                "t",
-                "dynamodb",
-                "table",
-                Some("my-table"),
-                None,
-                None,
-                None,
-            ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        let patterns =
-            vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}".to_string()];
-        let result = resolver
-            .substitute_arn_patterns("dynamodb", "table", &patterns)
-            .unwrap();
-        assert_eq!(
-            result,
-            vec!["arn:${Partition}:dynamodb:${Region}:${Account}:table/my-table"]
-        );
-    }
-
-    #[test]
-    fn test_multiple_resources_produce_multiple_arns() {
-        let mut resource_map = ResolvedResourceMap::new();
-        let entry = resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default();
-        entry.push(make_resolved_resource(
-            "aws_s3_bucket",
-            "a",
-            "s3",
-            "bucket",
-            Some("bucket-a"),
-            None,
-            None,
-            None,
-        ));
-        entry.push(make_resolved_resource(
-            "aws_s3_bucket",
-            "b",
-            "s3",
-            "bucket",
-            Some("bucket-b"),
-            None,
-            None,
-            None,
-        ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        let patterns = vec!["arn:${Partition}:s3:::${BucketName}".to_string()];
-        let result = resolver
-            .substitute_arn_patterns("s3", "bucket", &patterns)
-            .unwrap();
-        assert_eq!(result.len(), 2);
-        assert!(result.contains(&"arn:${Partition}:s3:::bucket-a".to_string()));
-        assert!(result.contains(&"arn:${Partition}:s3:::bucket-b".to_string()));
+    #[rstest]
+    // S3 bucket ARN resolved from HCL
+    #[case(
+        "s3_bucket_arn",
+        &[("aws_s3_bucket", "b", "s3", "bucket", Some("my-app-data"), None, Some("arn:${Partition}:s3:::my-app-data"))],
+        "s3", "bucket",
+        &["arn:${Partition}:s3:::${BucketName}"],
+        Some(&["arn:${Partition}:s3:::my-app-data"] as &[&str])
+    )]
+    // State ARN takes precedence over HCL ARN
+    #[case(
+        "state_arns_take_precedence",
+        &[("aws_s3_bucket", "b", "s3", "bucket", Some("hcl-bucket"), Some("arn:aws:s3:::state-bucket"), Some("arn:${Partition}:s3:::hcl-bucket"))],
+        "s3", "bucket",
+        &["arn:${Partition}:s3:::${BucketName}"],
+        Some(&["arn:aws:s3:::state-bucket"] as &[&str])
+    )]
+    // Sub-resource (object) falls back to parent resource (bucket) binding
+    #[case(
+        "sub_resource_falls_back_to_parent",
+        &[("aws_s3_bucket", "b", "s3", "bucket", Some("my-bucket"), None, Some("arn:${Partition}:s3:::my-bucket"))],
+        "s3", "object",
+        &["arn:${Partition}:s3:::${BucketName}/${ObjectName}"],
+        Some(&["arn:${Partition}:s3:::my-bucket/*"] as &[&str])
+    )]
+    // No bindings → None
+    #[case(
+        "no_bindings_returns_none",
+        &[],
+        "s3", "bucket",
+        &["arn:${Partition}:s3:::${BucketName}"],
+        None
+    )]
+    // Wildcard-only binding → None
+    #[case(
+        "wildcard_only_returns_none",
+        &[("aws_s3_bucket", "d", "s3", "bucket", Some("*"), None, None)],
+        "s3", "bucket",
+        &["arn:${Partition}:s3:::${BucketName}"],
+        None
+    )]
+    // Infrastructure placeholders (Region, Account, Partition) preserved
+    #[case(
+        "preserves_infra_placeholders",
+        &[("aws_dynamodb_table", "t", "dynamodb", "table", Some("my-table"), None, None)],
+        "dynamodb", "table",
+        &["arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"],
+        Some(&["arn:${Partition}:dynamodb:${Region}:${Account}:table/my-table"] as &[&str])
+    )]
+    // Multiple resources produce multiple ARNs
+    #[case(
+        "multiple_resources_produce_multiple_arns",
+        &[("aws_s3_bucket", "a", "s3", "bucket", Some("bucket-a"), None, None),
+          ("aws_s3_bucket", "b", "s3", "bucket", Some("bucket-b"), None, None)],
+        "s3", "bucket",
+        &["arn:${Partition}:s3:::${BucketName}"],
+        Some(&["arn:${Partition}:s3:::bucket-a", "arn:${Partition}:s3:::bucket-b"] as &[&str])
+    )]
+    fn test_substitute_arn_patterns(
+        #[case] _name: &str,
+        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] query_service: &str,
+        #[case] query_resource_type: &str,
+        #[case] patterns: &[&str],
+        #[case] expected: Option<&[&str]>,
+    ) {
+        assert_substitute_arn_patterns(resources, query_service, query_resource_type, patterns, expected);
     }
 
     // -----------------------------------------------------------------------
-    // build_binding_explanations tests
+    // build_binding_explanations tests (parameterized)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_build_binding_explanations_terraform() {
+    #[rstest]
+    // Terraform source → explanation with HCL location
+    #[case(
+        "terraform_source",
+        vec![("aws_s3_bucket", "data", "s3", "bucket", Some("my-bucket"), None, Some("arn:${Partition}:s3:::my-bucket"), false)],
+        vec![("arn:${Partition}:s3:::my-bucket", BindingSource::Terraform, "aws_s3_bucket", "data", "main.tf")]
+    )]
+    // State takes precedence → explanation with state location
+    #[case(
+        "state_takes_precedence",
+        vec![("aws_s3_bucket", "data", "s3", "bucket", Some("my-bucket"), Some("arn:aws:s3:::my-bucket"), Some("arn:${Partition}:s3:::my-bucket"), true)],
+        vec![("arn:aws:s3:::my-bucket", BindingSource::TerraformState, "aws_s3_bucket", "data", "terraform.tfstate")]
+    )]
+    // Empty → no explanations
+    #[case(
+        "empty",
+        vec![],
+        vec![]
+    )]
+    fn test_binding_explanations(
+        #[case] _name: &str,
+        #[case] resources: Vec<(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>, bool)>,
+        #[case] expected: Vec<(&str, BindingSource, &str, &str, &str)>,
+    ) {
         let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "data",
-                "s3",
-                "bucket",
-                Some("my-bucket"),
-                None,
-                Some("arn:${Partition}:s3:::my-bucket"),
-                None,
-            ));
-        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-
-        let explanations = resolver.build_binding_explanations();
-        assert_eq!(explanations.len(), 1);
-        assert_eq!(explanations[0].arn, "arn:${Partition}:s3:::my-bucket");
-        assert_eq!(explanations[0].source, BindingSource::Terraform);
-        assert_eq!(explanations[0].resource_type, "aws_s3_bucket");
-        assert_eq!(explanations[0].resource_name, "data");
-        assert_eq!(
-            explanations[0].location,
-            Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1))
-        );
-    }
-
-    #[test]
-    fn test_build_binding_explanations_state_takes_over() {
-        let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "data",
-                "s3",
-                "bucket",
-                Some("my-bucket"),
-                Some("arn:aws:s3:::my-bucket"),
-                Some("arn:${Partition}:s3:::my-bucket"),
+        for (rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn, has_state_loc) in &resources {
+            let state_loc = if *has_state_loc {
                 Some(Location::new(PathBuf::from("terraform.tfstate"), (1, 1), (1, 1)))
-            ));
-        let tfstate_path = PathBuf::from("terraform.tfstate");
-        let resolver =
-            TerraformResourceResolver::from_resolved_map(resource_map);
-
+            } else {
+                None
+            };
+            resource_map
+                .entry((service.to_string(), suffix.to_string()))
+                .or_default()
+                .push(make_resolved_resource(
+                    rtype, local_name, service, suffix,
+                    *binding_name, *state_arn, *hcl_arn, state_loc,
+                ));
+        }
+        let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         let explanations = resolver.build_binding_explanations();
-        // State ARN present → Terraform explanation is suppressed, only state explanation emitted
-        assert_eq!(explanations.len(), 1);
-        assert_eq!(explanations[0].arn, "arn:aws:s3:::my-bucket");
-        assert_eq!(explanations[0].source, BindingSource::TerraformState);
-        assert_eq!(
-            explanations[0].location,
-            Location::new(tfstate_path, (1, 1), (1, 1))
-        );
-    }
-
-    #[test]
-    fn test_build_binding_explanations_empty() {
-        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
-        assert!(resolver.build_binding_explanations().is_empty());
+        assert_eq!(explanations.len(), expected.len(), "count mismatch");
+        for (actual, (exp_arn, exp_source, exp_rtype, exp_rname, exp_file)) in explanations.iter().zip(expected.iter()) {
+            assert_eq!(actual.arn, *exp_arn, "arn mismatch");
+            assert_eq!(actual.source, *exp_source, "source mismatch");
+            assert_eq!(actual.resource_type, *exp_rtype, "resource_type mismatch");
+            assert_eq!(actual.resource_name, *exp_rname, "resource_name mismatch");
+            assert_eq!(actual.location.file_path, PathBuf::from(exp_file), "location file mismatch");
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -1418,31 +1297,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_resolver_empty() {
-        let resolver = TerraformResourceResolver::from_resolved_map(ResolvedResourceMap::new());
-        assert!(resolver.is_empty());
-        assert_eq!(resolver.len(), 0);
-    }
-
-    #[test]
-    fn test_resolver_not_empty() {
+    #[rstest]
+    #[case("empty",     &[],                                                                 true,  0)]
+    #[case("non_empty", &[("aws_s3_bucket", "b", "s3", "bucket", Some("x"), None, None)],    false, 1)]
+    fn test_resolver_len_and_empty(
+        #[case] _name: &str,
+        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] expected_empty: bool,
+        #[case] expected_len: usize,
+    ) {
         let mut resource_map = ResolvedResourceMap::new();
-        resource_map
-            .entry(("s3".to_string(), "bucket".to_string()))
-            .or_default()
-            .push(make_resolved_resource(
-                "aws_s3_bucket",
-                "b",
-                "s3",
-                "bucket",
-                Some("x"),
-                None,
-                None,
-                None,
-            ));
+        for &(rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn) in resources {
+            resource_map
+                .entry((service.to_string(), suffix.to_string()))
+                .or_default()
+                .push(make_resolved_resource(rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn, None));
+        }
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
-        assert!(!resolver.is_empty());
-        assert_eq!(resolver.len(), 1);
+        assert_eq!(resolver.is_empty(), expected_empty, "[{_name}] is_empty");
+        assert_eq!(resolver.len(), expected_len, "[{_name}] len");
     }
 }

@@ -154,6 +154,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             config.terraform_dir.as_deref(),
             &config.terraform_files,
             &config.tfstate_paths,
+            &config.tfvars_files,
             loader,
         )
         .await

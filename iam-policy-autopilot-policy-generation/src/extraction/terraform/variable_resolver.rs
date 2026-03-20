@@ -6,7 +6,7 @@
 //! 2. Overrides from `terraform.tfvars` and `*.auto.tfvars`
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
@@ -28,12 +28,40 @@ pub struct VariableContext {
 }
 
 impl VariableContext {
-    /// Build a variable context from a Terraform directory.
+    /// Build a variable context from only explicit `.tfvars` file paths (no directory).
     ///
-    /// 1. Scans all `.tf` files for `variable` blocks with `default` values
-    /// 2. Reads `terraform.tfvars` if present (overrides defaults)
-    /// 3. Reads `*.auto.tfvars` files if present (overrides defaults)
-    pub fn from_directory(dir: &Path) -> Result<Self> {
+    /// Used when `--terraform-file` + `--tfvars` are provided without `--terraform-dir`.
+    pub fn from_explicit_tfvars(tfvars_paths: &[PathBuf]) -> Self {
+        let mut ctx = Self::default();
+        for tfvars_file in tfvars_paths {
+            match std::fs::read_to_string(tfvars_file) {
+                Ok(content) => ctx.apply_tfvars(&content),
+                Err(e) => log::warn!(
+                    "Failed to read explicit tfvars file {}: {e}",
+                    tfvars_file.display()
+                ),
+            }
+        }
+        log::debug!("Resolved {} Terraform variables from explicit tfvars", ctx.vars.len());
+        ctx
+    }
+
+    /// Build a variable context from a Terraform directory, with optional explicit
+    /// `.tfvars` file paths.
+    ///
+    /// When `explicit_tfvars` is non-empty, these files are applied **after** all
+    /// auto-discovered sources, giving them highest precedence. This matches the
+    /// Terraform CLI behavior of `-var-file=` flags.
+    ///
+    /// Precedence order (later overrides earlier):
+    /// 1. `variable` block defaults from `.tf` files (lexicographic order)
+    /// 2. `terraform.tfvars` (if present in directory)
+    /// 3. `*.auto.tfvars` files (lexicographic order)
+    /// 4. Explicit tfvars files (in the order provided)
+    pub fn from_directory_with_explicit_tfvars(
+        dir: &Path,
+        explicit_tfvars: &[PathBuf],
+    ) -> Result<Self> {
         let mut ctx = Self::default();
 
         // Step 1: Extract defaults from variable blocks in .tf files
@@ -74,6 +102,17 @@ impl VariableContext {
         for auto_path in &auto_tfvars {
             if let Ok(content) = std::fs::read_to_string(auto_path) {
                 ctx.apply_tfvars(&content);
+            }
+        }
+
+        // Step 4: Apply explicit --tfvars files (highest precedence, in order)
+        for tfvars_file in explicit_tfvars {
+            match std::fs::read_to_string(tfvars_file) {
+                Ok(content) => ctx.apply_tfvars(&content),
+                Err(e) => log::warn!(
+                    "Failed to read explicit tfvars file {}: {e}",
+                    tfvars_file.display()
+                ),
             }
         }
 
@@ -290,196 +329,197 @@ mod tests {
         assert_eq!(result, expected, "try_resolve mismatch for case '{_name}'");
     }
 
-    #[test]
-    fn test_literal_not_modified() {
-        let ctx = VariableContext::default();
-        let lit = AttributeValue::Literal("already-resolved".to_string());
-        assert!(ctx.try_resolve(&lit).is_none());
+    // -----------------------------------------------------------------------
+    // extract_variable_defaults + apply_tfvars tests (shared harness)
+    // -----------------------------------------------------------------------
+
+    /// Shared harness for variable extraction and override tests.
+    ///
+    /// Applies HCL defaults, then optional tfvars overrides, and asserts
+    /// each expected variable value.
+    fn assert_variable_extraction(
+        hcl_content: &str,
+        tfvars_content: Option<&str>,
+        expected: &[(&str, Option<&str>)],
+    ) {
+        let mut ctx = VariableContext::default();
+        ctx.extract_variable_defaults(hcl_content, Path::new("variables.tf"));
+        if let Some(tfvars) = tfvars_content {
+            ctx.apply_tfvars(tfvars);
+        }
+        for &(var_name, expected_value) in expected {
+            assert_eq!(
+                ctx.get(var_name),
+                expected_value,
+                "variable '{var_name}' mismatch"
+            );
+        }
+    }
+
+    #[rstest]
+    // Scalar defaults extracted, type-only variables skipped
+    #[case(
+        "scalar_defaults",
+        "variable \"bucket_name\" {\n  default = \"my-default-bucket\"\n}\nvariable \"region\" {\n  default = \"us-east-1\"\n}\nvariable \"no_default\" {\n  type = string\n}",
+        None,
+        &[("bucket_name", Some("my-default-bucket")), ("region", Some("us-east-1")), ("no_default", None)]
+    )]
+    // tfvars override defaults
+    #[case(
+        "tfvars_override",
+        "variable \"bucket_name\" {\n  default = \"default-bucket\"\n}",
+        Some("bucket_name = \"override-bucket\""),
+        &[("bucket_name", Some("override-bucket"))]
+    )]
+    // Complex types (maps, lists) skipped, scalar kept
+    #[case(
+        "complex_defaults_skipped",
+        "variable \"tags\" {\n  default = {\n    env = \"prod\"\n    team = \"platform\"\n  }\n}\nvariable \"allowed_cidrs\" {\n  default = [\"10.0.0.0/8\", \"172.16.0.0/12\"]\n}\nvariable \"simple\" {\n  default = \"kept\"\n}",
+        None,
+        &[("tags", None), ("allowed_cidrs", None), ("simple", Some("kept"))]
+    )]
+    fn test_variable_extraction(
+        #[case] _name: &str,
+        #[case] hcl_content: &str,
+        #[case] tfvars_content: Option<&str>,
+        #[case] expected: &[(&str, Option<&str>)],
+    ) {
+        assert_variable_extraction(hcl_content, tfvars_content, expected);
     }
 
     // -----------------------------------------------------------------------
-    // Variable extraction + override tests
+    // resolve_attributes + try_resolve edge case tests (shared harness)
     // -----------------------------------------------------------------------
 
-    #[test]
-    fn test_extract_variable_defaults() {
-        let mut ctx = VariableContext::default();
-        let hcl = r#"
-variable "bucket_name" {
-  default = "my-default-bucket"
-}
-
-variable "region" {
-  default = "us-east-1"
-}
-
-variable "no_default" {
-  type = string
-}
-"#;
-        ctx.extract_variable_defaults(hcl, Path::new("variables.tf"));
-
-        assert_eq!(ctx.get("bucket_name"), Some("my-default-bucket"));
-        assert_eq!(ctx.get("region"), Some("us-east-1"));
-        assert!(ctx.get("no_default").is_none());
-    }
-
-    #[test]
-    fn test_tfvars_override_defaults() {
-        let mut ctx = VariableContext::default();
-        ctx.extract_variable_defaults(
-            r#"
-variable "bucket_name" {
-  default = "default-bucket"
-}
-"#,
-            Path::new("variables.tf"),
-        );
-        assert_eq!(ctx.get("bucket_name"), Some("default-bucket"));
-
-        ctx.apply_tfvars(r#"bucket_name = "override-bucket""#);
-        assert_eq!(ctx.get("bucket_name"), Some("override-bucket"));
-    }
-
-    #[test]
-    fn test_complex_default_values_skipped() {
-        let mut ctx = VariableContext::default();
-        let hcl = r#"
-variable "tags" {
-  default = {
-    env = "prod"
-    team = "platform"
-  }
-}
-
-variable "allowed_cidrs" {
-  default = ["10.0.0.0/8", "172.16.0.0/12"]
-}
-
-variable "simple" {
-  default = "kept"
-}
-"#;
-        ctx.extract_variable_defaults(hcl, Path::new("variables.tf"));
-        assert!(ctx.get("tags").is_none(), "Map defaults should be skipped");
-        assert!(
-            ctx.get("allowed_cidrs").is_none(),
-            "List defaults should be skipped"
-        );
-        assert_eq!(ctx.get("simple"), Some("kept"));
-    }
-
-    // -----------------------------------------------------------------------
-    // resolve_attributes integration test
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_resolve_attributes_in_parse_result() {
-        let mut ctx = VariableContext::default();
-        ctx.vars
-            .insert("bucket_name".to_string(), "resolved-bucket".to_string());
-
+    /// Shared harness for resolve_attributes tests.
+    fn assert_resolve_attributes(
+        vars: &[(&str, &str)],
+        input_attr_key: &str,
+        input_attr_value: AttributeValue,
+        expected_attr_value: AttributeValue,
+    ) {
+        let ctx = ctx_from(vars);
         let resource = super::super::TerraformResource {
             resource_type: "aws_s3_bucket".to_string(),
             local_name: "b".to_string(),
-            attributes: HashMap::from([(
-                "bucket".to_string(),
-                AttributeValue::Expression("var.bucket_name".to_string()),
-            )]),
+            attributes: HashMap::from([(input_attr_key.to_string(), input_attr_value)]),
             location: crate::Location::new(std::path::PathBuf::from("main.tf"), (1, 1), (1, 1)),
         };
         let mut result = TerraformResources::default();
         result.insert(resource);
-
         ctx.resolve_attributes(&mut result);
-
         let r = result.values().next().unwrap();
         assert_eq!(
-            r.attributes.get("bucket"),
-            Some(&AttributeValue::Literal("resolved-bucket".to_string()))
+            r.attributes.get(input_attr_key),
+            Some(&expected_attr_value),
+            "attribute '{input_attr_key}' mismatch"
         );
     }
 
-    // -----------------------------------------------------------------------
-    // Directory-based tests (require temp dirs)
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_from_directory_with_tfvars() {
-        let tmp = TempDir::new().expect("tmp");
-
-        let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(
-            vars_tf,
-            r#"
-variable "bucket_name" {{
-  default = "default-bucket"
-}}
-variable "table_name" {{
-  default = "default-table"
-}}
-"#
-        )
-        .expect("write");
-
-        let mut tfvars =
-            std::fs::File::create(tmp.path().join("terraform.tfvars")).expect("create");
-        writeln!(tfvars, r#"bucket_name = "prod-bucket""#).expect("write");
-
-        let ctx = VariableContext::from_directory(tmp.path()).expect("resolve");
-
-        assert_eq!(ctx.get("bucket_name"), Some("prod-bucket"));
-        assert_eq!(ctx.get("table_name"), Some("default-table"));
+    #[rstest]
+    // Variable expression resolved to literal
+    #[case(
+        "expression_resolved",
+        &[("bucket_name", "resolved-bucket")],
+        "bucket",
+        AttributeValue::Expression("var.bucket_name".to_string()),
+        AttributeValue::Literal("resolved-bucket".to_string())
+    )]
+    // Literal not modified
+    #[case(
+        "literal_not_modified",
+        &[],
+        "bucket",
+        AttributeValue::Literal("already-resolved".to_string()),
+        AttributeValue::Literal("already-resolved".to_string())
+    )]
+    fn test_resolve_attributes(
+        #[case] _name: &str,
+        #[case] vars: &[(&str, &str)],
+        #[case] attr_key: &str,
+        #[case] input: AttributeValue,
+        #[case] expected: AttributeValue,
+    ) {
+        assert_resolve_attributes(vars, attr_key, input, expected);
     }
 
-    #[test]
-    fn test_from_directory_with_auto_tfvars() {
-        let tmp = TempDir::new().expect("tmp");
+    // -----------------------------------------------------------------------
+    // Directory-based tests (shared harness)
+    // -----------------------------------------------------------------------
 
-        let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(
-            vars_tf,
-            r#"
-variable "env" {{
-  default = "dev"
-}}
-"#
-        )
-        .expect("write");
+    /// Shared harness for directory-based variable resolution tests.
+    ///
+    /// Creates a temp directory, writes the given files, builds a
+    /// `VariableContext`, and asserts each expected variable value.
+    fn assert_directory_resolution(
+        files: &[(&str, &str)],
+        expected: &[(&str, Option<&str>)],
+    ) {
+        let tmp = TempDir::new().expect("create temp dir");
 
-        let mut auto = std::fs::File::create(tmp.path().join("prod.auto.tfvars")).expect("create");
-        writeln!(auto, r#"env = "prod""#).expect("write");
+        for (filename, content) in files {
+            let path = tmp.path().join(filename);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).expect("create parent dir");
+            }
+            let mut f = std::fs::File::create(&path).expect("create file");
+            writeln!(f, "{content}").expect("write file");
+        }
 
-        let ctx = VariableContext::from_directory(tmp.path()).expect("resolve");
-        assert_eq!(ctx.get("env"), Some("prod"));
+        let ctx = VariableContext::from_directory_with_explicit_tfvars(tmp.path(), &[]).expect("resolve");
+
+        for &(var_name, expected_value) in expected {
+            assert_eq!(
+                ctx.get(var_name),
+                expected_value,
+                "variable '{var_name}' resolution mismatch"
+            );
+        }
     }
 
-    #[test]
-    fn test_auto_tfvars_lexicographic_ordering() {
-        let tmp = TempDir::new().expect("tmp");
-
-        let mut vars_tf = std::fs::File::create(tmp.path().join("variables.tf")).expect("create");
-        writeln!(
-            vars_tf,
-            r#"
-variable "env" {{
-  default = "dev"
-}}
-"#
-        )
-        .expect("write");
-
-        let mut a = std::fs::File::create(tmp.path().join("a.auto.tfvars")).expect("create");
-        writeln!(a, r#"env = "from-a""#).expect("write");
-
-        let mut b = std::fs::File::create(tmp.path().join("b.auto.tfvars")).expect("create");
-        writeln!(b, r#"env = "from-b""#).expect("write");
-
-        let ctx = VariableContext::from_directory(tmp.path()).expect("resolve");
-        assert_eq!(
-            ctx.get("env"),
-            Some("from-b"),
-            "Later auto.tfvars should win"
-        );
+    #[rstest]
+    // tfvars overrides default, non-overridden default preserved
+    #[case(
+        "tfvars_override",
+        &[
+            ("variables.tf", "variable \"bucket_name\" {\n  default = \"default-bucket\"\n}\nvariable \"table_name\" {\n  default = \"default-table\"\n}"),
+            ("terraform.tfvars", "bucket_name = \"prod-bucket\""),
+        ],
+        &[("bucket_name", Some("prod-bucket")), ("table_name", Some("default-table"))]
+    )]
+    // auto.tfvars overrides default
+    #[case(
+        "auto_tfvars_override",
+        &[
+            ("variables.tf", "variable \"env\" {\n  default = \"dev\"\n}"),
+            ("prod.auto.tfvars", "env = \"prod\""),
+        ],
+        &[("env", Some("prod"))]
+    )]
+    // Later auto.tfvars wins (lexicographic ordering)
+    #[case(
+        "auto_tfvars_lexicographic_ordering",
+        &[
+            ("variables.tf", "variable \"env\" {\n  default = \"dev\"\n}"),
+            ("a.auto.tfvars", "env = \"from-a\""),
+            ("b.auto.tfvars", "env = \"from-b\""),
+        ],
+        &[("env", Some("from-b"))]
+    )]
+    // Same variable default in multiple .tf files — lexicographically later file wins
+    #[case(
+        "tf_file_clash_lexicographic",
+        &[
+            ("a_vars.tf", "variable \"region\" {\n  default = \"us-west-1\"\n}"),
+            ("b_vars.tf", "variable \"region\" {\n  default = \"us-east-1\"\n}"),
+        ],
+        &[("region", Some("us-east-1"))]
+    )]
+    fn test_directory_resolution(
+        #[case] _name: &str,
+        #[case] files: &[(&str, &str)],
+        #[case] expected: &[(&str, Option<&str>)],
+    ) {
+        assert_directory_resolution(files, expected);
     }
 }

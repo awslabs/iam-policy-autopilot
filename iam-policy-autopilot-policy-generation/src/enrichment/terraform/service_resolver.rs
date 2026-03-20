@@ -466,26 +466,35 @@ mod tests {
     use super::*;
     use rstest::rstest;
 
-    // --- parse_names_data tests ---
+    // --- parse_names_data tests (parameterized) ---
 
-    #[test]
-    fn test_parse_names_data_returns_entries() {
-        let entries = parse_names_data(NAMES_DATA_HCL);
-        assert!(
-            entries.len() > 50,
-            "Expected >50 entries, got {}",
-            entries.len()
-        );
-    }
-
-    #[test]
-    #[should_panic(expected = "Failed to parse names_data.hcl")]
-    fn test_parse_names_data_panics_on_invalid_hcl() {
-        parse_names_data("this is {{ not valid HCL");
+    /// Shared harness for parse_names_data tests.
+    fn assert_parse_names_data(
+        hcl: &str,
+        min_entries: Option<usize>,
+        expected_entries: &[(&str, &str, &str, bool)],
+    ) {
+        let entries = parse_names_data(hcl);
+        if let Some(min) = min_entries {
+            assert!(
+                entries.len() > min,
+                "Expected >{min} entries, got {}",
+                entries.len()
+            );
+        }
+        for &(service_key, expected_arn_ns, expected_prefix, has_actual) in expected_entries {
+            let entry = entries
+                .iter()
+                .find(|e| e.service_key == service_key)
+                .unwrap_or_else(|| panic!("service_key '{service_key}' not found"));
+            assert_eq!(entry.arn_namespace, expected_arn_ns, "arn_namespace mismatch for {service_key}");
+            assert_eq!(entry.resource_prefix.correct, expected_prefix, "correct prefix mismatch for {service_key}");
+            assert_eq!(entry.resource_prefix.actual.is_some(), has_actual, "actual pattern mismatch for {service_key}");
+        }
     }
 
     #[rstest]
-    #[case("s3", "s3", "aws_s3_", true)]
+    #[case("s3",  "s3",  "aws_s3_",  true)]
     #[case("sqs", "sqs", "aws_sqs_", false)]
     #[case("amp", "aps", "aws_amp_", true)]
     fn test_parse_names_data_service_entry(
@@ -494,24 +503,18 @@ mod tests {
         #[case] expected_resource_prefix: &str,
         #[case] has_actual: bool,
     ) {
-        let entries = parse_names_data(NAMES_DATA_HCL);
-        let entry = entries
-            .iter()
-            .find(|e| e.service_key == service_key)
-            .unwrap_or_else(|| panic!("service_key '{service_key}' not found in names_data"));
-        assert_eq!(
-            entry.arn_namespace, expected_arn_ns,
-            "arn_namespace mismatch for {service_key}"
+        assert_parse_names_data(
+            NAMES_DATA_HCL,
+            Some(50),
+            &[(service_key, expected_arn_ns, expected_resource_prefix, has_actual)],
         );
-        assert_eq!(
-            entry.resource_prefix.correct, expected_resource_prefix,
-            "correct prefix mismatch for {service_key}"
-        );
-        assert_eq!(
-            entry.resource_prefix.actual.is_some(),
-            has_actual,
-            "actual pattern presence mismatch for {service_key}"
-        );
+    }
+
+    #[rstest]
+    #[case("invalid_hcl")]
+    #[should_panic(expected = "Failed to parse names_data.hcl")]
+    fn test_parse_names_data_panics_on_invalid(#[case] _name: &str) {
+        parse_names_data("this is {{ not valid HCL");
     }
 
     // --- try_expand_pattern tests ---
@@ -596,28 +599,41 @@ mod tests {
         );
     }
 
-    // --- TypeResolver internals ---
+    // --- TypeResolver internals (parameterized) ---
 
-    #[test]
-    fn test_resolver_has_expanded_entries() {
+    #[rstest]
+    // Expanded alternation entries present in prefix_map
+    #[case("prefix_aws_db",           "prefix",  "aws_db_")]
+    #[case("prefix_aws_rds",          "prefix",  "aws_rds_")]
+    // Exact match entries present in exact_map
+    #[case("exact_canonical_user_id",  "exact",   "aws_canonical_user_id")]
+    fn test_resolver_internal_maps(
+        #[case] _name: &str,
+        #[case] map_type: &str,
+        #[case] key: &str,
+    ) {
         let resolver = TerraformServiceAndResourceResolver::global();
-        assert!(resolver.prefix_map.contains_key("aws_db_"));
-        assert!(resolver.prefix_map.contains_key("aws_rds_"));
-        assert!(resolver.exact_map.contains_key("aws_canonical_user_id"));
+        match map_type {
+            "prefix" => assert!(resolver.prefix_map.contains_key(key), "prefix_map missing '{key}'"),
+            "exact"  => assert!(resolver.exact_map.contains_key(key), "exact_map missing '{key}'"),
+            _ => panic!("unknown map_type: {map_type}"),
+        }
     }
 
-    #[test]
-    fn test_resolver_has_few_regex_fallbacks() {
+    #[rstest]
+    #[case("few_regex_fallbacks", 20)]
+    fn test_resolver_regex_fallback_count(#[case] _name: &str, #[case] max: usize) {
         let resolver = TerraformServiceAndResourceResolver::global();
         assert!(
-            resolver.regex_fallbacks.len() < 20,
-            "Expected <20 regex fallbacks, got {}",
+            resolver.regex_fallbacks.len() < max,
+            "Expected <{max} regex fallbacks, got {}",
             resolver.regex_fallbacks.len()
         );
     }
 
-    #[test]
-    fn test_resolver_pointer_identity() {
+    #[rstest]
+    #[case("pointer_identity")]
+    fn test_resolver_singleton(#[case] _name: &str) {
         let a = TerraformServiceAndResourceResolver::global();
         let b = TerraformServiceAndResourceResolver::global();
         assert!(std::ptr::eq(a, b), "Should return the same cached instance");
