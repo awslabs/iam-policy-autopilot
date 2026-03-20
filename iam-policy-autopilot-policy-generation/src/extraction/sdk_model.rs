@@ -166,6 +166,7 @@ impl ServiceDiscovery {
     /// Each service includes its name and API version. Since build.rs only processes
     /// the latest version for each service, there's exactly one version per service.
     fn discover_services() -> Result<Vec<SdkModel>> {
+        #[cfg(not(target_arch = "wasm32"))]
         let start_time = std::time::Instant::now();
         log::debug!("Starting optimized service discovery...");
 
@@ -183,10 +184,15 @@ impl ServiceDiscovery {
         // Sort services by name for consistent ordering
         services.sort_by(|a, b| a.name.cmp(&b.name).then(a.api_version.cmp(&b.api_version)));
 
-        let total_duration = start_time.elapsed();
+        #[cfg(not(target_arch = "wasm32"))]
         log::debug!(
             "Optimized service discovery completed in {:?} - found {} services",
-            total_duration,
+            start_time.elapsed(),
+            services.len()
+        );
+        #[cfg(target_arch = "wasm32")]
+        log::debug!(
+            "Optimized service discovery completed - found {} services",
             services.len()
         );
         Ok(services)
@@ -285,106 +291,139 @@ impl ServiceDiscovery {
     ) -> Result<()> {
         // Import waiter types for inline loading
         use crate::extraction::waiter_model::WaiterEntry;
-        use std::sync::Arc;
 
-        #[allow(clippy::type_complexity)]
-        let mut join_set: JoinSet<
-            Result<(
-                SdkModel,
-                SdkServiceDefinition,
-                Option<HashMap<String, WaiterEntry>>,
-            )>,
-        > = JoinSet::new();
-
-        // Create semaphore to limit concurrent operations (max 50)
-        let semaphore = Arc::new(Semaphore::new(50));
-
-        // Spawn parallel tasks for loading service models from embedded data
-        let start_time = std::time::Instant::now();
-        for service_info in services {
-            let semaphore = semaphore.clone();
-            join_set.spawn(async move {
-                let service_start = std::time::Instant::now();
-
-                // Acquire permit for concurrent operations
-                let _permit = semaphore.acquire_owned().await.map_err(|e| {
-                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {e}"))
-                })?;
-
-                // Load service definition from embedded data
-                let service_definition = BotocoreData::get_service_definition(
-                    &service_info.name,
-                    &service_info.api_version,
-                )?;
-
-                // Load waiters from embedded data
-                let waiters =
-                    BotocoreData::get_waiters(&service_info.name, &service_info.api_version);
-
-                let service_time = service_start.elapsed();
-                if service_time.as_millis() > 100 {
-                    log::debug!(
-                        "Service {}/{} took {:?} to load",
-                        service_info.name,
-                        service_info.api_version,
-                        service_time
-                    );
+        // Helper: process a single loaded service result
+        fn process_result(
+            service_info: SdkModel,
+            service_model: SdkServiceDefinition,
+            waiters: Option<HashMap<String, WaiterEntry>>,
+            service_models: &mut HashMap<String, SdkServiceDefinition>,
+            method_lookup: &mut HashMap<String, Vec<ServiceMethodRef>>,
+            waiter_lookup: &mut HashMap<String, Vec<ServiceMethodRef>>,
+            language: Language,
+        ) {
+            let service_name = service_info.name;
+            for operation_name in service_model.operations.keys() {
+                let method_name =
+                    ServiceDiscovery::operation_to_method_name(operation_name, language);
+                method_lookup
+                    .entry(method_name.clone())
+                    .or_default()
+                    .push(ServiceMethodRef {
+                        service_name: service_name.clone(),
+                        operation_name: operation_name.clone(),
+                    });
+            }
+            if let Some(waiters) = waiters {
+                for (waiter_name, waiter_entry) in waiters {
+                    let method_name =
+                        ServiceDiscovery::operation_to_method_name(&waiter_name, language);
+                    waiter_lookup
+                        .entry(method_name.clone())
+                        .or_default()
+                        .push(ServiceMethodRef {
+                            service_name: service_name.clone(),
+                            operation_name: waiter_entry.operation.clone(),
+                        });
                 }
-
-                Ok((service_info, service_definition, waiters))
-            });
+            }
+            service_models.insert(service_name.clone(), service_model);
         }
 
-        log::debug!(
-            "Spawned all {} service loading tasks in {:?}",
-            join_set.len(),
-            start_time.elapsed()
-        );
-
-        // Collect results from parallel tasks
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(Ok((service_info, service_model, waiters))) => {
-                    let service_name = service_info.name;
-                    // Build method lookup index for this service
-                    for operation_name in service_model.operations.keys() {
-                        let method_name = Self::operation_to_method_name(operation_name, language);
-
-                        method_lookup.entry(method_name.clone()).or_default().push(
-                            ServiceMethodRef {
-                                service_name: service_name.clone(),
-                                operation_name: operation_name.clone(),
-                            },
+        // On WASM: load sequentially (no JoinSet/spawn available)
+        #[cfg(target_arch = "wasm32")]
+        {
+            for service_info in services {
+                match BotocoreData::get_service_definition(
+                    &service_info.name,
+                    &service_info.api_version,
+                ) {
+                    Ok(service_definition) => {
+                        let waiters = BotocoreData::get_waiters(
+                            &service_info.name,
+                            &service_info.api_version,
+                        );
+                        process_result(
+                            service_info,
+                            service_definition,
+                            waiters,
+                            service_models,
+                            method_lookup,
+                            waiter_lookup,
+                            language,
                         );
                     }
-
-                    if let Some(waiters) = waiters {
-                        for (waiter_name, waiter_entry) in waiters {
-                            let method_name =
-                                Self::operation_to_method_name(&waiter_name, language);
-
-                            waiter_lookup.entry(method_name.clone()).or_default().push(
-                                ServiceMethodRef {
-                                    service_name: service_name.clone(),
-                                    operation_name: waiter_entry.operation.clone(),
-                                },
-                            );
-                        }
+                    Err(e) => {
+                        load_errors.push(format!("Failed to load service: {e}"));
                     }
+                }
+            }
+        }
 
-                    service_models.insert(service_name.clone(), service_model);
-                }
-                Ok(Err(e)) => {
-                    // Collect errors but continue loading other services
-                    let error_msg = format!("Failed to load service: {e}");
-                    log::debug!("{error_msg}");
-                    load_errors.push(error_msg);
-                }
-                Err(e) => {
-                    // Task join error - this is more serious
-                    let error_msg = format!("Task execution failed: {e}");
-                    log::debug!("{error_msg}");
-                    load_errors.push(error_msg);
+        // On native: load in parallel with JoinSet
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            use std::sync::Arc;
+
+            #[allow(clippy::type_complexity)]
+            let mut join_set: JoinSet<
+                Result<(
+                    SdkModel,
+                    SdkServiceDefinition,
+                    Option<HashMap<String, WaiterEntry>>,
+                )>,
+            > = JoinSet::new();
+
+            let semaphore = Arc::new(Semaphore::new(50));
+
+            let start_time = std::time::Instant::now();
+            for service_info in services {
+                let semaphore = semaphore.clone();
+                join_set.spawn(async move {
+                    let _permit = semaphore.acquire_owned().await.map_err(|e| {
+                        ExtractorError::validation(format!(
+                            "Failed to acquire semaphore permit: {e}"
+                        ))
+                    })?;
+                    let service_definition = BotocoreData::get_service_definition(
+                        &service_info.name,
+                        &service_info.api_version,
+                    )?;
+                    let waiters =
+                        BotocoreData::get_waiters(&service_info.name, &service_info.api_version);
+                    Ok((service_info, service_definition, waiters))
+                });
+            }
+
+            log::debug!(
+                "Spawned all {} service loading tasks in {:?}",
+                join_set.len(),
+                start_time.elapsed()
+            );
+
+            while let Some(result) = join_set.join_next().await {
+                match result {
+                    Ok(Ok((service_info, service_model, waiters))) => {
+                        process_result(
+                            service_info,
+                            service_model,
+                            waiters,
+                            service_models,
+                            method_lookup,
+                            waiter_lookup,
+                            language,
+                        );
+                    }
+                    Ok(Err(e)) => {
+                        let error_msg = format!("Failed to load service: {e}");
+                        log::debug!("{error_msg}");
+                        load_errors.push(error_msg);
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Task execution failed: {e}");
+                        log::debug!("{error_msg}");
+                        load_errors.push(error_msg);
+                    }
                 }
             }
         }

@@ -15,19 +15,30 @@ serde.workspace = true
 thiserror.workspace = true
 log.workspace = true
 regex.workspace = true
-ast-grep-config.workspace = true
-ast-grep-core.workspace = true
-ast-grep-language.workspace = true
 anyhow.workspace = true
 convert_case.workspace = true
-reqwest.workspace = true
-rust-embed.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
-tokio.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
+
+# Tree-sitter / ast-grep dependencies — gated behind default feature
+ast-grep-config = { workspace = true, optional = true }
+ast-grep-core = { workspace = true, optional = true }
+ast-grep-language = { workspace = true, optional = true }
+
+# rust-embed: use compression on native, skip on wasm (zstd has native C code)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+rust-embed = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rust-embed = { version = "8.9", features = ["include-exclude"] }
+reqwest = { version = "0.12.4", default-features = false }
+tokio = { version = "1.0", features = ["rt", "macros", "sync"] }
+getrandom = { version = "0.2", features = ["js"] }
 
 
 # Build dependencies
@@ -47,7 +58,8 @@ git2.workspace = true
 relative-path.workspace = true
 
 [features]
-default = []
+default = ["tree-sitter"]
+tree-sitter = ["ast-grep-config", "ast-grep-core", "ast-grep-language"]
 integ-test = []
 # Development features
 dev = ["tokio/test-util"]

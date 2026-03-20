@@ -65,23 +65,8 @@ impl Boto3UtilitiesRaw {
 impl Boto3ResourcesRaw {
     /// Get a boto3 resources definition file by service name and API version
     fn get_resources_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let start_time = std::time::Instant::now();
-
         let json_path = format!("{service}/{api_version}/resources-1.json");
         if let Some(file) = Self::get(&json_path) {
-            let file_size = file.data.len();
-
-            let total_time = start_time.elapsed();
-            if total_time.as_millis() > 10 {
-                log::debug!(
-                    "Loaded boto3 {}/{}: {}KB in {:?}",
-                    service,
-                    api_version,
-                    file_size / 1024,
-                    total_time
-                );
-            }
-
             Some(file.data)
         } else {
             None
@@ -92,15 +77,12 @@ impl Boto3ResourcesRaw {
     fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
         log::debug!("Building boto3 service versions map...");
 
-        let start_time = std::time::Instant::now();
         let mut service_versions: std::collections::HashMap<
             String,
             std::collections::HashSet<String>,
         > = std::collections::HashMap::new();
-        let mut file_count = 0;
 
         for file_path in Self::iter() {
-            file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {
                 let service = path_parts[0].to_string();
@@ -118,11 +100,8 @@ impl Boto3ResourcesRaw {
             result.insert(service, versions);
         }
 
-        let duration = start_time.elapsed();
         log::debug!(
-            "Built boto3 service versions map in {:?} (processed {} files, found {} services)",
-            duration,
-            file_count,
+            "Built boto3 service versions map (found {} services)",
             result.len()
         );
 
@@ -138,23 +117,8 @@ impl BotocoreRaw {
 
     /// Get a service definition file by service name and API version
     fn get_service_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let start_time = std::time::Instant::now();
-
         let json_path = format!("{service}/{api_version}/service-2.json");
         if let Some(file) = Self::get(&json_path) {
-            let file_size = file.data.len();
-
-            let total_time = start_time.elapsed();
-            if total_time.as_millis() > 10 {
-                log::debug!(
-                    "Loaded {}/{}: {}KB in {:?}",
-                    service,
-                    api_version,
-                    file_size / 1024,
-                    total_time
-                );
-            }
-
             Some(file.data)
         } else {
             None
@@ -177,15 +141,12 @@ impl BotocoreRaw {
     fn build_service_versions_map() -> std::collections::HashMap<String, Vec<String>> {
         log::debug!("Building service versions map...");
 
-        let start_time = std::time::Instant::now();
         let mut service_versions: std::collections::HashMap<
             String,
             std::collections::HashSet<String>,
         > = std::collections::HashMap::new();
-        let mut file_count = 0;
 
         for file_path in Self::iter() {
-            file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {
                 let service = path_parts[0].to_string();
@@ -203,11 +164,8 @@ impl BotocoreRaw {
             result.insert(service, versions);
         }
 
-        let duration = start_time.elapsed();
         log::debug!(
-            "Built service versions map in {:?} (processed {} files, found {} services)",
-            duration,
-            file_count,
+            "Built service versions map (found {} services)",
             result.len()
         );
 

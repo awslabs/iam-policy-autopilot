@@ -90,29 +90,41 @@ impl Engine {
         // Initialize metadata with loaded files
         let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
 
-        // Extract SDK method calls from all source files concurrently
+        // Extract SDK method calls from all source files
         let mut all_extraction_results = Vec::new();
-        let mut join_set = JoinSet::new();
 
-        for source_file in source_files {
-            let extractor = extractor.clone();
-            join_set.spawn(async move { extractor.parse(&source_file).await });
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let mut join_set = JoinSet::new();
+
+            for source_file in source_files {
+                let extractor = extractor.clone();
+                join_set.spawn(async move { extractor.parse(&source_file).await });
+            }
+
+            // Collect results from concurrent tasks
+            while let Some(result) = join_set.join_next().await {
+                match result {
+                    Ok(extraction_result) => {
+                        all_extraction_results.push(extraction_result);
+                    }
+                    Err(e) => {
+                        // Task join error - this is more serious
+                        return Err(ExtractorError::method_extraction(
+                            "unsupported",
+                            PathBuf::from("unknown"),
+                            format!("Task execution failed: {e}"),
+                        ));
+                    }
+                }
+            }
         }
 
-        // Collect results from concurrent tasks
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(extraction_result) => {
-                    all_extraction_results.push(extraction_result);
-                }
-                Err(e) => {
-                    // Task join error - this is more serious
-                    return Err(ExtractorError::method_extraction(
-                        "unsupported",
-                        PathBuf::from("unknown"),
-                        format!("Task execution failed: {e}"),
-                    ));
-                }
+        #[cfg(target_arch = "wasm32")]
+        {
+            for source_file in source_files {
+                let result = extractor.parse(&source_file).await;
+                all_extraction_results.push(result);
             }
         }
 

@@ -12,9 +12,11 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    path::PathBuf,
     time::{Duration, SystemTime},
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
 use tokio::sync::{OnceCell, RwLock};
 
@@ -266,7 +268,7 @@ where
 
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
     pub(crate) service_reference_mapping: HashMap<String, Url>,
@@ -307,6 +309,7 @@ pub(crate) struct RemoteServiceReferenceLoader {
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
     service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
     mapping_url: String,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     disable_file_system_cache: bool,
 }
 
@@ -409,6 +412,7 @@ impl RemoteServiceReferenceLoader {
             })
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn get_cache_dir() -> PathBuf {
         // not using tempfile crate
         // instead, using the std to resolve temp dir and then manage the file itself
@@ -418,10 +422,12 @@ impl RemoteServiceReferenceLoader {
         cache_dir
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn get_cache_path(service_name: &str) -> PathBuf {
         Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn is_cache_valid(path: &PathBuf) -> bool {
         if let Ok(metadata) = fs::metadata(path).await {
             if let Ok(modified) = metadata.modified() {
@@ -445,16 +451,21 @@ impl RemoteServiceReferenceLoader {
             }
         }
 
-        // check temp file
-        let cache_path = Self::get_cache_path(service_name);
-        if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
-            if let Ok(content) = fs::read_to_string(&cache_path).await {
-                if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await {
-                    self.service_cache.write().await.insert(
-                        service_name.to_string(),
-                        (service_ref.clone(), SystemTime::now()),
-                    );
-                    return Ok(Some(service_ref));
+        // Filesystem cache — not available on WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let cache_path = Self::get_cache_path(service_name);
+            if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
+                if let Ok(content) = fs::read_to_string(&cache_path).await {
+                    if let Ok(service_ref) =
+                        JsonProvider::parse::<ServiceReference>(&content).await
+                    {
+                        self.service_cache.write().await.insert(
+                            service_name.to_string(),
+                            (service_ref.clone(), SystemTime::now()),
+                        );
+                        return Ok(Some(service_ref));
+                    }
                 }
             }
         }
@@ -498,7 +509,9 @@ impl RemoteServiceReferenceLoader {
                         )
                     })?;
                 // persist content into the temp file as well
+                #[cfg(not(target_arch = "wasm32"))]
                 if !self.disable_file_system_cache {
+                    let cache_path = Self::get_cache_path(service_name);
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
                 self.service_cache.write().await.insert(

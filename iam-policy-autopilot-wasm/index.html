@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>IAM Policy Autopilot</title>
+		<style>
+			* {
+				box-sizing: border-box;
+				margin: 0;
+				padding: 0;
+			}
+			body {
+				font-family: system-ui, sans-serif;
+				max-width: 900px;
+				margin: 2rem auto;
+				padding: 0 1rem;
+				color: #1a1a1a;
+			}
+			h1 {
+				margin-bottom: 1.5rem;
+			}
+			label {
+				display: block;
+				font-weight: 600;
+				margin-bottom: 0.3rem;
+			}
+			input,
+			textarea {
+				width: 100%;
+				padding: 0.5rem;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				font-family: monospace;
+				font-size: 0.9rem;
+			}
+			textarea {
+				height: 260px;
+				resize: vertical;
+			}
+			.row {
+				display: flex;
+				gap: 1rem;
+				margin-bottom: 1rem;
+			}
+			.row > div {
+				flex: 1;
+			}
+			.buttons {
+				display: flex;
+				gap: 0.75rem;
+				margin: 1rem 0;
+			}
+			button {
+				padding: 0.55rem 1.2rem;
+				border: none;
+				border-radius: 4px;
+				font-size: 0.9rem;
+				cursor: pointer;
+				color: #fff;
+			}
+			button:disabled {
+				opacity: 0.5;
+				cursor: wait;
+			}
+			#btnExtract {
+				background: #0969da;
+			}
+			#btnGenerate {
+				background: #1a7f37;
+			}
+			pre {
+				background: #f6f8fa;
+				border: 1px solid #d0d7de;
+				border-radius: 6px;
+				padding: 1rem;
+				overflow: auto;
+				max-height: 400px;
+				font-size: 0.85rem;
+				white-space: pre-wrap;
+				word-break: break-word;
+			}
+			.status {
+				font-size: 0.85rem;
+				color: #666;
+				margin-bottom: 0.5rem;
+			}
+		</style>
+	</head>
+	<body>
+		<h1>IAM Policy Autopilot — WASM</h1>
+
+		<label for="filename">Filename</label>
+		<div class="row">
+			<div><input id="filename" value="app.py" placeholder="e.g. app.py, handler.ts, main.go" /></div>
+			<div><input id="region" value="us-east-1" placeholder="AWS region" /></div>
+			<div><input id="account" value="123456789012" placeholder="AWS account ID" /></div>
+		</div>
+
+		<label for="source">Source code</label>
+		<textarea id="source" spellcheck="false">
+import boto3
+
+s3 = boto3.client('s3')
+s3.get_object(Bucket='my-bucket', Key='my-key')
+s3.put_object(Bucket='my-bucket', Key='new.txt', Body=b'hello')
+
+dynamodb = boto3.client('dynamodb')
+dynamodb.get_item(TableName='my-table', Key={'id': {'S': '123'}})
+</textarea
+		>
+
+		<div class="buttons">
+			<button id="btnExtract">Extract SDK Calls</button>
+			<button id="btnGenerate">Generate Policies</button>
+		</div>
+
+		<p class="status" id="status">Loading modules…</p>
+		<label>Output</label>
+		<pre id="output"></pre>
+
+		<script type="module">
+			import init, { validateAndGeneratePolicies } from "./pkg/iam_policy_autopilot_wasm.js";
+			import { initExtractor, extractSdkCalls, detectLanguage } from "./extractor.js";
+
+			const $ = (id) => document.getElementById(id);
+
+			// Initialise both the Rust WASM module and the JS tree-sitter extractor
+			$("status").textContent = "Loading WASM module + tree-sitter…";
+			await Promise.all([init(), initExtractor()]);
+			$("status").textContent = "Ready.";
+
+			async function run(btn, fn) {
+				try {
+					btn.disabled = true;
+					$("status").textContent = "Running…";
+					const t0 = performance.now();
+					const result = await fn();
+					$("output").textContent = result;
+					$("status").textContent = `Done in ${(performance.now() - t0).toFixed(0)} ms`;
+				} catch (e) {
+					$("output").textContent = `Error: ${e}`;
+					$("status").textContent = "Failed";
+				} finally {
+					btn.disabled = false;
+				}
+			}
+
+			// Extract SDK calls (JS only — no Rust involved)
+			$("btnExtract").addEventListener("click", function () {
+				run(this, async () => {
+					const lang = detectLanguage($("filename").value);
+					const calls = await extractSdkCalls($("source").value, lang);
+					return JSON.stringify(calls, null, 2);
+				});
+			});
+
+			// Full pipeline: JS extract → Rust validate + enrich + generate
+			$("btnGenerate").addEventListener("click", function () {
+				run(this, async () => {
+					const lang = detectLanguage($("filename").value);
+					const calls = await extractSdkCalls($("source").value, lang);
+					const json = JSON.stringify(calls);
+					return await validateAndGeneratePolicies(json, lang, $("region").value, $("account").value);
+				});
+			});
+		</script>
+	</body>
+</html>
