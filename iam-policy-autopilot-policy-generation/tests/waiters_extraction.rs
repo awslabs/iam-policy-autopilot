@@ -2,6 +2,7 @@ use convert_case::{Case, Casing};
 use iam_policy_autopilot_policy_generation::api::{
     extract_sdk_calls, model::ExtractSdkCallsConfig,
 };
+use iam_policy_autopilot_policy_generation::{Language, ServiceDiscovery};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -134,8 +135,9 @@ impl TestRunner {
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python
-        let waiter_snake = aws_python_case_conversion(waiter_name);
+        // Convert operation to snake_case for Python using the same logic as the implementation
+        let waiter_snake =
+            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
 
         format!(
             r#"import boto3
@@ -160,8 +162,9 @@ def test_waiter_operation():
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python
-        let waiter_snake = aws_python_case_conversion(waiter_name);
+        // Convert operation to snake_case for Python using the same logic as the implementation
+        let waiter_snake =
+            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
 
         // Generate parameter assignments for the wait call using stored parameters
         let mut param_assignments = Vec::new();
@@ -202,8 +205,9 @@ def test_waiter_operation():
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python
-        let waiter_snake = aws_python_case_conversion(waiter_name);
+        // Convert operation to snake_case for Python using the same logic as the implementation
+        let waiter_snake =
+            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
 
         // Generate parameter assignments for the wait call using stored parameters
         let mut param_assignments = Vec::new();
@@ -505,7 +509,10 @@ testWaiterOperation();
             Ok(response) => {
                 // Handle Python's special case with snake_case conversion
                 let expected_operation = if language.to_lowercase() == "python" {
-                    &aws_python_case_conversion(&self.waiter.operation)
+                    &ServiceDiscovery::operation_to_method_name(
+                        &self.waiter.operation,
+                        Language::Python,
+                    )
                 } else {
                     &self.waiter.operation
                 };
@@ -769,48 +776,22 @@ fn generate_python_mock_value_for_shape(shape: &str) -> String {
     }
 }
 
-/// Convert AWS operation names to Python method names with special handling for version suffixes
-///
-/// This function uses convert_case for the base conversion but fixes AWS-specific patterns
-/// like "V2", "V3" suffixes that should not have underscores inserted.
-///
-/// Examples:
-/// - "ListObjectsV2" → "list_objects_v2" (not "list_objects_v_2")
-/// - "GetObjectV1" → "get_object_v1" (not "get_object_v_1")
-/// - "CreateBucket" → "create_bucket" (normal cases unchanged)
-fn aws_python_case_conversion(operation_name: &str) -> String {
-    // First, apply normal snake_case conversion
-    let snake_case = operation_name.to_case(Case::Snake);
-
-    // Fix AWS version suffixes at the end: "_v_N" → "_vN" where N is digits
-    // Only replace if "_v_" is followed by digits and is at the end of string
-    if snake_case.len() >= 4 && snake_case.ends_with(|c: char| c.is_ascii_digit()) {
-        if let Some(v_pos) = snake_case.rfind("_v_") {
-            let after_v = &snake_case[v_pos + 3..];
-            // Check if everything after "_v_" is digits (ensuring it's a version suffix)
-            if after_v.chars().all(|c| c.is_ascii_digit()) {
-                let prefix = &snake_case[..v_pos];
-                return format!("{prefix}_v{after_v}");
-            }
-        }
-    }
-
-    snake_case
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_snake_case_conversion() {
-        assert_eq!(aws_python_case_conversion("HeadBucket"), "head_bucket");
+    fn test_operation_to_method_name() {
         assert_eq!(
-            aws_python_case_conversion("DescribeInstances"),
+            ServiceDiscovery::operation_to_method_name("HeadBucket", Language::Python),
+            "head_bucket"
+        );
+        assert_eq!(
+            ServiceDiscovery::operation_to_method_name("DescribeInstances", Language::Python),
             "describe_instances"
         );
         assert_eq!(
-            aws_python_case_conversion("DescribeDBInstances"),
+            ServiceDiscovery::operation_to_method_name("DescribeDBInstances", Language::Python),
             "describe_db_instances"
         );
     }

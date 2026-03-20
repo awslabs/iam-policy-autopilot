@@ -36,6 +36,35 @@ To send us a pull request, please:
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
+### Code Style & Linting
+
+Ensure your changes pass all linters. The CI will enforce these checks automatically.
+
+**Rust**
+
+```bash
+# Format all Rust code
+cargo fmt --all
+
+# Run Clippy (warnings are treated as errors in CI)
+cargo clippy --workspace
+```
+
+**Python** (scripts in `iam-policy-autopilot-policy-generation/scripts/`)
+
+```bash
+# Lint
+ruff check .
+
+# Format
+ruff format .
+
+# Check formatting without modifying files (as CI does)
+ruff format --check .
+```
+
+Ruff is configured in [`pyproject.toml`](pyproject.toml) at the repository root. Install it with `pip install ruff` or via your package manager.
+
 ### Commit Message Guidelines
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. This helps with automated changelog generation and makes the commit history more readable.

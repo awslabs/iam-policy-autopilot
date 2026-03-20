@@ -266,7 +266,7 @@ where
 
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
     pub(crate) service_reference_mapping: HashMap<String, Url>,

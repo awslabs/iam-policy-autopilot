@@ -20,6 +20,9 @@ pub(crate) mod waiter_model;
 
 // Re-export main types for convenience
 pub use engine::Engine;
+// Not part of the stable public API — exposed only for integration tests in tests/.
+#[doc(hidden)]
+pub use sdk_model::ServiceDiscovery;
 pub(crate) use sdk_model::ServiceModelIndex;
 pub(crate) use service_hints::ServiceHintsProcessor;
 
