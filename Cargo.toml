@@ -4,7 +4,8 @@ members = [
     "iam-policy-autopilot-tools",
     "iam-policy-autopilot-mcp-server",
     "iam-policy-autopilot-access-denied",
-    "iam-policy-autopilot-cli"
+    "iam-policy-autopilot-cli",
+    "iam-policy-autopilot-wasm"
 ]
 exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"

@@ -7,20 +7,31 @@
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod engine;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod extractor;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod go;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod javascript;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod python;
 pub(crate) mod sdk_model;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod service_hints;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod shared;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
 // Re-export main types for convenience
+#[cfg(feature = "tree-sitter")]
 pub use engine::Engine;
+#[cfg(feature = "tree-sitter")]
 pub(crate) use sdk_model::ServiceModelIndex;
+#[cfg(feature = "tree-sitter")]
 pub(crate) use service_hints::ServiceHintsProcessor;
 
 // Re-export all core and output types for convenience
@@ -28,20 +39,24 @@ pub use self::{core::*, output::*};
 
 /// Core data structures for source file parsing and method extraction
 pub mod core {
+    #[cfg(feature = "tree-sitter")]
     use std::sync::Arc;
 
     use schemars::JsonSchema;
 
-    use crate::{Language, Location};
+    use crate::Language;
+    use crate::Location;
 
     use super::{Deserialize, Path, PathBuf, Serialize};
 
+    #[cfg(feature = "tree-sitter")]
     #[derive(Clone)]
     pub(crate) struct AstWithSourceFile<T: ast_grep_language::LanguageExt> {
         pub(crate) ast: Arc<ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>>,
         pub(crate) source_file: Arc<SourceFile>,
     }
 
+    #[cfg(feature = "tree-sitter")]
     impl<T: ast_grep_language::LanguageExt> AstWithSourceFile<T> {
         pub(crate) fn new(
             ast: ast_grep_core::AstGrep<ast_grep_core::tree_sitter::StrDoc<T>>,
