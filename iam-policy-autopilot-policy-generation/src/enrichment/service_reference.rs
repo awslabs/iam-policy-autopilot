@@ -302,7 +302,7 @@ fn deserialize_service_reference_mapping(
 /// with exact service name matching and thread-safe caching. Service names
 /// must match exactly between input and Service Reference Name (case-sensitive).
 #[derive(Debug)]
-#[cfg_attr(feature = "integ-test", visibility::make(pub))]
+
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
@@ -324,8 +324,8 @@ impl RemoteServiceReferenceLoader {
 
     /// Creates a loader that always returns `None` for any service.
     /// Useful in tests that don't need real SDF data.
-    #[cfg(any(test, feature = "integ-test"))]
-    #[cfg_attr(feature = "integ-test", visibility::make(pub))]
+    #[cfg(test)]
+    
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
             client: Self::create_client()?,
@@ -345,8 +345,8 @@ impl RemoteServiceReferenceLoader {
 
     /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
     /// so the next call fetches from the new URL.
-    #[cfg(any(test, feature = "integ-test"))]
-    #[cfg_attr(feature = "integ-test", visibility::make(pub))]
+    #[cfg(test)]
+    
     pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
         self.mapping_url = url;
         self.service_reference_mapping = OnceCell::new();

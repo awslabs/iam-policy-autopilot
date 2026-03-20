@@ -69,8 +69,6 @@ pub struct ResolvedTerraformResource {
     pub hcl_arn: Option<String>,
     /// The resolved naming attribute value (e.g. `"my-app-data-bucket"`).
     pub binding_name: Option<String>,
-    /// Handler entry point if applicable (e.g. `"index.handler"`).
-    pub handler: Option<String>,
 }
 
 /// Map key: `(service_name, resource_type)` e.g. `("s3", "bucket")`.
@@ -91,26 +89,28 @@ impl ResolvedTerraformResource {
             state_arn: None,
             state_arn_location: None,
             hcl_arn: None,
-            binding_name: None,
-            handler: None,
+            binding_name: None
         }
     }
 
-    /// The best available ARN: state ARN if present, otherwise HCL-derived.
+    /// The best available ARN: state ARN if present, otherwise HCL-derived.  
     #[must_use]
-    pub fn effective_arn(&self) -> Option<&str> {
+    #[cfg(test)]
+    pub(crate) fn effective_arn(&self) -> Option<&str> {
         self.state_arn.as_deref().or(self.hcl_arn.as_deref())
     }
 
-    /// Whether this resource has any ARN (state or HCL).
+    /// Whether this resource has any ARN (state or HCL).  
     #[must_use]
-    pub fn has_arn(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn has_arn(&self) -> bool {
         self.effective_arn().is_some()
     }
 
     /// Whether this resource was mapped to an IAM service.
     #[must_use]
-    pub fn has_service_reference_mapping(&self) -> bool {
+    #[cfg(test)] 
+    pub(crate) fn has_service_reference_mapping(&self) -> bool {
         self.service_name.is_some()
     }
 }
@@ -129,6 +129,7 @@ pub struct TerraformResourceResolver {
     /// All resolved resources keyed by `(service_name, resource_type)`.
     resources: ResolvedResourceMap,
     /// Parse warnings from HCL parsing.
+    #[allow(dead_code)]
     warnings: Vec<String>,
 }
 
@@ -200,19 +201,6 @@ impl TerraformResourceResolver {
         })
     }
 
-    /// Build a resolver from a Terraform project directory.
-    ///
-    /// Convenience method that wraps [`Self::new`] for the common case of a single
-    /// directory with an optional single tfstate file.
-    pub async fn from_directory(
-        directory: &Path,
-        tfstate_path: Option<&PathBuf>,
-        loader: &ServiceReferenceLoader,
-    ) -> Result<Self> {
-        let tfstate_paths: Vec<PathBuf> = tfstate_path.into_iter().cloned().collect();
-        Self::new(Some(directory), &[], &tfstate_paths, loader).await
-    }
-
     /// Build a resolver directly from pre-computed components (useful for testing).
     #[cfg(test)]
     pub fn from_resolved_map(resources: ResolvedResourceMap) -> Self {
@@ -222,23 +210,13 @@ impl TerraformResourceResolver {
         }
     }
 
-    /// Access the resolved resource map.
-    #[must_use]
-    pub fn resources(&self) -> &ResolvedResourceMap {
-        &self.resources
-    }
-
-    /// Access parse warnings.
-    #[must_use]
-    pub fn warnings(&self) -> &[String] {
-        &self.warnings
-    }
-
     /// Returns `true` if no IAM-mappable resources were resolved.
     #[must_use]
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.resources.is_empty()
     }
+
 
     /// Number of distinct `(service, resource_type)` groups resolved.
     #[must_use]
@@ -250,16 +228,6 @@ impl TerraformResourceResolver {
     // ARN substitution
     // -----------------------------------------------------------------------
 
-    /// Public wrapper around the internal `substitute_arn_patterns` for integration tests.
-    #[cfg(any(test, feature = "integ-test"))]
-    pub fn substitute_arn_patterns_for_test(
-        &self,
-        service: &str,
-        resource_type_name: &str,
-        arn_patterns: &[String],
-    ) -> Option<Vec<String>> {
-        self.substitute_arn_patterns(service, resource_type_name, arn_patterns)
-    }
 
     /// Apply Terraform resource bindings to enriched SDK calls.
     ///
@@ -332,7 +300,6 @@ impl TerraformResourceResolver {
     ///
     /// Returns `None` when no useful substitution can be made.
     ///
-    /// Exposed as public for integration tests via `substitute_arn_patterns_for_test`.
     fn substitute_arn_patterns(
         &self,
         service: &str,
@@ -855,8 +822,7 @@ mod tests {
             state_arn: state_arn.map(String::from),
             state_arn_location: state_arn_location,
             hcl_arn: hcl_arn.map(String::from),
-            binding_name: binding_name.map(String::from),
-            handler: None
+            binding_name: binding_name.map(String::from)
         }
     }
 

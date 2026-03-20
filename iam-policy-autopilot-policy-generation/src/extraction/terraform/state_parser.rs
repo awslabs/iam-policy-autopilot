@@ -97,15 +97,10 @@ impl TerraformStateResources {
         self.resources.len()
     }
 
-    /// Returns `true` if there are no state resources.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.resources.is_empty()
-    }
-
     /// Returns `true` if the given key is present.
     #[must_use]
-    pub fn contains_key(&self, resource_type: &str, local_name: &str) -> bool {
+    #[cfg(test)]
+    pub(crate) fn contains_key(&self, resource_type: &str, local_name: &str) -> bool {
         self.resources
             .contains_key(&(resource_type.to_string(), local_name.to_string()))
     }

@@ -33,7 +33,8 @@ impl AttributeValue {
     /// For `Literal`, returns the literal value.
     /// For `Expression`, returns the raw expression text.
     #[must_use]
-    pub fn as_str(&self) -> &str {
+    #[cfg(test)]
+    pub(crate) fn as_str(&self) -> &str {
         match self {
             Self::Literal(s) | Self::Expression(s) => s,
         }
@@ -41,7 +42,8 @@ impl AttributeValue {
 
     /// Returns `true` if this is a `Literal` value.
     #[must_use]
-    pub fn is_literal(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_literal(&self) -> bool {
         matches!(self, Self::Literal(_))
     }
 }
@@ -92,7 +94,8 @@ impl TerraformResources {
 
     /// Look up a resource by type and local name.
     #[must_use]
-    pub fn get(&self, resource_type: &str, local_name: &str) -> Option<&TerraformResource> {
+    #[cfg(test)]  
+    pub(crate) fn get(&self, resource_type: &str, local_name: &str) -> Option<&TerraformResource> {
         self.resources
             .get(&(resource_type.to_string(), local_name.to_string()))
     }
@@ -105,7 +108,8 @@ impl TerraformResources {
 
     /// Returns `true` if there are no resources.
     #[must_use]
-    pub fn is_empty(&self) -> bool {
+    #[cfg(test)] 
+    pub(crate) fn is_empty(&self) -> bool {
         self.resources.is_empty()
     }
 
