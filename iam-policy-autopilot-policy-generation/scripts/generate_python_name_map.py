@@ -3,9 +3,7 @@
 Generate a lookup table of AWS operation names → Python snake_case method names.
 
 This script uses botocore's own xform_name() function to produce the authoritative
-mapping for all operation names found in the botocore service data directory, plus
-all entries pre-populated in botocore's _xform_cache (special cases that may not
-appear in the current service data but are handled specially by botocore).
+mapping for all operation names found in the botocore service data directory.
 
 The resulting JSON maps every PascalCase operation name to its Python snake_case
 equivalent as boto3 uses it. The caller (build.rs) is responsible for filtering out
@@ -88,16 +86,6 @@ def main():
                 waiter_name_str = str(waiter_name)
                 if waiter_name_str not in operations:
                     operations[waiter_name_str] = xform_name(waiter_name_str)
-
-    # Also include all pre-populated special cases from botocore's _xform_cache.
-    # These cover names that may not appear in the current service data but are handled
-    # specially by botocore (e.g. PartiQL operations, iSCSI operations, HITs).
-    # Only include '_' separator entries (boto3 uses underscores for method names).
-    xform_cache_entries = 0
-    for (name, sep), result in _xform_cache.items():
-        if sep == "_" and name not in operations:
-            operations[name] = result
-            xform_cache_entries += 1
 
     # Write the full map as JSON (sorted keys for deterministic output).
     # build.rs will filter this down to only the entries that differ from convert_case.
