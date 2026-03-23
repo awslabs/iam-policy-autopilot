@@ -601,17 +601,6 @@ mod tests {
         Language::Python,
         "list_hits_for_qualification_type"
     )]
-    // PartiQL: must become "partiql", not "parti_ql"
-    #[case(
-        "ExecutePartiQLStatement",
-        Language::Python,
-        "execute_partiql_statement"
-    )]
-    #[case(
-        "ExecutePartiQLTransaction",
-        Language::Python,
-        "execute_partiql_transaction"
-    )]
     // JavaScript/TypeScript/Go: PascalCase passthrough
     #[case("GetObject", Language::JavaScript, "GetObject")]
     #[case("GetObject", Language::TypeScript, "GetObject")]

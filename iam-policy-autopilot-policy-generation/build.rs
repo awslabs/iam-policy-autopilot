@@ -646,8 +646,9 @@ fn generate_python_name_map(output_dir: &Path) -> Result<(), Box<dyn std::error:
     // either direction. We need to cover both:
     //
     // 1. Forward (PascalCase → snake_case): botocore's xform_name() differs from
-    //    convert_case::Case::Snake. Example: "ExecutePartiQLStatement" →
-    //    botocore: "execute_partiql_statement", convert_case: "execute_parti_q_l_statement".
+    //    convert_case::Case::Snake. Example: "AssignIpv6Addresses" →
+    //    botocore: "assign_ipv6_addresses", convert_case: "assign_ipv_6_addresses"
+    //    (convert_case splits on digit boundaries: LOWER_DIGIT at "v6" and DIGIT_UPPER at "6A").
     //
     // 2. Reverse (snake_case → PascalCase): convert_case::Case::Pascal applied to the botocore
     //    snake_case name does not round-trip back to the original PascalCase. Example:
