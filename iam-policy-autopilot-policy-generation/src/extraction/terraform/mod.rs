@@ -94,7 +94,7 @@ impl TerraformResources {
 
     /// Look up a resource by type and local name.
     #[must_use]
-    #[cfg(test)]  
+    #[cfg(test)]
     pub(crate) fn get(&self, resource_type: &str, local_name: &str) -> Option<&TerraformResource> {
         self.resources
             .get(&(resource_type.to_string(), local_name.to_string()))
@@ -108,7 +108,7 @@ impl TerraformResources {
 
     /// Returns `true` if there are no resources.
     #[must_use]
-    #[cfg(test)] 
+    #[cfg(test)]
     pub(crate) fn is_empty(&self) -> bool {
         self.resources.is_empty()
     }

@@ -487,14 +487,24 @@ mod tests {
                 .iter()
                 .find(|e| e.service_key == service_key)
                 .unwrap_or_else(|| panic!("service_key '{service_key}' not found"));
-            assert_eq!(entry.arn_namespace, expected_arn_ns, "arn_namespace mismatch for {service_key}");
-            assert_eq!(entry.resource_prefix.correct, expected_prefix, "correct prefix mismatch for {service_key}");
-            assert_eq!(entry.resource_prefix.actual.is_some(), has_actual, "actual pattern mismatch for {service_key}");
+            assert_eq!(
+                entry.arn_namespace, expected_arn_ns,
+                "arn_namespace mismatch for {service_key}"
+            );
+            assert_eq!(
+                entry.resource_prefix.correct, expected_prefix,
+                "correct prefix mismatch for {service_key}"
+            );
+            assert_eq!(
+                entry.resource_prefix.actual.is_some(),
+                has_actual,
+                "actual pattern mismatch for {service_key}"
+            );
         }
     }
 
     #[rstest]
-    #[case("s3",  "s3",  "aws_s3_",  true)]
+    #[case("s3", "s3", "aws_s3_", true)]
     #[case("sqs", "sqs", "aws_sqs_", false)]
     #[case("amp", "aps", "aws_amp_", true)]
     fn test_parse_names_data_service_entry(
@@ -506,7 +516,12 @@ mod tests {
         assert_parse_names_data(
             NAMES_DATA_HCL,
             Some(50),
-            &[(service_key, expected_arn_ns, expected_resource_prefix, has_actual)],
+            &[(
+                service_key,
+                expected_arn_ns,
+                expected_resource_prefix,
+                has_actual,
+            )],
         );
     }
 
@@ -603,19 +618,21 @@ mod tests {
 
     #[rstest]
     // Expanded alternation entries present in prefix_map
-    #[case("prefix_aws_db",           "prefix",  "aws_db_")]
-    #[case("prefix_aws_rds",          "prefix",  "aws_rds_")]
+    #[case("prefix_aws_db", "prefix", "aws_db_")]
+    #[case("prefix_aws_rds", "prefix", "aws_rds_")]
     // Exact match entries present in exact_map
-    #[case("exact_canonical_user_id",  "exact",   "aws_canonical_user_id")]
-    fn test_resolver_internal_maps(
-        #[case] _name: &str,
-        #[case] map_type: &str,
-        #[case] key: &str,
-    ) {
+    #[case("exact_canonical_user_id", "exact", "aws_canonical_user_id")]
+    fn test_resolver_internal_maps(#[case] _name: &str, #[case] map_type: &str, #[case] key: &str) {
         let resolver = TerraformServiceAndResourceResolver::global();
         match map_type {
-            "prefix" => assert!(resolver.prefix_map.contains_key(key), "prefix_map missing '{key}'"),
-            "exact"  => assert!(resolver.exact_map.contains_key(key), "exact_map missing '{key}'"),
+            "prefix" => assert!(
+                resolver.prefix_map.contains_key(key),
+                "prefix_map missing '{key}'"
+            ),
+            "exact" => assert!(
+                resolver.exact_map.contains_key(key),
+                "exact_map missing '{key}'"
+            ),
             _ => panic!("unknown map_type: {map_type}"),
         }
     }

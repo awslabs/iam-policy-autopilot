@@ -16,14 +16,14 @@ use walkdir::WalkDir;
 
 use crate::Location;
 
-use super::{AttributeValue, TerraformResources, TerraformResource};
+use super::{AttributeValue, TerraformResource, TerraformResources};
 
 impl TerraformResources {
     /// Parse all `.tf` files in a directory recursively and add them to this collection.
     ///
     /// Discovers every file ending in `.tf`, parses it with `hcl-rs`, and extends
     /// `self` in-place. Files with syntax errors are recorded as warnings and skipped.
-    pub(crate) fn from_directory(&mut self, dir: &Path) -> Result<()> {
+    pub(crate) fn parse_directory(&mut self, dir: &Path) -> Result<()> {
         let tf_files = discover_tf_files(dir);
 
         if tf_files.is_empty() {
@@ -58,7 +58,7 @@ impl TerraformResources {
     ///
     /// Extends `self` in-place. Files with syntax errors are recorded as
     /// warnings and skipped.
-    pub(crate) fn from_files(&mut self, files: &[PathBuf]) -> Result<()> {
+    pub(crate) fn parse_files(&mut self, files: &[PathBuf]) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }
@@ -139,9 +139,8 @@ fn extract_resource_block(
     }
 
     let attributes = extract_block_attributes(&block.body);
-    let location =
-        find_block_location(content, source_path, resource_type, local_name)
-            .unwrap_or_else(|| Location::new(source_path.to_path_buf(), (1, 1), (1, 1)));
+    let location = find_block_location(content, source_path, resource_type, local_name)
+        .unwrap_or_else(|| Location::new(source_path.to_path_buf(), (1, 1), (1, 1)));
 
     Some(TerraformResource {
         resource_type: resource_type.to_string(),
@@ -309,12 +308,14 @@ mod tests {
         );
 
         for expected in expected_resources {
-            let resource = result.get(expected.resource_type, expected.local_name).unwrap_or_else(|| {
-                panic!(
-                    "expected resource {}.{} not found",
-                    expected.resource_type, expected.local_name
-                )
-            });
+            let resource = result
+                .get(expected.resource_type, expected.local_name)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "expected resource {}.{} not found",
+                        expected.resource_type, expected.local_name
+                    )
+                });
             assert_eq!(resource.resource_type, expected.resource_type);
             assert_eq!(resource.local_name, expected.local_name);
 
@@ -651,13 +652,9 @@ resource "aws_s3_bucket" "b" {
         }
 
         let mut result = TerraformResources::default();
-        result.from_directory(tmp.path()).expect("should parse dir");
+        result.parse_directory(tmp.path()).expect("should parse dir");
 
-        assert_eq!(
-            result.len(),
-            expected_count,
-            "resource count mismatch"
-        );
+        assert_eq!(result.len(), expected_count, "resource count mismatch");
 
         let types: Vec<&str> = result.values().map(|r| r.resource_type.as_str()).collect();
         for expected_type in expected_types {
@@ -670,7 +667,10 @@ resource "aws_s3_bucket" "b" {
         match expected_warning_contains {
             None => assert!(result.warnings().is_empty(), "expected no warnings"),
             Some(substr) => {
-                assert!(!result.warnings().is_empty(), "expected warnings but got none");
+                assert!(
+                    !result.warnings().is_empty(),
+                    "expected warnings but got none"
+                );
                 assert!(
                     result.warnings().iter().any(|w| w.contains(substr)),
                     "no warning contains '{substr}', got: {:?}",
@@ -730,7 +730,12 @@ resource "aws_s3_bucket" "b" {
         #[case] expected_types: &[&str],
         #[case] expected_warning_contains: Option<&str>,
     ) {
-        assert_directory_parse(files, expected_count, expected_types, expected_warning_contains);
+        assert_directory_parse(
+            files,
+            expected_count,
+            expected_types,
+            expected_warning_contains,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -794,12 +799,17 @@ resource "aws_s3_bucket" "b" {
         match expected {
             None => assert!(result.is_none(), "[{_name}] expected None"),
             Some((start_line, start_col, end_line, end_col)) => {
-                let loc = result.unwrap_or_else(|| panic!("[{_name}] expected location to be found"));
+                let loc =
+                    result.unwrap_or_else(|| panic!("[{_name}] expected location to be found"));
                 assert_eq!(loc.start_line(), start_line, "[{_name}] start_line");
                 assert_eq!(loc.start_col(), start_col, "[{_name}] start_col");
                 assert_eq!(loc.end_line(), end_line, "[{_name}] end_line");
                 assert_eq!(loc.end_col(), end_col, "[{_name}] end_col");
-                assert_eq!(loc.file_path, PathBuf::from("test.tf"), "[{_name}] file_path");
+                assert_eq!(
+                    loc.file_path,
+                    PathBuf::from("test.tf"),
+                    "[{_name}] file_path"
+                );
             }
         }
     }

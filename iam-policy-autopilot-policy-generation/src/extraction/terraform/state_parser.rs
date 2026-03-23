@@ -86,7 +86,11 @@ impl TerraformStateResources {
     ///
     /// Returns a reference to the set of resources, or `None` if not present.
     #[must_use]
-    pub(crate) fn get(&self, resource_type: &str, local_name: &str) -> Option<&HashSet<StateResource>> {
+    pub(crate) fn get(
+        &self,
+        resource_type: &str,
+        local_name: &str,
+    ) -> Option<&HashSet<StateResource>> {
         self.resources
             .get(&(resource_type.to_string(), local_name.to_string()))
     }
@@ -207,10 +211,8 @@ fn find_string_location(content: &str, source_path: &Path, value: &str) -> Optio
         }
         // Skip ":" separator, then check value
         for child in children {
-            if child.kind() != ":" {
-                if child.text().trim_matches('"') == value {
-                    return Some(Location::from_node(source_path.to_path_buf(), &child));
-                }
+            if child.kind() != ":" && child.text().trim_matches('"') == value {
+                return Some(Location::from_node(source_path.to_path_buf(), &child));
             }
         }
     }
@@ -361,7 +363,8 @@ mod tests {
         expected_resources: &[ExpectedStateResource],
         expected_absent: &[(&str, &str)],
     ) {
-        let map = parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
+        let map =
+            parse_terraform_state_content(json, Path::new("terraform.tfstate")).expect("parse");
         assert_eq!(map.len(), expected_count, "resource group count mismatch");
 
         for exp in expected_resources {
@@ -465,7 +468,11 @@ mod tests {
             .next()
             .unwrap();
         let loc = r.arn_location.as_ref().expect("should have location");
-        assert_eq!(loc.file_path, PathBuf::from(file_name), "file_path mismatch");
+        assert_eq!(
+            loc.file_path,
+            PathBuf::from(file_name),
+            "file_path mismatch"
+        );
         assert_eq!(loc.start_line(), expected_line, "start_line mismatch");
         assert_eq!(loc.start_col(), expected_start_col, "start_col mismatch");
         assert_eq!(loc.end_col(), expected_end_col, "end_col mismatch");
@@ -476,15 +483,23 @@ mod tests {
     #[case(
         "sample_s3",
         None,
-        "terraform.tfstate", "aws_s3_bucket", "data_bucket",
-        13, 20, 53
+        "terraform.tfstate",
+        "aws_s3_bucket",
+        "data_bucket",
+        13,
+        20,
+        53
     )]
     // DynamoDB in sample state: line 28
     #[case(
         "sample_dynamodb",
         None,
-        "terraform.tfstate", "aws_dynamodb_table", "users_table",
-        28, 20, 79
+        "terraform.tfstate",
+        "aws_dynamodb_table",
+        "users_table",
+        28,
+        20,
+        79
     )]
     // Minimal state with exact positions
     #[case(
@@ -504,7 +519,15 @@ mod tests {
         #[case] expected_end_col: usize,
     ) {
         let json = json_override.unwrap_or_else(|| sample_state_json());
-        assert_arn_location(json, file_name, resource_type, name, expected_line, expected_start_col, expected_end_col);
+        assert_arn_location(
+            json,
+            file_name,
+            resource_type,
+            name,
+            expected_line,
+            expected_start_col,
+            expected_end_col,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -518,12 +541,7 @@ mod tests {
         "arn:aws:s3:::my-bucket",
         Some((1, 9))
     )]
-    #[case(
-        "not_found",
-        r#"{"bucket": "my-bucket"}"#,
-        "nonexistent",
-        None
-    )]
+    #[case("not_found", r#"{"bucket": "my-bucket"}"#, "nonexistent", None)]
     #[case(
         "multiline",
         "{\n  \"name\": \"test\",\n  \"arn\": \"arn:aws:s3:::b\"\n}",

@@ -144,7 +144,10 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             debug!("Terraform directory provided: {}", terraform_dir.display());
         }
         if !config.terraform_files.is_empty() {
-            debug!("{} individual Terraform files provided", config.terraform_files.len());
+            debug!(
+                "{} individual Terraform files provided",
+                config.terraform_files.len()
+            );
         }
         if !config.tfstate_paths.is_empty() {
             debug!("{} tfstate files provided", config.tfstate_paths.len());

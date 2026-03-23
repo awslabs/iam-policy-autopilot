@@ -45,7 +45,11 @@ fn discover_source_files(name: &str) -> Vec<PathBuf> {
 
 fn discover_tfstate(name: &str) -> Vec<PathBuf> {
     let p = fixture_dir(name).join("terraform.tfstate");
-    if p.exists() { vec![p] } else { vec![] }
+    if p.exists() {
+        vec![p]
+    } else {
+        vec![]
+    }
 }
 
 fn config(name: &str) -> GeneratePolicyConfig {

@@ -23,12 +23,12 @@ use log::debug;
 use regex::Regex;
 
 use crate::enrichment::ServiceReferenceLoader;
-use crate::Location;
 use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
+use crate::Location;
 
 use crate::extraction::terraform::state_parser::TerraformStateResources;
 use crate::extraction::terraform::variable_resolver::VariableContext;
-use crate::extraction::terraform::{AttributeValue, TerraformResources, TerraformResource};
+use crate::extraction::terraform::{AttributeValue, TerraformResource, TerraformResources};
 
 use super::{BindingSource, ResourceBindingExplanation};
 
@@ -89,7 +89,7 @@ impl ResolvedTerraformResource {
             state_arn: None,
             state_arn_location: None,
             hcl_arn: None,
-            binding_name: None
+            binding_name: None,
         }
     }
 
@@ -106,7 +106,6 @@ impl ResolvedTerraformResource {
     pub(crate) fn has_arn(&self) -> bool {
         self.effective_arn().is_some()
     }
-
 }
 
 // ---------------------------------------------------------------------------
@@ -153,12 +152,12 @@ impl TerraformResourceResolver {
 
         if let Some(directory) = terraform_dir {
             tf_result
-                .from_directory(directory)
+                .parse_directory(directory)
                 .context("Failed to parse Terraform directory")?;
         }
 
         tf_result
-            .from_files(terraform_files)
+            .parse_files(terraform_files)
             .context("Failed to parse individual Terraform files")?;
 
         for warning in tf_result.warnings() {
@@ -190,8 +189,13 @@ impl TerraformResourceResolver {
         debug!("Parsed {} state resource groups", state_resources.len());
 
         // Step 4: Resolve all resources
-        let resources =
-            resolve_terraform_resources(&tf_result, &state_resources, &VariableContext::default(), loader).await;
+        let resources = resolve_terraform_resources(
+            &tf_result,
+            &state_resources,
+            &VariableContext::default(),
+            loader,
+        )
+        .await;
 
         debug!(
             "Resolved {} resource groups from Terraform",
@@ -220,7 +224,6 @@ impl TerraformResourceResolver {
         self.resources.is_empty()
     }
 
-
     /// Number of distinct `(service, resource_type)` groups resolved.
     #[must_use]
     pub(crate) fn len(&self) -> usize {
@@ -230,7 +233,6 @@ impl TerraformResourceResolver {
     // -----------------------------------------------------------------------
     // ARN substitution
     // -----------------------------------------------------------------------
-
 
     /// Apply Terraform resource bindings to enriched SDK calls.
     ///
@@ -538,8 +540,6 @@ impl TerraformResourceResolver {
                         });
                     }
                 }
-
-                
             }
         }
 
@@ -555,8 +555,8 @@ impl TerraformResourceResolver {
 /// state data, variable resolution, and SDF ARN patterns.
 ///
 /// Keyed by `(service_name, resource_type)` for direct lookup during
-/// policy generation. 
-/// 
+/// policy generation.
+///
 /// Resources that don't map to a service in names_data.hcl are excluded.
 async fn resolve_terraform_resources(
     terraform_resources: &TerraformResources,
@@ -621,8 +621,10 @@ async fn resolve_terraform_resources(
         // Attach state ARN if available
         if let Some(resources) = state_resources.get(&tf_key.0, &tf_key.1) {
             if let Some(resource) = resources.iter().find(|s| s.arn.is_some()) {
-                resolved_res.state_arn = resource.arn.clone();
-                resolved_res.state_arn_location = resource.arn_location.clone();
+                resolved_res.state_arn.clone_from(&resource.arn);
+                resolved_res
+                    .state_arn_location
+                    .clone_from(&resource.arn_location);
             }
         }
 
@@ -734,7 +736,6 @@ fn placeholder_to_attribute_candidates(placeholder: &str) -> Vec<String> {
     candidates
 }
 
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -825,7 +826,7 @@ mod tests {
             state_arn: state_arn.map(String::from),
             state_arn_location: state_arn_location,
             hcl_arn: hcl_arn.map(String::from),
-            binding_name: binding_name.map(String::from)
+            binding_name: binding_name.map(String::from),
         }
     }
 
@@ -835,11 +836,25 @@ mod tests {
 
     #[rstest]
     // Freshly parsed: no service mapping, no ARN
-    #[case("from_parsed",       None,                                   None,                                   false, false, None)]
+    #[case("from_parsed", None, None, false, false, None)]
     // State ARN takes precedence over HCL ARN
-    #[case("prefers_state",     Some("arn:${Partition}:s3:::x"),         Some("arn:aws:s3:::real-bucket"),        true,  true,  Some("arn:aws:s3:::real-bucket"))]
+    #[case(
+        "prefers_state",
+        Some("arn:${Partition}:s3:::x"),
+        Some("arn:aws:s3:::real-bucket"),
+        true,
+        true,
+        Some("arn:aws:s3:::real-bucket")
+    )]
     // HCL ARN used when no state ARN
-    #[case("falls_back_to_hcl", Some("arn:${Partition}:s3:::x"),         None,                                   true,  false, Some("arn:${Partition}:s3:::x"))]
+    #[case(
+        "falls_back_to_hcl",
+        Some("arn:${Partition}:s3:::x"),
+        None,
+        true,
+        false,
+        Some("arn:${Partition}:s3:::x")
+    )]
     fn test_resolved_resource_properties(
         #[case] _name: &str,
         #[case] hcl_arn: Option<&str>,
@@ -849,7 +864,10 @@ mod tests {
         #[case] effective: Option<&str>,
     ) {
         let mut r = ResolvedTerraformResource::from_parsed(make_hcl_resource(
-            "aws_s3_bucket", "b", "bucket", AttributeValue::Literal("x".into()),
+            "aws_s3_bucket",
+            "b",
+            "bucket",
+            AttributeValue::Literal("x".into()),
         ));
         r.hcl_arn = hcl_arn.map(String::from);
         r.state_arn = state_arn.map(String::from);
@@ -887,13 +905,25 @@ mod tests {
                 let key = (svc.to_string(), rtype.to_string());
                 assert!(resolved.contains_key(&key), "key {svc}/{rtype} not found");
                 if let Some(count) = expected_count {
-                    assert_eq!(resolved[&key].len(), count, "count mismatch for {svc}/{rtype}");
+                    assert_eq!(
+                        resolved[&key].len(),
+                        count,
+                        "count mismatch for {svc}/{rtype}"
+                    );
                 }
                 if let Some(arn) = expected_state_arn {
-                    assert_eq!(resolved[&key][0].state_arn.as_deref(), arn, "state_arn mismatch");
+                    assert_eq!(
+                        resolved[&key][0].state_arn.as_deref(),
+                        arn,
+                        "state_arn mismatch"
+                    );
                 }
                 if let Some(service) = expected_service {
-                    assert_eq!(resolved[&key][0].service_name.as_deref(), Some(service), "service mismatch");
+                    assert_eq!(
+                        resolved[&key][0].service_name.as_deref(),
+                        Some(service),
+                        "service mismatch"
+                    );
                 }
             }
         }
@@ -955,10 +985,23 @@ mod tests {
         let hcl: Vec<TerraformResource> = hcl_input
             .into_iter()
             .map(|(rtype, name, attr_key, attr_val)| {
-                make_hcl_resource(rtype, name, attr_key, AttributeValue::Literal(attr_val.into()))
+                make_hcl_resource(
+                    rtype,
+                    name,
+                    attr_key,
+                    AttributeValue::Literal(attr_val.into()),
+                )
             })
             .collect();
-        assert_resolve(hcl, state_entries, expected_key, expected_count, expected_state_arn, expected_service).await;
+        assert_resolve(
+            hcl,
+            state_entries,
+            expected_key,
+            expected_count,
+            expected_state_arn,
+            expected_service,
+        )
+        .await;
     }
 
     // -----------------------------------------------------------------------
@@ -971,7 +1014,15 @@ mod tests {
     /// patterns, resolves it against the provided resource map entries, and
     /// asserts the resulting ARN patterns match `expected_arns`.
     fn assert_substitute_enriched_calls(
-        resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        resources: &[(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+        )],
         expected_arns: &[&str],
     ) {
         let sdk_call = make_sdk_call();
@@ -1032,7 +1083,15 @@ mod tests {
     )]
     fn test_substitute_enriched_calls(
         #[case] _name: &str,
-        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] resources: &[(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+        )],
         #[case] expected_arns: &[&str],
     ) {
         assert_substitute_enriched_calls(resources, expected_arns);
@@ -1049,7 +1108,15 @@ mod tests {
     /// For multi-resource cases (where order is non-deterministic), the results
     /// are sorted before comparison.
     fn assert_substitute_arn_patterns(
-        resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        resources: &[(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+        )],
         query_service: &str,
         query_resource_type: &str,
         patterns: &[&str],
@@ -1074,7 +1141,8 @@ mod tests {
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
 
         let pattern_strings: Vec<String> = patterns.iter().map(|s| s.to_string()).collect();
-        let result = resolver.substitute_arn_patterns(query_service, query_resource_type, &pattern_strings);
+        let result =
+            resolver.substitute_arn_patterns(query_service, query_resource_type, &pattern_strings);
 
         match expected {
             None => assert!(result.is_none(), "expected None but got {result:?}"),
@@ -1148,13 +1216,27 @@ mod tests {
     )]
     fn test_substitute_arn_patterns(
         #[case] _name: &str,
-        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] resources: &[(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+        )],
         #[case] query_service: &str,
         #[case] query_resource_type: &str,
         #[case] patterns: &[&str],
         #[case] expected: Option<&[&str]>,
     ) {
-        assert_substitute_arn_patterns(resources, query_service, query_resource_type, patterns, expected);
+        assert_substitute_arn_patterns(
+            resources,
+            query_service,
+            query_resource_type,
+            patterns,
+            expected,
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -1182,13 +1264,28 @@ mod tests {
     )]
     fn test_binding_explanations(
         #[case] _name: &str,
-        #[case] resources: Vec<(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>, bool)>,
+        #[case] resources: Vec<(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+            bool,
+        )>,
         #[case] expected: Vec<(&str, BindingSource, &str, &str, &str)>,
     ) {
         let mut resource_map = ResolvedResourceMap::new();
-        for (rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn, has_state_loc) in &resources {
+        for (rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn, has_state_loc) in
+            &resources
+        {
             let state_loc = if *has_state_loc {
-                Some(Location::new(PathBuf::from("terraform.tfstate"), (1, 1), (1, 1)))
+                Some(Location::new(
+                    PathBuf::from("terraform.tfstate"),
+                    (1, 1),
+                    (1, 1),
+                ))
             } else {
                 None
             };
@@ -1196,19 +1293,31 @@ mod tests {
                 .entry((service.to_string(), suffix.to_string()))
                 .or_default()
                 .push(make_resolved_resource(
-                    rtype, local_name, service, suffix,
-                    *binding_name, *state_arn, *hcl_arn, state_loc,
+                    rtype,
+                    local_name,
+                    service,
+                    suffix,
+                    *binding_name,
+                    *state_arn,
+                    *hcl_arn,
+                    state_loc,
                 ));
         }
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         let explanations = resolver.build_binding_explanations();
         assert_eq!(explanations.len(), expected.len(), "count mismatch");
-        for (actual, (exp_arn, exp_source, exp_rtype, exp_rname, exp_file)) in explanations.iter().zip(expected.iter()) {
+        for (actual, (exp_arn, exp_source, exp_rtype, exp_rname, exp_file)) in
+            explanations.iter().zip(expected.iter())
+        {
             assert_eq!(actual.arn, *exp_arn, "arn mismatch");
             assert_eq!(actual.source, *exp_source, "source mismatch");
             assert_eq!(actual.resource_type, *exp_rtype, "resource_type mismatch");
             assert_eq!(actual.resource_name, *exp_rname, "resource_name mismatch");
-            assert_eq!(actual.location.file_path, PathBuf::from(exp_file), "location file mismatch");
+            assert_eq!(
+                actual.location.file_path,
+                PathBuf::from(exp_file),
+                "location file mismatch"
+            );
         }
     }
 
@@ -1221,7 +1330,12 @@ mod tests {
     #[case("dynamodb:PutItem", "dynamodb")]
     #[case("nocolon", "nocolon")]
     fn test_action_service(#[case] action_name: &str, #[case] expected: &str) {
-        let action = Action::new(action_name.to_string(), vec![], vec![], Explanation::default());
+        let action = Action::new(
+            action_name.to_string(),
+            vec![],
+            vec![],
+            Explanation::default(),
+        );
         assert_eq!(action.service(), expected);
     }
 
@@ -1302,7 +1416,15 @@ mod tests {
     #[case("non_empty", &[("aws_s3_bucket", "b", "s3", "bucket", Some("x"), None, None)],    false, 1)]
     fn test_resolver_len_and_empty(
         #[case] _name: &str,
-        #[case] resources: &[(&str, &str, &str, &str, Option<&str>, Option<&str>, Option<&str>)],
+        #[case] resources: &[(
+            &str,
+            &str,
+            &str,
+            &str,
+            Option<&str>,
+            Option<&str>,
+            Option<&str>,
+        )],
         #[case] expected_empty: bool,
         #[case] expected_len: usize,
     ) {
@@ -1311,7 +1433,16 @@ mod tests {
             resource_map
                 .entry((service.to_string(), suffix.to_string()))
                 .or_default()
-                .push(make_resolved_resource(rtype, local_name, service, suffix, binding_name, state_arn, hcl_arn, None));
+                .push(make_resolved_resource(
+                    rtype,
+                    local_name,
+                    service,
+                    suffix,
+                    binding_name,
+                    state_arn,
+                    hcl_arn,
+                    None,
+                ));
         }
         let resolver = TerraformResourceResolver::from_resolved_map(resource_map);
         assert_eq!(resolver.is_empty(), expected_empty, "[{_name}] is_empty");

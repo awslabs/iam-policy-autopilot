@@ -42,7 +42,10 @@ impl VariableContext {
                 ),
             }
         }
-        log::debug!("Resolved {} Terraform variables from explicit tfvars", ctx.vars.len());
+        log::debug!(
+            "Resolved {} Terraform variables from explicit tfvars",
+            ctx.vars.len()
+        );
         ctx
     }
 
@@ -451,10 +454,7 @@ mod tests {
     ///
     /// Creates a temp directory, writes the given files, builds a
     /// `VariableContext`, and asserts each expected variable value.
-    fn assert_directory_resolution(
-        files: &[(&str, &str)],
-        expected: &[(&str, Option<&str>)],
-    ) {
+    fn assert_directory_resolution(files: &[(&str, &str)], expected: &[(&str, Option<&str>)]) {
         let tmp = TempDir::new().expect("create temp dir");
 
         for (filename, content) in files {
@@ -466,7 +466,8 @@ mod tests {
             writeln!(f, "{content}").expect("write file");
         }
 
-        let ctx = VariableContext::from_directory_with_explicit_tfvars(tmp.path(), &[]).expect("resolve");
+        let ctx =
+            VariableContext::from_directory_with_explicit_tfvars(tmp.path(), &[]).expect("resolve");
 
         for &(var_name, expected_value) in expected {
             assert_eq!(

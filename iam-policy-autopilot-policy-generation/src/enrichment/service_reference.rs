@@ -325,7 +325,7 @@ impl RemoteServiceReferenceLoader {
     /// Creates a loader that always returns `None` for any service.
     /// Useful in tests that don't need real SDF data.
     #[cfg(test)]
-    
+
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
             client: Self::create_client()?,
@@ -346,7 +346,7 @@ impl RemoteServiceReferenceLoader {
     /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
     /// so the next call fetches from the new URL.
     #[cfg(test)]
-    
+
     pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
         self.mapping_url = url;
         self.service_reference_mapping = OnceCell::new();
