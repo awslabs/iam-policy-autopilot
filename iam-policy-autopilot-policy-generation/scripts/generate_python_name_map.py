@@ -64,7 +64,7 @@ def main():
                 with gzip.open(os.path.join(root, service_file), "rb") as fd:
                     data = json.loads(fd.read().decode("utf-8"))
             else:
-                with open(os.path.join(root, service_file)) as fd:
+                with open(os.path.join(root, service_file), encoding="utf-8") as fd:
                     data = json.loads(fd.read())
 
             for op_name in data.get("operations", {}).keys():
@@ -81,7 +81,7 @@ def main():
                 with gzip.open(os.path.join(root, waiter_file), "rb") as fd:
                     waiter_data = json.loads(fd.read().decode("utf-8"))
             else:
-                with open(os.path.join(root, waiter_file)) as fd:
+                with open(os.path.join(root, waiter_file), encoding="utf-8") as fd:
                     waiter_data = json.loads(fd.read())
 
             for waiter_name in waiter_data.get("waiters", {}).keys():
