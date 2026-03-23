@@ -36,7 +36,7 @@ pub struct ResourceBindingExplanation {
 
 /// Whether the ARN came from Terraform configuration parsing or from a terraform.tfstate file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum BindingSource {
+pub(crate) enum BindingSource {
     /// ARN constructed from Terraform resource attributes
     Terraform,
     /// ARN read directly from terraform.tfstate

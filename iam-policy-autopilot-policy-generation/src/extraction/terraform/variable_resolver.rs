@@ -23,7 +23,7 @@ fn var_interpolation_regex() -> &'static Regex {
 
 /// A map of variable name → resolved string value.
 #[derive(Debug, Clone, Default)]
-pub struct VariableContext {
+pub(crate) struct VariableContext {
     vars: HashMap<String, String>,
 }
 
@@ -31,7 +31,7 @@ impl VariableContext {
     /// Build a variable context from only explicit `.tfvars` file paths (no directory).
     ///
     /// Used when `--terraform-file` + `--tfvars` are provided without `--terraform-dir`.
-    pub fn from_explicit_tfvars(tfvars_paths: &[PathBuf]) -> Self {
+    pub(crate) fn from_explicit_tfvars(tfvars_paths: &[PathBuf]) -> Self {
         let mut ctx = Self::default();
         for tfvars_file in tfvars_paths {
             match std::fs::read_to_string(tfvars_file) {
@@ -58,7 +58,7 @@ impl VariableContext {
     /// 2. `terraform.tfvars` (if present in directory)
     /// 3. `*.auto.tfvars` files (lexicographic order)
     /// 4. Explicit tfvars files (in the order provided)
-    pub fn from_directory_with_explicit_tfvars(
+    pub(crate) fn from_directory_with_explicit_tfvars(
         dir: &Path,
         explicit_tfvars: &[PathBuf],
     ) -> Result<Self> {
@@ -256,7 +256,7 @@ impl VariableContext {
 
     /// Get a variable value by name (for testing).
     #[cfg(test)]
-    pub fn get(&self, name: &str) -> Option<&str> {
+    pub(crate) fn get(&self, name: &str) -> Option<&str> {
         self.vars.get(name).map(String::as_str)
     }
 }

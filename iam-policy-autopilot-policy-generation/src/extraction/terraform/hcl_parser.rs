@@ -23,7 +23,7 @@ impl TerraformResources {
     ///
     /// Discovers every file ending in `.tf`, parses it with `hcl-rs`, and extends
     /// `self` in-place. Files with syntax errors are recorded as warnings and skipped.
-    pub fn from_directory(&mut self, dir: &Path) -> Result<()> {
+    pub(crate) fn from_directory(&mut self, dir: &Path) -> Result<()> {
         let tf_files = discover_tf_files(dir);
 
         if tf_files.is_empty() {
@@ -58,7 +58,7 @@ impl TerraformResources {
     ///
     /// Extends `self` in-place. Files with syntax errors are recorded as
     /// warnings and skipped.
-    pub fn from_files(&mut self, files: &[PathBuf]) -> Result<()> {
+    pub(crate) fn from_files(&mut self, files: &[PathBuf]) -> Result<()> {
         if files.is_empty() {
             return Ok(());
         }

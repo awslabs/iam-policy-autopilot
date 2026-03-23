@@ -21,7 +21,7 @@ pub mod variable_resolver;
 
 /// Represents a Terraform attribute value, which may be a literal or an unresolvable expression.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AttributeValue {
+pub(crate) enum AttributeValue {
     /// A resolved literal string value (e.g., `"my-app-bucket"`)
     Literal(String),
     /// An unresolvable expression preserved as-is (e.g., `"${var.prefix}-bucket"`)
@@ -50,7 +50,7 @@ impl AttributeValue {
 
 /// A parsed Terraform resource block (e.g., `resource "aws_s3_bucket" "my_bucket" { ... }`)
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TerraformResource {
+pub(crate) struct TerraformResource {
     /// Terraform resource type (e.g., `"aws_s3_bucket"`, `"aws_dynamodb_table"`)
     pub resource_type: String,
     /// Local name in Terraform config (e.g., `"my_bucket"`)
@@ -67,7 +67,7 @@ pub struct TerraformResource {
 /// Resources are keyed internally by `(resource_type, local_name)` for O(1) lookup.
 /// Use the provided methods to query and mutate instead of accessing the map directly.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TerraformResources {
+pub(crate) struct TerraformResources {
     /// Discovered AWS resource blocks keyed by `(resource_type, local_name)`
     resources: HashMap<(String, String), TerraformResource>,
     /// Warnings encountered during parsing (e.g., syntax errors in individual files)
@@ -77,7 +77,7 @@ pub struct TerraformResources {
 impl TerraformResources {
     /// Create an empty collection.
     #[must_use]
-    pub fn default() -> Self {
+    pub(crate) fn default() -> Self {
         Self {
             resources: HashMap::new(),
             warnings: Vec::new(),
@@ -87,7 +87,7 @@ impl TerraformResources {
     /// Insert a resource, keyed by `(resource_type, local_name)`.
     ///
     /// If a resource with the same key already exists, it is replaced.
-    pub fn insert(&mut self, resource: TerraformResource) {
+    pub(crate) fn insert(&mut self, resource: TerraformResource) {
         let key = (resource.resource_type.clone(), resource.local_name.clone());
         self.resources.insert(key, resource);
     }
@@ -114,28 +114,28 @@ impl TerraformResources {
     }
 
     /// Iterate over all resources (unordered).
-    pub fn values(&self) -> impl Iterator<Item = &TerraformResource> {
+    pub(crate) fn values(&self) -> impl Iterator<Item = &TerraformResource> {
         self.resources.values()
     }
 
     /// Iterate mutably over all resources (unordered).
-    pub fn values_mut(&mut self) -> impl Iterator<Item = &mut TerraformResource> {
+    pub(crate) fn values_mut(&mut self) -> impl Iterator<Item = &mut TerraformResource> {
         self.resources.values_mut()
     }
 
     /// Access the warnings collected during parsing.
     #[must_use]
-    pub fn warnings(&self) -> &[String] {
+    pub(crate) fn warnings(&self) -> &[String] {
         &self.warnings
     }
 
     /// Record a warning.
-    pub fn add_warning(&mut self, warning: String) {
+    pub(crate) fn add_warning(&mut self, warning: String) {
         self.warnings.push(warning);
     }
 
     /// Take ownership of the warnings, leaving an empty list behind.
-    pub fn take_warnings(&mut self) -> Vec<String> {
+    pub(crate) fn take_warnings(&mut self) -> Vec<String> {
         std::mem::take(&mut self.warnings)
     }
 
@@ -144,7 +144,7 @@ impl TerraformResources {
     /// Resources and warnings from `other` are appended. If both collections
     /// contain a resource with the same `(type, local_name)` key, the one
     /// from `other` wins (last-write-wins).
-    pub fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self) {
         self.resources.extend(other.resources);
         self.warnings.extend(other.warnings);
     }

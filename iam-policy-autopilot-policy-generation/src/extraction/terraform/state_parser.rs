@@ -17,7 +17,7 @@ use crate::Location;
 /// Identity is based on `(resource_type, name, arn)` — the location is
 /// metadata for diagnostics and does not affect equality or hashing.
 #[derive(Debug, Clone)]
-pub struct StateResource {
+pub(crate) struct StateResource {
     /// Terraform resource type (e.g., `"aws_s3_bucket"`)
     pub resource_type: String,
     /// Local name in Terraform config (e.g., `"data_bucket"`)
@@ -51,21 +51,21 @@ impl std::hash::Hash for StateResource {
 /// Resources are keyed internally by `(resource_type, local_name)`.
 /// Multiple instances (from `count` / `for_each`) share the same key.
 #[derive(Debug, Clone)]
-pub struct TerraformStateResources {
+pub(crate) struct TerraformStateResources {
     resources: HashMap<(String, String), HashSet<StateResource>>,
 }
 
 impl TerraformStateResources {
     /// Create an empty collection.
     #[must_use]
-    pub fn default() -> Self {
+    pub(crate) fn default() -> Self {
         Self {
             resources: HashMap::new(),
         }
     }
 
     /// Parse a single `terraform.tfstate` file.
-    pub fn from_file(path: &Path) -> Result<Self> {
+    pub(crate) fn from_file(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading state file: {}", path.display()))?;
 
@@ -73,7 +73,7 @@ impl TerraformStateResources {
     }
 
     /// Parse multiple `terraform.tfstate` files and merge them.
-    pub fn from_files(paths: &[std::path::PathBuf]) -> Result<Self> {
+    pub(crate) fn from_files(paths: &[std::path::PathBuf]) -> Result<Self> {
         let mut result = Self::default();
         for path in paths {
             result.merge(Self::from_file(path)?);
@@ -86,14 +86,14 @@ impl TerraformStateResources {
     ///
     /// Returns a reference to the set of resources, or `None` if not present.
     #[must_use]
-    pub fn get(&self, resource_type: &str, local_name: &str) -> Option<&HashSet<StateResource>> {
+    pub(crate) fn get(&self, resource_type: &str, local_name: &str) -> Option<&HashSet<StateResource>> {
         self.resources
             .get(&(resource_type.to_string(), local_name.to_string()))
     }
 
     /// Number of distinct `(resource_type, local_name)` groups.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.resources.len()
     }
 
@@ -109,7 +109,7 @@ impl TerraformStateResources {
     ///
     /// Resources from `other` are added. Duplicates (same identity) are
     /// automatically deduplicated by the `HashSet`.
-    pub fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self) {
         for (key, resources) in other.resources {
             self.resources.entry(key).or_default().extend(resources);
         }

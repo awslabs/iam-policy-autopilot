@@ -54,7 +54,7 @@ fn placeholder_regex() -> &'static Regex {
 
 /// A fully-resolved Terraform resource with all associated metadata.
 #[derive(Debug, Clone)]
-pub struct ResolvedTerraformResource {
+pub(crate) struct ResolvedTerraformResource {
     /// The original parsed resource (includes location).
     pub resource: TerraformResource,
     /// IAM service name derived from `names_data.hcl` (e.g. `"s3"`).
@@ -72,16 +72,16 @@ pub struct ResolvedTerraformResource {
 }
 
 /// Map key: `(service_name, resource_type)` e.g. `("s3", "bucket")`.
-pub type ResolvedResourceKey = (String, String);
+pub(crate) type ResolvedResourceKey = (String, String);
 
 /// Indexed map of resolved resources keyed by `(service_name, resource_type)`.
 /// Multiple terraform resources can map to the same IAM key (e.g. two S3 buckets).
-pub type ResolvedResourceMap = HashMap<ResolvedResourceKey, Vec<ResolvedTerraformResource>>;
+pub(crate) type ResolvedResourceMap = HashMap<ResolvedResourceKey, Vec<ResolvedTerraformResource>>;
 
 impl ResolvedTerraformResource {
     /// Build from a parsed resource with no enrichment.
     #[must_use]
-    pub fn from_parsed(resource: TerraformResource) -> Self {
+    pub(crate) fn from_parsed(resource: TerraformResource) -> Self {
         Self {
             resource,
             service_name: None,
@@ -119,7 +119,7 @@ impl ResolvedTerraformResource {
 /// loading state, mapping to IAM services, deriving ARNs, and substituting
 /// concrete resource names into enriched SDK calls.
 #[derive(Debug)]
-pub struct TerraformResourceResolver {
+pub(crate) struct TerraformResourceResolver {
     /// All resolved resources keyed by `(service_name, resource_type)`.
     resources: ResolvedResourceMap,
     /// Parse warnings from HCL parsing.
@@ -141,7 +141,7 @@ impl TerraformResourceResolver {
     /// 3. Traces source code from compute resources (e.g. Lambda handlers)
     /// 4. Parses `terraform.tfstate` files for deployed ARNs
     /// 5. Resolves each HCL resource to its service, ARN, and metadata
-    pub async fn new(
+    pub(crate) async fn new(
         terraform_dir: Option<&Path>,
         terraform_files: &[PathBuf],
         tfstate_paths: &[PathBuf],
@@ -206,7 +206,7 @@ impl TerraformResourceResolver {
 
     /// Build a resolver directly from pre-computed components (useful for testing).
     #[cfg(test)]
-    pub fn from_resolved_map(resources: ResolvedResourceMap) -> Self {
+    pub(crate) fn from_resolved_map(resources: ResolvedResourceMap) -> Self {
         Self {
             resources,
             warnings: Vec::new(),
@@ -216,14 +216,14 @@ impl TerraformResourceResolver {
     /// Returns `true` if no IAM-mappable resources were resolved.
     #[must_use]
     #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.resources.is_empty()
     }
 
 
     /// Number of distinct `(service, resource_type)` groups resolved.
     #[must_use]
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.resources.len()
     }
 
@@ -236,7 +236,7 @@ impl TerraformResourceResolver {
     ///
     /// For each action's resources, if the resource type has a matching binding,
     /// substitute the ARN patterns with concrete values. Otherwise, leave unchanged.
-    pub fn substitute_enriched_calls<'a>(
+    pub(crate) fn substitute_enriched_calls<'a>(
         &self,
         enriched_calls: &[EnrichedSdkMethodCall<'a>],
     ) -> Vec<EnrichedSdkMethodCall<'a>> {
