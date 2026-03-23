@@ -40,7 +40,7 @@ def main():
     sys.path.insert(0, botocore_root)
 
     try:
-        from botocore import _xform_cache, xform_name
+        from botocore import xform_name
     except ImportError as e:
         print(
             f"Error: could not import botocore from {botocore_root}: {e}",
