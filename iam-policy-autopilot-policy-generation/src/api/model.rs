@@ -18,8 +18,14 @@ pub struct GeneratePolicyConfig {
     pub individual_policies: bool,
     /// Enable policy size minimization
     pub minimize_policy_size: bool,
+    /// The URL from which to fetch service reference data
+    pub service_reference_url: Option<String>,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
+    /// Cache location for service references
+    pub cache_location: Option<PathBuf>,
+    /// Cache expiry duration for service references in seconds
+    pub cache_expiry_seconds: Option<u64>,
     /// Generate explanations for why actions were added, filtered by patterns.
     /// - `None`: No explanations generated
     /// - `Some(patterns)`: Generate explanations for actions matching the patterns

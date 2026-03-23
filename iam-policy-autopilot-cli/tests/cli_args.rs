@@ -168,6 +168,45 @@ fn test_fix_access_denied_stdin_input() {
 }
 
 #[test]
+fn test_cache_expiry_valid_duration_parsing() {
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args([
+            "generate-policies",
+            "--cache-expiry",
+            "152h",
+            "--region",
+            "us-east-1",
+            "--account",
+            "123456789012",
+            "tests/resources/test_example.py",
+        ])
+        .output()
+        .expect("failed to run mcp-server with valid cache expiry");
+    assert_eq!(output.status.code(), Some(0));
+}
+
+#[test]
+fn test_cache_expiry_invalid_duration_parsing() {
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args([
+            "generate-policies",
+            "--cache-expiry",
+            "five minutes",
+            "--region",
+            "us-east-1",
+            "--account",
+            "123456789012",
+            "tests/resources/test_example.py",
+        ])
+        .output()
+        .expect("failed to run mcp-server with valid cache expiry");
+    assert!(
+        !output.status.success(),
+        "should fail with invalid cache expiry duration"
+    );
+}
+
+#[test]
 fn test_mcp_server_help_shows_bind_address() {
     let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
         .args(["mcp-server", "--help"])

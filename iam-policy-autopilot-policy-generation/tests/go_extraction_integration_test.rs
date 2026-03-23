@@ -88,7 +88,7 @@ async fn test_go_extraction_to_policy_generation_integration() {
             // Step 3: Enrich method calls with IAM actions and resources
             println!("\nStep 3: Enriching method calls with IAM metadata...");
 
-            let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+            let mut enrichment_engine = EnrichmentEngine::new(None, false, None, None).unwrap();
 
             match enrichment_engine
                 .enrich_methods(&extracted_methods.methods, SdkType::Other)

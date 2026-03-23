@@ -307,24 +307,28 @@ pub(crate) struct RemoteServiceReferenceLoader {
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
     service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
     mapping_url: String,
-    disable_file_system_cache: bool,
+    disable_cache: bool,
+    cache_location: PathBuf,
+    cache_expiry_seconds: u64,
 }
 
 impl RemoteServiceReferenceLoader {
-    pub(crate) fn new(disable_file_system_cache: bool) -> crate::errors::Result<Self> {
+    pub(crate) fn new(
+        mapping_url: Option<String>,
+        disable_cache: bool,
+        cache_location: Option<PathBuf>,
+        cache_expiry_seconds: Option<u64>,
+    ) -> crate::errors::Result<Self> {
         Ok(Self {
             client: Self::create_client()?,
             service_reference_mapping: OnceCell::new(),
             service_cache: RwLock::new(HashMap::new()),
-            mapping_url: "https://servicereference.us-east-1.amazonaws.com".to_string(),
-            disable_file_system_cache,
+            mapping_url: mapping_url
+                .unwrap_or("https://servicereference.us-east-1.amazonaws.com".to_string()),
+            disable_cache,
+            cache_location: cache_location.unwrap_or_else(Self::get_default_cache_location),
+            cache_expiry_seconds: cache_expiry_seconds.unwrap_or(DEFAULT_CACHE_DURATION_IN_SECONDS),
         })
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
-        self.mapping_url = url;
-        self
     }
 
     async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
@@ -409,7 +413,7 @@ impl RemoteServiceReferenceLoader {
             })
     }
 
-    fn get_cache_dir() -> PathBuf {
+    fn get_default_cache_location() -> PathBuf {
         // not using tempfile crate
         // instead, using the std to resolve temp dir and then manage the file itself
         // file deletion is delegated to the OS.
@@ -418,15 +422,15 @@ impl RemoteServiceReferenceLoader {
         cache_dir
     }
 
-    fn get_cache_path(service_name: &str) -> PathBuf {
-        Self::get_cache_dir().join(format!("{service_name}.json"))
+    fn get_cache_path(&self, service_name: &str) -> PathBuf {
+        self.cache_location.join(format!("{service_name}.json"))
     }
 
-    async fn is_cache_valid(path: &PathBuf) -> bool {
+    async fn is_cache_valid(&self, path: &PathBuf) -> bool {
         if let Ok(metadata) = fs::metadata(path).await {
             if let Ok(modified) = metadata.modified() {
                 if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                    return elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS);
+                    return elapsed < Duration::from_secs(self.cache_expiry_seconds);
                 }
             }
         }
@@ -439,15 +443,15 @@ impl RemoteServiceReferenceLoader {
     ) -> crate::errors::Result<Option<ServiceReference>> {
         if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
             if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
-                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                if elapsed < Duration::from_secs(self.cache_expiry_seconds) {
                     return Ok(Some(cached.clone()));
                 }
             }
         }
 
         // check temp file
-        let cache_path = Self::get_cache_path(service_name);
-        if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
+        let cache_path = self.get_cache_path(service_name);
+        if !self.disable_cache && self.is_cache_valid(&cache_path).await {
             if let Ok(content) = fs::read_to_string(&cache_path).await {
                 if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await {
                     self.service_cache.write().await.insert(
@@ -498,7 +502,7 @@ impl RemoteServiceReferenceLoader {
                         )
                     })?;
                 // persist content into the temp file as well
-                if !self.disable_file_system_cache {
+                if !self.disable_cache {
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
                 self.service_cache.write().await.insert(
@@ -514,12 +518,14 @@ impl RemoteServiceReferenceLoader {
 
 #[cfg(test)]
 mod tests {
+    use tokio::io::AsyncWriteExt;
+
     use super::*;
     use crate::enrichment::mock_remote_service_reference;
 
     #[tokio::test]
     async fn test_remote_loader_new() {
-        let loader = RemoteServiceReferenceLoader::new(false);
+        let loader = RemoteServiceReferenceLoader::new(None, false, None, None);
         assert!(loader.is_ok());
 
         let loader = loader.unwrap();
@@ -596,7 +602,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Use `cargo test -- --ignored` to run this test
     async fn test_load_from_service_reference_success() {
-        let loader = RemoteServiceReferenceLoader::new(false).unwrap();
+        let loader = RemoteServiceReferenceLoader::new(None, false, None, None).unwrap();
         let result = loader.load("s3").await;
 
         match result {
@@ -619,7 +625,7 @@ mod tests {
     #[tokio::test]
     #[ignore] // Use `cargo test -- --ignored` to run this test
     async fn test_load_nonexistent_service() {
-        let loader = RemoteServiceReferenceLoader::new(false).unwrap();
+        let loader = RemoteServiceReferenceLoader::new(None, false, None, None).unwrap();
         let result = loader.load("nonexistent-service-xyz").await;
 
         assert!(result.is_ok());
@@ -667,14 +673,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_cache_dir() {
-        let cache_dir = RemoteServiceReferenceLoader::get_cache_dir();
+        let cache_dir = RemoteServiceReferenceLoader::get_default_cache_location();
         assert!(cache_dir.ends_with("IAMPolicyAutopilot"));
         assert!(cache_dir.exists());
     }
 
     #[tokio::test]
     async fn test_get_cache_path() {
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
+        let cache_path = RemoteServiceReferenceLoader::new(None, false, None, None)
+            .unwrap()
+            .get_cache_path("s3");
         assert!(
             cache_path.ends_with("IAMPolicyAutopilot/s3.json")
                 || cache_path.ends_with("IAMAutoPilot\\s3.json")
@@ -684,24 +692,65 @@ mod tests {
     #[tokio::test]
     async fn test_is_cache_valid_nonexistent() {
         let path = PathBuf::from("/nonexistent/path/file.json");
-        assert!(!RemoteServiceReferenceLoader::is_cache_valid(&path).await);
+        assert!(
+            !RemoteServiceReferenceLoader::new(None, false, None, None)
+                .unwrap()
+                .is_cache_valid(&path)
+                .await
+        );
     }
 
     #[tokio::test]
     async fn test_is_cache_valid_fresh() {
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("test_fresh");
+        let cache_path = RemoteServiceReferenceLoader::new(None, false, None, None)
+            .unwrap()
+            .get_cache_path("test_fresh");
         let _ = fs::write(&cache_path, "test content").await;
 
-        assert!(RemoteServiceReferenceLoader::is_cache_valid(&cache_path).await);
+        assert!(
+            RemoteServiceReferenceLoader::new(None, false, None, None)
+                .unwrap()
+                .is_cache_valid(&cache_path)
+                .await
+        );
         let _ = fs::remove_file(&cache_path).await;
+    }
+
+    #[tokio::test]
+    async fn test_cache_invalidation() {
+        let cache_expiry_seconds = 24 * 60 * 60; // 24 hours
+        let service_reference_loader =
+            RemoteServiceReferenceLoader::new(None, false, None, Some(cache_expiry_seconds))
+                .unwrap();
+        let cache_path = service_reference_loader.get_cache_path("test_fresh");
+
+        // Ensure a file that is older than the cache expiry is invalid
+        let mut file = fs::File::create(&cache_path).await.unwrap();
+        file.write_all(b"test content").await.unwrap();
+        file.into_std()
+            .await
+            .set_modified(SystemTime::now() - Duration::from_secs(cache_expiry_seconds + 500))
+            .unwrap();
+        assert!(!service_reference_loader.is_cache_valid(&cache_path).await);
+        fs::remove_file(&cache_path).await.unwrap();
+
+        // Ensure a file that is newer than the cache expiry is valid
+        let mut file = fs::File::create(&cache_path).await.unwrap();
+        file.write_all(b"test content").await.unwrap();
+        file.into_std()
+            .await
+            .set_modified(SystemTime::now() - Duration::from_secs(cache_expiry_seconds - 500))
+            .unwrap();
+        assert!(service_reference_loader.is_cache_valid(&cache_path).await);
+        fs::remove_file(&cache_path).await.unwrap();
     }
 
     #[tokio::test]
     async fn test_filesystem_cache() {
         let (_, mut loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
         // setup_mock_server_with_loader disables file system cache by default
-        loader.disable_file_system_cache = false;
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
+        loader.disable_cache = false;
+        let cache_path = loader.get_cache_path("s3");
         let _ = fs::remove_file(&cache_path).await;
 
         let result = loader.load("s3").await;

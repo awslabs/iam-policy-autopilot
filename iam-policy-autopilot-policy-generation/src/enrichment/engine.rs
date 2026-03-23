@@ -5,6 +5,7 @@
 //! with resource matching.
 
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use super::EnrichedSdkMethodCall;
@@ -30,9 +31,19 @@ impl Engine {
     ///
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
-    pub fn new(disable_file_system_cache: bool) -> Result<Self> {
+    pub fn new(
+        mapping_url: Option<String>,
+        disable_file_system_cache: bool,
+        cache_location: Option<PathBuf>,
+        cache_expiry_seconds: Option<u64>,
+    ) -> Result<Self> {
         Ok(Self {
-            service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
+            service_reference_loader: ServiceReferenceLoader::new(
+                mapping_url,
+                disable_file_system_cache,
+                cache_location,
+                cache_expiry_seconds,
+            )?,
         })
     }
 
@@ -163,7 +174,7 @@ mod tests {
 
     #[test]
     fn test_get_unique_services() {
-        let engine = Engine::new(false).unwrap();
+        let engine = Engine::new(None, false, None, None).unwrap();
 
         let extracted_methods = create_test_extracted_methods();
         let services = engine.get_unique_services(&extracted_methods);
@@ -197,7 +208,7 @@ mod tests {
         }
 
         println!("\nSetting up enrichment engine...");
-        let mut enrichment_engine = Engine::new(true).unwrap();
+        let mut enrichment_engine = Engine::new(None, true, None, None).unwrap();
         println!("Enrichment engine initialized");
 
         println!("\nRunning enrichment on all operations...");

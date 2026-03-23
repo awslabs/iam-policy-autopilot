@@ -164,7 +164,12 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         });
     }
 
-    let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
+    let mut enrichment_engine = EnrichmentEngine::new(
+        config.service_reference_url.clone(),
+        config.disable_file_system_cache,
+        config.cache_location.clone(),
+        config.cache_expiry_seconds,
+    )?;
 
     // Run the complete enrichment pipeline
     let enriched_results = enrichment_engine
