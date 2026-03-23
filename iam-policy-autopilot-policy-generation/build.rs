@@ -655,6 +655,7 @@ fn generate_python_name_map(output_dir: &Path) -> Result<(), Box<dyn std::error:
     //    so it would be filtered out by a forward-only check), but
     //    "modify_db_cluster".to_case(Case::Pascal) = "ModifyDbCluster" ≠ "ModifyDBCluster",
     //    so the reverse lookup in Operation::from_call would produce the wrong PascalCase name.
+    #[allow(unknown_lints, convert_case_pascal)]
     let special_cases: BTreeMap<String, String> = full_map
         .into_iter()
         .filter(|(pascal_name, botocore_snake)| {
