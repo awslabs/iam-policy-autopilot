@@ -577,7 +577,23 @@ async fn resolve_terraform_resources(
         resolved_res.service_name = Some(service.clone());
         resolved_res.resource_type = Some(resource_type.clone());
 
-        // Derive HCL ARN from SDF patterns + naming attribute
+        // Priority 1: Use state-derived ARN if available (exact deployed ARN)
+        let has_state_arn = if let Some(resources) = state_resources.get(&tf_key.0, &tf_key.1) {
+            if let Some(resource) = resources.iter().find(|s| s.arn.is_some()) {
+                resolved_res.state_arn.clone_from(&resource.arn);
+                resolved_res
+                    .state_arn_location
+                    .clone_from(&resource.arn_location);
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
+
+        // Priority 2: Derive HCL ARN from SDF patterns + naming attribute (only when no state ARN)
+        // Always derive binding_name since it's used for sub-resource fallback lookups
         if let Some(patterns) = loader.get_resource_arns(&service, &resource_type).await {
             if let Some((naming_attr, matched_pattern)) =
                 derive_naming_attribute(&patterns, &resource.attributes)
@@ -594,37 +610,31 @@ async fn resolve_terraform_resources(
                     };
                     if let Some(name) = resolved_value {
                         resolved_res.binding_name = Some(name.clone());
-                        let re = placeholder_regex();
-                        let mut replaced = false;
-                        let hcl_arn = re
-                            .replace_all(&matched_pattern, |caps: &regex::Captures| {
-                                let ph = caps.get(1).map_or("", |m| m.as_str());
-                                if is_aws_placeholder(ph) {
-                                    format!("${{{ph}}}")
-                                } else if !replaced {
-                                    replaced = true;
-                                    name.clone()
-                                } else {
-                                    "*".to_string()
-                                }
-                            })
-                            .to_string();
-                        resolved_res.hcl_arn = Some(hcl_arn);
+
+                        // Only construct HCL ARN if state ARN not already available
+                        if !has_state_arn {
+                            let re = placeholder_regex();
+                            let mut replaced = false;
+                            let hcl_arn = re
+                                .replace_all(&matched_pattern, |caps: &regex::Captures| {
+                                    let ph = caps.get(1).map_or("", |m| m.as_str());
+                                    if is_aws_placeholder(ph) {
+                                        format!("${{{ph}}}")
+                                    } else if !replaced {
+                                        replaced = true;
+                                        name.clone()
+                                    } else {
+                                        "*".to_string()
+                                    }
+                                })
+                                .to_string();
+                            resolved_res.hcl_arn = Some(hcl_arn);
+                        }
                     } else {
                         // Expression couldn't be resolved — use wildcard as binding name
                         resolved_res.binding_name = Some("*".to_string());
                     }
                 }
-            }
-        }
-
-        // Attach state ARN if available
-        if let Some(resources) = state_resources.get(&tf_key.0, &tf_key.1) {
-            if let Some(resource) = resources.iter().find(|s| s.arn.is_some()) {
-                resolved_res.state_arn.clone_from(&resource.arn);
-                resolved_res
-                    .state_arn_location
-                    .clone_from(&resource.arn_location);
             }
         }
 
