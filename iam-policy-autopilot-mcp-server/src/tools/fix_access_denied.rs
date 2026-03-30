@@ -48,17 +48,20 @@ impl From<ApplyResult> for FixResult {
 }
 
 // Input struct matching the updated schema
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, iam_policy_autopilot_common::telemetry::TelemetryEventDerive)]
 #[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for fixing access denied issues")]
+#[telemetry(command = "mcp-tool-fix-access-denied")]
 pub struct FixAccessDeniedInput {
     #[schemars(
         description = "The IAM Policy JSON to fix access denied that was generated through generate_policy_for_access_denied tool"
     )]
+    #[telemetry(presence)]
     pub access_denied_fix_policy: String,
     #[schemars(
         description = "The original access denied error message to extract principal information"
     )]
+    #[telemetry(presence)]
     pub error_message: String,
 }
 

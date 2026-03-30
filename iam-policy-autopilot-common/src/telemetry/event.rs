@@ -1,135 +1,173 @@
 //! Telemetry event data model.
 //!
-//! Defines the structure for telemetry events, parameters, and their encoding
-//! into HTTP headers for transmission to the service reference endpoint.
+//! Defines the JSON payload structure sent to the telemetry Lambda endpoint.
+//! The payload matches the schema validated by the backend:
+//!
+//! ```json
+//! {
+//!   "command": "generate-policies",
+//!   "version": "0.1.4",
+//!   "anonymous_id": "550e8400-e29b-41d4-a716-446655440000",
+//!   "params": { "language": "python", "pretty": true },
+//!   "result": { "success": true, "num_policies_generated": 2, "services_used": ["s3", "dynamodb"] }
+//! }
+//! ```
 
-use std::fmt;
+use serde::Serialize;
+use serde_json::Value;
+use std::collections::HashMap;
 
 /// Represents a single telemetry event emitted per CLI command or MCP tool invocation.
 ///
-/// Each event captures which command was run, which parameters were used,
-/// and the tool version. Events are encoded as HTTP headers for transmission.
-#[derive(Debug, Clone)]
+/// The event is serialized as a JSON payload and sent via POST to the telemetry endpoint.
+/// It captures which command was run, which parameters were used, the tool version,
+/// a persistent session ID, and (after execution) the result outcome.
+#[derive(Debug, Clone, Serialize)]
 pub struct TelemetryEvent {
-    /// The command or tool name (e.g., "generate-policies", "mcp:generate_application_policies")
+    /// The command or tool name (e.g., "generate-policies", "mcp-tool-generate-policies")
     pub command: String,
-    /// List of recorded parameters with their telemetry-safe values
-    pub params: Vec<TelemetryParam>,
     /// The tool version (from `CARGO_PKG_VERSION`)
     pub version: String,
+    /// A persistent session UUID for counting unique installations
+    pub anonymous_id: String,
+    /// Recorded parameters with their telemetry-safe values
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub params: Option<HashMap<String, Value>>,
+    /// Result data populated after command execution
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<HashMap<String, Value>>,
 }
 
 impl TelemetryEvent {
     /// Create a new telemetry event for a given command.
     ///
-    /// The version is automatically populated from the crate version.
+    /// The version and anonymous_id are automatically populated.
     #[must_use]
     pub fn new(command: impl Into<String>) -> Self {
         Self {
             command: command.into(),
-            params: Vec::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            anonymous_id: super::config::anonymous_id(),
+            params: None,
+            result: None,
         }
     }
 
-    /// Add a parameter to this telemetry event.
-    #[must_use]
-    pub fn with_param(mut self, name: impl Into<String>, value: TelemetryValue) -> Self {
-        self.params.push(TelemetryParam {
-            name: name.into(),
-            value,
-        });
-        self
-    }
+    // --- Parameter recording methods (builder pattern) ---
 
     /// Record a boolean parameter (e.g., whether a flag was set).
     #[must_use]
-    pub fn with_bool(self, name: impl Into<String>, value: bool) -> Self {
-        self.with_param(name, TelemetryValue::Bool(value))
+    pub fn with_bool(mut self, name: impl Into<String>, value: bool) -> Self {
+        self.params
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::Bool(value));
+        self
     }
 
     /// Record a string parameter (e.g., language name, transport type).
     #[must_use]
-    pub fn with_str(self, name: impl Into<String>, value: impl Into<String>) -> Self {
-        self.with_param(name, TelemetryValue::Str(value.into()))
+    pub fn with_str(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.params
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::String(value.into()));
+        self
     }
 
-    /// Record an optional string parameter. If `None`, records `"none"`.
+    /// Record presence generically. Called by `#[derive(TelemetryEvent)]` for `#[telemetry(presence)]` fields.
+    ///
+    /// Handles `Vec<T>` → `!is_empty()`, `Option<T>` → `is_some()`, and other types → `true`.
     #[must_use]
-    pub fn with_optional_str(self, name: impl Into<String>, value: Option<&str>) -> Self {
-        match value {
-            Some(v) => self.with_str(name, v),
-            None => self.with_str(name, "none"),
-        }
+    pub fn with_telemetry_presence(self, name: &str, value: &impl TelemetryFieldPresence) -> Self {
+        value.record_presence(self, name)
     }
 
-    /// Record a presence-only parameter (whether it was provided, not the value).
-    #[must_use]
-    pub fn with_presence(self, name: impl Into<String>, is_present: bool) -> Self {
-        self.with_bool(name, is_present)
-    }
-
-    /// Record a list parameter as a comma-separated string of values.
+    /// Record a list parameter as a JSON array of strings.
     /// Only records the values themselves (e.g., service names), never user content.
     #[must_use]
-    pub fn with_list(self, name: impl Into<String>, values: &[String]) -> Self {
-        if values.is_empty() {
-            self.with_str(name, "none")
-        } else {
-            self.with_str(name, values.join(","))
-        }
+    pub fn with_list(mut self, name: impl Into<String>, values: &[String]) -> Self {
+        let json_values: Vec<Value> = values.iter().map(|v| Value::String(v.clone())).collect();
+        self.params
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::Array(json_values));
+        self
     }
 
-    /// Encode this event as a list of HTTP header key-value pairs.
-    ///
-    /// Header format:
-    /// - `X-Ipa-Command` → command name
-    /// - `X-Ipa-Version` → tool version
-    /// - `X-Ipa-P-{name}` → parameter value
+    // --- Result recording methods (builder pattern) ---
+
+    /// Set whether the command succeeded (builder pattern).
     #[must_use]
-    pub fn to_headers(&self) -> Vec<(String, String)> {
-        let mut headers = Vec::with_capacity(self.params.len() + 2);
-        headers.push(("X-Ipa-Command".to_string(), self.command.clone()));
-        headers.push(("X-Ipa-Version".to_string(), self.version.clone()));
+    pub fn with_result_success(mut self, success: bool) -> Self {
+        self.set_result_success(success);
+        self
+    }
 
-        for param in &self.params {
-            let header_name = format!("X-Ipa-P-{}", param.name);
-            headers.push((header_name, param.value.to_string()));
-        }
+    /// Set the number of policies generated (builder pattern).
+    #[must_use]
+    pub fn with_result_num_policies(mut self, count: usize) -> Self {
+        self.set_result_num_policies(count);
+        self
+    }
 
-        headers
+    // --- In-place mutation methods ---
+
+    /// Set whether the command succeeded (in-place mutation).
+    pub fn set_result_success(&mut self, success: bool) {
+        self.result
+            .get_or_insert_with(HashMap::new)
+            .insert("success".to_string(), Value::Bool(success));
+    }
+
+    /// Set the number of policies generated (in-place mutation).
+    pub fn set_result_num_policies(&mut self, count: usize) {
+        self.result
+            .get_or_insert_with(HashMap::new)
+            .insert(
+                "num_policies_generated".to_string(),
+                Value::Number(serde_json::Number::from(count)),
+            );
+    }
+
+    /// Set a string parameter (in-place mutation).
+    pub fn set_str(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        self.params
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::String(value.into()));
+    }
+
+    /// Serialize this event to a JSON string.
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 
-/// A single telemetry parameter: a name and its telemetry-safe value.
-#[derive(Debug, Clone)]
-pub struct TelemetryParam {
-    /// Parameter name (e.g., "region", "pretty", "language")
-    pub name: String,
-    /// Telemetry-safe value
-    pub value: TelemetryValue,
+/// Trait for types that can record their presence as a telemetry parameter.
+/// Used by `#[telemetry(presence)]` fields in `#[derive(TelemetryEvent)]`.
+pub trait TelemetryFieldPresence {
+    /// Record whether this field is "present" (non-empty, non-None).
+    fn record_presence(&self, event: TelemetryEvent, name: &str) -> TelemetryEvent;
 }
 
-/// Telemetry-safe parameter value.
-///
-/// We only record:
-/// - Boolean presence (whether a parameter was provided)
-/// - Enum/fixed values (language names, transport types, service names)
-/// - Never user-supplied content (paths, ARNs, account IDs, policy content)
-#[derive(Debug, Clone)]
-pub enum TelemetryValue {
-    /// Boolean value (parameter presence or flag value)
-    Bool(bool),
-    /// String value (enum/fixed values like language names, service names)
-    Str(String),
+impl<T> TelemetryFieldPresence for Vec<T> {
+    fn record_presence(&self, event: TelemetryEvent, name: &str) -> TelemetryEvent {
+        event.with_bool(name, !self.is_empty())
+    }
 }
 
-impl fmt::Display for TelemetryValue {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Bool(b) => write!(f, "{b}"),
-            Self::Str(s) => write!(f, "{s}"),
-        }
+impl<T> TelemetryFieldPresence for Option<T> {
+    fn record_presence(&self, event: TelemetryEvent, name: &str) -> TelemetryEvent {
+        event.with_bool(name, self.is_some())
+    }
+}
+
+impl TelemetryFieldPresence for bool {
+    fn record_presence(&self, event: TelemetryEvent, name: &str) -> TelemetryEvent {
+        event.with_bool(name, *self)
+    }
+}
+
+impl TelemetryFieldPresence for String {
+    fn record_presence(&self, event: TelemetryEvent, name: &str) -> TelemetryEvent {
+        event.with_bool(name, !self.is_empty())
     }
 }
 
@@ -138,114 +176,141 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_event_new_has_version() {
+    fn test_event_new_has_version_and_anonymous_id() {
         let event = TelemetryEvent::new("test-command");
         assert_eq!(event.command, "test-command");
         assert!(!event.version.is_empty());
-        assert!(event.params.is_empty());
+        assert!(event.params.is_none());
+        assert!(event.result.is_none());
+        assert!(!event.anonymous_id.is_empty());
     }
 
     #[test]
     fn test_event_with_bool() {
         let event = TelemetryEvent::new("cmd").with_bool("pretty", true);
-        assert_eq!(event.params.len(), 1);
-        assert_eq!(event.params[0].name, "pretty");
-        assert_eq!(event.params[0].value.to_string(), "true");
+        let params = event.params.expect("params should be Some");
+        assert_eq!(params.get("pretty"), Some(&Value::Bool(true)));
     }
 
     #[test]
     fn test_event_with_str() {
         let event = TelemetryEvent::new("cmd").with_str("language", "python");
-        assert_eq!(event.params.len(), 1);
-        assert_eq!(event.params[0].name, "language");
-        assert_eq!(event.params[0].value.to_string(), "python");
-    }
-
-    #[test]
-    fn test_event_with_optional_str_some() {
-        let event = TelemetryEvent::new("cmd").with_optional_str("language", Some("go"));
-        assert_eq!(event.params[0].value.to_string(), "go");
-    }
-
-    #[test]
-    fn test_event_with_optional_str_none() {
-        let event = TelemetryEvent::new("cmd").with_optional_str("language", None);
-        assert_eq!(event.params[0].value.to_string(), "none");
-    }
-
-    #[test]
-    fn test_event_with_presence() {
-        let event = TelemetryEvent::new("cmd")
-            .with_presence("region", true)
-            .with_presence("account", false);
-        assert_eq!(event.params[0].value.to_string(), "true");
-        assert_eq!(event.params[1].value.to_string(), "false");
+        let params = event.params.expect("params should be Some");
+        assert_eq!(
+            params.get("language"),
+            Some(&Value::String("python".to_string()))
+        );
     }
 
     #[test]
     fn test_event_with_list() {
         let services = vec!["s3".to_string(), "ec2".to_string()];
         let event = TelemetryEvent::new("cmd").with_list("service_hints", &services);
-        assert_eq!(event.params[0].value.to_string(), "s3,ec2");
+        let params = event.params.expect("params should be Some");
+        let expected = Value::Array(vec![
+            Value::String("s3".to_string()),
+            Value::String("ec2".to_string()),
+        ]);
+        assert_eq!(params.get("service_hints"), Some(&expected));
     }
 
     #[test]
     fn test_event_with_list_empty() {
         let event = TelemetryEvent::new("cmd").with_list("service_hints", &[]);
-        assert_eq!(event.params[0].value.to_string(), "none");
+        let params = event.params.expect("params should be Some");
+        assert_eq!(
+            params.get("service_hints"),
+            Some(&Value::Array(Vec::new()))
+        );
     }
 
     #[test]
-    fn test_event_chaining() {
-        let event = TelemetryEvent::new("generate-policies")
-            .with_presence("source_files", true)
-            .with_presence("region", false)
-            .with_bool("pretty", true)
-            .with_str("language", "python");
+    fn test_event_with_result_success() {
+        let event = TelemetryEvent::new("cmd").with_result_success(true);
+        let result = event.result.expect("result should be Some");
+        assert_eq!(result.get("success"), Some(&Value::Bool(true)));
+    }
 
-        assert_eq!(event.params.len(), 4);
+    #[test]
+    fn test_event_with_result_num_policies() {
+        let event = TelemetryEvent::new("cmd").with_result_num_policies(3);
+        let result = event.result.expect("result should be Some");
+        assert_eq!(
+            result.get("num_policies_generated"),
+            Some(&Value::Number(serde_json::Number::from(3)))
+        );
+    }
+
+    #[test]
+    fn test_event_chaining_with_result() {
+        let event = TelemetryEvent::new("generate-policies")
+            .with_bool("source_files", true)
+            .with_str("language", "python")
+            .with_result_success(true)
+            .with_result_num_policies(2);
+
         assert_eq!(event.command, "generate-policies");
+        assert!(!event.anonymous_id.is_empty());
+
+        let params = event.params.expect("params should be Some");
+        assert_eq!(params.len(), 2);
+
+        let result = event.result.expect("result should be Some");
+        assert_eq!(result.len(), 2);
+        assert_eq!(result.get("success"), Some(&Value::Bool(true)));
     }
 
     #[test]
-    fn test_to_headers() {
+    fn test_set_result_num_policies() {
+        let mut event = TelemetryEvent::new("cmd");
+        event.set_result_num_policies(5);
+        let result = event.result.expect("result should be Some");
+        assert_eq!(
+            result.get("num_policies_generated"),
+            Some(&Value::Number(serde_json::Number::from(5)))
+        );
+    }
+
+    #[test]
+    fn test_to_json_full() {
         let event = TelemetryEvent::new("generate-policies")
             .with_bool("pretty", true)
-            .with_str("language", "python");
+            .with_str("language", "python")
+            .with_result_success(true)
+            .with_result_num_policies(2);
 
-        let headers = event.to_headers();
+        let json = event.to_json().expect("should serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
 
-        // Should have command + version + 2 params = 4 headers
-        assert_eq!(headers.len(), 4);
-
-        assert_eq!(headers[0].0, "X-Ipa-Command");
-        assert_eq!(headers[0].1, "generate-policies");
-
-        assert_eq!(headers[1].0, "X-Ipa-Version");
-        assert!(!headers[1].1.is_empty());
-
-        assert_eq!(headers[2].0, "X-Ipa-P-pretty");
-        assert_eq!(headers[2].1, "true");
-
-        assert_eq!(headers[3].0, "X-Ipa-P-language");
-        assert_eq!(headers[3].1, "python");
+        assert_eq!(parsed["command"], "generate-policies");
+        assert!(parsed["anonymous_id"].is_string());
+        assert_eq!(parsed["params"]["pretty"], true);
+        assert_eq!(parsed["params"]["language"], "python");
+        assert_eq!(parsed["result"]["success"], true);
+        assert_eq!(parsed["result"]["num_policies_generated"], 2);
     }
 
     #[test]
-    fn test_to_headers_empty_params() {
-        let event = TelemetryEvent::new("cmd");
-        let headers = event.to_headers();
+    fn test_json_only_contains_allowed_keys() {
+        let event = TelemetryEvent::new("generate-policies")
+            .with_bool("pretty", true)
+            .with_result_success(true);
 
-        // Should have only command + version = 2 headers
-        assert_eq!(headers.len(), 2);
-        assert_eq!(headers[0].0, "X-Ipa-Command");
-        assert_eq!(headers[1].0, "X-Ipa-Version");
-    }
+        let json = event.to_json().expect("should serialize");
+        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+        let obj = parsed.as_object().expect("should be object");
 
-    #[test]
-    fn test_telemetry_value_display() {
-        assert_eq!(TelemetryValue::Bool(true).to_string(), "true");
-        assert_eq!(TelemetryValue::Bool(false).to_string(), "false");
-        assert_eq!(TelemetryValue::Str("python".to_string()).to_string(), "python");
+        let allowed_keys: std::collections::HashSet<&str> =
+            ["command", "version", "anonymous_id", "params", "result"]
+                .iter()
+                .copied()
+                .collect();
+
+        for key in obj.keys() {
+            assert!(
+                allowed_keys.contains(key.as_str()),
+                "Unexpected key in telemetry payload: {key}"
+            );
+        }
     }
 }

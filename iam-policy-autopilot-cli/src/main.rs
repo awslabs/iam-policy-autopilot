@@ -21,13 +21,13 @@ use std::process;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use iam_policy_autopilot_common::telemetry::{
+    self, TelemetryChoice, ToTelemetryEvent, TelemetryEventDerive,
+};
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
 };
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
-use iam_policy_autopilot_common::telemetry::{
-    self, TelemetryClient, TelemetryEvent,
-};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
@@ -157,7 +157,7 @@ struct Cli {
     command: Commands,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, TelemetryEventDerive)]
 #[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
@@ -167,6 +167,7 @@ generates the minimal required policy statements, and optionally applies them au
 Supports both explicit denials (with action/resource details) and implicit denials (requiring analysis). \
 When not using --yes, provides interactive confirmation before applying changes."
     )]
+    #[telemetry(command = "fix-access-denied")]
     FixAccessDenied {
         /// Error text containing AccessDenied message. If not provided, reads from stdin.
         #[arg(
@@ -174,6 +175,7 @@ When not using --yes, provides interactive confirmation before applying changes.
 Lambda error message, or raw IAM error message. If not provided as an argument, \
 the tool will read from stdin, allowing you to pipe error messages directly."
         )]
+        #[telemetry(presence)]
         source: Option<String>,
 
         /// Skip confirmation prompt and apply fix automatically (only for ImplicitIdentity denials)
@@ -184,6 +186,7 @@ the tool will read from stdin, allowing you to pipe error messages directly."
 prompting for confirmation. Only works for implicit identity denials where the fix can be \
 safely automated. For other denial types, you'll still need to review and apply changes manually."
         )]
+        #[telemetry(value)]
         yes: bool,
     },
 
@@ -194,6 +197,7 @@ safely automated. For other denial types, you'll still need to review and apply 
 This is the basic extraction functionality that identifies method calls, parameters, \
 and basic metadata without enrichment."
     )]
+    #[telemetry(skip)]
     ExtractSdkCalls {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1.., long_help = "One or more source code files to analyze. \
@@ -269,9 +273,11 @@ Supported languages and SDKs:
 TIP: Use --service-hints to specify the AWS services your application uses. The
 final policy may still include actions from other services if required."#
     )]
+    #[telemetry(command = "generate-policies")]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
+        #[telemetry(presence)]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)
@@ -280,14 +286,17 @@ final policy may still include actions from other services if required."#
 
         /// Format JSON output with indentation for readability
         #[arg(short = 'p', long = "pretty")]
+        #[telemetry(value)]
         pretty: bool,
 
         /// Override programming language detection
         #[arg(short = 'l', long = "language")]
+        #[telemetry(value, if_present)]
         language: Option<String>,
 
         /// Output full ExtractedMethods instead of simplified operations
         #[arg(long = "full-output")]
+        #[telemetry(value)]
         full_output: bool,
 
         /// AWS region
@@ -298,6 +307,7 @@ final policy may still include actions from other services if required."#
             long_help = "AWS region to use for ARN generation. \
 Examples: us-east-1, us-west-2, eu-west-1."
         )]
+        #[telemetry(presence, default = "*")]
         region: String,
 
         /// AWS account ID
@@ -307,6 +317,7 @@ Examples: us-east-1, us-west-2, eu-west-1."
             default_value = "*",
             long_help = "AWS account ID to use for ARN generation."
         )]
+        #[telemetry(presence, default = "*")]
         account: String,
 
         /// Output separate policies for each method call instead of a single merged policy
@@ -316,6 +327,7 @@ Examples: us-east-1, us-west-2, eu-west-1."
             long_help = "When enabled, outputs individual IAM policies \
 for each method call. Disables --upload-policy, if provided."
         )]
+        #[telemetry(value)]
         individual_policies: bool,
 
         /// Upload generated policies to AWS IAM with optional custom name prefix
@@ -327,6 +339,7 @@ IamPolicyAutopilotGeneratedPolicy_1, IamPolicyAutopilotGeneratedPolicy_2, etc. \
 If a custom prefix is provided, policies will be named: \
 <CUSTOM_PREFIX>_1, <CUSTOM_PREFIX>_2, etc. \
 The tool automatically finds the lowest available number for each policy name.")]
+        #[telemetry(presence)]
         upload_policies: Option<String>,
 
         /// Enable minimal policy size by allowing cross-service action merging
@@ -337,6 +350,7 @@ different AWS services into the same policy statement. This can result in smalle
 but may be less readable. By default, actions from different services are kept in separate statements \
 for better organization."
         )]
+        #[telemetry(value)]
         minimal_policy_size: bool,
 
         /// Disable file system caching for service references
@@ -346,6 +360,7 @@ for better organization."
 By default, service reference data is cached in the system temp directory for 6 hours to improve performance. \
 Use this flag to force fresh data retrieval on every run."
         )]
+        #[telemetry(value)]
         disable_cache: bool,
 
         /// Filter extracted SDK calls to specific AWS services
@@ -354,6 +369,7 @@ Use this flag to force fresh data retrieval on every run."
             num_args = 1..,
             long_help = SERVICE_HINTS_LONG_HELP,
         )]
+        #[telemetry(list)]
         service_hints: Option<Vec<String>>,
 
         /// Generate explanations for why actions were added, filtered to specific action patterns
@@ -371,6 +387,7 @@ Examples:\n  \
 --explain 'ec2:Describe*'     # Explain EC2 Describe actions\n  \
 --explain 's3:*' 'dynamodb:*' # Explain S3 and DynamoDB actions"
         )]
+        #[telemetry(list)]
         explain: Option<Vec<String>>,
 
         /// Terraform project directory for resolving ARNs to use in resource block in generated policies
@@ -443,17 +460,21 @@ and AccessDenied error fixing capabilities to IDEs and other tools. The server c
 for direct integration or HTTP mode for network-based communication. \
 Supports both transport mechanisms with configurable logging."
     )]
+    // MCP server notice is sent through `notifications/message` on initialization
+    #[telemetry(command = "mcp-server", skip_notice)]
     McpServer {
         /// Transport mechanism for MCP communication
         #[arg(short = 't', long = "transport", default_value_t = McpTransport::Stdio,
               long_help = "Transport mechanism for MCP communication. 'stdio' uses standard input/output \
 for direct integration with IDEs and tools. 'http' starts an HTTP server for network-based communication.")]
+        #[telemetry(value)]
         transport: McpTransport,
 
         /// Port number for HTTP transport (ignored for stdio transport)
         #[arg(short = 'p', long = "port", default_value_t = MCP_HTTP_DEFAULT_PORT,
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
 Only used when --transport=http. The server will bind to the specified address on the specified port.")]
+        #[telemetry(skip)]
         port: u16,
 
         /// Bind address for HTTP transport (ignored for stdio transport)
@@ -469,9 +490,34 @@ Use 0.0.0.0 to listen on all interfaces.")]
         short_flag = 'V',
         long_flag = "version"
     )]
+    #[telemetry(skip)]
     Version {
         #[arg(long = "verbose", default_value_t = false, hide = true)]
         verbose: bool,
+    },
+
+    /// Manage anonymous telemetry settings
+    #[command(
+        long_about = "View or change anonymous telemetry settings.\n\n\
+IAM Policy Autopilot collects anonymous usage metrics to improve the tool.\n\
+No file paths, policy content, AWS account IDs, or credentials are ever collected.\n\n\
+Use --enable or --disable to persist your preference to ~/.iam-policy-autopilot/telemetry.json.\n\
+Use --status to view the current telemetry state.\n\n\
+The IAM_POLICY_AUTOPILOT_TELEMETRY environment variable (0/1) always takes precedence over the config file."
+    )]
+    #[telemetry(skip)]
+    Telemetry {
+        /// Enable anonymous telemetry
+        #[arg(long = "enable", conflicts_with = "disable")]
+        enable: bool,
+
+        /// Disable anonymous telemetry
+        #[arg(long = "disable", conflicts_with = "enable")]
+        disable: bool,
+
+        /// Show current telemetry status
+        #[arg(long = "status")]
+        status: bool,
     },
 }
 
@@ -530,8 +576,9 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
     Ok(())
 }
 
-/// Handle the generate-policies subcommand
-async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
+/// Handle the generate-policies subcommand.
+/// Returns the number of policies generated (used for telemetry).
+async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<usize> {
     use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 
     info!("Running generate-policies command");
@@ -567,6 +614,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         explain_resource_filters: config.explain_resources.clone(),
     })
     .await?;
+
+    let num_policies = result.policies.len();
 
     if config.individual_policies {
         // Output individual policies
@@ -614,110 +663,30 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             .context("Failed to output merged IAM policy")?;
     }
 
-    Ok(())
+    Ok(num_policies)
 }
 
-/// Build a telemetry event from the parsed CLI command.
-///
-/// Records only telemetry-safe data: boolean presence, enum values, and service names.
-/// Never records file paths, AWS account IDs, region values, or policy content.
-fn build_telemetry_event(command: &Commands) -> Option<TelemetryEvent> {
-    match command {
-        Commands::FixAccessDenied { source, yes } => Some(
-            TelemetryEvent::new("fix-access-denied")
-                .with_presence("source", source.is_some())
-                .with_bool("yes", *yes),
-        ),
-        Commands::ExtractSdkCalls {
-            source_files,
-            pretty,
-            language,
-            full_output,
-            service_hints,
-            ..
-        } => Some(
-            TelemetryEvent::new("extract-sdk-calls")
-                .with_presence("source_files", !source_files.is_empty())
-                .with_bool("pretty", *pretty)
-                .with_optional_str("language", language.as_deref())
-                .with_bool("full_output", *full_output)
-                .with_list(
-                    "service_hints",
-                    service_hints.as_deref().unwrap_or(&[]),
-                ),
-        ),
-        Commands::GeneratePolicies {
-            source_files,
-            pretty,
-            language,
-            full_output,
-            region,
-            account,
-            individual_policies,
-            upload_policies,
-            minimal_policy_size,
-            disable_cache,
-            service_hints,
-            explain,
-            ..
-        } => Some(
-            TelemetryEvent::new("generate-policies")
-                .with_presence("source_files", !source_files.is_empty())
-                .with_presence("region", region != "*")
-                .with_presence("account", account != "*")
-                .with_bool("pretty", *pretty)
-                .with_optional_str("language", language.as_deref())
-                .with_bool("full_output", *full_output)
-                .with_bool("individual_policies", *individual_policies)
-                .with_presence("upload_policies", upload_policies.is_some())
-                .with_bool("minimal_policy_size", *minimal_policy_size)
-                .with_bool("disable_cache", *disable_cache)
-                .with_list(
-                    "service_hints",
-                    service_hints.as_deref().unwrap_or(&[]),
-                )
-                .with_list(
-                    "explain",
-                    explain.as_deref().unwrap_or(&[]),
-                ),
-        ),
-        Commands::McpServer { transport, port } => Some(
-            TelemetryEvent::new("mcp-server")
-                .with_str("transport", transport.to_string())
-                .with_bool("non_default_port", *port != MCP_HTTP_DEFAULT_PORT),
-        ),
-        Commands::Version { .. } => {
-            // Don't emit telemetry for --version
-            None
+fn show_telemetry_notice(cli: &Cli) {
+    // --- Telemetry: show notice (before execution) ---
+    // Skip CLI notice for variants annotated with #[telemetry(skip)] or #[telemetry(skip_notice)]:
+    //   - `telemetry` subcommand (user is already managing telemetry) — via skip
+    //   - `mcp-server` subcommand (notice is sent via MCP notifications/message instead) — via skip_notice
+    if !cli.command.should_skip_notice() {
+        if let Some(notice) = telemetry::telemetry_notice() {
+            eprintln!("\n{notice}\n");
         }
     }
-}
-
-/// Emit telemetry in the background (fire-and-forget).
-///
-/// Spawns a tokio task that sends the telemetry event. The task is detached
-/// and any failures are silently ignored.
-fn spawn_telemetry(event: TelemetryEvent) {
-    tokio::spawn(async move {
-        if let Some(client) = TelemetryClient::new() {
-            client.emit(&event).await;
-        }
-    });
 }
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    // --- Telemetry: build event, show notice, emit ---
-    if telemetry::is_telemetry_enabled() {
-        if let Some(event) = build_telemetry_event(&cli.command) {
-            spawn_telemetry(event);
-        }
-    }
-    if let Some(notice) = telemetry::telemetry_notice_cli() {
-        eprintln!("{notice}");
-    }
+    show_telemetry_notice(&cli);
+
+    // Build telemetry event using the derived ToTelemetryEvent trait (result data added after execution).
+    // to_telemetry_event() returns None automatically when telemetry is disabled or for #[telemetry(skip)] variants.
+    let mut telemetry_event = cli.command.to_telemetry_event();
 
     let code = match cli.command {
         Commands::FixAccessDenied { source, yes } => {
@@ -820,7 +789,12 @@ async fn main() {
             };
 
             match handle_generate_policy(&config).await {
-                Ok(()) => ExitCode::Success,
+                Ok(num_policies) => {
+                    if let Some(ref mut event) = telemetry_event {
+                        event.set_result_num_policies(num_policies);
+                    }
+                    ExitCode::Success
+                }
                 Err(e) => {
                     print_cli_command_error(e);
                     ExitCode::Duplicate // Exit code 1 for generate-policies errors
@@ -849,7 +823,30 @@ async fn main() {
                 ExitCode::Error
             }
         },
+
+        Commands::Telemetry {
+            enable,
+            disable,
+            status,
+        } => {
+            if enable {
+                telemetry::set_telemetry_choice(TelemetryChoice::Enabled);
+                eprintln!("Telemetry enabled. Preference saved to ~/.iam-policy-autopilot/telemetry.json");
+            } else if disable {
+                telemetry::set_telemetry_choice(TelemetryChoice::Disabled);
+                eprintln!("Telemetry disabled. Preference saved to ~/.iam-policy-autopilot/telemetry.json");
+            }
+
+            if status || (!enable && !disable) {
+                eprintln!("{}", telemetry::telemetry_status_string());
+            }
+
+            ExitCode::Success
+        }
     };
+
+    // --- Telemetry: emit AFTER execution with result data ---
+    telemetry::finalize_and_emit(telemetry_event, code == ExitCode::Success).await;
 
     process::exit(code.into());
 }
@@ -860,5 +857,46 @@ fn print_cli_command_error(e: anyhow::Error) {
     while let Some(err) = source {
         eprintln!("  Caused by: {err}");
         source = err.source();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iam_policy_autopilot_common::telemetry::ToTelemetryEvent;
+
+    /// Verify that every CLI telemetry field from the `Commands` enum is documented
+    /// in TELEMETRY.md. Fails if a `#[telemetry(...)]` annotation is added or
+    /// renamed without updating the doc.
+    #[test]
+    fn test_cli_telemetry_fields_documented_in_telemetry_md() {
+        let fields = Commands::telemetry_fields();
+
+        let telemetry_md = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../TELEMETRY.md"
+        ))
+        .expect("Failed to read TELEMETRY.md");
+
+        for field in &fields {
+            // Skip fields with "not collected" mode — they're documented as not collected
+            if field.collection_mode == "not collected" {
+                continue;
+            }
+
+            let header = format!("### CLI: `{}` Command", field.command);
+            assert!(
+                telemetry_md.contains(&header),
+                "TELEMETRY.md missing section: {header}"
+            );
+
+            let field_row = format!("| `{}` |", field.field_name);
+            assert!(
+                telemetry_md.contains(&field_row),
+                "TELEMETRY.md missing field `{}` for CLI command `{}`",
+                field.field_name,
+                field.command,
+            );
+        }
     }
 }

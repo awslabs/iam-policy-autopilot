@@ -40,8 +40,10 @@ iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-de
 
 [dev-dependencies]
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" , features=["integ-test"] }
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 serial_test.workspace = true
 reqwest.workspace = true
+rstest = "0.24"
 rmcp = { version = "^0.8" , features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",

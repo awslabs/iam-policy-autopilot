@@ -1,12 +1,12 @@
 use anyhow;
 use iam_policy_autopilot_common::telemetry::{
-    self, TelemetryClient, TelemetryEvent,
+    self, ToTelemetryEvent,
 };
 use log::{error, info, trace};
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
-    model::{ErrorCode, ServerCapabilities, ServerInfo},
-    service::RequestContext,
+    model::{ErrorCode, LoggingLevel, LoggingMessageNotificationParam, ServerCapabilities, ServerInfo},
+    service::{NotificationContext, RequestContext},
     tool, tool_handler, tool_router,
     transport::{
         self, streamable_http_server::session::local::LocalSessionManager, StreamableHttpService,
@@ -19,15 +19,6 @@ use crate::tools::{
     FixAccessDeniedInput, FixAccessDeniedOutput, GeneratePoliciesInput, GeneratePoliciesOutput,
     GeneratePolicyForAccessDeniedInput, GeneratePolicyForAccessDeniedOutput,
 };
-
-/// Spawn a fire-and-forget telemetry emission task.
-fn spawn_mcp_telemetry(event: TelemetryEvent) {
-    tokio::spawn(async move {
-        if let Some(client) = TelemetryClient::new() {
-            client.emit(&event).await;
-        }
-    });
-}
 
 // Define the server struct
 #[derive(Clone)]
@@ -90,27 +81,28 @@ impl IamAutoPilotMcpServer {
     ) -> Result<Json<GeneratePoliciesOutput>, McpError> {
         trace!("generate_application_policies input: {:#?}", params.0);
 
-        // Emit telemetry for this MCP tool invocation
-        if telemetry::is_telemetry_enabled() {
-            let event = TelemetryEvent::new("mcp:generate_application_policies")
-                .with_presence("source_files", !params.0.source_files.is_empty())
-                .with_presence("region", params.0.region.is_some())
-                .with_presence("account", params.0.account.is_some())
-                .with_list(
-                    "service_hints",
-                    params.0.service_hints.as_deref().unwrap_or(&[]),
-                );
-            spawn_mcp_telemetry(event);
+        // Build telemetry event (returns None when telemetry is disabled)
+        let telemetry_event = params.0.to_telemetry_event();
+
+        match generate_application_policies(params.0).await {
+            Ok(output) => {
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(
+                        event.with_result_success(true)
+                            .with_result_num_policies(output.policies.len()),
+                    );
+                }
+                trace!("generate_application_policies output: {output:#?}");
+                Ok(Json(output))
+            }
+            Err(e) => {
+                error!("{e:#?}");
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(event.with_result_success(false));
+                }
+                Err(self.format_mcp_error("Failed to generate policies", e))
+            }
         }
-
-        let output = generate_application_policies(params.0).await.map_err(|e| {
-            error!("{e:#?}");
-            self.format_mcp_error("Failed to generate policies", e)
-        })?;
-
-        trace!("generate_application_policies output: {output:#?}");
-
-        Ok(Json(output))
     }
 
     #[tool(
@@ -125,21 +117,25 @@ impl IamAutoPilotMcpServer {
     ) -> Result<Json<GeneratePolicyForAccessDeniedOutput>, McpError> {
         trace!("generate_policy_for_access_denied input: {:#?}", params.0);
 
-        // Emit telemetry for this MCP tool invocation
-        if telemetry::is_telemetry_enabled() {
-            let event = TelemetryEvent::new("mcp:generate_policy_for_access_denied")
-                .with_presence("error_message", true);
-            spawn_mcp_telemetry(event);
-        }
+        // Build telemetry event (returns None when telemetry is disabled)
+        let telemetry_event = params.0.to_telemetry_event();
 
-        let output = generate_policy_for_access_denied(params.0)
-            .await
-            .map_err(|e| {
+        match generate_policy_for_access_denied(params.0).await {
+            Ok(output) => {
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(event.with_result_success(true));
+                }
+                trace!("generate_policy_for_access_denied output: {output:#?}");
+                Ok(Json(output))
+            }
+            Err(e) => {
                 error!("{e:#?}");
-                self.format_mcp_error("Failed to to generate policy for access denial fix", e)
-            })?;
-        trace!("generate_policy_for_access_denied  output: {output:#?}");
-        Ok(Json(output))
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(event.with_result_success(false));
+                }
+                Err(self.format_mcp_error("Failed to generate policy for access denial fix", e))
+            }
+        }
     }
 
     #[tool(
@@ -162,19 +158,25 @@ impl IamAutoPilotMcpServer {
     ) -> Result<Json<FixAccessDeniedOutput>, McpError> {
         trace!("fix_access_denied input: {:#?}", params.0);
 
-        // Emit telemetry for this MCP tool invocation
-        if telemetry::is_telemetry_enabled() {
-            let event = TelemetryEvent::new("mcp:fix_access_denied")
-                .with_presence("error_message", true);
-            spawn_mcp_telemetry(event);
-        }
+        // Build telemetry event (returns None when telemetry is disabled)
+        let telemetry_event = params.0.to_telemetry_event();
 
-        let output = fix_access_denied(context, params.0).await.map_err(|e| {
-            error!("{e:#?}");
-            self.format_mcp_error("Failed to apply access denial fix", e)
-        })?;
-        trace!("fix_access_denied output: {output:#?}");
-        Ok(Json(output))
+        match fix_access_denied(context, params.0).await {
+            Ok(output) => {
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(event.with_result_success(true));
+                }
+                trace!("fix_access_denied output: {output:#?}");
+                Ok(Json(output))
+            }
+            Err(e) => {
+                error!("{e:#?}");
+                if let Some(event) = telemetry_event {
+                    telemetry::spawn_telemetry(event.with_result_success(false));
+                }
+                Err(self.format_mcp_error("Failed to apply access denial fix", e))
+            }
+        }
     }
 }
 
@@ -205,6 +207,35 @@ impl ServerHandler for IamAutoPilotMcpServer {
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
             This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.".to_string()),
                 ..Default::default()
+        }
+    }
+
+    /// Called after the MCP handshake completes. Sends the telemetry notice
+    /// via `notifications/message` (MCP logging) if the user hasn't made
+    /// an explicit telemetry choice.
+    async fn on_initialized(
+        &self,
+        context: NotificationContext<RoleServer>,
+    ) {
+        info!("MCP client initialized");
+
+        // Send telemetry notice via MCP notifications/message protocol.
+        // Use a timeout to avoid blocking if the client disconnects before reading.
+        if let Some(notice) = telemetry::telemetry_notice() {
+            info!("Sending telemetry notice via MCP notifications/message");
+            let send_future = context
+                .peer
+                .notify_logging_message(LoggingMessageNotificationParam {
+                    level: LoggingLevel::Notice,
+                    logger: Some("iam-policy-autopilot".to_string()),
+                    data: serde_json::Value::String(notice.to_string()),
+                });
+
+            match tokio::time::timeout(std::time::Duration::from_secs(2), send_future).await {
+                Ok(Ok(())) => info!("Telemetry notice sent via MCP notifications/message"),
+                Ok(Err(e)) => info!("Failed to send telemetry notice (non-fatal): {e}"),
+                Err(_) => info!("Telemetry notice send timed out (client may have disconnected)"),
+            }
         }
     }
 }

@@ -5,7 +5,9 @@ use clap::ValueEnum;
 use log::info;
 
 pub mod mcp;
-pub(crate) mod tools;
+/// MCP tool input/output types. Input types derive `TelemetryEvent` and expose
+/// `telemetry_fields()` for documentation generation.
+pub mod tools;
 
 /// Default bind address for the HTTP MCP server.
 pub static DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";

@@ -13,22 +13,27 @@ mod api {
 }
 
 // Input struct matching the updated schema
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Serialize, Deserialize, JsonSchema, iam_policy_autopilot_common::telemetry::TelemetryEventDerive)]
 #[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for generating IAM policies from source code.")]
+#[telemetry(command = "mcp-tool-generate-policies")]
 pub struct GeneratePoliciesInput {
     #[schemars(description = "Absolute paths to source files to generate IAM Policies for")]
+    #[telemetry(presence)]
     pub source_files: Vec<String>,
 
     #[schemars(description = "AWS Region")]
+    #[telemetry(presence)]
     pub region: Option<String>,
 
     #[schemars(description = "AWS Account Id")]
+    #[telemetry(presence)]
     pub account: Option<String>,
 
     #[schemars(
         description = "List of AWS service names to filter SDK calls by (e.g., ['s3', 'dynamodb']). When provided, the result of source code analysis will be restricted to the provided services. The generated policy may still contain actions from a service not provided as a hint, if IAM Policy Autopilot determines that the action may be needed for the SDK call."
     )]
+    #[telemetry(list)]
     pub service_hints: Option<Vec<String>>,
 
     #[schemars(

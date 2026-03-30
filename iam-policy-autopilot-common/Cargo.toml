@@ -14,6 +14,17 @@ path = "src/lib.rs"
 reqwest.workspace = true
 tokio.workspace = true
 log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+uuid.workspace = true
+iam-policy-autopilot-telemetry-derive = { path = "../iam-policy-autopilot-telemetry-derive" }
+
+# AWS SigV4 signing for authenticated Lambda Function URL
+aws-config.workspace = true
+aws-sigv4 = "1"
+aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
+aws-smithy-runtime-api = "1"
+http = "1"
 
 [dev-dependencies]
 serial_test.workspace = true

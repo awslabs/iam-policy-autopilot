@@ -2,12 +2,11 @@ mod fix_access_denied;
 mod generate_policy;
 mod generate_policy_for_access_denied;
 
-pub(crate) use generate_policy::{
-    generate_application_policies, GeneratePoliciesInput, GeneratePoliciesOutput,
-};
+pub(crate) use generate_policy::generate_application_policies;
+pub(crate) use generate_policy::{GeneratePoliciesInput, GeneratePoliciesOutput};
+pub(crate) use generate_policy_for_access_denied::generate_policy_for_access_denied;
 pub(crate) use generate_policy_for_access_denied::{
-    generate_policy_for_access_denied, GeneratePolicyForAccessDeniedInput,
-    GeneratePolicyForAccessDeniedOutput,
+    GeneratePolicyForAccessDeniedInput, GeneratePolicyForAccessDeniedOutput,
 };
 
 /// Wrapper for iam_policy_autopilot_policy_generation::commands::IamPolicyAutopilotService
@@ -80,4 +79,60 @@ mod policy_autopilot {
     }
 }
 
-pub(crate) use fix_access_denied::*;
+pub(crate) use fix_access_denied::fix_access_denied;
+pub(crate) use fix_access_denied::{FixAccessDeniedInput, FixAccessDeniedOutput};
+
+#[cfg(test)]
+mod telemetry_doc_sync_tests {
+    use super::*;
+    use iam_policy_autopilot_common::telemetry::{TelemetryFieldInfo, ToTelemetryEvent};
+    use std::collections::BTreeMap;
+
+    fn collect_mcp_telemetry_fields() -> Vec<TelemetryFieldInfo> {
+        let mut fields = Vec::new();
+        fields.extend(GeneratePoliciesInput::telemetry_fields());
+        fields.extend(GeneratePolicyForAccessDeniedInput::telemetry_fields());
+        fields.extend(FixAccessDeniedInput::telemetry_fields());
+        fields
+    }
+
+    #[test]
+    fn test_mcp_telemetry_fields_documented_in_telemetry_md() {
+        let fields = collect_mcp_telemetry_fields();
+
+        let telemetry_md = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../TELEMETRY.md"
+        ))
+        .expect("Failed to read TELEMETRY.md");
+
+        let mut by_command: BTreeMap<String, Vec<&TelemetryFieldInfo>> = BTreeMap::new();
+        for field in &fields {
+            by_command
+                .entry(field.command.clone())
+                .or_default()
+                .push(field);
+        }
+
+        for (command, fields) in &by_command {
+            let header = format!("### MCP: `{command}`");
+            assert!(
+                telemetry_md.contains(&header),
+                "TELEMETRY.md missing section: {header}"
+            );
+
+            for field in fields {
+                if field.collection_mode == "not collected" {
+                    continue;
+                }
+                let field_row = format!("| `{}` |", field.field_name);
+                assert!(
+                    telemetry_md.contains(&field_row),
+                    "TELEMETRY.md missing field `{}` for MCP command `{}`",
+                    field.field_name,
+                    command,
+                );
+            }
+        }
+    }
+}
