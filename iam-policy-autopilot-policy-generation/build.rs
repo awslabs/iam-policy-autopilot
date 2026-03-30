@@ -1,4 +1,5 @@
 use aws_lc_rs::digest::{Context, Digest, SHA256};
+use convert_case::{Case, Casing};
 use git2::{DescribeOptions, Repository};
 use relative_path::PathExt;
 use relative_path::RelativePathBuf;
@@ -10,6 +11,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Simplified service definition with fields removed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +118,7 @@ impl GitSubmoduleMetadata {
 fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
+    println!("cargo:rerun-if-changed=scripts/generate_python_name_map.py");
 
     #[allow(clippy::unwrap_used)]
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -172,6 +175,12 @@ fn main() {
 
     if let Err(e) = process_boto3_data(boto3_data_path, &boto3_dir) {
         panic!("Failed to process boto3 data: {e}");
+    }
+
+    // Generate Python operation name map using botocore's xform_name
+    let python_name_map_dir = Path::new("target/python-name-map");
+    if let Err(e) = generate_python_name_map(python_name_map_dir) {
+        panic!("Failed to generate Python operation name map: {e}");
     }
 
     // Copy the boto3 directory to workspace-level target for rust-embed
@@ -581,6 +590,96 @@ fn get_repository_tag(repo: &Repository) -> Result<Option<String>, Box<dyn std::
             )
         })
         .unwrap_or_default())
+}
+
+/// Generate the Python operation name map by running the Python script and then
+/// filtering out entries that convert_case already handles correctly.
+///
+/// The Python script produces a full map of {PascalCase → snake_case} for all operations
+/// using botocore's authoritative xform_name(). We then keep only the entries where
+/// botocore's result differs from what convert_case::Case::Snake produces, so the
+/// embedded lookup table stays small.
+fn generate_python_name_map(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let botocore_root = Path::new("resources/config/sdks/botocore-data");
+    let botocore_data_dir = botocore_root.join("botocore/data");
+    let script_path = Path::new("scripts/generate_python_name_map.py");
+
+    assert!(
+        botocore_root.exists(),
+        "Required botocore root not found at: {}. Please run `git submodule init && git submodule update`.",
+        botocore_root.display()
+    );
+    assert!(
+        script_path.exists(),
+        "Python name map script not found at: {}",
+        script_path.display()
+    );
+
+    // Create output directory
+    fs::create_dir_all(output_dir)?;
+
+    let tmp_full_map = output_dir.join("python_operation_name_map_full.json");
+    let final_map = output_dir.join("python_operation_name_map.json");
+
+    // Run the Python script to generate the full xform_name map
+    let output = Command::new("python3")
+        .arg(script_path)
+        .arg(botocore_root)
+        .arg(&botocore_data_dir)
+        .arg(&tmp_full_map)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Python script failed with status {}: {}",
+            output.status, stderr
+        )
+        .into());
+    }
+
+    // Read the full map produced by the Python script
+    let full_map_json = fs::read_to_string(&tmp_full_map)?;
+    let full_map: BTreeMap<String, String> = serde_json::from_str(&full_map_json)?;
+
+    // Filter: keep only entries where convert_case produces a different result than botocore in
+    // either direction. We need to cover both:
+    //
+    // 1. Forward (PascalCase → snake_case): botocore's xform_name() differs from
+    //    convert_case::Case::Snake. Example: "AssignIpv6Addresses" →
+    //    botocore: "assign_ipv6_addresses", convert_case: "assign_ipv_6_addresses"
+    //    (convert_case splits on digit boundaries: LOWER_DIGIT at "v6" and DIGIT_UPPER at "6A").
+    //
+    // 2. Reverse (snake_case → PascalCase): convert_case::Case::Pascal applied to the botocore
+    //    snake_case name does not round-trip back to the original PascalCase. Example:
+    //    "ModifyDBCluster" → botocore snake: "modify_db_cluster" (forward matches convert_case,
+    //    so it would be filtered out by a forward-only check), but
+    //    "modify_db_cluster".to_case(Case::Pascal) = "ModifyDbCluster" ≠ "ModifyDBCluster",
+    //    so the reverse lookup in Operation::from_call would produce the wrong PascalCase name.
+    #[allow(unknown_lints, convert_case_pascal)]
+    let special_cases: BTreeMap<String, String> = full_map
+        .into_iter()
+        .filter(|(pascal_name, botocore_snake)| {
+            // Keep if forward conversion differs (convert_case snake is wrong)
+            let convert_case_snake = pascal_name.to_case(Case::Snake);
+            if &convert_case_snake != botocore_snake {
+                return true;
+            }
+            // Also keep if reverse conversion differs (convert_case Pascal can't round-trip
+            // back to the original PascalCase from the botocore snake_case name)
+            let convert_case_pascal = botocore_snake.to_case(Case::Pascal);
+            &convert_case_pascal != pascal_name
+        })
+        .collect();
+
+    // Write the filtered map as the final embedded JSON
+    let final_json = serde_json::to_string(&special_cases)?;
+    fs::write(&final_map, final_json)?;
+
+    // Clean up the temporary full map
+    let _ = fs::remove_file(&tmp_full_map);
+
+    Ok(())
 }
 
 fn get_repository_commit(repo: &Repository) -> Result<String, Box<dyn std::error::Error>> {

@@ -336,6 +336,7 @@ iam-policy-autopilot mcp-server --transport http
 
 - [Rust](https://rustup.rs/) (latest stable version)
 - Git
+- Python 3
 - [CMake](https://cmake.org/) (Windows only)
 
 ### Setup

@@ -16,6 +16,62 @@ use regex::Regex;
 use rust_embed::RustEmbed;
 use serde_json::Value;
 
+/// Embedded Python operation name map
+///
+/// Contains the special-case lookup table mapping PascalCase AWS operation names
+/// to their correct Python snake_case equivalents as used by boto3. Only entries
+/// where botocore's xform_name() differs from the standard convert_case result
+/// are included, keeping the table small.
+#[derive(RustEmbed)]
+#[folder = "target/python-name-map"]
+#[include = "*.json"]
+struct PythonNameMapRaw;
+
+/// Python operation name map manager
+///
+/// Provides a lazily-initialized lookup table for converting AWS PascalCase
+/// operation names to their Python snake_case equivalents. The table is built
+/// at compile time from botocore's xform_name() function and covers all
+/// special cases that the standard snake_case conversion gets wrong.
+pub(crate) struct PythonNameMap;
+
+impl PythonNameMap {
+    /// Look up the Python snake_case method name for a given PascalCase operation name.
+    ///
+    /// Returns `Some(snake_case_name)` if the operation is a special case that botocore
+    /// handles differently from the standard conversion, or `None` if the standard
+    /// convert_case algorithm produces the correct result.
+    pub(crate) fn lookup(operation_name: &str) -> Option<&'static str> {
+        static MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+            let file = PythonNameMapRaw::get("python_operation_name_map.json")
+                .expect("python_operation_name_map.json not found in embedded data");
+            serde_json::from_slice::<HashMap<String, String>>(&file.data)
+                .expect("Failed to parse python_operation_name_map.json")
+        });
+
+        MAP.get(operation_name).map(std::string::String::as_str)
+    }
+
+    /// Look up the PascalCase operation name for a given Python snake_case method name.
+    ///
+    /// This is the reverse lookup used in `Operation::from_call` to convert a
+    /// snake_case method name back to the PascalCase operation name. Returns `None`
+    /// if the name is not a special case (the caller should fall back to
+    /// `to_case(Case::Pascal)`).
+    pub(crate) fn reverse_lookup(snake_name: &str) -> Option<&'static str> {
+        static REVERSE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+            let file = PythonNameMapRaw::get("python_operation_name_map.json")
+                .expect("python_operation_name_map.json not found in embedded data");
+            let forward: HashMap<String, String> = serde_json::from_slice(&file.data)
+                .expect("Failed to parse python_operation_name_map.json");
+            // Invert: snake_case → PascalCase
+            forward.into_iter().map(|(k, v)| (v, k)).collect()
+        });
+
+        REVERSE_MAP.get(snake_name).map(std::string::String::as_str)
+    }
+}
+
 /// Partitions definition. Map of partition ID to region regex.
 #[derive(Clone, Debug)]
 pub(crate) struct PartitionsDefinition {

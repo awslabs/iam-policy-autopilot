@@ -11,8 +11,8 @@ use crate::extraction::shared::{
     ChainedPaginatorCallInfo, PaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
 };
 use crate::extraction::{AstWithSourceFile, Parameter, SdkMethodCall};
+use crate::Location;
 use crate::ServiceModelIndex;
-use crate::{Language, Location};
 use ast_grep_language::Python;
 
 /// Extractor for boto3 paginate method patterns
@@ -74,8 +74,7 @@ impl<'a> PaginatorExtractor<'a> {
                     creation: paginator,
                     paginate: paginate_call,
                 };
-                synthetic_calls
-                    .push(pattern.create_synthetic_call(self.service_index, Language::Python));
+                synthetic_calls.push(pattern.create_synthetic_call(self.service_index));
                 matched_paginator_indices.insert(paginator_idx);
             }
         }
@@ -83,16 +82,14 @@ impl<'a> PaginatorExtractor<'a> {
         // Step 5: Handle chained paginator calls
         for chained_call in &chained_calls {
             let pattern = PaginatorCallPattern::Chained(chained_call);
-            synthetic_calls
-                .push(pattern.create_synthetic_call(self.service_index, Language::Python));
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index));
         }
 
         // Step 6: Handle unmatched get_paginator calls by creating synthetic calls with empty parameters
         for (idx, paginator) in paginators.iter().enumerate() {
             if !matched_paginator_indices.contains(&idx) {
                 let pattern = PaginatorCallPattern::CreationOnly(paginator);
-                synthetic_calls
-                    .push(pattern.create_synthetic_call(self.service_index, Language::Python));
+                synthetic_calls.push(pattern.create_synthetic_call(self.service_index));
             }
         }
 

@@ -36,6 +36,9 @@ use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
+// Not part of the stable public API — exposed only for integration tests in tests/.
+#[doc(hidden)]
+pub use extraction::ServiceDiscovery;
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
 };
