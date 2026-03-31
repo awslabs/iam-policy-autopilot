@@ -11,7 +11,6 @@
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
-// Re-export the enrichment module for public use
 pub(crate) mod enrichment;
 
 // Re-export the providers module for public use

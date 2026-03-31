@@ -18,6 +18,8 @@ pub(crate) mod shared;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
+pub(crate) mod terraform;
+
 // Re-export main types for convenience
 pub use engine::Engine;
 // Not part of the stable public API — exposed only for integration tests in tests/.

@@ -27,7 +27,9 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod engine;
 pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
-pub(crate) mod service_reference;
+pub mod service_reference;
+
+pub(crate) mod terraform;
 
 pub use engine::Engine;
 pub(crate) use operation_fas_map::load_operation_fas_map;
@@ -320,6 +322,15 @@ impl Action {
             conditions,
             explanation,
         }
+    }
+
+    /// Extract the service prefix from this action's name.
+    ///
+    /// For `"s3:GetObject"` returns `"s3"`. If no colon is present,
+    /// returns the full name.
+    #[must_use]
+    pub(crate) fn service(&self) -> &str {
+        self.name.split(':').next().unwrap_or(&self.name)
     }
 }
 

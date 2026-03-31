@@ -1,0 +1,178 @@
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "dynamodb:GetItem"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:dynamodb:us-east-1:123456789012:table/users-prod"
+            ],
+            "Sid": "AllowDYNAMODBGetItem"
+          },
+          {
+            "Action": [
+              "dynamodb:ReadDataForReplication"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:dynamodb:us-east-1:123456789012:table/users-prod"
+            ],
+            "Sid": "AllowDYNAMODBReadDataForReplication"
+          },
+          {
+            "Action": [
+              "kms:Decrypt"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ],
+            "Sid": "AllowDYNAMODBDecrypt"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    },
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ],
+            "Sid": "AllowS3GenerateDataKey"
+          },
+          {
+            "Action": [
+              "s3-object-lambda:PutObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObject"
+          },
+          {
+            "Action": [
+              "s3:PutObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObject"
+          },
+          {
+            "Action": [
+              "s3:PutObjectAcl"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObjectAcl"
+          },
+          {
+            "Action": [
+              "s3:PutObjectLegalHold"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObjectLegalHold"
+          },
+          {
+            "Action": [
+              "s3:PutObjectRetention"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObjectRetention"
+          },
+          {
+            "Action": [
+              "s3:PutObjectTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3PutObjectTagging"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    },
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "sqs.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ],
+            "Sid": "AllowSQSGenerateDataKey"
+          },
+          {
+            "Action": [
+              "sqs:SendMessage"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:sqs:us-east-1:123456789012:myapp-tasks"
+            ],
+            "Sid": "AllowSQSSendMessage"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    }
+  ]
+}

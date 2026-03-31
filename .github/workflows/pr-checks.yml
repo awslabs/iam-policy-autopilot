@@ -33,6 +33,7 @@ jobs:
             submodules:
               - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
               - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
+              - 'iam-policy-autopilot-policy-generation/resources/config/terraform/**'
             python:
               - 'iam-policy-autopilot-policy-generation/scripts/**/*.py'
               - 'pyproject.toml'
@@ -84,6 +85,9 @@ jobs:
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
     steps:
+      - name: Enable long paths for Git
+        run: git config --system core.longpaths true
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
