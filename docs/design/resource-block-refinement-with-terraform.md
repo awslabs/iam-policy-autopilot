@@ -163,7 +163,7 @@ For each action's resource ARN pattern:
 1. **`local.*` and `module.*` references** — Not resolved. These produce wildcard bindings.
 2. **Complex expressions** — Function calls, conditionals, and `for_each` expressions are preserved as-is and produce wildcard bindings.
 3. **Cross-module references** — Module compositions where resources reference outputs from other modules are not followed.
-5. **Data sources** — `data` blocks are not processed (deferred for future auto-discovery feature).
+4. **Data sources** — `data` blocks are not processed (deferred for future auto-discovery feature).
 
 ## Future Work
 

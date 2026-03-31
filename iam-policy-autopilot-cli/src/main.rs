@@ -394,7 +394,7 @@ State-derived ARNs take precedence over those derived from .tf files. Can be use
         )]
         tfstate: Vec<PathBuf>,
 
-        /// Generate explanations for why resource ARNs were added, filtered to specificed patterns
+        /// Generate explanations for why resource ARNs were added, filtered to specified patterns
         #[arg(
             long = "explain-resources",
             num_args = 1..,
