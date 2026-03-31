@@ -31,6 +31,10 @@ lsp-types = "0.95"
 which = "6.0"
 tokio = { workspace = true, features = ["process", "io-util"] }
 tokio-util.workspace = true
+hcl-rs.workspace = true
+toml.workspace = true
+walkdir.workspace = true
+visibility.workspace = true
 
 
 # Build dependencies
@@ -43,6 +47,7 @@ serde_json.workspace = true
 aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
+convert_case.workspace = true
 
 [features]
 default = []
@@ -56,6 +61,7 @@ tokio-test.workspace = true
 tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
+rstest.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"

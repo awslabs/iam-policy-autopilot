@@ -7,7 +7,6 @@
 use std::path::Path;
 
 use crate::extraction::python::common::{ArgumentExtractor, ParameterFilter};
-use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::shared::{
     ChainedWaiterCallInfo, WaiterCallInfo, WaiterCallPattern, WaiterCreationInfo,
 };
@@ -74,6 +73,7 @@ impl<'a> WaitersExtractor<'a> {
                 }
                 .create_synthetic_calls(
                     self.service_index,
+                    Language::Python,
                     ParameterFilter::filter_waiter_parameters,
                     |service_name, operation_name| {
                         self.get_required_parameters(
@@ -81,9 +81,6 @@ impl<'a> WaitersExtractor<'a> {
                             operation_name,
                             self.service_index,
                         )
-                    },
-                    |operation_name| {
-                        ServiceDiscovery::operation_to_method_name(operation_name, Language::Python)
                     },
                 );
                 synthetic_calls.extend(matched_calls);
@@ -96,6 +93,7 @@ impl<'a> WaitersExtractor<'a> {
             let chained_synthetic_calls = WaiterCallPattern::Chained(&chained_call)
                 .create_synthetic_calls(
                     self.service_index,
+                    Language::Python,
                     ParameterFilter::filter_waiter_parameters,
                     |service_name, operation_name| {
                         self.get_required_parameters(
@@ -103,9 +101,6 @@ impl<'a> WaitersExtractor<'a> {
                             operation_name,
                             self.service_index,
                         )
-                    },
-                    |operation_name| {
-                        ServiceDiscovery::operation_to_method_name(operation_name, Language::Python)
                     },
                 );
             synthetic_calls.extend(chained_synthetic_calls);
@@ -118,18 +113,13 @@ impl<'a> WaitersExtractor<'a> {
                 let unmatched_calls = WaiterCallPattern::CreationOnly(waiter)
                     .create_synthetic_calls(
                         self.service_index,
+                        Language::Python,
                         ParameterFilter::filter_waiter_parameters,
                         |service_name, operation_name| {
                             self.get_required_parameters(
                                 service_name,
                                 operation_name,
                                 self.service_index,
-                            )
-                        },
-                        |operation_name| {
-                            ServiceDiscovery::operation_to_method_name(
-                                operation_name,
-                                Language::Python,
                             )
                         },
                     );

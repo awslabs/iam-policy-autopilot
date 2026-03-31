@@ -20,9 +20,9 @@ use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 6 hours.
+// Cache files for 5 minutes.
 // We can allow cache duration override in future.
-const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 21600;
+const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
 /// Represents the complete service reference loaded from service reference endpoint.
@@ -266,7 +266,7 @@ where
 
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
     pub(crate) service_reference_mapping: HashMap<String, Url>,
@@ -302,6 +302,7 @@ fn deserialize_service_reference_mapping(
 /// with exact service name matching and thread-safe caching. Service names
 /// must match exactly between input and Service Reference Name (case-sensitive).
 #[derive(Debug)]
+
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
@@ -321,9 +322,34 @@ impl RemoteServiceReferenceLoader {
         })
     }
 
+    /// Creates a loader that always returns `None` for any service.
+    /// Useful in tests that don't need real SDF data.
     #[cfg(test)]
+
+    pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
+        let loader = Self {
+            client: Self::create_client()?,
+            service_reference_mapping: OnceCell::new(),
+            service_cache: RwLock::new(HashMap::new()),
+            mapping_url: String::new(),
+            disable_file_system_cache: true,
+        };
+        // Pre-initialize with an empty mapping so no network call is ever made.
+        let _ = loader
+            .service_reference_mapping
+            .set(ServiceReferenceMapping {
+                service_reference_mapping: HashMap::new(),
+            });
+        Ok(loader)
+    }
+
+    /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
+    /// so the next call fetches from the new URL.
+    #[cfg(test)]
+
     pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
         self.mapping_url = url;
+        self.service_reference_mapping = OnceCell::new();
         self
     }
 
@@ -431,6 +457,18 @@ impl RemoteServiceReferenceLoader {
             }
         }
         false
+    }
+
+    pub(crate) async fn get_resource_arns(
+        &self,
+        service_name: &str,
+        resource_type: &str,
+    ) -> Option<Vec<String>> {
+        if let Ok(Some(service_ref)) = self.load(service_name).await {
+            service_ref.resources.get(resource_type).cloned()
+        } else {
+            None
+        }
     }
 
     pub(crate) async fn load(

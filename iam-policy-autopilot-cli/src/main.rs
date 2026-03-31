@@ -33,7 +33,7 @@ mod commands;
 mod output;
 mod types;
 
-use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport};
+use iam_policy_autopilot_mcp_server::{start_mcp_server, McpTransport, DEFAULT_BIND_ADDRESS};
 use types::ExitCode;
 
 use crate::commands::print_version_info;
@@ -92,6 +92,16 @@ struct GeneratePolicyCliConfig {
     disable_cache: bool,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
+    /// Optional Terraform project directory
+    terraform_dir: Option<PathBuf>,
+    /// Optional individual Terraform files
+    terraform_files: Vec<PathBuf>,
+    /// Optional paths to terraform.tfstate files
+    tfstate: Vec<PathBuf>,
+    /// Optional explicit .tfvars file paths
+    tfvars: Vec<PathBuf>,
+    /// Optional ARN patterns to filter resource binding explanations
+    explain_resources: Option<Vec<String>>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -133,6 +143,7 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
     #[command(
@@ -337,6 +348,68 @@ Examples:\n  \
 --explain 's3:*' 'dynamodb:*' # Explain S3 and DynamoDB actions"
         )]
         explain: Option<Vec<String>>,
+
+        /// Terraform project directory for resolving ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tf-dir",
+            long_help = "Directory containing Terraform .tf files. When provided, the tool parses \
+Terraform resources to discover AWS infrastructure and generates more precise IAM policies by \
+using concrete resource names in ARNs, when possible. .tf files discovered in the Terraform \
+directory are combined with any files specified via --tf-files."
+        )]
+        terraform_dir: Option<PathBuf>,
+
+        /// One or more .tf file(s) for resolving ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tf-files",
+            num_args = 1..,
+            long_help = "One or more individual Terraform .tf files to parse for AWS resource definitions. \
+When provided, the tool parses Terraform resources to discover AWS infrastructure and generates \
+more precise IAM policies by using concrete resource names in ARNs, when possible. These files \
+are combined with any directory specified via --tf-dir."
+        )]
+        terraform_files: Vec<PathBuf>,
+
+        /// One or more .tfvars file(s) for variable overrides
+        #[arg(
+            long = "tfvars",
+            num_args = 1..,
+            long_help = "One or more .tfvars files for overriding Terraform variable values. When \
+provided, these files are used to resolve variable references in resource definitions, enabling \
+more precise IAM policies by using concrete resource names in ARNs. These files take precedence \
+over auto-discovered terraform.tfvars and *.auto.tfvars files from the Terraform directory. \
+Applied in order (later files override earlier ones). This is equivalent to Terraform's \
+-var-file= CLI flag."
+        )]
+        tfvars: Vec<PathBuf>,
+
+        /// One or more .tfstate file(s) for resolving exact deployed ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tfstate",
+            num_args = 1..,
+            long_help = "One or more terraform.tfstate files containing deployed resource state. \
+When provided, the tool uses actual deployed resource ARNs to generate more precise IAM policies. \
+State-derived ARNs take precedence over those derived from .tf files. Can be used with --tf-dir, \
+--tf-files, or independently."
+        )]
+        tfstate: Vec<PathBuf>,
+
+        /// Generate explanations for why resource ARNs were added, filtered to specified patterns
+        #[arg(
+            long = "explain-resources",
+            num_args = 1..,
+            long_help = "Show where concrete resource ARNs in the generated policy came from \
+(Terraform source file, state file, etc.). Accepts one or more ARN glob patterns to filter which \
+resources are explained. Only works when Terraform inputs (--tf-dir, --tf-files, or --tfstate) \
+are also provided.\n\n\
+Examples:\n  \
+--explain-resources '*'                                                        # Explain all resource ARNs\n  \
+--explain-resources 'arn:aws:s3:::*'                                           # Explain only S3 bucket ARNs\n  \
+--explain-resources 'arn:*:dynamodb:*'                                         # Explain only DynamoDB ARNs\n  \
+--explain-resources 'arn:aws:s3:::*' 'arn:aws:sqs:*'                           # Explain S3 and SQS ARNs\n \
+--explain-resources 'arn:aws:dynamodb:us-east-1:123456789012:table/users-prod' # Explain specific resource ARNs"
+        )]
+        explain_resources: Option<Vec<String>>,
     },
 
     /// Start MCP server
@@ -356,8 +429,15 @@ for direct integration with IDEs and tools. 'http' starts an HTTP server for net
         /// Port number for HTTP transport (ignored for stdio transport)
         #[arg(short = 'p', long = "port", default_value_t = MCP_HTTP_DEFAULT_PORT,
               long_help = "Port number to bind the HTTP server to when using HTTP transport. \
-Only used when --transport=http. The server will bind to 127.0.0.1 (localhost) on the specified port.")]
+Only used when --transport=http. The server will bind to the specified address on the specified port.")]
         port: u16,
+
+        /// Bind address for HTTP transport (ignored for stdio transport)
+        #[arg(short = 'b', long = "bind-address", default_value_t = DEFAULT_BIND_ADDRESS.to_string(),
+              long_help = "IP address to bind the HTTP server to when using HTTP transport. \
+Only used when --transport=http. Defaults to 127.0.0.1 (localhost). \
+Use 0.0.0.0 to listen on all interfaces.")]
+        bind_address: String,
     },
 
     #[command(
@@ -456,6 +536,11 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
+        terraform_dir: config.terraform_dir.clone(),
+        terraform_files: config.terraform_files.clone(),
+        tfstate_paths: config.tfstate.clone(),
+        tfvars_files: config.tfvars.clone(),
+        explain_resource_filters: config.explain_resources.clone(),
     })
     .await?;
 
@@ -578,6 +663,11 @@ async fn main() {
             disable_cache,
             service_hints,
             explain,
+            terraform_dir,
+            terraform_files,
+            tfstate,
+            tfvars,
+            explain_resources,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -600,6 +690,11 @@ async fn main() {
                 minimal_policy_size,
                 disable_cache,
                 explain,
+                terraform_dir,
+                terraform_files,
+                tfstate,
+                tfvars,
+                explain_resources,
             };
 
             match handle_generate_policy(&config).await {
@@ -611,8 +706,12 @@ async fn main() {
             }
         }
 
-        Commands::McpServer { transport, port } => {
-            match start_mcp_server(transport, port).await {
+        Commands::McpServer {
+            transport,
+            port,
+            bind_address,
+        } => {
+            match start_mcp_server(transport, port, &bind_address).await {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);

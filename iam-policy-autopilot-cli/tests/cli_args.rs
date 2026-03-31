@@ -166,3 +166,53 @@ fn test_fix_access_denied_stdin_input() {
     );
     assert_eq!(output.status.code(), Some(0));
 }
+
+#[test]
+fn test_mcp_server_help_shows_bind_address() {
+    let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["mcp-server", "--help"])
+        .output()
+        .expect("failed to run mcp-server --help");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("--bind-address"),
+        "mcp-server help should mention --bind-address: {}",
+        stdout
+    );
+}
+
+#[test]
+fn test_mcp_server_rejects_unknown_args() {
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["mcp-server", "--unknown-flag"])
+        .output()
+        .expect("failed to run mcp-server with unknown flag");
+    assert!(!output.status.success(), "should fail with unknown flag");
+}
+
+#[test]
+fn test_mcp_server_bind_address_accepts_custom_value() {
+    // Start with an invalid address to quickly verify the argument is parsed and passed through.
+    // The server should attempt to bind and fail, proving the argument was consumed.
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args([
+            "mcp-server",
+            "--transport",
+            "http",
+            "--port",
+            "0",
+            "--bind-address",
+            "192.0.2.1", // TEST-NET address, should fail to bind
+        ])
+        .output()
+        .expect("failed to run mcp-server with custom bind address");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // The server should have attempted to bind to the custom address (and failed),
+    // proving the argument was parsed and forwarded. Exit code should be non-zero.
+    assert!(
+        !output.status.success(),
+        "server should fail to bind to TEST-NET address, stderr: {}",
+        stderr
+    );
+}

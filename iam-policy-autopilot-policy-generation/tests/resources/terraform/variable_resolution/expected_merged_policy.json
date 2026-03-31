@@ -1,0 +1,104 @@
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3:PutObject",
+              "s3:PutObjectAcl",
+              "s3:PutObjectLegalHold",
+              "s3:PutObjectRetention",
+              "s3:PutObjectTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3-object-lambda:PutObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "kms:Decrypt"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:ReadDataForReplication"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:dynamodb:us-east-1:123456789012:table/users-prod"
+            ]
+          },
+          {
+            "Action": [
+              "sqs:SendMessage"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:sqs:us-east-1:123456789012:myapp-tasks"
+            ]
+          },
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "sqs.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    }
+  ]
+}

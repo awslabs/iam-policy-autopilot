@@ -14,6 +14,7 @@ jobs:
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
       submodules: ${{ steps.filter.outputs.submodules }}
+      python: ${{ steps.filter.outputs.python }}
       should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.submodules == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -32,6 +33,10 @@ jobs:
             submodules:
               - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
               - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
+              - 'iam-policy-autopilot-policy-generation/resources/config/terraform/**'
+            python:
+              - 'iam-policy-autopilot-policy-generation/scripts/**/*.py'
+              - 'pyproject.toml'
 
   test-linux:
     name: Test Linux
@@ -80,6 +85,9 @@ jobs:
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
     steps:
+      - name: Enable long paths for Git
+        run: git config --system core.longpaths true
+
       - uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -154,6 +162,24 @@ jobs:
 
       - name: Run clippy
         run: cargo clippy --workspace -- -D warnings
+
+  ruff:
+    name: Ruff (Python lint + format)
+    needs: [changes]
+    if: needs.changes.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "check ."
+
+      - uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check ."
 
   custom-lints:
     name: Custom Lints (dylint)

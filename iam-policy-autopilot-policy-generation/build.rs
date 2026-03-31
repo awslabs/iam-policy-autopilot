@@ -1,4 +1,5 @@
 use aws_lc_rs::digest::{Context, Digest, SHA256};
+use convert_case::{Case, Casing};
 use git2::{DescribeOptions, Repository};
 use relative_path::PathExt;
 use relative_path::RelativePathBuf;
@@ -10,6 +11,7 @@ use std::fs;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
+use std::process::Command;
 
 /// Simplified service definition with fields removed
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -116,6 +118,28 @@ impl GitSubmoduleMetadata {
 fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
+    println!("cargo:rerun-if-changed=scripts/generate_python_name_map.py");
+    println!("cargo:rerun-if-changed=resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl");
+
+    // --- Auto-initialize all submodules if needed ---
+    ensure_submodule_initialized(
+        "botocore",
+        Path::new("resources/config/sdks/botocore-data"),
+        Path::new("resources/config/sdks/botocore-data/botocore/data"),
+        None, // no sparse-checkout needed
+    );
+    ensure_submodule_initialized(
+        "boto3",
+        Path::new("resources/config/sdks/boto3"),
+        Path::new("resources/config/sdks/boto3/boto3/data"),
+        None, // no sparse-checkout needed
+    );
+    ensure_submodule_initialized(
+        "terraform-provider-aws",
+        Path::new("resources/config/terraform/terraform-provider-aws"),
+        Path::new("resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl"),
+        Some("/names/data/names_data.hcl"), // sparse-checkout pattern
+    );
 
     #[allow(clippy::unwrap_used)]
     let out_dir = env::var("OUT_DIR").unwrap();
@@ -132,12 +156,6 @@ fn main() {
 
     // Process botocore data
     let botocore_data_path = Path::new("resources/config/sdks/botocore-data/botocore/data");
-    assert!(
-        botocore_data_path.exists(),
-        "Required botocore data directory not found at: {}. Please ensure the botocore data \
-         is available by running `git submodule init && git submodule update`.",
-        botocore_data_path.display()
-    );
 
     match process_botocore_data(botocore_data_path, &simplified_dir) {
         Ok(_processed_count) => {
@@ -164,7 +182,7 @@ fn main() {
     // Process boto3 data
     let boto3_data_path = Path::new("resources/config/sdks/boto3/boto3/data");
     assert!(
-        boto3_data_path.exists(),
+        boto3_data_path.exists(), // Should always pass — ensure_submodule_initialized handles init
         "Required boto3 data directory not found at: {}. Please ensure the boto3 data \
          is available by running `git submodule init && git submodule update`.",
         boto3_data_path.display()
@@ -172,6 +190,12 @@ fn main() {
 
     if let Err(e) = process_boto3_data(boto3_data_path, &boto3_dir) {
         panic!("Failed to process boto3 data: {e}");
+    }
+
+    // Generate Python operation name map using botocore's xform_name
+    let python_name_map_dir = Path::new("target/python-name-map");
+    if let Err(e) = generate_python_name_map(python_name_map_dir) {
+        panic!("Failed to generate Python operation name map: {e}");
     }
 
     // Copy the boto3 directory to workspace-level target for rust-embed
@@ -583,6 +607,96 @@ fn get_repository_tag(repo: &Repository) -> Result<Option<String>, Box<dyn std::
         .unwrap_or_default())
 }
 
+/// Generate the Python operation name map by running the Python script and then
+/// filtering out entries that convert_case already handles correctly.
+///
+/// The Python script produces a full map of {PascalCase → snake_case} for all operations
+/// using botocore's authoritative xform_name(). We then keep only the entries where
+/// botocore's result differs from what convert_case::Case::Snake produces, so the
+/// embedded lookup table stays small.
+fn generate_python_name_map(output_dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let botocore_root = Path::new("resources/config/sdks/botocore-data");
+    let botocore_data_dir = botocore_root.join("botocore/data");
+    let script_path = Path::new("scripts/generate_python_name_map.py");
+
+    assert!(
+        botocore_root.exists(),
+        "Required botocore root not found at: {}. Please run `git submodule init && git submodule update`.",
+        botocore_root.display()
+    );
+    assert!(
+        script_path.exists(),
+        "Python name map script not found at: {}",
+        script_path.display()
+    );
+
+    // Create output directory
+    fs::create_dir_all(output_dir)?;
+
+    let tmp_full_map = output_dir.join("python_operation_name_map_full.json");
+    let final_map = output_dir.join("python_operation_name_map.json");
+
+    // Run the Python script to generate the full xform_name map
+    let output = Command::new("python3")
+        .arg(script_path)
+        .arg(botocore_root)
+        .arg(&botocore_data_dir)
+        .arg(&tmp_full_map)
+        .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "Python script failed with status {}: {}",
+            output.status, stderr
+        )
+        .into());
+    }
+
+    // Read the full map produced by the Python script
+    let full_map_json = fs::read_to_string(&tmp_full_map)?;
+    let full_map: BTreeMap<String, String> = serde_json::from_str(&full_map_json)?;
+
+    // Filter: keep only entries where convert_case produces a different result than botocore in
+    // either direction. We need to cover both:
+    //
+    // 1. Forward (PascalCase → snake_case): botocore's xform_name() differs from
+    //    convert_case::Case::Snake. Example: "AssignIpv6Addresses" →
+    //    botocore: "assign_ipv6_addresses", convert_case: "assign_ipv_6_addresses"
+    //    (convert_case splits on digit boundaries: LOWER_DIGIT at "v6" and DIGIT_UPPER at "6A").
+    //
+    // 2. Reverse (snake_case → PascalCase): convert_case::Case::Pascal applied to the botocore
+    //    snake_case name does not round-trip back to the original PascalCase. Example:
+    //    "ModifyDBCluster" → botocore snake: "modify_db_cluster" (forward matches convert_case,
+    //    so it would be filtered out by a forward-only check), but
+    //    "modify_db_cluster".to_case(Case::Pascal) = "ModifyDbCluster" ≠ "ModifyDBCluster",
+    //    so the reverse lookup in Operation::from_call would produce the wrong PascalCase name.
+    #[allow(unknown_lints, convert_case_pascal)]
+    let special_cases: BTreeMap<String, String> = full_map
+        .into_iter()
+        .filter(|(pascal_name, botocore_snake)| {
+            // Keep if forward conversion differs (convert_case snake is wrong)
+            let convert_case_snake = pascal_name.to_case(Case::Snake);
+            if &convert_case_snake != botocore_snake {
+                return true;
+            }
+            // Also keep if reverse conversion differs (convert_case Pascal can't round-trip
+            // back to the original PascalCase from the botocore snake_case name)
+            let convert_case_pascal = botocore_snake.to_case(Case::Pascal);
+            &convert_case_pascal != pascal_name
+        })
+        .collect();
+
+    // Write the filtered map as the final embedded JSON
+    let final_json = serde_json::to_string(&special_cases)?;
+    fs::write(&final_map, final_json)?;
+
+    // Clean up the temporary full map
+    let _ = fs::remove_file(&tmp_full_map);
+
+    Ok(())
+}
+
 fn get_repository_commit(repo: &Repository) -> Result<String, Box<dyn std::error::Error>> {
     Ok(repo
         .revparse_single("HEAD")?
@@ -590,4 +704,105 @@ fn get_repository_commit(repo: &Repository) -> Result<String, Box<dyn std::error
         .expect("Failed to get HEAD commit hash")
         .id()
         .to_string())
+}
+
+/// Ensure a git submodule is initialized, and optionally configure sparse-checkout.
+///
+/// - `name`: human-readable name for error messages
+/// - `submodule_dir`: path to the submodule root (relative to crate root)
+/// - `data_path`: a file or directory that must exist after initialization
+/// - `sparse_pattern`: if `Some`, configure sparse-checkout with this pattern
+///
+/// If `data_path` already exists, this is a no-op.
+/// Otherwise, runs `git submodule update --init --depth 1` and optionally
+/// `git sparse-checkout set --no-cone <pattern>`.
+fn ensure_submodule_initialized(
+    name: &str,
+    submodule_dir: &Path,
+    data_path: &Path,
+    sparse_pattern: Option<&str>,
+) {
+    if data_path.exists() {
+        return; // Already initialized
+    }
+
+    let git_marker = submodule_dir.join(".git");
+    if git_marker.exists() {
+        // Submodule dir exists but data missing — needs sparse-checkout or is broken
+        if let Some(pattern) = sparse_pattern {
+            eprintln!("cargo:warning=Configuring sparse-checkout for {name} submodule...");
+            run_sparse_checkout(name, submodule_dir, pattern);
+        } else {
+            panic!(
+                "Submodule '{name}' appears initialized at {} but required data not found at {}. \
+                 Try: git submodule update --init",
+                submodule_dir.display(),
+                data_path.display()
+            );
+        }
+    } else {
+        // Submodule not initialized — run git submodule update
+        eprintln!("cargo:warning=Initializing {name} submodule...");
+
+        let status = std::process::Command::new("git")
+            .args(["submodule", "update", "--init", "--depth", "1", "--"])
+            .arg(submodule_dir)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {
+                if let Some(pattern) = sparse_pattern {
+                    run_sparse_checkout(name, submodule_dir, pattern);
+                }
+            }
+            Ok(s) => {
+                panic!(
+                    "Failed to initialize '{name}' submodule (exit code: {s}). \
+                     Try: git submodule update --init"
+                );
+            }
+            Err(e) => {
+                panic!(
+                    "Failed to run git submodule update for '{name}': {e}. \
+                     Try: git submodule update --init"
+                );
+            }
+        }
+    }
+
+    // Final check
+    assert!(
+        data_path.exists(),
+        "Required data for '{name}' not found at {} after submodule initialization. \
+         Try: git submodule update --init",
+        data_path.display()
+    );
+}
+
+/// Run `git sparse-checkout set` inside a submodule directory.
+fn run_sparse_checkout(name: &str, submodule_dir: &Path, pattern: &str) {
+    let status = std::process::Command::new("git")
+        .args(["sparse-checkout", "set", "--no-cone", pattern])
+        .current_dir(submodule_dir)
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            eprintln!("cargo:warning=Sparse-checkout configured for {name}");
+        }
+        Ok(s) => {
+            panic!(
+                "git sparse-checkout failed for '{name}' (exit code: {s}). \
+                 Try: cd {dir} && git sparse-checkout set --no-cone '{pattern}'",
+                dir = submodule_dir.display()
+            );
+        }
+        Err(e) => {
+            panic!(
+                "Failed to run git sparse-checkout for '{name}': {e}. \
+                 Try: cd {dir} && git sparse-checkout set --no-cone '{pattern}'",
+                dir = submodule_dir.display()
+            );
+        }
+    }
 }

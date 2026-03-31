@@ -14,6 +14,7 @@ use std::{
 };
 
 use crate::{
+    embedded_data::PythonNameMap,
     enrichment::operation_fas_map::{FasContext, FasOperation},
     extraction::SdkMethodCallMetadata,
     service_configuration::ServiceConfiguration,
@@ -26,7 +27,9 @@ use serde::{Deserialize, Serialize};
 pub(crate) mod engine;
 pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
-pub(crate) mod service_reference;
+pub mod service_reference;
+
+pub(crate) mod terraform;
 
 pub use engine::Engine;
 pub(crate) use operation_fas_map::load_operation_fas_map;
@@ -83,32 +86,14 @@ impl Operation {
         original_service_name: &str,
         service_cfg: &ServiceConfiguration,
         sdk: SdkType,
-        service_reference_loader: &ServiceReferenceLoader,
     ) -> crate::errors::Result<Self> {
         let service = service_cfg
             .rename_service_service_reference(original_service_name)
             .to_string();
         #[allow(unknown_lints, convert_case_pascal)]
         let name = if sdk == SdkType::Boto3 {
-            // Try to load service reference and look up the boto3 method mapping
-            service_reference_loader
-                .load(&service)
-                .await?
-                .and_then(|service_ref| {
-                    log::debug!("Looking up method {}", call.name);
-                    service_ref
-                        .boto3_method_to_operation
-                        .get(&call.name)
-                        .map(|op| {
-                            log::debug!("got {op:?}");
-                            op.split(':').nth(1).unwrap_or(op).to_string()
-                        })
-                })
-                // Fallback to PascalCase conversion if mapping not found
-                // This should not be reachable, but if for some reason we cannot use the SDF,
-                // we try converting to PascalCase, knowing that this is flawed in some cases:
-                // think `AddRoleToDBInstance` (actual name)
-                //   vs. `AddRoleToDbInstance` (converted name)
+            PythonNameMap::reverse_lookup(&call.name)
+                .map(std::string::ToString::to_string)
                 .unwrap_or_else(|| call.name.to_case(Case::Pascal))
         } else {
             // For non-Boto3 SDKs we use the extracted name as-is
@@ -337,6 +322,15 @@ impl Action {
             conditions,
             explanation,
         }
+    }
+
+    /// Extract the service prefix from this action's name.
+    ///
+    /// For `"s3:GetObject"` returns `"s3"`. If no colon is present,
+    /// returns the full name.
+    #[must_use]
+    pub(crate) fn service(&self) -> &str {
+        self.name.split(':').next().unwrap_or(&self.name)
     }
 }
 
@@ -798,10 +792,7 @@ pub(crate) mod mock_remote_service_reference {
 #[cfg(test)]
 mod location_tests {
     use super::*;
-    use crate::{
-        enrichment::mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping,
-        service_configuration::load_service_configuration, Location,
-    };
+    use crate::{service_configuration::load_service_configuration, Location};
     use std::path::PathBuf;
 
     #[test]
@@ -835,36 +826,28 @@ mod location_tests {
     }
 
     fn mock_sdk_method_call() -> SdkMethodCall {
+        let metadata = SdkMethodCallMetadata::new(
+            "s3.get_object(Bucket='my-bucket')".to_string(),
+            Location::new(PathBuf::from("test.py"), (10, 5), (10, 79)),
+        )
+        .with_receiver("s3".to_string());
+
         SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![],
-                return_type: None,
-                expr: "s3.get_object(Bucket='my-bucket')".to_string(),
-                location: Location::new(PathBuf::from("test.py"), (10, 5), (10, 79)),
-                receiver: Some("s3".to_string()),
-            }),
+            metadata: Some(metadata),
         }
     }
 
     #[tokio::test]
     async fn test_reason_extracted_with_location() {
         let service_cfg = load_service_configuration().unwrap();
-        let (_, service_reference_loader) =
-            setup_mock_server_with_loader_without_operation_to_action_mapping().await;
         let call = mock_sdk_method_call();
 
         let reason = Reason::new(vec![Arc::new(
-            Operation::from_call(
-                &call,
-                "s3",
-                &service_cfg,
-                SdkType::Boto3,
-                &service_reference_loader,
-            )
-            .await
-            .unwrap(),
+            Operation::from_call(&call, "s3", &service_cfg, SdkType::Boto3)
+                .await
+                .unwrap(),
         )]);
 
         assert_eq!(reason.operations[0].name, "GetObject");
@@ -884,13 +867,11 @@ mod location_tests {
 
     #[test]
     fn test_operation_source_extracted_serialization() {
-        let metadata = SdkMethodCallMetadata {
-            parameters: vec![],
-            return_type: None,
-            expr: "dynamodb.get_item(\n        TableName='my-table',\n        Key={'id': {'S': '123'}}\n    )".to_string(),
-            location: Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
-            receiver: Some("dynamodb".to_string()),
-        };
+        let metadata = SdkMethodCallMetadata::new(
+            "dynamodb.get_item(\n        TableName='my-table',\n        Key={'id': {'S': '123'}}\n    )".to_string(),
+            Location::new(PathBuf::from("iam-policy-autopilot-cli/tests/resources/test_example.py"), (19, 5), (22, 5)),
+        )
+        .with_receiver("dynamodb".to_string());
 
         let source = OperationSource::Extracted(metadata);
         let json = serde_json::to_string(&source).unwrap();
@@ -931,8 +912,6 @@ mod location_tests {
     #[tokio::test]
     async fn test_operation_methods() {
         let service_cfg = load_service_configuration().unwrap();
-        let (_, service_reference_loader) =
-            setup_mock_server_with_loader_without_operation_to_action_mapping().await;
 
         {
             let call = SdkMethodCall {
@@ -940,42 +919,28 @@ mod location_tests {
                 possible_services: vec!["kms".to_string()],
                 metadata: None,
             };
-            let op = Operation::from_call(
-                &call,
-                "kms",
-                &service_cfg,
-                SdkType::Boto3,
-                &service_reference_loader,
-            )
-            .await
-            .unwrap();
+            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3)
+                .await
+                .unwrap();
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &[]);
         }
 
         {
             let expr = "kms.decrypt(...)".to_string();
-            let metadata = SdkMethodCallMetadata {
-                parameters: vec![],
-                return_type: None,
-                expr: expr.clone(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, expr.len() + 1)),
-                receiver: Some("kms".to_string()),
-            };
+            let metadata = SdkMethodCallMetadata::new(
+                expr.clone(),
+                Location::new(PathBuf::new(), (1, 1), (1, expr.len() + 1)),
+            )
+            .with_receiver("kms".to_string());
             let call = SdkMethodCall {
                 name: "decrypt".to_string(),
                 possible_services: vec!["kms".to_string()],
                 metadata: Some(metadata),
             };
-            let op = Operation::from_call(
-                &call,
-                "kms",
-                &service_cfg,
-                SdkType::Boto3,
-                &service_reference_loader,
-            )
-            .await
-            .unwrap();
+            let op = Operation::from_call(&call, "kms", &service_cfg, SdkType::Boto3)
+                .await
+                .unwrap();
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &[]);
         }
