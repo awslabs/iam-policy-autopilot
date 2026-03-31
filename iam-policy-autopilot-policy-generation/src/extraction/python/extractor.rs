@@ -58,10 +58,7 @@ impl PythonExtractor {
             {
                 // Found a single service type (from variable assignment or first parameter match)
                 log::debug!(
-                    "Resolved receiver '{}' to service '{}' for method '{}'",
-                    receiver_name,
-                    service,
-                    method_name
+                    "Resolved receiver '{receiver_name}' to service '{service}' for method '{method_name}'"
                 );
                 vec![service.clone()]
             } else if let Some(func_name) = current_function {
@@ -71,26 +68,18 @@ impl PythonExtractor {
                 {
                     let service_vec: Vec<String> = services.iter().cloned().collect();
                     log::debug!(
-                        "Resolved parameter '{}' in function '{}' to multiple services {:?} for method '{}'",
-                        receiver_name,
-                        func_name,
-                        service_vec,
-                        method_name
+                        "Resolved parameter '{receiver_name}' in function '{func_name}' to multiple services {service_vec:?} for method '{method_name}'"
                     );
                     service_vec
                 } else {
                     log::debug!(
-                        "Could not resolve receiver '{}' for method '{}' - will use disambiguation",
-                        receiver_name,
-                        method_name
+                        "Could not resolve receiver '{receiver_name}' for method '{method_name}' - will use disambiguation"
                     );
                     Vec::new() // Will be determined later during service validation
                 }
             } else {
                 log::debug!(
-                    "Could not resolve receiver '{}' for method '{}' - will use disambiguation",
-                    receiver_name,
-                    method_name
+                    "Could not resolve receiver '{receiver_name}' for method '{method_name}' - will use disambiguation"
                 );
                 Vec::new() // Will be determined later during service validation
             }
@@ -155,10 +144,7 @@ impl Extractor for PythonExtractor {
                 let end_line = node.end_pos().line();
                 function_ranges.push((func_name.clone(), start_line..end_line + 1));
                 log::debug!(
-                    "Found function '{}' at lines {}-{}",
-                    func_name,
-                    start_line,
-                    end_line
+                    "Found function '{func_name}' at lines {start_line}-{end_line}"
                 );
             }
         }
@@ -178,9 +164,7 @@ impl Extractor for PythonExtractor {
 
             if let Some(func) = current_function {
                 log::debug!(
-                    "Method call at line {} is in function '{}'",
-                    call_line,
-                    func
+                    "Method call at line {call_line} is in function '{func}'"
                 );
             }
 

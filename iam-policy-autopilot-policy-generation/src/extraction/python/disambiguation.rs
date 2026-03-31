@@ -48,16 +48,16 @@ impl<'a> MethodDisambiguator<'a> {
                 // If variable tracking already identified specific services, only validate against those
                 // This respects the variable type tracking results from the extractor
                 let services_to_validate: Vec<ServiceMethodRef> =
-                    if !method_call.possible_services.is_empty() {
+                    if method_call.possible_services.is_empty() {
+                        // No tracking info available, validate against all possible services
+                        service_refs.clone()
+                    } else {
                         // Filter to only the services identified by variable tracking
                         service_refs
                             .iter()
                             .filter(|s| method_call.possible_services.contains(&s.service_name))
                             .cloned()
                             .collect()
-                    } else {
-                        // No tracking info available, validate against all possible services
-                        service_refs.clone()
                     };
 
                 // Validate the method call against the filtered service list

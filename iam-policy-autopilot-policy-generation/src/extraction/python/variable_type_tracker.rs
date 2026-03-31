@@ -263,10 +263,7 @@ impl VariableTypeTracker {
                 };
 
                 log::debug!(
-                    "Tracked boto3.client assignment in function '{}': {} -> {}",
-                    func_name,
-                    var_name,
-                    service_name
+                    "Tracked boto3.client assignment in function '{func_name}': {var_name} -> {service_name}"
                 );
 
                 // Add to function scope
@@ -319,9 +316,7 @@ impl VariableTypeTracker {
             };
 
             log::debug!(
-                "Tracked boto3.client assignment at module level: {} -> {}",
-                var_name,
-                service_name
+                "Tracked boto3.client assignment at module level: {var_name} -> {service_name}"
             );
             self.module_scope.insert(
                 var_name,
@@ -364,10 +359,7 @@ impl VariableTypeTracker {
                 };
 
                 log::debug!(
-                    "Tracked boto3.resource assignment in function '{}': {} -> {}",
-                    func_name,
-                    var_name,
-                    service_name
+                    "Tracked boto3.resource assignment in function '{func_name}': {var_name} -> {service_name}"
                 );
 
                 // Add to function scope
@@ -419,9 +411,7 @@ impl VariableTypeTracker {
             };
 
             log::debug!(
-                "Tracked boto3.resource assignment at module level: {} -> {}",
-                var_name,
-                service_name
+                "Tracked boto3.resource assignment at module level: {var_name} -> {service_name}"
             );
             self.module_scope.insert(
                 var_name,
@@ -576,12 +566,12 @@ impl VariableTypeTracker {
             }
 
             if !params.is_empty() {
-                log::debug!("Found function definition: {}({:?})", func_name, params);
+                log::debug!("Found function definition: {func_name}({params:?})");
                 func_params.insert(func_name, params);
             }
         }
 
-        log::debug!("Function parameters map: {:?}", func_params);
+        log::debug!("Function parameters map: {func_params:?}");
 
         // Now find function calls and match arguments to parameters
         let call_pattern = "$FUNC($$$ARGS)";
@@ -606,7 +596,7 @@ impl VariableTypeTracker {
                 continue;
             }
 
-            log::debug!("Found function call: {}({:?})", func_name, args);
+            log::debug!("Found function call: {func_name}({args:?})");
 
             // Check if we know the parameter names for this function
             if let Some(param_names) = func_params.get(&func_name) {
@@ -638,7 +628,7 @@ impl VariableTypeTracker {
                     }
                 }
             } else {
-                log::debug!("No parameter mapping found for function {}", func_name);
+                log::debug!("No parameter mapping found for function {func_name}");
             }
         }
     }
