@@ -55,12 +55,16 @@ pub async fn generate_application_policies(
     let result = api::generate_policies(&GeneratePolicyConfig {
         individual_policies: false,
         extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: input.source_files.into_iter().map(|f| f.into()).collect(),
+            source_files: input
+                .source_files
+                .into_iter()
+                .map(std::convert::Into::into)
+                .collect(),
             // Maybe we should let the llm figure out the language
             language: None,
             service_hints,
         },
-        aws_context: AwsContext::new(region, account),
+        aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
 
         // true by default, if we want to allow the user to change it we should
@@ -87,21 +91,27 @@ mod api {
     use iam_policy_autopilot_policy_generation::api::model::{
         GeneratePoliciesResult, GeneratePolicyConfig,
     };
+    use std::sync::Mutex;
+    use std::sync::OnceLock;
 
-    // Static mutable return value
-    pub static mut MOCK_RETURN_VALUE: Option<Result<GeneratePoliciesResult>> = None;
+    // Simple mock storage - Mutex is needed for static variables even with serial tests
+    static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
+        OnceLock::new();
 
     pub async fn generate_policies(
         _config: &GeneratePolicyConfig,
     ) -> Result<GeneratePoliciesResult> {
-        #[allow(static_mut_refs)]
-        unsafe {
-            MOCK_RETURN_VALUE.take().unwrap()
-        }
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard
+            .take()
+            .expect("Mock return value not set. Call set_mock_return() first.")
     }
 
     pub fn set_mock_return(value: Result<GeneratePoliciesResult>) {
-        unsafe { MOCK_RETURN_VALUE = Some(value) }
+        let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        *guard = Some(value);
     }
 }
 

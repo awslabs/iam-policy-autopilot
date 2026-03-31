@@ -222,14 +222,14 @@ impl<'a> GoMethodDisambiguator<'a> {
                     }
 
                     // Use AST-extracted fields
-                    struct_fields.as_ref().cloned()
+                    struct_fields.clone()
                 }
                 _ => None,
             })
             .flatten()
             .collect();
 
-        log::debug!("Extracted parameters from code: {:?}", provided_params);
+        log::debug!("Extracted parameters from code: {provided_params:?}");
 
         // Get required parameters from the shape
         let required_params: HashSet<String> = shape
@@ -237,7 +237,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             .as_ref()
             .map(|req| req.iter().cloned().collect())
             .unwrap_or_default();
-        log::debug!("Required parameters from AWS model: {:?}", required_params);
+        log::debug!("Required parameters from AWS model: {required_params:?}");
 
         // Get all valid parameters from the shape (lowercase for case-insensitive comparison)
         // AWS models are inconsistent - some use PascalCase, some use camelCase
@@ -255,8 +255,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             let provided_lower = provided_param.to_lowercase();
             if !valid_params_lower.contains(&provided_lower) {
                 log::debug!(
-                    "Rejecting: parameter '{}' not found in AWS model (case-insensitive)",
-                    provided_param
+                    "Rejecting: parameter '{provided_param}' not found in AWS model (case-insensitive)"
                 );
                 return false; // Invalid parameter provided
             }
@@ -279,9 +278,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             let required_lower = required_param.to_lowercase();
             if !provided_params_lower.contains(&required_lower) {
                 log::debug!(
-                    "Rejecting: missing required parameter '{}' (provided: {:?})",
-                    required_param,
-                    provided_params
+                    "Rejecting: missing required parameter '{required_param}' (provided: {provided_params:?})"
                 );
                 return false; // Required parameter missing
             }
@@ -585,32 +582,32 @@ mod tests {
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "ListObjectsV2".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "ListObjectsV2".to_string(),
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
-                                .to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string()]),
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -646,21 +643,22 @@ mod tests {
         let service_index = create_test_service_index();
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
+        let metadata = SdkMethodCallMetadata::new(
+            "NonAwsMethod".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 30)),
+        )
+        .with_parameters(vec![Parameter::Positional {
+            value: ParameterValue::Unresolved("someParam".to_string()),
+            position: 0,
+            type_annotation: None,
+            struct_fields: None,
+        }])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "NonAwsMethod".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "NonAwsMethod".to_string(),
-                parameters: vec![Parameter::Positional {
-                    value: ParameterValue::Unresolved("someParam".to_string()),
-                    position: 0,
-                    type_annotation: None,
-                    struct_fields: None,
-                }],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 30)),
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -683,32 +681,32 @@ mod tests {
         ));
 
         // Create a method call that could match multiple services but we only have S3 imported
+        let metadata = SdkMethodCallMetadata::new(
+            "ListObjectsV2".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "ListObjectsV2".to_string(),
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
-                                .to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string()]),
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], Some(&import_info));
@@ -726,32 +724,32 @@ mod tests {
         // Create empty import info (no AWS services imported)
         let import_info = GoImportInfo::new();
 
+        let metadata = SdkMethodCallMetadata::new(
+            "ListObjectsV2".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.ListObjectsV2Input".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "ListObjectsV2".to_string(),
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
-                                .to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.ListObjectsV2Input".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string()]),
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], Some(&import_info));
@@ -775,32 +773,32 @@ mod tests {
             5,
         ));
 
+        let metadata = SdkMethodCallMetadata::new(
+            "ListObjectsV2".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&myS3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("myS3.ListObjectsV2Input".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "ListObjectsV2".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                expr: "ListObjectsV2".to_string(),
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&myS3.ListObjectsV2Input{ Bucket: aws.String(\"my-bucket\") }"
-                                .to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("myS3.ListObjectsV2Input".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string()]),
-                    },
-                ],
-                return_type: None,
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], Some(&import_info));
@@ -814,31 +812,32 @@ mod tests {
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
         // GetObject requires both Bucket and Key, but we only provide Bucket
+        let metadata = SdkMethodCallMetadata::new(
+            "GetObject".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.GetObjectInput".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "GetObject".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\") }".to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.GetObjectInput".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string()]),
-                    },
-                ],
-                expr: "GetObject".to_string(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                return_type: None,
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -852,31 +851,32 @@ mod tests {
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
         // GetObject requires both Bucket and Key, and we provide both
+        let metadata = SdkMethodCallMetadata::new(
+            "GetObject".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.GetObjectInput".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "GetObject".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                    struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.GetObjectInput".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-                    },
-                ],
-                expr: "GetObject".to_string(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                return_type: None,
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -891,29 +891,30 @@ mod tests {
         let disambiguator = GoMethodDisambiguator::new(&service_index);
 
         // Using a variable for input - can't extract fields, so should be accepted
+        let metadata = SdkMethodCallMetadata::new(
+            "GetObject".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("getObjectInput".to_string()),
+                position: 1,
+                type_annotation: Some("s3.GetObjectInput".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "GetObject".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("getObjectInput".to_string()),
-                        position: 1,
-                        type_annotation: Some("s3.GetObjectInput".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-                    },
-                ],
-                expr: "GetObject".to_string(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                return_type: None,
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -931,31 +932,32 @@ mod tests {
         // s3 requires: Bucket, Key
         // s3control requires: AccountId, Bucket, Key
         // If we only provide Bucket and Key, it should match s3 but not s3control
+        let metadata = SdkMethodCallMetadata::new(
+            "GetObject".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("s3.GetObjectInput".to_string()),
+                struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
+            },
+        ])
+        .with_receiver("client".to_string());
+
         let method_call = SdkMethodCall {
             name: "GetObject".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                    struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&s3.GetObjectInput{ Bucket: aws.String(\"my-bucket\"), Key: aws.String(\"my-key\") }".to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("s3.GetObjectInput".to_string()),
-                        struct_fields: Some(vec!["Bucket".to_string(), "Key".to_string()]),
-                    },
-                ],
-                expr: "GetObject".to_string(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                return_type: None,
-                receiver: Some("client".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);
@@ -987,32 +989,33 @@ mod tests {
         // - QueueName (required) is present
         // - Attributes (optional) is present and valid
 
+        let metadata = SdkMethodCallMetadata::new(
+            "CreateQueue".to_string(),
+            Location::new(PathBuf::new(), (1, 1), (1, 50)),
+        )
+        .with_parameters(vec![
+            Parameter::Positional {
+                value: ParameterValue::Unresolved("context.TODO()".to_string()),
+                position: 0,
+                type_annotation: Some("context.Context".to_string()),
+                struct_fields: None,
+            },
+            Parameter::Positional {
+                value: ParameterValue::Unresolved(
+                    "&sqs.CreateQueueInput{ QueueName: aws.String(queueName), Attributes: map[string]string{\"VisibilityTimeout\": \"60\", \"MessageRetentionPeriod\": \"345600\"} }".to_string(),
+                ),
+                position: 1,
+                type_annotation: Some("sqs.CreateQueueInput".to_string()),
+                // AST-extracted fields: only top-level fields, NOT nested map keys
+                struct_fields: Some(vec!["QueueName".to_string(), "Attributes".to_string()]),
+            },
+        ])
+        .with_receiver("sqsClient".to_string());
+
         let method_call = SdkMethodCall {
             name: "CreateQueue".to_string(),
             possible_services: Vec::new(),
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: vec![
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved("context.TODO()".to_string()),
-                        position: 0,
-                        type_annotation: Some("context.Context".to_string()),
-                        struct_fields: None,
-                    },
-                    Parameter::Positional {
-                        value: ParameterValue::Unresolved(
-                            "&sqs.CreateQueueInput{ QueueName: aws.String(queueName), Attributes: map[string]string{\"VisibilityTimeout\": \"60\", \"MessageRetentionPeriod\": \"345600\"} }".to_string(),
-                        ),
-                        position: 1,
-                        type_annotation: Some("sqs.CreateQueueInput".to_string()),
-                        // AST-extracted fields: only top-level fields, NOT nested map keys
-                        struct_fields: Some(vec!["QueueName".to_string(), "Attributes".to_string()]),
-                    },
-                ],
-                expr: "CreateQueue".to_string(),
-                location: Location::new(PathBuf::new(), (1, 1), (1, 50)),
-                return_type: None,
-                receiver: Some("sqsClient".to_string()),
-            }),
+            metadata: Some(metadata),
         };
 
         let result = disambiguator.disambiguate_method_calls(vec![method_call], None);

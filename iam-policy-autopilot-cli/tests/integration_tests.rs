@@ -686,6 +686,139 @@ fn test_generate_policy() {
 }
 
 #[test]
+fn test_generate_policy_us_gov_region() {
+    // Test that when a aws-us-gov partition region is specified, the output resources also use it
+    let test_file = PathBuf::from("tests/resources/test_example.py");
+
+    let output = generate_policy_command()
+        .arg("--region")
+        .arg("us-gov-east-1")
+        .arg("--account")
+        .arg("123456789012")
+        .arg("--pretty")
+        .arg(test_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
+
+    let policies_with_types = json.get("Policies").unwrap().as_array().unwrap();
+    let policy_with_type = &policies_with_types[0];
+    let policy = policy_with_type.get("Policy").unwrap();
+    let statements = policy.get("Statement").unwrap().as_array().unwrap();
+
+    for statement in statements {
+        if let Some(condition) = statement.get("Condition") {
+            for (_, condition_tests) in condition.as_object().unwrap() {
+                for (_, condition_values) in condition_tests.as_object().unwrap() {
+                    for condition_value in condition_values.as_array().unwrap() {
+                        let condition_value = condition_value.as_str().unwrap();
+                        // The service principal name should be for the specified region
+                        assert!(condition_value.ends_with(".us-gov-east-1.amazonaws.com"));
+                    }
+                }
+            }
+        }
+
+        let resources = statement.get("Resource").unwrap().as_array().unwrap();
+        for resource in resources.into_iter().map(|r| r.as_str().unwrap()) {
+            if resource.starts_with("arn:") {
+                assert!(resource.contains("arn:aws-us-gov:"));
+                assert!(
+                    resource.contains(":us-gov-east-1:123456789012:") || resource.contains(":::")
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn test_generate_policy_wildcard_region() {
+    // Test that when a wildcard region is specified, the output resources are generic over
+    // partitions and regions
+    let test_file = PathBuf::from("tests/resources/test_example.py");
+
+    let output = generate_policy_command()
+        .arg("--region")
+        .arg("*")
+        .arg("--account")
+        .arg("123456789012")
+        .arg("--pretty")
+        .arg(test_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
+
+    let policies_with_types = json.get("Policies").unwrap().as_array().unwrap();
+    let policy_with_type = &policies_with_types[0];
+    let policy = policy_with_type.get("Policy").unwrap();
+    let statements = policy.get("Statement").unwrap().as_array().unwrap();
+
+    for statement in statements {
+        if let Some(condition) = statement.get("Condition") {
+            for (_, condition_tests) in condition.as_object().unwrap() {
+                for (_, condition_values) in condition_tests.as_object().unwrap() {
+                    for condition_value in condition_values.as_array().unwrap() {
+                        let condition_value = condition_value.as_str().unwrap();
+                        // All service principal names across all partitions end in .amazonaws.com.
+                        // Region part should be as we specified (wildcard).
+                        // See https://github.com/awslabs/iam-policy-autopilot/pull/103#discussion_r2753125558
+                        assert!(condition_value.ends_with(".*.amazonaws.com"));
+                    }
+                }
+            }
+        }
+
+        let resources = statement.get("Resource").unwrap().as_array().unwrap();
+        for resource in resources.into_iter().map(|r| r.as_str().unwrap()) {
+            if resource.starts_with("arn:") {
+                // ARN should be generic across all partitions
+                assert!(resource.contains("arn:*:"));
+                // If ARN specifies a region, it should use what we provided (wildcard)
+                assert!(resource.contains(":*:123456789012:") || resource.contains(":::"));
+            }
+        }
+    }
+}
+
+#[test]
+fn test_generate_policy_wildcard_account() {
+    // Test that when a wildcard account ID is specified, the output resources use it.
+    let test_file = PathBuf::from("tests/resources/test_example.py");
+
+    let output = generate_policy_command()
+        .arg("--region")
+        .arg("us-east-1")
+        .arg("--account")
+        .arg("*")
+        .arg("--pretty")
+        .arg(test_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
+
+    let policies_with_types = json.get("Policies").unwrap().as_array().unwrap();
+    let policy_with_type = &policies_with_types[0];
+    let policy = policy_with_type.get("Policy").unwrap();
+    let statements = policy.get("Statement").unwrap().as_array().unwrap();
+
+    for statement in statements {
+        let resources = statement.get("Resource").unwrap().as_array().unwrap();
+        for resource in resources.into_iter().map(|r| r.as_str().unwrap()) {
+            if resource.starts_with("arn:") {
+                // If ARN specifies an account ID, it should use what we provided (wildcard)
+                assert!(resource.contains(":us-east-1:*:") || resource.contains(":::"));
+            }
+        }
+    }
+}
+
+#[test]
 fn test_dictionary_unpacking_file() {
     let unpacking_file = PathBuf::from("tests/resources/test_dictionary_unpacking.py");
 

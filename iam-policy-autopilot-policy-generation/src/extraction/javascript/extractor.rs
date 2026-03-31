@@ -43,7 +43,7 @@ impl Extractor for JavaScriptExtractor {
             Ok(results) => results,
             Err(e) => {
                 // Log error and return empty results
-                log::warn!("JavaScript scanning failed: {}", e);
+                log::warn!("JavaScript scanning failed: {e}");
                 return ExtractorResult::JavaScript(ast, Vec::new());
             }
         };
@@ -67,15 +67,14 @@ impl Extractor for JavaScriptExtractor {
         service_index: &ServiceModelIndex,
     ) {
         for extractor_result in extractor_results.iter_mut() {
-            let method_calls = match extractor_result {
-                ExtractorResult::JavaScript(_ast, method_calls) => method_calls,
-                _ => {
-                    // This shouldn't happen in JavaScript extractor
-                    log::warn!(
-                        "Received non-JavaScript result during JavaScript method extraction."
-                    );
-                    continue;
-                }
+            let method_calls = if let ExtractorResult::JavaScript(_ast, method_calls) =
+                extractor_result
+            {
+                method_calls
+            } else {
+                // This shouldn't happen in JavaScript extractor
+                log::warn!("Received non-JavaScript result during JavaScript method extraction.");
+                continue;
             };
 
             // First: Resolve waiter names to actual operations

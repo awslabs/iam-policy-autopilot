@@ -10,10 +10,13 @@ pub const POLICY_PREFIX: &str = "IamPolicyAutopilot";
 
 fn sanitize_component(component: &str) -> String {
     static SANITIZE_REGEX: OnceLock<Regex> = OnceLock::new();
-    let regex = SANITIZE_REGEX.get_or_init(|| Regex::new(r"[^a-zA-Z0-9+=,.@_-]").unwrap());
+    let regex = SANITIZE_REGEX.get_or_init(|| {
+        Regex::new(r"[^a-zA-Z0-9+=,.@_-]")
+            .expect("Valid regex pattern for policy name sanitization")
+    });
     let sanitized = regex.replace_all(component, "-").to_string();
     let cleaned = Regex::new(r"-+")
-        .unwrap()
+        .expect("Valid cleanup regex pattern")
         .replace_all(&sanitized, "-")
         .trim_matches('-')
         .to_string();
@@ -37,15 +40,17 @@ fn truncate_policy_name(name: &str) -> String {
 /// Format is immutable; changing it would orphan existing user policies.
 /// Sanitizes input and truncates to 128-char IAM limit.
 /// TODO: Revisit policy naming based on decision on collecting analytics through policy names.
+#[must_use]
 pub fn build_canonical_policy_name(_kind: &PrincipalKind, name: &str) -> String {
     let sanitized_name = sanitize_component(name);
-    let full_name = format!("{}-{}", POLICY_PREFIX, sanitized_name);
+    let full_name = format!("{POLICY_PREFIX}-{sanitized_name}");
     truncate_policy_name(&full_name)
 }
 
 /// Generate unique Sid with format IamPolicyAutopilot{Service}{Action}{YYYYMMDD}
 /// Handles collision detection by appending counter (2, 3, etc.)
 #[allow(unknown_lints, convert_case_pascal)]
+#[must_use]
 pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -> String {
     // Falls back to "Unknown" service if format is invalid
     let parts: Vec<&str> = action.split(':').collect();
@@ -57,17 +62,14 @@ pub fn build_statement_sid(action: &str, date: &str, existing_sids: &[String]) -
 
     let service_cap = service.to_case(Case::Pascal);
     let action_cap = action_name.to_case(Case::Pascal);
-    let date_no_hyphens = date.replace("-", "");
+    let date_no_hyphens = date.replace('-', "");
 
-    let base_sid = format!(
-        "{}{}{}{}",
-        POLICY_PREFIX, service_cap, action_cap, date_no_hyphens
-    );
+    let base_sid = format!("{POLICY_PREFIX}{service_cap}{action_cap}{date_no_hyphens}");
 
     let mut sid = base_sid.clone();
     let mut counter = 2;
     while existing_sids.contains(&sid) {
-        sid = format!("{}{}", base_sid, counter);
+        sid = format!("{base_sid}{counter}");
         counter += 1;
     }
 

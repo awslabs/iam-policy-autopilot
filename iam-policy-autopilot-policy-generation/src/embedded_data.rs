@@ -7,11 +7,76 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
 use crate::api::model::GitSubmoduleMetadata;
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::sdk_model::SdkServiceDefinition;
+use regex::Regex;
 use rust_embed::RustEmbed;
+use serde_json::Value;
+
+/// Embedded Python operation name map
+///
+/// Contains the special-case lookup table mapping PascalCase AWS operation names
+/// to their correct Python snake_case equivalents as used by boto3. Only entries
+/// where botocore's xform_name() differs from the standard convert_case result
+/// are included, keeping the table small.
+#[derive(RustEmbed)]
+#[folder = "target/python-name-map"]
+#[include = "*.json"]
+struct PythonNameMapRaw;
+
+/// Python operation name map manager
+///
+/// Provides a lazily-initialized lookup table for converting AWS PascalCase
+/// operation names to their Python snake_case equivalents. The table is built
+/// at compile time from botocore's xform_name() function and covers all
+/// special cases that the standard snake_case conversion gets wrong.
+pub(crate) struct PythonNameMap;
+
+impl PythonNameMap {
+    /// Look up the Python snake_case method name for a given PascalCase operation name.
+    ///
+    /// Returns `Some(snake_case_name)` if the operation is a special case that botocore
+    /// handles differently from the standard conversion, or `None` if the standard
+    /// convert_case algorithm produces the correct result.
+    pub(crate) fn lookup(operation_name: &str) -> Option<&'static str> {
+        static MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+            let file = PythonNameMapRaw::get("python_operation_name_map.json")
+                .expect("python_operation_name_map.json not found in embedded data");
+            serde_json::from_slice::<HashMap<String, String>>(&file.data)
+                .expect("Failed to parse python_operation_name_map.json")
+        });
+
+        MAP.get(operation_name).map(std::string::String::as_str)
+    }
+
+    /// Look up the PascalCase operation name for a given Python snake_case method name.
+    ///
+    /// This is the reverse lookup used in `Operation::from_call` to convert a
+    /// snake_case method name back to the PascalCase operation name. Returns `None`
+    /// if the name is not a special case (the caller should fall back to
+    /// `to_case(Case::Pascal)`).
+    pub(crate) fn reverse_lookup(snake_name: &str) -> Option<&'static str> {
+        static REVERSE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+            let file = PythonNameMapRaw::get("python_operation_name_map.json")
+                .expect("python_operation_name_map.json not found in embedded data");
+            let forward: HashMap<String, String> = serde_json::from_slice(&file.data)
+                .expect("Failed to parse python_operation_name_map.json");
+            // Invert: snake_case → PascalCase
+            forward.into_iter().map(|(k, v)| (v, k)).collect()
+        });
+
+        REVERSE_MAP.get(snake_name).map(std::string::String::as_str)
+    }
+}
+
+/// Partitions definition. Map of partition ID to region regex.
+#[derive(Clone, Debug)]
+pub(crate) struct PartitionsDefinition {
+    pub(crate) partitions: HashMap<String, Regex>,
+}
 
 /// Embedded AWS service definitions with compression
 ///
@@ -58,7 +123,7 @@ impl Boto3ResourcesRaw {
     fn get_resources_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
-        let json_path = format!("{}/{}/resources-1.json", service, api_version);
+        let json_path = format!("{service}/{api_version}/resources-1.json");
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
 
@@ -122,11 +187,16 @@ impl Boto3ResourcesRaw {
 }
 
 impl BotocoreRaw {
+    /// Get the partitions definition
+    fn get_partitions() -> Option<Cow<'static, [u8]>> {
+        Self::get("partitions.json").map(|file| file.data)
+    }
+
     /// Get a service definition file by service name and API version
     fn get_service_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
         let start_time = std::time::Instant::now();
 
-        let json_path = format!("{}/{}/service-2.json", service, api_version);
+        let json_path = format!("{service}/{api_version}/service-2.json");
         if let Some(file) = Self::get(&json_path) {
             let file_size = file.data.len();
 
@@ -149,13 +219,13 @@ impl BotocoreRaw {
 
     /// Get a waiters definition file by service name and API version
     fn get_waiters(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let path = format!("{}/{}/waiters-2.json", service, api_version);
+        let path = format!("{service}/{api_version}/waiters-2.json");
         Self::get(&path).map(|file| file.data)
     }
 
     /// Get a paginators definition file by service name and API version
     fn get_paginators(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
-        let path = format!("{}/{}/paginators-1.json", service, api_version);
+        let path = format!("{service}/{api_version}/paginators-1.json");
         Self::get(&path).map(|file| file.data)
     }
 
@@ -170,7 +240,7 @@ impl BotocoreRaw {
         > = std::collections::HashMap::new();
         let mut file_count = 0;
 
-        for file_path in BotocoreRaw::iter() {
+        for file_path in Self::iter() {
             file_count += 1;
             let path_parts: Vec<&str> = file_path.split('/').collect();
             if path_parts.len() >= 2 {
@@ -241,6 +311,45 @@ impl Boto3Data {
 pub(crate) struct BotocoreData;
 
 impl BotocoreData {
+    /// Get a parsed partitions definition file
+    ///
+    /// # Returns
+    /// Parsed partitions definition or error if not found or parsing fails
+    pub(crate) fn get_partitions(
+    ) -> std::result::Result<&'static PartitionsDefinition, &'static ExtractorError> {
+        static PARTITIONS: LazyLock<std::result::Result<PartitionsDefinition, ExtractorError>> =
+            LazyLock::new(|| {
+                let data = BotocoreRaw::get_partitions()
+                    .ok_or_else(|| ExtractorError::validation("Partitions definition not found"))?;
+
+                let parsed: Value = serde_json::from_slice(&data).map_err(ExtractorError::from)?;
+                let partitions = parsed
+                    .get("partitions")
+                    .and_then(Value::as_object)
+                    .ok_or_else(|| {
+                        ExtractorError::validation("partitions not found in partitions definition")
+                    })?
+                    .into_iter()
+                    .map(|(k, v)| {
+                        let region_regex_str = v.as_str().ok_or_else(|| {
+                            ExtractorError::validation(
+                                "Expected regionRegex string in partitions definition",
+                            )
+                        })?;
+                        let region_regex = Regex::new(region_regex_str).map_err(|_| {
+                            ExtractorError::validation(
+                                "Invalid region_regex in partitions definition",
+                            )
+                        })?;
+                        Ok((k.clone(), region_regex))
+                    })
+                    .collect::<Result<HashMap<_, _>>>()?;
+                Ok(PartitionsDefinition { partitions })
+            });
+
+        PARTITIONS.as_ref()
+    }
+
     /// Get a parsed service definition by service name and API version
     ///
     /// # Arguments
@@ -255,8 +364,7 @@ impl BotocoreData {
     ) -> Result<SdkServiceDefinition> {
         let data = BotocoreRaw::get_service_definition(service, api_version).ok_or_else(|| {
             ExtractorError::validation(format!(
-                "Service definition not found for {}/{}",
-                service, api_version
+                "Service definition not found for {service}/{api_version}"
             ))
         })?;
 
@@ -557,6 +665,7 @@ mod tests {
         assert!(result.is_ok());
     }
 
+    #[test]
     fn test_get_botocore_version_info_happy_path() {
         let result = GitSubmoduleVersionInfo::get_botocore_version_info();
         assert!(result.is_ok());

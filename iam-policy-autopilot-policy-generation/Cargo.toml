@@ -45,6 +45,7 @@ serde_json.workspace = true
 aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
+convert_case.workspace = true
 
 [features]
 default = []
@@ -58,6 +59,7 @@ tokio-test.workspace = true
 tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
+rstest.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"
@@ -67,3 +69,6 @@ iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-unknown-linux-gnu"]
+
+[lints]
+workspace = true

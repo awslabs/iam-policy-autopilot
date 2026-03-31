@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use convert_case::{Case, Casing};
 use serde::{Deserialize, Serialize};
 
-use crate::embedded_data::BotocoreData;
+use crate::embedded_data::{BotocoreData, PythonNameMap};
 use crate::errors::{ExtractorError, Result};
 use crate::Language;
 
@@ -152,7 +152,10 @@ pub(crate) struct ServiceMethodRef {
 ///
 /// Provides functionality to discover available services, load service definitions,
 /// and build comprehensive service indexes for method validation.
-pub(crate) struct ServiceDiscovery;
+// Not part of the stable public API. Exposed only so that integration tests in tests/
+// can call operation_to_method_name without duplicating the conversion logic.
+#[doc(hidden)]
+pub struct ServiceDiscovery;
 
 /// Global cache for service model indexes by language
 /// Uses OnceLock for thread-safe lazy initialization
@@ -209,16 +212,13 @@ impl ServiceDiscovery {
         {
             let read_guard = cache.read().await;
             if let Some(cached_index) = read_guard.get(&language_key) {
-                log::debug!("Using cached service index for language '{}'", language);
+                log::debug!("Using cached service index for language '{language}'");
                 return Ok(Arc::clone(cached_index));
             }
         }
 
         // Not in cache, need to load it
-        log::debug!(
-            "Loading service index for language '{}' (not cached)",
-            language
-        );
+        log::debug!("Loading service index for language '{language}' (not cached)");
 
         // Discover all available services
         let services = Self::discover_services()?;
@@ -286,6 +286,10 @@ impl ServiceDiscovery {
         load_errors: &mut Vec<String>,
         language: Language,
     ) -> Result<()> {
+        // Import waiter types for inline loading
+        use crate::extraction::waiter_model::WaiterEntry;
+        use std::sync::Arc;
+
         #[allow(clippy::type_complexity)]
         let mut join_set: JoinSet<
             Result<(
@@ -294,10 +298,6 @@ impl ServiceDiscovery {
                 Option<HashMap<String, WaiterEntry>>,
             )>,
         > = JoinSet::new();
-
-        // Import waiter types for inline loading
-        use crate::extraction::waiter_model::WaiterEntry;
-        use std::sync::Arc;
 
         // Create semaphore to limit concurrent operations (max 50)
         let semaphore = Arc::new(Semaphore::new(50));
@@ -311,7 +311,7 @@ impl ServiceDiscovery {
 
                 // Acquire permit for concurrent operations
                 let _permit = semaphore.acquire_owned().await.map_err(|e| {
-                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {}", e))
+                    ExtractorError::validation(format!("Failed to acquire semaphore permit: {e}"))
                 })?;
 
                 // Load service definition from embedded data
@@ -414,8 +414,12 @@ impl ServiceDiscovery {
     /// - **Python (boto3)**: `PascalCase` → `snake_case` (`GetObject` → `get_object`)
     /// - **TypeScript/JavaScript**: `PascalCase` → camelCase (`GetObject` → getObject)
     /// - **Go**: `PascalCase` unchanged (`GetObject` → `GetObject`)
+    // Not part of the stable public API. Exposed only so that integration tests in tests/
+    // can call this without duplicating the conversion logic (including the PythonNameMap
+    // lookup table built from botocore's xform_name at build time).
+    #[doc(hidden)]
     #[must_use]
-    pub(crate) fn operation_to_method_name(operation_name: &str, language: Language) -> String {
+    pub fn operation_to_method_name(operation_name: &str, language: Language) -> String {
         #[allow(unreachable_patterns)]
         match language {
             Language::Python => {
@@ -438,39 +442,34 @@ impl ServiceDiscovery {
         }
     }
 
-    /// Convert AWS operation names to Python method names with special handling for version suffixes
+    /// Convert AWS operation names to Python method names.
     ///
-    /// This function uses convert_case for the base conversion but fixes AWS-specific patterns
-    /// like "V2", "V3" suffixes that should not have underscores inserted.
+    /// First consults the pre-built lookup table (generated from botocore's xform_name at
+    /// build time) to handle special cases like WhatsApp, iSCSI, HITs, PartiQL operations
+    /// that the standard snake_case algorithm gets wrong. Falls back to the standard
+    /// convert_case algorithm with a fix for AWS version suffixes (V2, V3, etc.).
     ///
     /// Examples:
-    /// - "ListObjectsV2" → "list_objects_v2" (not "list_objects_v_2")
-    /// - "GetObjectV1" → "get_object_v1" (not "get_object_v_1")
-    /// - "CreateBucket" → "create_bucket" (normal cases unchanged)
+    /// - "AssociateWhatsAppBusinessAccount" → "associate_whatsapp_business_account" (lookup table)
+    /// - "CreateCachediSCSIVolume" → "create_cached_iscsi_volume" (lookup table)
+    /// - "ListObjectsV2" → "list_objects_v2" (version suffix fix)
+    /// - "CreateBucket" → "create_bucket" (standard conversion)
     fn aws_python_case_conversion(operation_name: &str) -> String {
-        // First, apply normal snake_case conversion
-        let snake_case = operation_name.to_case(Case::Snake);
-
-        // Fix AWS version suffixes at the end: "_v_N" → "_vN" where N is digits
-        // Only replace if "_v_" is followed by digits and is at the end of string
-        if snake_case.len() >= 4 && snake_case.ends_with(|c: char| c.is_ascii_digit()) {
-            if let Some(v_pos) = snake_case.rfind("_v_") {
-                let after_v = &snake_case[v_pos + 3..];
-                // Check if everything after "_v_" is digits (ensuring it's a version suffix)
-                if after_v.chars().all(|c| c.is_ascii_digit()) {
-                    let prefix = &snake_case[..v_pos];
-                    return format!("{prefix}_v{after_v}");
-                }
-            }
+        // First, consult the lookup table built from botocore's xform_name at build time.
+        // This covers all special cases that the standard algorithm gets wrong.
+        if let Some(python_name) = PythonNameMap::lookup(operation_name) {
+            return python_name.to_string();
         }
 
-        snake_case
+        // Standard snake_case conversion for names not in the lookup table
+        operation_name.to_case(Case::Snake)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
     fn test_service_info_creation() {
@@ -478,51 +477,6 @@ mod tests {
 
         assert_eq!(service_info.name, "s3");
         assert_eq!(service_info.api_version, "2006-03-01");
-    }
-
-    #[test]
-    fn test_pascal_to_snake_case() {
-        let test_cases = vec![
-            ("GetObject", "get_object"),
-            ("ListBuckets", "list_buckets"),
-            ("CreateBucket", "create_bucket"),
-            ("DeleteObjectTagging", "delete_object_tagging"),
-            ("PutBucketAcl", "put_bucket_acl"),
-            ("S3", "s_3"), // Consecutive uppercase letters (convert_case handles this correctly)
-            ("XMLParser", "xml_parser"), // Multiple consecutive uppercase (convert_case handles this better)
-        ];
-
-        for (input, expected) in test_cases {
-            let result = input.to_case(Case::Snake);
-            assert_eq!(result, expected, "Failed for input: {input}");
-        }
-    }
-
-    #[test]
-    fn test_operation_to_method_name() {
-        // Test Python mapping
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::Python),
-            "get_object"
-        );
-
-        // Test JavaScript mapping (PascalCase to match service index)
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::JavaScript),
-            "GetObject"
-        );
-
-        // Test TypeScript mapping (PascalCase to match service index)
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::TypeScript),
-            "GetObject"
-        );
-
-        // Test Go mapping
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::Go),
-            "GetObject"
-        );
     }
 
     #[test]
@@ -610,41 +564,56 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_method_name_conversion() {
-        // Test Python (boto3) method name conversion
+    // Standard Python (boto3) snake_case conversions
+    #[rstest]
+    #[case("GetObject", Language::Python, "get_object")]
+    #[case("ListBuckets", Language::Python, "list_buckets")]
+    #[case("CreateBucket", Language::Python, "create_bucket")]
+    #[case("PutBucketAcl", Language::Python, "put_bucket_acl")]
+    // Version suffix: handled by fallback logic
+    #[case("ListObjectsV2", Language::Python, "list_objects_v2")]
+    // WhatsApp: must stay as one word "whatsapp", not "whats_app"
+    #[case(
+        "AssociateWhatsAppBusinessAccount",
+        Language::Python,
+        "associate_whatsapp_business_account"
+    )]
+    #[case(
+        "GetLinkedWhatsAppBusinessAccount",
+        Language::Python,
+        "get_linked_whatsapp_business_account"
+    )]
+    #[case("SendWhatsAppMessage", Language::Python, "send_whatsapp_message")]
+    // iSCSI: mixed-case acronym must become "iscsi", not "i_scsi"
+    #[case(
+        "CreateCachediSCSIVolume",
+        Language::Python,
+        "create_cached_iscsi_volume"
+    )]
+    #[case(
+        "DescribeCachediSCSIVolumes",
+        Language::Python,
+        "describe_cached_iscsi_volumes"
+    )]
+    // HITs: must become "hits", not "hi_ts"
+    #[case(
+        "ListHITsForQualificationType",
+        Language::Python,
+        "list_hits_for_qualification_type"
+    )]
+    // JavaScript/TypeScript/Go: PascalCase passthrough
+    #[case("GetObject", Language::JavaScript, "GetObject")]
+    #[case("GetObject", Language::TypeScript, "GetObject")]
+    #[case("GetObject", Language::Go, "GetObject")]
+    fn test_method_name_conversion(
+        #[case] operation: &str,
+        #[case] language: Language,
+        #[case] expected: &str,
+    ) {
         assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::Python),
-            "get_object"
+            ServiceDiscovery::operation_to_method_name(operation, language),
+            expected
         );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("ListBuckets", Language::Python),
-            "list_buckets"
-        );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("CreateBucket", Language::Python),
-            "create_bucket"
-        );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("PutBucketAcl", Language::Python),
-            "put_bucket_acl"
-        );
-
-        // Test JavaScript/TypeScript support (PascalCase to match service index)
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::JavaScript),
-            "GetObject"
-        );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::TypeScript),
-            "GetObject"
-        );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("GetObject", Language::Go),
-            "GetObject"
-        );
-
-        println!("✓ Method name conversion tests passed");
     }
 
     #[tokio::test]

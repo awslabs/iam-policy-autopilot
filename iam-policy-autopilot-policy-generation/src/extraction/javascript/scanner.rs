@@ -165,7 +165,7 @@ where
                 original_name,
                 local_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         } else {
             // No rename - original name is the same as local name
@@ -174,7 +174,7 @@ where
                 import_name.clone(),
                 import_name,
                 import_item,
-                Location::from_node(self.ast_grep.source_file.path.to_path_buf(), node),
+                Location::from_node(self.ast_grep.source_file.path.clone(), node),
             ))
         }
     }
@@ -201,12 +201,12 @@ where
     ) -> Option<CommandUsage<'_>> {
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
-        let pattern = format!("new {}($ARGS)", command_name);
+        let pattern = format!("new {command_name}($ARGS)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract arguments from the ARGS node
@@ -228,12 +228,12 @@ where
         use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
 
         // Use explicit two-argument pattern
-        let pattern = format!("{}($ARG1, $ARG2)", function_name);
+        let pattern = format!("{function_name}($ARG1, $ARG2)");
 
         if let Ok(matches) = self.find_all_matches(&pattern) {
             if let Some(first_match) = matches.first() {
                 let location =
-                    Location::from_node(self.ast_grep.source_file.path.to_path_buf(), first_match);
+                    Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                 let env = first_match.get_env();
 
                 // Extract parameters from second argument (ARG2 = operation params)
@@ -255,17 +255,15 @@ where
 
         // Try patterns with and without await keyword using explicit two-argument pattern
         let patterns = [
-            format!("await {}($ARG1, $ARG2)", function_name), // With await
-            format!("{}($ARG1, $ARG2)", function_name),       // Without await
+            format!("await {function_name}($ARG1, $ARG2)"), // With await
+            format!("{function_name}($ARG1, $ARG2)"),       // Without await
         ];
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
                     let env = first_match.get_env();
 
                     // Extract parameters from second argument (ARG2 = operation params)
@@ -286,19 +284,17 @@ where
     ) -> Option<CommandUsage<'_>> {
         // Try multiple patterns for TypeScript type annotations
         let patterns = [
-            format!("const $VAR: {} = $VALUE", type_name), // const variable: Type = value
-            format!("let $VAR: {} = $VALUE", type_name),   // let variable: Type = value
-            format!("$VAR: {} = $VALUE", type_name),       // variable: Type = value
+            format!("const $VAR: {type_name} = $VALUE"), // const variable: Type = value
+            format!("let $VAR: {type_name} = $VALUE"),   // let variable: Type = value
+            format!("$VAR: {type_name} = $VALUE"),       // variable: Type = value
         ];
 
         for pattern in &patterns {
             if let Ok(matches) = self.find_all_matches(pattern) {
                 if let Some(first_match) = matches.first() {
-                    let location = Location::from_node(
-                        self.ast_grep.source_file.path.to_path_buf(),
-                        first_match,
-                    );
-                    let expr_text = matches.first().unwrap().text();
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), first_match);
+                    let expr_text = first_match.text();
                     // TODO: Extract from variable assignments
                     let parameters = vec![];
                     return Some(CommandUsage::new(expr_text, location, parameters));
@@ -335,24 +331,22 @@ where
                 let module_text = module_text_cow.trim_matches('"').trim_matches('\'');
 
                 // Check if it's an AWS SDK statement
-                if !module_text.starts_with("@aws-sdk/") {
-                    continue;
+                if let Some(sublibrary) = module_text.strip_prefix("@aws-sdk/") {
+                    let sublibrary = sublibrary.to_string();
+                    let imports_text = imports_node.text();
+                    let imports_text_str = imports_text.as_ref(); // Convert Cow to &str
+
+                    // Initialize sublibrary data if not exists
+                    let sublibrary_info = sublibrary_data
+                        .entry(sublibrary.clone())
+                        .or_insert_with(|| SublibraryInfo::new(sublibrary));
+
+                    self.parse_and_add_imports(
+                        imports_text_str,
+                        sublibrary_info,
+                        node_match.get_node(),
+                    );
                 }
-
-                let sublibrary = module_text.strip_prefix("@aws-sdk/").unwrap().to_string();
-                let imports_text = imports_node.text();
-                let imports_text_str = imports_text.as_ref(); // Convert Cow to &str
-
-                // Initialize sublibrary data if not exists
-                let sublibrary_info = sublibrary_data
-                    .entry(sublibrary.clone())
-                    .or_insert_with(|| SublibraryInfo::new(sublibrary));
-
-                self.parse_and_add_imports(
-                    imports_text_str,
-                    sublibrary_info,
-                    node_match.get_node(),
-                );
             }
         }
         Ok(())
@@ -399,17 +393,14 @@ where
         let mut sublibrary_mappings = HashMap::new();
 
         // Process both imports and requires
-        for source_data in [imports, requires].iter() {
+        for source_data in &[imports, requires] {
             for sublibrary_info in source_data {
                 for import_info in &sublibrary_info.imports {
                     let original_name = &import_info.original_name;
                     let local_name = &import_info.local_name;
 
                     // Check if it's a client type (starts with uppercase, doesn't end with Command/CommandInput)
-                    if original_name
-                        .chars()
-                        .next()
-                        .is_some_and(|c| c.is_uppercase())
+                    if original_name.chars().next().is_some_and(char::is_uppercase)
                         && !original_name.ends_with("Command")
                         && !original_name.ends_with("CommandInput")
                     {
@@ -433,6 +424,12 @@ where
     pub(crate) fn scan_client_instantiations(
         &mut self,
     ) -> Result<Vec<ClientInstantiation>, String> {
+        // Patterns to match client instantiations
+        const PATTERNS: &[&str] = &[
+            "const $VAR = new $CLIENT($ARGS)",
+            "let $VAR = new $CLIENT($ARGS)",
+        ];
+
         let client_info = self.get_valid_client_types()?;
 
         if client_info.is_empty() {
@@ -440,12 +437,6 @@ where
         }
 
         let mut results = Vec::new();
-
-        // Patterns to match client instantiations
-        const PATTERNS: &[&str] = &[
-            "const $VAR = new $CLIENT($ARGS)",
-            "let $VAR = new $CLIENT($ARGS)",
-        ];
 
         for pattern in PATTERNS {
             let matches = self.find_all_matches(pattern)?;
@@ -523,7 +514,6 @@ where
     fn process_method_call_matches(
         &self,
         matches: Vec<ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<T>>>,
-        client_variables: &[String],
         client_info_map: &HashMap<String, (String, String, String)>,
         results: &mut Vec<MethodCall>,
     ) -> Result<(), String> {
@@ -539,10 +529,9 @@ where
                 let method_name = method_node.text().to_string();
 
                 // Check if it's a known client variable
-                if client_variables.contains(&variable_name) {
-                    let (client_type, original_client_type, client_sublibrary) =
-                        client_info_map.get(&variable_name).unwrap();
-
+                if let Some((client_type, original_client_type, client_sublibrary)) =
+                    client_info_map.get(&variable_name)
+                {
                     // Extract arguments
                     let arguments = if let Some(args_node) = args_node {
                         let args_text = args_node.text();
@@ -560,7 +549,7 @@ where
                         method_name,
                         arguments,
                         location: Location::from_node(
-                            self.ast_grep.source_file.path.to_path_buf(),
+                            self.ast_grep.source_file.path.clone(),
                             node_match.get_node(),
                         ),
                     });
@@ -595,16 +584,9 @@ where
             })
             .collect();
 
-        let client_variables: Vec<String> = client_info_map.keys().cloned().collect();
-
         // Single pattern to match method calls (covers both awaited and non-awaited)
         let matches = self.find_all_matches("$VAR.$METHOD($ARGS)")?;
-        self.process_method_call_matches(
-            matches,
-            &client_variables,
-            &client_info_map,
-            &mut results,
-        )?;
+        self.process_method_call_matches(matches, &client_info_map, &mut results)?;
 
         Ok(results)
     }

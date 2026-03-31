@@ -163,3 +163,53 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod negative_tests {
+    use rust_embed::RustEmbed;
+
+    use super::ServiceConfiguration;
+
+    /// Embedded invalid test configuration files for negative testing
+    /// This RustEmbed points to test resources with intentionally malformed configs
+    #[derive(RustEmbed)]
+    #[folder = "tests/resources/invalid_configs"]
+    #[include = "*.json"]
+    struct InvalidTestConfigs;
+
+    #[test]
+    fn test_invalid_service_configuration() {
+        let file_paths = [
+            "invalid_service_config1.json",
+            "invalid_service_config2.json",
+        ];
+        for file_path in file_paths {
+            // Test that malformed JSON (missing closing brace) is rejected
+            let file = InvalidTestConfigs::get(file_path).expect("Test file should exist");
+
+            let json_str =
+                std::str::from_utf8(&file.data).expect("Test file should be valid UTF-8");
+
+            let result: Result<ServiceConfiguration, _> = serde_json::from_str(json_str);
+
+            assert!(
+                result.is_err(),
+                "{}: Parsing should fail for malformed JSON",
+                file_path
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_configs_directory_exists() {
+        // Verify that the test resources directory is properly set up
+        let file_count = InvalidTestConfigs::iter().count();
+
+        assert!(
+            file_count > 0,
+            "Should have at least one invalid test configuration file"
+        );
+
+        println!("✓ Found {} invalid test configuration files", file_count);
+    }
+}

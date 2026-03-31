@@ -20,9 +20,9 @@ use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 6 hours.
+// Cache files for 5 minutes.
 // We can allow cache duration override in future.
-const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 21600;
+const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
 /// Represents the complete service reference loaded from service reference endpoint.
@@ -117,7 +117,7 @@ impl<'de> Deserialize<'de> for ServiceReference {
             }
         }
 
-        Ok(ServiceReference {
+        Ok(Self {
             actions: temp.actions,
             service_name: temp.name,
             resources: temp.resources,
@@ -266,7 +266,7 @@ where
 
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
     pub(crate) service_reference_mapping: HashMap<String, Url>,
@@ -419,7 +419,7 @@ impl RemoteServiceReferenceLoader {
     }
 
     fn get_cache_path(service_name: &str) -> PathBuf {
-        Self::get_cache_dir().join(format!("{}.json", service_name))
+        Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
     async fn is_cache_valid(path: &PathBuf) -> bool {
@@ -492,8 +492,7 @@ impl RemoteServiceReferenceLoader {
                         ExtractorError::service_reference_parse_error_with_source(
                             service_name,
                             format!(
-                                "Failed to parse service reference content. Detailed error: {}",
-                                e
+                                "Failed to parse service reference content. Detailed error: {e}"
                             ),
                             e,
                         )

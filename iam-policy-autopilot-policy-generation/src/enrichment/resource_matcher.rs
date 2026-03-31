@@ -43,7 +43,7 @@ impl FasExpansion {
                 {
                     Some(operation_fas_map) => {
                         let service_operation_name = current.service_operation_name();
-                        log::debug!("Looking up operation {}", service_operation_name);
+                        log::debug!("Looking up operation {service_operation_name}");
 
                         if let Some(additional_operations) = operation_fas_map
                             .fas_operations
@@ -63,11 +63,11 @@ impl FasExpansion {
                                 }
                             }
                         } else {
-                            log::debug!("Did not find {}", service_operation_name);
+                            log::debug!("Did not find {service_operation_name}");
                         }
                     }
                     None => {
-                        log::debug!("No FAS map found for service: {}", service_name);
+                        log::debug!("No FAS map found for service: {service_name}");
                     }
                 }
             }
@@ -75,10 +75,7 @@ impl FasExpansion {
             let newly_discovered_count = newly_discovered.len();
             to_process = newly_discovered;
 
-            log::debug!(
-                "FAS expansion discovered {} new operations",
-                newly_discovered_count
-            );
+            log::debug!("FAS expansion discovered {newly_discovered_count} new operations");
         }
 
         log::debug!(
@@ -173,7 +170,7 @@ impl ResourceMatcher {
                 operator: crate::enrichment::Operator::StringEquals,
                 key: ctx.key().to_string(),
                 values: ctx.values().to_vec(),
-            })
+            });
         }
         result
     }
@@ -194,16 +191,10 @@ impl ResourceMatcher {
         // Store the original service name from parsed_call for use in explanations
         let original_service_name = service_name;
 
-        let initial = Operation::from_call(
-            parsed_call,
-            service_name,
-            &self.service_cfg,
-            self.sdk,
-            service_reference_loader,
-        )
-        .await?;
+        let initial =
+            Operation::from_call(parsed_call, service_name, &self.service_cfg, self.sdk).await?;
 
-        log::debug!("Expanded {:?}", initial);
+        log::debug!("Expanded {initial:?}");
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
         let fas_expansion = FasExpansion::new(&self.service_cfg, &self.fas_maps, initial);
 
@@ -272,7 +263,7 @@ impl ResourceMatcher {
                                     conditions,
                                     explanation,
                                 );
-                                log::debug!("Created action: {:?}", enriched_action);
+                                log::debug!("Created action: {enriched_action:?}");
                                 enriched_actions.push(enriched_action);
                             }
                         } else {
@@ -281,7 +272,7 @@ impl ResourceMatcher {
                             if let Some(a) =
                                 self.create_fallback_action(op, &fas_expansion, &service_reference)?
                             {
-                                log::debug!("Created fallback action due to no entry in operation action map: {:?}", a);
+                                log::debug!("Created fallback action due to no entry in operation action map: {a:?}");
                                 enriched_actions.push(a);
                             }
                         }
@@ -290,7 +281,7 @@ impl ResourceMatcher {
                         if let Some(a) =
                             self.create_fallback_action(op, &fas_expansion, &service_reference)?
                         {
-                            log::debug!("Created fallback action due to no operation action map for service: {:?}", a);
+                            log::debug!("Created fallback action due to no operation action map for service: {a:?}");
                             enriched_actions.push(a);
                         }
                     }
@@ -325,8 +316,7 @@ impl ResourceMatcher {
         // Sanity check that the action exists in the SDF
         if !service_reference.actions.contains_key(&op.name) {
             log::debug!(
-                "Not creating fallback action: service reference doesn't contain key: {:?}",
-                action_name
+                "Not creating fallback action: service reference doesn't contain key: {action_name:?}"
             );
             return Ok(None);
         }
@@ -343,7 +333,7 @@ impl ResourceMatcher {
         };
 
         Ok(Some(Action::new(
-            action_name.to_string(),
+            action_name.clone(),
             resources,
             vec![],
             explanation,
@@ -359,10 +349,7 @@ impl ResourceMatcher {
         // Extract the action part (remove service prefix)
         let action = action_name.split(':').nth(1).unwrap_or(action_name);
 
-        log::debug!(
-            "find_resources_for_action_in_service_reference: action = {}",
-            action
-        );
+        log::debug!("find_resources_for_action_in_service_reference: action = {action}");
         log::debug!(
             "find_resources_for_action_in_service_reference: service_reference.actions = {:?}",
             service_reference.actions
@@ -371,32 +358,30 @@ impl ResourceMatcher {
         if let Some(action) = service_reference.actions.get(action) {
             let overrides = self.service_cfg.resource_overrides.get(action_name);
             for resource in &action.resources {
-                let service_reference_resource =
-                    if let Some(r#override) = overrides.and_then(|m| m.get(resource)) {
-                        log::debug!(
-                        "find_resources_for_action_in_service_reference: resource override = {}",
-                        r#override
+                let service_reference_resource = if let Some(r#override) =
+                    overrides.and_then(|m| m.get(resource))
+                {
+                    log::debug!(
+                        "find_resources_for_action_in_service_reference: resource override = {override}"
                     );
-                        Resource::new(resource.clone(), Some(vec![r#override.clone()]))
-                    } else {
-                        log::debug!(
-                        "find_resources_for_action_in_service_reference: looking up resource = {}",
-                        resource
+                    Resource::new(resource.clone(), Some(vec![r#override.clone()]))
+                } else {
+                    log::debug!(
+                        "find_resources_for_action_in_service_reference: looking up resource = {resource}"
                     );
-                        log::debug!(
-                            "find_resources_for_action_in_service_reference: resources = {:?}",
-                            service_reference.resources
+                    log::debug!(
+                        "find_resources_for_action_in_service_reference: resources = {:?}",
+                        service_reference.resources
+                    );
+                    let arn_patterns = service_reference.resources.get(resource).cloned();
+                    log::debug!(
+                            "find_resources_for_action_in_service_reference: arn_pattern = {arn_patterns:?}"
                         );
-                        let arn_patterns = service_reference.resources.get(resource).cloned();
-                        log::debug!(
-                            "find_resources_for_action_in_service_reference: arn_pattern = {:?}",
-                            arn_patterns
-                        );
-                        Resource::new(resource.clone(), arn_patterns)
-                    };
+                    Resource::new(resource.clone(), arn_patterns)
+                };
                 result.push(service_reference_resource);
             }
-        };
+        }
 
         // If no resources found, that's still valid (some actions don't require specific resources)
         Ok(result)

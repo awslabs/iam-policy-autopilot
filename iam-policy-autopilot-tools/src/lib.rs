@@ -91,6 +91,7 @@ impl PolicyUploader {
     }
 
     /// Create a new PolicyUploader with custom AWS configuration
+    #[must_use]
     pub fn with_client(client: IamClient) -> Self {
         Self { client }
     }
@@ -113,18 +114,18 @@ impl PolicyUploader {
         if name.len() > max_len {
             return Err(UploaderError::InvalidPolicyName(
                 name.to_string(),
-                format!("Name cannot exceed {} characters", max_len),
+                format!("Name cannot exceed {max_len} characters"),
             ));
         }
 
         // Check for valid characters: alphanumeric + = , . @ _ -
-        let valid_chars = Regex::new(r"^[a-zA-Z0-9+=,.@_-]+$").unwrap();
+        let valid_chars = Regex::new(r"^[a-zA-Z0-9+=,.@_-]+$")
+            .expect("Valid regex pattern for policy name validation");
         if !valid_chars.is_match(name) {
             return Err(UploaderError::InvalidPolicyName(
                 name.to_string(),
                 format!(
-                    "Names must be alphanumeric and can include: + = , . @ _ - (see {})",
-                    NAME_SPEC_LINK
+                    "Names must be alphanumeric and can include: + = , . @ _ - (see {NAME_SPEC_LINK})"
                 ),
             ));
         }
@@ -189,7 +190,7 @@ impl PolicyUploader {
         }
 
         // Append the `_` so there is divider in case the custom_name ends in a number
-        let prefix = format!("{}_", prefix);
+        let prefix = format!("{prefix}_");
 
         // Filter existing policies that match our pattern and extract their numbers
         let mut used_numbers = Vec::new();
@@ -216,7 +217,7 @@ impl PolicyUploader {
             }
         }
 
-        Ok(format!("{}{}", prefix, next_number))
+        Ok(format!("{prefix}{next_number}"))
     }
 
     /// Upload multiple IAM policies to AWS
@@ -302,7 +303,7 @@ impl PolicyUploader {
             UploaderError::AwsConfig("No policy returned from CreatePolicy".to_string())
         })?;
 
-        log::info!("Successfully created policy: {}", policy_name);
+        log::info!("Successfully created policy: {policy_name}");
 
         Ok(UploadResponse {
             policy_name: created_policy.policy_name.unwrap_or(policy_name),

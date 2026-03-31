@@ -5,6 +5,7 @@
 //! and RenameServicesServiceReference configurations.
 
 use std::collections::{HashMap, HashSet};
+use std::fmt::Write;
 use std::sync::Arc;
 
 use log::trace;
@@ -134,7 +135,7 @@ impl ServiceHintsProcessor {
                 }
             }
 
-            trace!("Service '{}' synonyms: {:?}", service_name, synonyms);
+            trace!("Service '{service_name}' synonyms: {synonyms:?}");
             synonyms_map.insert(service_name.clone(), synonyms);
         }
 
@@ -166,18 +167,19 @@ impl ServiceHintsProcessor {
             let mut error_msg = String::new();
             for (invalid_service, suggestions) in invalid_services {
                 if suggestions.is_empty() {
-                    error_msg.push_str(&format!("  - {}\n", invalid_service));
+                    let _ = writeln!(error_msg, "  - {invalid_service}");
                 } else if suggestions.len() == 1 {
-                    error_msg.push_str(&format!(
-                        "  - {} (did you mean {}?)\n",
+                    let _ = writeln!(
+                        error_msg,
+                        "  - {} (did you mean {}?)",
                         invalid_service, suggestions[0]
-                    ));
+                    );
                 } else {
                     let suggestion_list = suggestions.join(", ");
-                    error_msg.push_str(&format!(
-                        "  - {} (did you mean one of: {}?)\n",
-                        invalid_service, suggestion_list
-                    ));
+                    let _ = writeln!(
+                        error_msg,
+                        "  - {invalid_service} (did you mean one of: {suggestion_list}?)"
+                    );
                 }
             }
             return Err(ExtractorError::invalid_service_hints(error_msg).into());

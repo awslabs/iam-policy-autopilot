@@ -49,7 +49,7 @@ impl GoFeaturesExtractor {
     ) -> Vec<SdkMethodCall> {
         let mut synthetic_calls = Vec::new();
 
-        log::debug!("import_info: {:?}", import_info);
+        log::debug!("import_info: {import_info:?}");
 
         // Find all method calls (receiver.Method(...))
         let method_calls = self.find_method_calls(ast);
@@ -69,7 +69,7 @@ impl GoFeaturesExtractor {
         let mut calls = Vec::new();
 
         // Use the same pattern as the main extractor for method calls
-        let config = r#"
+        let config = r"
 id: method_call_extraction
 language: Go
 rule:
@@ -90,7 +90,7 @@ rule:
         field: arguments
         pattern: $$$ARGS
         kind: argument_list
-        "#;
+        ";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config = &from_yaml_string::<Go>(config, &globals).expect("rule should parse")[0];
@@ -214,16 +214,19 @@ rule:
                     operation
                 );
 
+                let metadata =
+                    SdkMethodCallMetadata::new(call_info.expr.clone(), call_info.location.clone())
+                        .with_parameters(parameters.clone());
+                let metadata = if let Some(r) = call_info.receiver.clone() {
+                    metadata.with_receiver(r)
+                } else {
+                    metadata
+                };
+
                 SdkMethodCall {
                     name: operation_name,
                     possible_services: vec![service_name.to_string()],
-                    metadata: Some(SdkMethodCallMetadata {
-                        parameters: parameters.clone(),
-                        return_type: None,
-                        expr: call_info.expr.clone(),
-                        location: call_info.location.clone(),
-                        receiver: call_info.receiver.clone(),
-                    }),
+                    metadata: Some(metadata),
                 }
             })
             .collect()

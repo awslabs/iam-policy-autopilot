@@ -32,6 +32,7 @@ fn infer_denial_type(message: &str) -> DenialType {
 
 /// Parse AccessDenied message.
 /// Returns None if message is empty or cannot be parsed.
+#[must_use]
 pub fn parse(message: &str) -> Option<ParsedDenial> {
     if message.is_empty() {
         return None;

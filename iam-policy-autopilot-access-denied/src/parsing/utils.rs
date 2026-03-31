@@ -5,7 +5,8 @@ use std::sync::LazyLock;
 
 /// Compiled regex for ARN validation - only place we use regex in parsing
 static ARN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"arn:aws(?:-[a-z]+)*:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+").unwrap()
+    Regex::new(r"arn:aws(?:-[a-z]+)*:[a-zA-Z0-9\-]+:[a-zA-Z0-9\-]*:\d{12}:[^\s\x22]+")
+        .expect("Valid ARN regex pattern")
 });
 
 pub fn is_account_id(value: &str) -> bool {
@@ -145,7 +146,7 @@ pub fn extract_resource(message: &str) -> Option<String> {
                     if resource_parts.len() >= 2 {
                         let resource_name =
                             resource_parts[1].trim_end_matches(&['.', ',', ';'] as &[_]);
-                        let formatted = format!("arn:*:iam::*:{}/{}", first_part, resource_name);
+                        let formatted = format!("arn:*:iam::*:{first_part}/{resource_name}");
                         return Some(formatted);
                     }
                 }
@@ -278,6 +279,7 @@ pub fn is_s3_object_operation(action: &str) -> bool {
 /// let result = normalize_s3_resource("dynamodb:GetItem", "arn:aws:dynamodb:us-east-1:123:table/T");
 /// assert_eq!(result, "arn:aws:dynamodb:us-east-1:123:table/T");
 /// ```
+#[must_use]
 pub fn normalize_s3_resource(action: &str, resource: &str) -> String {
     // Only normalize for S3 object operations
     if !is_s3_object_operation(action) {

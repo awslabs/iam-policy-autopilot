@@ -98,22 +98,24 @@ impl PythonExtractor {
             Vec::new()
         };
 
+        let metadata = SdkMethodCallMetadata::new(
+            node_match.text().to_string(),
+            Location::from_node(source_file.path.clone(), node_match.get_node()),
+        )
+        .with_parameters(arguments);
+        let metadata = if let Some(r) = receiver {
+            metadata.with_receiver(r)
+        } else {
+            metadata
+        };
+
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services,
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: arguments,
-                return_type: None, // We don't know the return type from the call site
-                expr: node_match.text().to_string(),
-                location: Location::from_node(
-                    source_file.path.to_path_buf(),
-                    node_match.get_node(),
-                ),
-                receiver,
-            }),
+            metadata: Some(metadata),
         };
 
-        log::debug!("Found method call: {:?}", method_call);
+        log::debug!("Found method call: {method_call:?}");
         Some(method_call)
     }
 }
@@ -198,22 +200,22 @@ impl Extractor for PythonExtractor {
         service_index: &ServiceModelIndex,
     ) {
         let method_disambiguator = MethodDisambiguator::new(service_index);
+        let resource_extractor = ResourceDirectCallsExtractor::new(service_index);
+        let waiters_extractor = WaitersExtractor::new(service_index);
+        let paginator_extractor = PaginatorExtractor::new(service_index);
 
         for extractor_result in extractor_results.iter_mut() {
             match extractor_result {
                 ExtractorResult::Python(ast, method_calls) => {
                     // Extract resource direct calls (with ServiceModelIndex access)
-                    let resource_extractor = ResourceDirectCallsExtractor::new(service_index);
                     let resource_calls = resource_extractor.extract_resource_method_calls(ast);
                     method_calls.extend(resource_calls);
 
                     // Add waiters to extracted methods using the service model index directly
-                    let waiters_extractor = WaitersExtractor::new(service_index);
                     let waiter_calls = waiters_extractor.extract_waiter_method_calls(ast);
                     method_calls.extend(waiter_calls);
 
                     // Add paginators to extracted methods using the service model index directly
-                    let paginator_extractor = PaginatorExtractor::new(service_index);
                     let paginator_calls = paginator_extractor.extract_paginate_method_calls(ast);
                     method_calls.extend(paginator_calls);
 

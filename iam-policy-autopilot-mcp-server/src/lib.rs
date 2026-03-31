@@ -7,7 +7,8 @@ use log::info;
 pub mod mcp;
 pub(crate) mod tools;
 
-static BIND_ADDRESS: &str = "127.0.0.1";
+/// Default bind address for the HTTP MCP server.
+pub static DEFAULT_BIND_ADDRESS: &str = "127.0.0.1";
 
 #[derive(Clone, Debug, ValueEnum)]
 pub enum McpTransport {
@@ -18,19 +19,23 @@ pub enum McpTransport {
 impl Display for McpTransport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            McpTransport::Stdio => write!(f, "stdio"),
-            McpTransport::Http => write!(f, "http"),
+            Self::Stdio => write!(f, "stdio"),
+            Self::Http => write!(f, "http"),
         }
     }
 }
 
-pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> {
-    info!("Starting MCP server with transport: {}", transport);
+pub async fn start_mcp_server(
+    transport: McpTransport,
+    port: u16,
+    bind_address: &str,
+) -> Result<()> {
+    info!("Starting MCP server with transport: {transport}");
 
     let env = env_logger::Env::default().filter_or("IAMPA_LOG_LEVEL", "debug");
 
     let timestamp = chrono::Local::now().format("%Y-%m-%d-%H%M%S").to_string();
-    let prefix = format!("iam-policy-autopilot-mcp-{}-", timestamp);
+    let prefix = format!("iam-policy-autopilot-mcp-{timestamp}-");
 
     // Set up logging to temp file
     let path_str: Option<String> = {
@@ -62,21 +67,21 @@ pub async fn start_mcp_server(transport: McpTransport, port: u16) -> Result<()> 
 
     match transport {
         McpTransport::Http => {
-            let bind_address: String = format!("{}:{}", BIND_ADDRESS, port);
-            info!("Starting HTTP MCP server at {}", bind_address);
+            let addr: String = format!("{bind_address}:{port}");
+            info!("Starting HTTP MCP server at {addr}");
 
-            crate::mcp::begin_http_transport(bind_address.as_str(), path_str)
+            crate::mcp::begin_http_transport(addr.as_str(), path_str)
                 .await
-                .with_context(|| format!("Failed to start HTTP Server at '{bind_address}'"))?
+                .with_context(|| format!("Failed to start HTTP Server at '{addr}'"))?;
         }
         McpTransport::Stdio => {
             info!("Starting STDIO MCP server");
 
             crate::mcp::begin_stdio_transport(path_str)
                 .await
-                .with_context(|| "Failed to start STDIO Server".to_string())?
+                .with_context(|| "Failed to start STDIO Server".to_string())?;
         }
-    };
+    }
 
     Ok(())
 }

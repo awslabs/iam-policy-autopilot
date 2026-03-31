@@ -19,10 +19,10 @@ impl ExtractorResult {
     /// Extract just the method calls from the result
     pub(crate) fn method_calls(self) -> Vec<SdkMethodCall> {
         match self {
-            ExtractorResult::Python(_, calls) => calls,
-            ExtractorResult::Go(_, calls, _) => calls,
-            ExtractorResult::JavaScript(_, calls) => calls,
-            ExtractorResult::TypeScript(_, calls) => calls,
+            Self::Python(_, calls) => calls,
+            Self::Go(_, calls, _) => calls,
+            Self::JavaScript(_, calls) => calls,
+            Self::TypeScript(_, calls) => calls,
         }
     }
 
@@ -30,10 +30,10 @@ impl ExtractorResult {
     #[allow(dead_code)]
     pub(crate) fn method_calls_ref(&self) -> &Vec<SdkMethodCall> {
         match self {
-            ExtractorResult::Python(_, calls) => calls,
-            ExtractorResult::Go(_, calls, _) => calls,
-            ExtractorResult::JavaScript(_, calls) => calls,
-            ExtractorResult::TypeScript(_, calls) => calls,
+            Self::Python(_, calls) => calls,
+            Self::Go(_, calls, _) => calls,
+            Self::JavaScript(_, calls) => calls,
+            Self::TypeScript(_, calls) => calls,
         }
     }
 
@@ -41,7 +41,7 @@ impl ExtractorResult {
     #[allow(dead_code)]
     pub(crate) fn go_import_info(&self) -> Option<&GoImportInfo> {
         match self {
-            ExtractorResult::Go(_, _, import_info) => Some(import_info),
+            Self::Go(_, _, import_info) => Some(import_info),
             _ => None,
         }
     }

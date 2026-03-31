@@ -36,6 +36,9 @@ use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
+// Not part of the stable public API — exposed only for integration tests in tests/.
+#[doc(hidden)]
+pub use extraction::ServiceDiscovery;
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
 };
@@ -102,10 +105,10 @@ impl Language {
     /// ```
     pub fn try_from_str(s: &str) -> Result<Self, ExtractorError> {
         match s {
-            "python" | "py" => Ok(Language::Python),
-            "go" => Ok(Language::Go),
-            "javascript" | "js" => Ok(Language::JavaScript),
-            "typescript" | "ts" => Ok(Language::TypeScript),
+            "python" | "py" => Ok(Self::Python),
+            "go" => Ok(Self::Go),
+            "javascript" | "js" => Ok(Self::JavaScript),
+            "typescript" | "ts" => Ok(Self::TypeScript),
             _ => Err(ExtractorError::UnsupportedLanguage {
                 language: s.to_string(),
             }),
@@ -116,17 +119,17 @@ impl Language {
 impl Display for Language {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let language_str = match self {
-            Language::Python => "python",
-            Language::Go => "go",
-            Language::JavaScript => "javascript",
-            Language::TypeScript => "typescript",
+            Self::Python => "python",
+            Self::Go => "go",
+            Self::JavaScript => "javascript",
+            Self::TypeScript => "typescript",
         };
-        write!(f, "{}", language_str)
+        write!(f, "{language_str}")
     }
 }
 
 impl From<Language> for String {
-    fn from(value: Language) -> String {
+    fn from(value: Language) -> Self {
         match value {
             Language::Python => "python",
             Language::Go => "go",
@@ -189,21 +192,25 @@ impl Location {
     }
 
     /// Line where the finding starts
+    #[must_use]
     pub fn start_line(&self) -> usize {
         self.start_position.0
     }
 
     /// Column where the finding starts
+    #[must_use]
     pub fn start_col(&self) -> usize {
         self.start_position.1
     }
 
     /// Line where the finding ends
+    #[must_use]
     pub fn end_line(&self) -> usize {
         self.end_position.0
     }
 
     /// Column where the finding ends
+    #[must_use]
     pub fn end_col(&self) -> usize {
         self.end_position.1
     }
@@ -215,10 +222,7 @@ impl Location {
         let (start_line, start_col) = self.start_position;
         let (end_line, end_col) = self.end_position;
 
-        format!(
-            "{}:{}.{}-{}.{}",
-            path_str, start_line, start_col, end_line, end_col
-        )
+        format!("{path_str}:{start_line}.{start_col}-{end_line}.{end_col}")
     }
 }
 
@@ -267,18 +271,18 @@ impl Location {
         // Convert strings to numbers
         let start_line = start_line_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid start line: {}", start_line_str))?;
+            .map_err(|_| format!("Invalid start line: {start_line_str}"))?;
         let start_col = start_col_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid start column: {}", start_col_str))?;
+            .map_err(|_| format!("Invalid start column: {start_col_str}"))?;
         let end_line = end_line_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid end line: {}", end_line_str))?;
+            .map_err(|_| format!("Invalid end line: {end_line_str}"))?;
         let end_col = end_col_str
             .parse::<usize>()
-            .map_err(|_| format!("Invalid end column: {}", end_col_str))?;
+            .map_err(|_| format!("Invalid end column: {end_col_str}"))?;
 
-        Ok(Location {
+        Ok(Self {
             file_path: PathBuf::from(file_path_str),
             start_position: (start_line, start_col),
             end_position: (end_line, end_col),

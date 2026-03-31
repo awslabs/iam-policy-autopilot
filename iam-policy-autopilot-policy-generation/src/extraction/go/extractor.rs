@@ -30,7 +30,7 @@ impl GoExtractor {
         let root = ast.ast.root();
 
         // AST-grep configuration for extracting import statements
-        let import_config = r#"
+        let import_config = r"
 id: import_extraction
 language: Go
 rule:
@@ -39,7 +39,7 @@ rule:
     field: path
     pattern: $PATH
     kind: interpreted_string_literal
-"#;
+";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config =
@@ -53,7 +53,7 @@ rule:
         }
 
         // Also handle import declarations with aliases
-        let import_alias_config = r#"
+        let import_alias_config = r"
 id: import_alias_extraction
 language: Go
 rule:
@@ -67,7 +67,7 @@ rule:
         field: path
         pattern: $PATH
         kind: interpreted_string_literal
-"#;
+";
 
         let alias_config = &from_yaml_string::<Go>(import_alias_config, &globals)
             .expect("import alias rule should parse")[0];
@@ -189,16 +189,21 @@ rule:
             vec![]
         };
 
+        let metadata = SdkMethodCallMetadata::new(
+            node_match.text().to_string(),
+            Location::from_node(source_file.path.clone(), node_match.get_node()),
+        )
+        .with_parameters(arguments);
+        let metadata = if let Some(r) = receiver {
+            metadata.with_receiver(r)
+        } else {
+            metadata
+        };
+
         let method_call = SdkMethodCall {
             name: method_name.to_string(),
             possible_services: Vec::new(), // Will be determined later during service validation
-            metadata: Some(SdkMethodCallMetadata {
-                parameters: arguments,
-                return_type: None, // We don't know the return type from the call site
-                expr: node_match.text().to_string(),
-                location: Location::from_node(source_file.path.clone(), node_match.get_node()),
-                receiver,
-            }),
+            metadata: Some(metadata),
         };
 
         Some(method_call)
@@ -373,7 +378,7 @@ rule:
             }
         }
 
-        log::debug!("Field names extracted from AST: {:?}", field_names);
+        log::debug!("Field names extracted from AST: {field_names:?}");
         field_names
     }
 
@@ -424,7 +429,7 @@ impl Extractor for GoExtractor {
 
         let mut method_calls = Vec::new();
 
-        let config = r#"
+        let config = r"
 id: method_call_extraction
 language: Go
 rule:
@@ -445,7 +450,7 @@ rule:
         field: arguments
         pattern: $$$ARGS
         kind: argument_list
-        "#;
+        ";
 
         let globals = ast_grep_config::GlobalRules::default();
         let config = &from_yaml_string::<Go>(config, &globals).expect("rule should parse")[0];
@@ -495,7 +500,7 @@ rule:
                             method_calls.extend(feature_calls);
                         }
                         Err(e) => {
-                            log::debug!("Failed to create GoFeaturesExtractor: {}", e);
+                            log::debug!("Failed to create GoFeaturesExtractor: {e}");
                         }
                     }
 
@@ -530,7 +535,7 @@ rule:
 impl Parameter {
     /// Create a context parameter
     pub(crate) fn context(expression: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(expression),
             position,
             type_annotation: Some("context.Context".to_string()),
@@ -551,8 +556,8 @@ impl Parameter {
             .collect::<Vec<_>>()
             .join(", ");
 
-        Parameter::Positional {
-            value: ParameterValue::Unresolved(format!("&{}{{ {} }}", type_name, fields_str)),
+        Self::Positional {
+            value: ParameterValue::Unresolved(format!("&{type_name}{{ {fields_str} }}")),
             position,
             type_annotation: Some(type_name),
             struct_fields: Some(fields.iter().map(|f| f.name.clone()).collect()),
@@ -561,7 +566,7 @@ impl Parameter {
 
     /// Create an expression parameter
     pub(crate) fn expression(value: String, position: usize) -> Self {
-        Parameter::Positional {
+        Self::Positional {
             value: ParameterValue::Unresolved(value),
             position,
             type_annotation: None,

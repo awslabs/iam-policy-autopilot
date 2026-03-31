@@ -5,6 +5,7 @@
 //! extraction process, coordinating file system operations, JSON parsing, and tree-sitter
 //! source code analysis.
 
+use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
@@ -28,6 +29,7 @@ impl Default for Engine {
 
 impl Engine {
     /// Create a new SDK method extractor with the specified providers.
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -119,9 +121,9 @@ impl Engine {
         // Disambiguate and validate method calls against SDK definitions
         extractor.disambiguate(&mut all_extraction_results, &service_index);
 
-        let method_calls = all_extraction_results
+        let method_calls: Vec<crate::SdkMethodCall> = all_extraction_results
             .into_iter()
-            .flat_map(|r| r.method_calls())
+            .flat_map(super::extractor::ExtractorResult::method_calls)
             .collect::<Vec<_>>();
 
         // Update metadata with final method count
@@ -172,7 +174,7 @@ impl Engine {
         if detected_languages.len() > 1 {
             let mut error_msg = "Mixed programming languages detected:\n".to_string();
             for (file_path, language) in file_languages {
-                error_msg.push_str(&format!("  {} -> {}\n", file_path.display(), language));
+                let _ = writeln!(error_msg, "  {} -> {}", file_path.display(), language);
             }
             error_msg.push_str("All source files must be in the same programming language, or use --language to override.");
 
@@ -180,7 +182,11 @@ impl Engine {
         }
 
         // Return the single detected language
-        Ok(detected_languages.into_iter().next().unwrap())
+        // We know there's exactly one element due to the validation above
+        Ok(detected_languages
+            .into_iter()
+            .next()
+            .expect("Should have detected exactly one language"))
     }
 }
 

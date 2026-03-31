@@ -6,11 +6,11 @@ use log::debug;
 use std::io::{self, Write};
 
 pub(crate) fn note(msg: &str) {
-    let _ = writeln!(io::stderr(), "iam-policy-autopilot: {}", msg);
+    let _ = writeln!(io::stderr(), "iam-policy-autopilot: {msg}");
 }
 
 pub(crate) fn warn(msg: &str) {
-    let _ = writeln!(io::stderr(), "iam-policy-autopilot (warning): {}", msg);
+    let _ = writeln!(io::stderr(), "iam-policy-autopilot (warning): {msg}");
 }
 
 pub(crate) fn print_plan(plan: &PlanResult) {
@@ -24,7 +24,7 @@ pub(crate) fn print_plan(plan: &PlanResult) {
     let _ = writeln!(w);
     let _ = writeln!(w, "Proposed permissions:");
     for a in &plan.actions {
-        let _ = writeln!(w, "  - {}", a);
+        let _ = writeln!(w, "  - {a}");
     }
     let _ = writeln!(w);
     if !matches!(plan.diagnosis.denial_type, DenialType::ImplicitIdentity) {
@@ -41,19 +41,14 @@ pub(crate) fn prompt_apply_once() {
 pub(crate) fn print_apply_success(policy_name: &str, principal_kind: &str, principal_name: &str) {
     let _ = writeln!(
         io::stderr(),
-        "Applied inline policy '{}' to {}/{}",
-        policy_name,
-        principal_kind,
-        principal_name
+        "Applied inline policy '{policy_name}' to {principal_kind}/{principal_name}"
     );
 }
 
 pub(crate) fn print_apply_refused(reason_code: &str, hint: &str) {
     let _ = writeln!(
         io::stderr(),
-        "iam-policy-autopilot: apply refused ({}) — {}",
-        reason_code,
-        hint
+        "iam-policy-autopilot: apply refused ({reason_code}) — {hint}"
     );
 }
 
@@ -65,11 +60,7 @@ pub(crate) fn print_statement_added(
 ) {
     let _ = writeln!(
         io::stderr(),
-        "Added statement to policy '{}' on {}/{} (now {} statements total)",
-        policy_name,
-        principal_kind,
-        principal_name,
-        statement_count
+        "Added statement to policy '{policy_name}' on {principal_kind}/{principal_name} (now {statement_count} statements total)"
     );
 }
 
@@ -82,8 +73,8 @@ pub(crate) fn print_duplicate_statement(action: &str, resource: &str) {
         io::stderr(),
         "The canonical policy already contains permission for:"
     );
-    let _ = writeln!(io::stderr(), "  Action:   {}", action);
-    let _ = writeln!(io::stderr(), "  Resource: {}", resource);
+    let _ = writeln!(io::stderr(), "  Action:   {action}");
+    let _ = writeln!(io::stderr(), "  Resource: {resource}");
 }
 
 pub(crate) fn print_resource_policy_fix(action: &str, resource: &str, statement_json: &str) {
@@ -97,12 +88,12 @@ pub(crate) fn print_resource_policy_fix(action: &str, resource: &str, statement_
     );
     let _ = writeln!(w, "The resource owner must manually update the policy on:");
     let _ = writeln!(w);
-    let _ = writeln!(w, "  Action:   {}", action);
-    let _ = writeln!(w, "  Resource: {}", resource);
+    let _ = writeln!(w, "  Action:   {action}");
+    let _ = writeln!(w, "  Resource: {resource}");
     let _ = writeln!(w);
     let _ = writeln!(w, "Add this statement to the resource policy:");
     let _ = writeln!(w);
-    let _ = writeln!(w, "{}", statement_json);
+    let _ = writeln!(w, "{statement_json}");
     let _ = writeln!(w);
     let _ = writeln!(
         w,
@@ -145,8 +136,8 @@ pub(crate) fn print_unsupported_denial(denial_type: &DenialType, reason: &str) {
     let mut w = stderr.lock();
     let _ = writeln!(w, "iam-policy-autopilot: Unsupported denial type");
     let _ = writeln!(w);
-    let _ = writeln!(w, "Denial Type: {:?}", denial_type);
-    let _ = writeln!(w, "Reason: {}", reason);
+    let _ = writeln!(w, "Denial Type: {denial_type:?}");
+    let _ = writeln!(w, "Reason: {reason}");
     let _ = writeln!(w);
     let _ = writeln!(
         w,
@@ -175,10 +166,7 @@ pub(crate) fn output_iam_policies(
     upload_result: Option<BatchUploadResponse>,
     pretty: bool,
 ) -> Result<()> {
-    debug!(
-        "Formatting IAM policies output as JSON (pretty: {})",
-        pretty
-    );
+    debug!("Formatting IAM policies output as JSON (pretty: {pretty})");
 
     let policy_output = PolicyOutput {
         result,
@@ -194,7 +182,7 @@ pub(crate) fn output_iam_policies(
     };
 
     // Output to stdout (not using println! to avoid extra newline in compact mode)
-    print!("{}", json_output);
+    print!("{json_output}");
     if pretty {
         println!(); // Add newline for pretty output
     }
