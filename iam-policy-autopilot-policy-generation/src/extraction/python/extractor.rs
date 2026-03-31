@@ -143,9 +143,7 @@ impl Extractor for PythonExtractor {
                 let start_line = node.start_pos().line();
                 let end_line = node.end_pos().line();
                 function_ranges.push((func_name.clone(), start_line..end_line + 1));
-                log::debug!(
-                    "Found function '{func_name}' at lines {start_line}-{end_line}"
-                );
+                log::debug!("Found function '{func_name}' at lines {start_line}-{end_line}");
             }
         }
 
@@ -163,9 +161,7 @@ impl Extractor for PythonExtractor {
                 .map(|(name, _)| name.as_str());
 
             if let Some(func) = current_function {
-                log::debug!(
-                    "Method call at line {call_line} is in function '{func}'"
-                );
+                log::debug!("Method call at line {call_line} is in function '{func}'");
             }
 
             if let Some(call) =
