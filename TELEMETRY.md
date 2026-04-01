@@ -12,7 +12,7 @@ Telemetry records **only** which commands and parameters are used, and whether t
 
 | Parameter | What We Record |
 |-----------|---------------|
-| `source_files` | presence (boolean) |
+| `source_files` | count of items |
 | `pretty` | actual value (boolean) |
 | `language` | value if provided, omitted otherwise |
 | `full_output` | actual value (boolean) |
@@ -24,10 +24,14 @@ Telemetry records **only** which commands and parameters are used, and whether t
 | `disable_cache` | actual value (boolean) |
 | `service_hints` | list of values if non-empty, omitted otherwise |
 | `explain` | list of values if non-empty, omitted otherwise |
+| `tf_dir` | presence (boolean) |
+| `tf_files` | presence (boolean) |
+| `tfvars` | presence (boolean) |
+| `tfstate` | presence (boolean) |
+| `explain_resources` | presence (boolean) |
 | `debug` | not collected |
 
 ### CLI: `fix-access-denied` Command
-
 | Parameter | What We Record |
 |-----------|---------------|
 | `source` | presence (boolean) |
@@ -44,10 +48,14 @@ Telemetry records **only** which commands and parameters are used, and whether t
 
 | Parameter | What We Record |
 |-----------|---------------|
-| `source_files` | presence (boolean) |
+| `source_files` | count of items |
 | `region` | presence (boolean) |
 | `account` | presence (boolean) |
 | `service_hints` | list of values if non-empty, omitted otherwise |
+| `tf_dir` | presence (boolean) |
+| `tf_files` | presence (boolean) |
+| `tfstate` | presence (boolean) |
+| `tfvars` | presence (boolean) |
 
 ### MCP: `mcp-tool-generate-policy-for-access-denied`
 
@@ -69,11 +77,14 @@ Telemetry records **only** which commands and parameters are used, and whether t
 | Field | Type | Description |
 |-------|------|-------------|
 | `success` | boolean | Whether the command completed successfully |
-| `num_policies_generated` | number | Number of policies generated (generate-policies only) |
+| `num_policies_generated` | number | Number of policies generated |
+| `runtime_ms` | number | Pipeline execution time in milliseconds |
+| `detected_language` | string | Programming language detected from source files (e.g., "python", "go") |
+| `services_used` | string[] | AWS services found in the source code (e.g., ["s3", "dynamodb"]) |
 
-### Anonymous ID
+### Installation ID
 
-A persistent UUID v4 is stored in `~/.iam-policy-autopilot/telemetry.json`. This allows counting unique installations across invocations without identifying individual users. The file also stores your telemetry preference (`telemetryChoice`).
+A persistent UUID v4 is stored in `~/.iam-policy-autopilot/config.json` as `installationId`. This allows counting unique installations across invocations without identifying individual users. The file also stores your telemetry preference (`telemetryChoice`).
 
 ## How Data Is Transmitted
 
@@ -94,7 +105,7 @@ CloudWatch metrics are retained according to standard CloudWatch retention polic
 ### Option 1: CLI command (persistent)
 
 ```bash
-# Disable telemetry (persisted to ~/.iam-policy-autopilot/telemetry.json)
+# Disable telemetry (persisted to ~/.iam-policy-autopilot/config.json)
 iam-policy-autopilot telemetry --disable
 
 # Re-enable telemetry
@@ -108,17 +119,17 @@ iam-policy-autopilot telemetry --status
 
 ```bash
 # Disable for a single invocation
-IAM_POLICY_AUTOPILOT_TELEMETRY=0 iam-policy-autopilot generate-policies ./src/app.py
+DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true iam-policy-autopilot generate-policies ./src/app.py
 
 # Disable for the current shell session
-export IAM_POLICY_AUTOPILOT_TELEMETRY=0
+export DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true
 
 # Disable permanently (add to your shell profile)
-echo 'export IAM_POLICY_AUTOPILOT_TELEMETRY=0' >> ~/.bashrc
+echo 'export DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true' >> ~/.bashrc
 
 # Disable in CI/CD (GitHub Actions example)
 env:
-  IAM_POLICY_AUTOPILOT_TELEMETRY: "0"
+  DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY: "true"
 
 # Disable for MCP server (in your mcp.json config)
 {
@@ -127,7 +138,7 @@ env:
       "command": "iam-policy-autopilot",
       "args": ["mcp-server"],
       "env": {
-        "IAM_POLICY_AUTOPILOT_TELEMETRY": "0"
+        "DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY": "true"
       }
     }
   }
@@ -136,8 +147,8 @@ env:
 
 ### Precedence
 
-1. **Environment variable** `IAM_POLICY_AUTOPILOT_TELEMETRY` (highest priority)
-2. **Config file** `~/.iam-policy-autopilot/telemetry.json` (`telemetryChoice` field)
+1. **Environment variable** `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true` → disabled (highest priority)
+2. **Config file** `~/.iam-policy-autopilot/config.json` (`telemetryChoice` field)
 3. **Default**: telemetry ON, notice shown
 
 ## Telemetry Notice
@@ -155,7 +166,7 @@ IAM Policy Autopilot will collect telemetry data on command usage starting at ve
                   prior to 0.2.0 - regardless of opt-in/out.
 
         Opt-out:  Run `iam-policy-autopilot telemetry --disable`
-                  or set IAM_POLICY_AUTOPILOT_TELEMETRY=0
+                  or set DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true
 
         Details:  https://github.com/awslabs/iam-policy-autopilot/blob/main/TELEMETRY.md
 ```
@@ -163,4 +174,4 @@ IAM Policy Autopilot will collect telemetry data on command usage starting at ve
 **MCP server mode** (via MCP `notifications/message` at `Notice` level):
 The same notice content is sent as a logging notification after the MCP handshake completes.
 
-The notice disappears once you make an explicit choice via `telemetry --enable`, `telemetry --disable`, or by setting the environment variable.
+The notice disappears once you make an explicit choice via `telemetry --enable`, `telemetry --disable`, or by setting `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true`.

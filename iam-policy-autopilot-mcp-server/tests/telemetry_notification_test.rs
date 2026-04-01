@@ -8,11 +8,8 @@ use std::sync::{Arc, Mutex};
 
 use iam_policy_autopilot_common::telemetry::{TelemetryChoice, TELEMETRY_NOTICE};
 use rmcp::{
-    handler::client::ClientHandler,
-    model::LoggingMessageNotificationParam,
-    service::NotificationContext,
-    transport::TokioChildProcess,
-    RmcpError, RoleClient, ServiceExt,
+    handler::client::ClientHandler, model::LoggingMessageNotificationParam,
+    service::NotificationContext, transport::TokioChildProcess, RmcpError, RoleClient, ServiceExt,
 };
 use rstest::rstest;
 use serial_test::serial;
@@ -63,7 +60,7 @@ async fn connect_mcp_client(
     let mut command = Command::new("../target/debug/iam-policy-autopilot");
     command.args(["mcp-server"]);
     // Default: clear env var so config file choice takes effect
-    command.env_remove("IAM_POLICY_AUTOPILOT_TELEMETRY");
+    command.env_remove("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY");
 
     if let Some((key, value)) = env_override {
         command.env(key, value);
@@ -85,7 +82,7 @@ async fn connect_mcp_client(
 #[case::notice_sent_when_not_set(TelemetryChoice::NotSet, None, true)]
 #[case::notice_suppressed_when_disabled(TelemetryChoice::Disabled, None, false)]
 #[case::notice_suppressed_when_enabled(TelemetryChoice::Enabled, None, false)]
-#[case::env_var_disables_overrides_config(TelemetryChoice::NotSet, Some(("IAM_POLICY_AUTOPILOT_TELEMETRY", "0")), false)]
+#[case::env_var_disables_overrides_config(TelemetryChoice::NotSet, Some(("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY", "true")), false)]
 #[tokio::test]
 #[serial]
 async fn test_telemetry_notification(

@@ -11,6 +11,7 @@ crate-type = ["cdylib", "rlib"]
 
 # Universal dependencies (all compilation targets)
 [dependencies]
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true

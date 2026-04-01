@@ -3,8 +3,8 @@
 //! This module provides fire-and-forget anonymous telemetry for IAM Policy Autopilot.
 //!
 //! **Precedence (highest to lowest):**
-//! 1. `IAM_POLICY_AUTOPILOT_TELEMETRY` environment variable (`0` = off, `1` = on)
-//! 2. Persistent config file choice (`~/.iam-policy-autopilot/telemetry.json`)
+//! 1. `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true` environment variable → disabled
+//! 2. Persistent config file choice (`~/.iam-policy-autopilot/config.json`)
 //! 3. Default: telemetry ON, notice shown
 //!
 //! The notice is shown when the user has not yet made an explicit choice
@@ -14,17 +14,17 @@
 //! It collects only anonymous parameter-usage data (boolean presence, enum values, service names)
 //! and post-execution result data (success/failure, number of policies, services used).
 //!
-//! A persistent UUID (anonymous_id) is stored in `~/.iam-policy-autopilot/telemetry.json`
+//! A persistent UUID (installation_id) is stored in `~/.iam-policy-autopilot/config.json`
 //! and included in every event to allow counting unique installations without identifying users.
 
 mod client;
 mod config;
 mod event;
+pub mod span;
 
 pub use client::TelemetryClient;
 pub use config::{
-    anonymous_id, get_telemetry_choice, set_telemetry_choice,
-    TelemetryChoice, TelemetryConfig,
+    get_telemetry_choice, installation_id, set_telemetry_choice, TelemetryChoice, TelemetryConfig,
 };
 pub use event::TelemetryEvent;
 
@@ -71,18 +71,20 @@ pub struct TelemetryFieldInfo {
     pub collection_mode: String,
 }
 
-/// Environment variable name that controls telemetry opt-in/opt-out.
-pub const TELEMETRY_ENV_VAR: &str = "IAM_POLICY_AUTOPILOT_TELEMETRY";
+/// Environment variable name that disables telemetry when set to `"true"`.
+///
+/// Any other value or unset → fall through to config file.
+pub const TELEMETRY_ENV_VAR: &str = "DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY";
 
 /// Represents the resolved telemetry state based on environment variable and config file.
 ///
 /// **Precedence (highest to lowest):**
-/// 1. Environment variable `IAM_POLICY_AUTOPILOT_TELEMETRY` (`0` = disabled, other = enabled)
+/// 1. Environment variable `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true` → disabled
 /// 2. Config file `telemetryChoice` (`enabled`/`disabled`/`notSet`)
 /// 3. Default: telemetry ON, notice shown
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TelemetryState {
-    /// Telemetry is explicitly enabled (via env var or config file).
+    /// Telemetry is explicitly enabled (via config file).
     /// No notice is shown.
     Enabled,
     /// Telemetry is explicitly disabled (via env var or config file).
@@ -92,22 +94,20 @@ pub enum TelemetryState {
     DefaultOn,
 }
 
-/// Reads the `IAM_POLICY_AUTOPILOT_TELEMETRY` environment variable and the persistent
+/// Reads the `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY` environment variable and the persistent
 /// config file, returning the corresponding [`TelemetryState`].
 ///
 /// **Precedence:**
-/// 1. Env var `"0"` → `Disabled`
-/// 2. Env var set to any other value → `Enabled`
+/// 1. Env var `"true"` → `Disabled`
+/// 2. Any other env var value or unset → fall through to config file
 /// 3. Config file `telemetryChoice: "disabled"` → `Disabled`
 /// 4. Config file `telemetryChoice: "enabled"` → `Enabled`
 /// 5. Config file `telemetryChoice: "notSet"` or missing → `DefaultOn`
 #[must_use]
 pub fn telemetry_state() -> TelemetryState {
-    // 1. Environment variable takes highest precedence
-    match std::env::var(TELEMETRY_ENV_VAR) {
-        Ok(v) if v == "0" => return TelemetryState::Disabled,
-        Ok(_) => return TelemetryState::Enabled,
-        Err(_) => {} // Not set — fall through to config file
+    // 1. Environment variable: only "true" disables; anything else is ignored
+    if std::env::var(TELEMETRY_ENV_VAR).ok().as_deref() == Some("true") {
+        return TelemetryState::Disabled;
     }
 
     // 2. Check persistent config file
@@ -139,17 +139,17 @@ version 0.2.0 (unless opted out)
                   prior to 0.2.0 - regardless of opt-in/out.
 
         Opt-out:  Run `iam-policy-autopilot telemetry --disable`
-                  or set IAM_POLICY_AUTOPILOT_TELEMETRY=0
+                  or set DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true
 
         Details:  https://github.com/awslabs/iam-policy-autopilot/blob/main/TELEMETRY.md";
 
 /// Returns the telemetry notice if the user has not made an explicit choice.
 ///
 /// The notice is shown when:
-/// - The env var is unset, AND
+/// - The env var is unset or not `"true"`, AND
 /// - The config file `telemetryChoice` is `notSet`
 ///
-/// Returns `None` if the user has explicitly set the env var or made a config file choice.
+/// Returns `None` if the user has explicitly disabled via env var or made a config file choice.
 /// Used by both the CLI (printed to stderr) and the MCP server (sent via `notifications/message`).
 #[must_use]
 pub fn telemetry_notice() -> Option<&'static str> {
@@ -163,34 +163,34 @@ pub fn telemetry_notice() -> Option<&'static str> {
 /// Format the current telemetry status as a human-readable multi-line string.
 ///
 /// Includes the effective state, config file preference, environment variable,
-/// and the persistent anonymous ID. Used by the CLI `telemetry --status` command.
+/// and the persistent installation ID. Used by the CLI `telemetry --status` command.
 #[must_use]
 pub fn telemetry_status_string() -> String {
     let state = telemetry_state();
     let config_choice = get_telemetry_choice();
     let env_var = std::env::var(TELEMETRY_ENV_VAR).ok();
-    let anonymous_id = anonymous_id();
+    let installation_id = installation_id();
 
     format!(
         "Telemetry status:\n\
          \x20 Effective state:  {state:?}\n\
          \x20 Config file:      {config_choice}\n\
          \x20 Env var ({env_name}): {env_value}\n\
-         \x20 Anonymous ID:     {anonymous_id}",
+         \x20 Installation ID:  {installation_id}",
         env_name = TELEMETRY_ENV_VAR,
         env_value = env_var.as_deref().unwrap_or("<not set>"),
     )
 }
 
-/// Emit a telemetry event in the background.
+/// Emit a telemetry event in the background (fire-and-forget).
 ///
-/// Spawns a tokio task that sends the telemetry event and returns the
-/// `JoinHandle`. Callers should await this with a timeout before exiting
-/// to ensure the request completes. Any failures are silently ignored.
-pub fn spawn_telemetry(event: TelemetryEvent) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
+/// Spawns a tokio task that sends the telemetry event. The task runs
+/// independently — callers don't need to await the result.
+/// Any failures are silently ignored.
+pub fn spawn_telemetry(event: TelemetryEvent) {
+    drop(tokio::spawn(async move {
         TelemetryClient::global().emit(&event).await;
-    })
+    }));
 }
 
 /// Finalize and emit a telemetry event, then await completion with a timeout.
@@ -201,11 +201,12 @@ pub fn spawn_telemetry(event: TelemetryEvent) -> tokio::task::JoinHandle<()> {
 pub async fn finalize_and_emit(event: Option<TelemetryEvent>, success: bool) {
     if let Some(event) = event {
         let event = event.with_result_success(success);
-        let handle = spawn_telemetry(event);
+        let handle = tokio::spawn(async move {
+            TelemetryClient::global().emit(&event).await;
+        });
         await_telemetry(handle).await;
     }
 }
-
 
 /// Maximum time to wait for telemetry to complete before exiting.
 /// This prevents the CLI from hanging if the network is slow.
@@ -223,108 +224,116 @@ pub async fn await_telemetry(handle: tokio::task::JoinHandle<()>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use serial_test::serial;
 
-    // Note: These tests modify environment variables, so they must run serially.
-    // The `#[serial]` attribute ensures no parallel execution.
-
-    fn with_env_var<F: FnOnce()>(value: Option<&str>, f: F) {
-        // Save original value
+    /// Run a closure with a specific env var value, restoring afterwards.
+    fn with_env_var<F: FnOnce()>(value: &str, f: F) {
         let original = std::env::var(TELEMETRY_ENV_VAR).ok();
-
-        // Set or unset the env var
-        match value {
-            Some(v) => std::env::set_var(TELEMETRY_ENV_VAR, v),
-            None => std::env::remove_var(TELEMETRY_ENV_VAR),
-        }
-
+        std::env::set_var(TELEMETRY_ENV_VAR, value);
         f();
-
-        // Restore original value
         match original {
             Some(v) => std::env::set_var(TELEMETRY_ENV_VAR, v),
             None => std::env::remove_var(TELEMETRY_ENV_VAR),
         }
     }
 
+    /// Run a closure with the env var removed, restoring afterwards.
+    fn without_env_var<F: FnOnce()>(f: F) {
+        let original = std::env::var(TELEMETRY_ENV_VAR).ok();
+        std::env::remove_var(TELEMETRY_ENV_VAR);
+        f();
+        match original {
+            Some(v) => std::env::set_var(TELEMETRY_ENV_VAR, v),
+            None => std::env::remove_var(TELEMETRY_ENV_VAR),
+        }
+    }
+
+    // =========================================================================
+    // Env-var–driven behavior — "true" disables, anything else falls through
+    // to config file.
+    // =========================================================================
+
     #[test]
     #[serial]
-    fn test_telemetry_state_env_zero_returns_disabled() {
-        with_env_var(Some("0"), || {
+    fn test_telemetry_env_true_disables() {
+        with_env_var("true", || {
             assert_eq!(telemetry_state(), TelemetryState::Disabled);
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_telemetry_state_env_one_returns_enabled() {
-        with_env_var(Some("1"), || {
-            assert_eq!(telemetry_state(), TelemetryState::Enabled);
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_telemetry_state_env_other_value_returns_enabled() {
-        with_env_var(Some("true"), || {
-            assert_eq!(telemetry_state(), TelemetryState::Enabled);
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_telemetry_enabled_when_env_enabled() {
-        with_env_var(Some("1"), || {
-            assert!(is_telemetry_enabled());
-        });
-    }
-
-    #[test]
-    #[serial]
-    fn test_is_telemetry_disabled_when_env_zero() {
-        with_env_var(Some("0"), || {
             assert!(!is_telemetry_enabled());
+            // Disabled = no notice
+            assert!(telemetry_notice().is_none());
         });
     }
 
+    /// Non-"true" env var values (e.g. "false", "0", "1") are ignored and
+    /// fall through to the config file. With config at NotSet → DefaultOn.
+    #[rstest]
+    #[case::false_str("false")]
+    #[case::zero("0")]
+    #[case::one("1")]
+    #[case::random("foobar")]
     #[test]
     #[serial]
-    fn test_telemetry_notice_returns_none_when_env_explicitly_set() {
-        with_env_var(Some("1"), || {
-            assert!(telemetry_notice().is_none());
+    fn test_telemetry_env_non_true_falls_through(#[case] env_val: &str) {
+        with_env_var(env_val, || {
+            // With default NotSet config, non-"true" env values fall through to DefaultOn
+            let state = telemetry_state();
+            assert_ne!(
+                state,
+                TelemetryState::Disabled,
+                "env var '{env_val}' should NOT disable telemetry"
+            );
         });
-        with_env_var(Some("0"), || {
-            assert!(telemetry_notice().is_none());
-        });
     }
 
-    #[test]
-    fn test_telemetry_notice_constant_contains_required_content() {
-        assert!(TELEMETRY_NOTICE.contains("IAM Policy Autopilot"));
-        assert!(TELEMETRY_NOTICE.contains("telemetry --disable"));
-        assert!(TELEMETRY_NOTICE.contains("IAM_POLICY_AUTOPILOT_TELEMETRY=0"));
-        assert!(TELEMETRY_NOTICE.contains("TELEMETRY.md"));
+    // =========================================================================
+    // Notice content — parameterized
+    // =========================================================================
+
+    #[rstest]
+    #[case("IAM Policy Autopilot")]
+    #[case("telemetry --disable")]
+    #[case("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true")]
+    #[case("TELEMETRY.md")]
+    fn test_notice_contains(#[case] needle: &str) {
+        assert!(TELEMETRY_NOTICE.contains(needle), "missing: {needle}");
     }
 
-    #[test]
-    fn test_get_anonymous_id_is_valid_uuid() {
-        let anonymous_id = anonymous_id();
-        // UUID v4 format: 8-4-4-4-12 hex chars
-        assert_eq!(anonymous_id.len(), 36);
-        assert!(uuid::Uuid::parse_str(&anonymous_id).is_ok());
-    }
+    // =========================================================================
+    // Installation ID + TelemetryChoice
+    // =========================================================================
 
     #[test]
-    fn test_get_anonymous_id_is_persistent() {
-        // Two calls should return the same ID (persisted to disk)
-        let id1 = anonymous_id();
-        let id2 = anonymous_id();
+    fn test_installation_id_is_valid_persistent_uuid() {
+        let id1 = installation_id();
+        let id2 = installation_id();
+        assert_eq!(id1.len(), 36);
+        assert!(uuid::Uuid::parse_str(&id1).is_ok());
         assert_eq!(id1, id2);
     }
 
     #[test]
-    fn test_telemetry_choice_enum() {
+    fn test_telemetry_choice_defaults() {
         assert_eq!(TelemetryChoice::default(), TelemetryChoice::NotSet);
         assert_ne!(TelemetryChoice::Enabled, TelemetryChoice::Disabled);
+    }
+
+    // =========================================================================
+    // Env var unset — falls through to config file (DefaultOn with NotSet config)
+    // =========================================================================
+
+    #[test]
+    #[serial]
+    fn test_telemetry_env_unset_falls_through_to_config() {
+        without_env_var(|| {
+            // With default NotSet config, should be DefaultOn
+            let state = telemetry_state();
+            // State depends on config file, but should not be Disabled
+            // (unless config file says disabled)
+            assert!(
+                state == TelemetryState::DefaultOn || state == TelemetryState::Enabled,
+                "With env unset and default config, state should be DefaultOn or Enabled, got {state:?}"
+            );
+        });
     }
 }

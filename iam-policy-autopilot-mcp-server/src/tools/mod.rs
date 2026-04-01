@@ -100,11 +100,9 @@ mod telemetry_doc_sync_tests {
     fn test_mcp_telemetry_fields_documented_in_telemetry_md() {
         let fields = collect_mcp_telemetry_fields();
 
-        let telemetry_md = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../TELEMETRY.md"
-        ))
-        .expect("Failed to read TELEMETRY.md");
+        let telemetry_md =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../TELEMETRY.md"))
+                .expect("Failed to read TELEMETRY.md");
 
         let mut by_command: BTreeMap<String, Vec<&TelemetryFieldInfo>> = BTreeMap::new();
         for field in &fields {

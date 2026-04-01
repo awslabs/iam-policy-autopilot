@@ -22,7 +22,7 @@ use std::process;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use iam_policy_autopilot_common::telemetry::{
-    self, TelemetryChoice, ToTelemetryEvent, TelemetryEventDerive,
+    self, TelemetryChoice, TelemetryEventDerive, ToTelemetryEvent,
 };
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
@@ -96,9 +96,9 @@ struct GeneratePolicyCliConfig {
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
-    terraform_dir: Option<PathBuf>,
+    tf_dir: Option<PathBuf>,
     /// Optional individual Terraform files
-    terraform_files: Vec<PathBuf>,
+    tf_files: Vec<PathBuf>,
     /// Optional paths to terraform.tfstate files
     tfstate: Vec<PathBuf>,
     /// Optional explicit .tfvars file paths
@@ -277,7 +277,7 @@ final policy may still include actions from other services if required."#
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
-        #[telemetry(presence)]
+        #[telemetry(count)]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)
@@ -398,7 +398,8 @@ Terraform resources to discover AWS infrastructure and generates more precise IA
 using concrete resource names in ARNs, when possible. .tf files discovered in the Terraform \
 directory are combined with any files specified via --tf-files."
         )]
-        terraform_dir: Option<PathBuf>,
+        #[telemetry(presence)]
+        tf_dir: Option<PathBuf>,
 
         /// One or more .tf file(s) for resolving ARNs to use in resource block in generated policies
         #[arg(
@@ -409,7 +410,8 @@ When provided, the tool parses Terraform resources to discover AWS infrastructur
 more precise IAM policies by using concrete resource names in ARNs, when possible. These files \
 are combined with any directory specified via --tf-dir."
         )]
-        terraform_files: Vec<PathBuf>,
+        #[telemetry(presence)]
+        tf_files: Vec<PathBuf>,
 
         /// One or more .tfvars file(s) for variable overrides
         #[arg(
@@ -422,6 +424,7 @@ over auto-discovered terraform.tfvars and *.auto.tfvars files from the Terraform
 Applied in order (later files override earlier ones). This is equivalent to Terraform's \
 -var-file= CLI flag."
         )]
+        #[telemetry(presence)]
         tfvars: Vec<PathBuf>,
 
         /// One or more .tfstate file(s) for resolving exact deployed ARNs to use in resource block in generated policies
@@ -433,6 +436,7 @@ When provided, the tool uses actual deployed resource ARNs to generate more prec
 State-derived ARNs take precedence over those derived from .tf files. Can be used with --tf-dir, \
 --tf-files, or independently."
         )]
+        #[telemetry(presence)]
         tfstate: Vec<PathBuf>,
 
         /// Generate explanations for why resource ARNs were added, filtered to specified patterns
@@ -450,6 +454,7 @@ Examples:\n  \
 --explain-resources 'arn:aws:s3:::*' 'arn:aws:sqs:*'                           # Explain S3 and SQS ARNs\n \
 --explain-resources 'arn:aws:dynamodb:us-east-1:123456789012:table/users-prod' # Explain specific resource ARNs"
         )]
+        #[telemetry(presence)]
         explain_resources: Option<Vec<String>>,
     },
 
@@ -497,14 +502,12 @@ Use 0.0.0.0 to listen on all interfaces.")]
     },
 
     /// Manage anonymous telemetry settings
-    #[command(
-        long_about = "View or change anonymous telemetry settings.\n\n\
+    #[command(long_about = "View or change anonymous telemetry settings.\n\n\
 IAM Policy Autopilot collects anonymous usage metrics to improve the tool.\n\
 No file paths, policy content, AWS account IDs, or credentials are ever collected.\n\n\
-Use --enable or --disable to persist your preference to ~/.iam-policy-autopilot/telemetry.json.\n\
+Use --enable or --disable to persist your preference to ~/.iam-policy-autopilot/config.json.\n\
 Use --status to view the current telemetry state.\n\n\
-The IAM_POLICY_AUTOPILOT_TELEMETRY environment variable (0/1) always takes precedence over the config file."
-    )]
+The DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY=true environment variable disables telemetry, overriding the config file.")]
     #[telemetry(skip)]
     Telemetry {
         /// Enable anonymous telemetry
@@ -577,8 +580,7 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
 }
 
 /// Handle the generate-policies subcommand.
-/// Returns the number of policies generated (used for telemetry).
-async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<usize> {
+async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> {
     use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 
     info!("Running generate-policies command");
@@ -607,15 +609,13 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<usiz
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
-        terraform_dir: config.terraform_dir.clone(),
-        terraform_files: config.terraform_files.clone(),
+        terraform_dir: config.tf_dir.clone(),
+        terraform_files: config.tf_files.clone(),
         tfstate_paths: config.tfstate.clone(),
         tfvars_files: config.tfvars.clone(),
         explain_resource_filters: config.explain_resources.clone(),
     })
     .await?;
-
-    let num_policies = result.policies.len();
 
     if config.individual_policies {
         // Output individual policies
@@ -663,7 +663,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<usiz
             .context("Failed to output merged IAM policy")?;
     }
 
-    Ok(num_policies)
+    Ok(())
 }
 
 fn show_telemetry_notice(cli: &Cli) {
@@ -706,7 +706,11 @@ async fn main() {
                 Some(text) => text,
             };
 
-            commands::fix_access_denied(&error_text, yes).await
+            Box::pin(telemetry::span::run_with_telemetry(
+                commands::fix_access_denied(&error_text, yes),
+                &mut telemetry_event,
+            ))
+            .await
         }
 
         Commands::ExtractSdkCalls {
@@ -754,8 +758,8 @@ async fn main() {
             disable_cache,
             service_hints,
             explain,
-            terraform_dir,
-            terraform_files,
+            tf_dir,
+            tf_files,
             tfstate,
             tfvars,
             explain_resources,
@@ -781,20 +785,20 @@ async fn main() {
                 minimal_policy_size,
                 disable_cache,
                 explain,
-                terraform_dir,
-                terraform_files,
+                tf_dir,
+                tf_files,
                 tfstate,
                 tfvars,
                 explain_resources,
             };
 
-            match handle_generate_policy(&config).await {
-                Ok(num_policies) => {
-                    if let Some(ref mut event) = telemetry_event {
-                        event.set_result_num_policies(num_policies);
-                    }
-                    ExitCode::Success
-                }
+            let gen_result = Box::pin(telemetry::span::run_with_telemetry(
+                handle_generate_policy(&config),
+                &mut telemetry_event,
+            ))
+            .await;
+            match gen_result {
+                Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);
                     ExitCode::Duplicate // Exit code 1 for generate-policies errors
@@ -831,10 +835,14 @@ async fn main() {
         } => {
             if enable {
                 telemetry::set_telemetry_choice(TelemetryChoice::Enabled);
-                eprintln!("Telemetry enabled. Preference saved to ~/.iam-policy-autopilot/telemetry.json");
+                eprintln!(
+                    "Telemetry enabled. Preference saved to ~/.iam-policy-autopilot/config.json"
+                );
             } else if disable {
                 telemetry::set_telemetry_choice(TelemetryChoice::Disabled);
-                eprintln!("Telemetry disabled. Preference saved to ~/.iam-policy-autopilot/telemetry.json");
+                eprintln!(
+                    "Telemetry disabled. Preference saved to ~/.iam-policy-autopilot/config.json"
+                );
             }
 
             if status || (!enable && !disable) {
@@ -872,11 +880,9 @@ mod tests {
     fn test_cli_telemetry_fields_documented_in_telemetry_md() {
         let fields = Commands::telemetry_fields();
 
-        let telemetry_md = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../TELEMETRY.md"
-        ))
-        .expect("Failed to read TELEMETRY.md");
+        let telemetry_md =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../TELEMETRY.md"))
+                .expect("Failed to read TELEMETRY.md");
 
         for field in &fields {
             // Skip fields with "not collected" mode — they're documented as not collected

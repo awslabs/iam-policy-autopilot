@@ -19,15 +19,14 @@ serde_json.workspace = true
 uuid.workspace = true
 iam-policy-autopilot-proc-macros = { path = "../iam-policy-autopilot-proc-macros" }
 
-# AWS SigV4 signing for authenticated Lambda Function URL
-aws-config.workspace = true
-aws-sigv4 = "1"
-aws-credential-types = { version = "1", features = ["hardcoded-credentials"] }
-aws-smithy-runtime-api = "1"
-http = "1"
+# SHA256 payload hashing for CloudFront OAC (x-amz-content-sha256 header)
+sha2.workspace = true
 
 [dev-dependencies]
 serial_test.workspace = true
+rstest.workspace = true
+regex.workspace = true
+walkdir.workspace = true
 wiremock = "0.6"
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 

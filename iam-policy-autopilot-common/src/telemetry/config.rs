@@ -1,7 +1,7 @@
 //! Persistent telemetry configuration.
 //!
-//! Manages the `~/.iam-policy-autopilot/telemetry.json` file which stores:
-//! - `anonymousId`: A persistent UUID v4 that identifies this installation
+//! Manages the `~/.iam-policy-autopilot/config.json` file which stores:
+//! - `installationId`: A persistent UUID v4 that identifies this installation
 //! - `telemetryChoice`: The user's telemetry preference (`notSet`, `enabled`, `disabled`)
 //!
 //! The file is created on first use with a freshly generated UUID.
@@ -16,7 +16,7 @@ use std::path::PathBuf;
 const CONFIG_DIR_NAME: &str = ".iam-policy-autopilot";
 
 /// Name of the telemetry config file.
-const CONFIG_FILE_NAME: &str = "telemetry.json";
+const CONFIG_FILE_NAME: &str = "config.json";
 
 /// Represents the user's persistent telemetry preference.
 ///
@@ -50,14 +50,14 @@ impl std::fmt::Display for TelemetryChoice {
     }
 }
 
-/// Persistent telemetry configuration stored in `~/.iam-policy-autopilot/telemetry.json`.
+/// Persistent telemetry configuration stored in `~/.iam-policy-autopilot/config.json`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TelemetryConfig {
     /// A persistent UUID v4 identifying this installation.
-    /// Used as `anonymous_id` in telemetry events to count unique installations
+    /// Used as `installation_id` in telemetry events to count unique installations
     /// without identifying individual users.
-    pub anonymous_id: String,
+    pub installation_id: String,
 
     /// The user's telemetry preference.
     ///
@@ -65,7 +65,7 @@ pub struct TelemetryConfig {
     /// - `Enabled`: user explicitly opted in.
     /// - `Disabled`: user explicitly opted out.
     ///
-    /// This can be overridden by the `IAM_POLICY_AUTOPILOT_TELEMETRY` environment variable.
+    /// This can be overridden by the `DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY` environment variable.
     #[serde(default)]
     pub telemetry_choice: TelemetryChoice,
 }
@@ -74,7 +74,7 @@ impl TelemetryConfig {
     /// Create a new config with a fresh UUID and telemetry choice not set.
     fn new() -> Self {
         Self {
-            anonymous_id: uuid::Uuid::new_v4().to_string(),
+            installation_id: uuid::Uuid::new_v4().to_string(),
             telemetry_choice: TelemetryChoice::NotSet,
         }
     }
@@ -82,7 +82,7 @@ impl TelemetryConfig {
 
 /// Get the path to the telemetry config file.
 ///
-/// Returns `~/.iam-policy-autopilot/telemetry.json` on all platforms.
+/// Returns `~/.iam-policy-autopilot/config.json` on all platforms.
 fn config_file_path() -> Option<PathBuf> {
     dirs_path().map(|dir| dir.join(CONFIG_FILE_NAME))
 }
@@ -170,13 +170,14 @@ fn cached_config() -> &'static TelemetryConfig {
     CONFIG_CACHE.get_or_init(load_or_create_config)
 }
 
-/// Get the persistent anonymous ID for this installation.
+/// Get the persistent installation ID for this installation.
 ///
-/// Loaded from `~/.iam-policy-autopilot/telemetry.json` on first call,
+/// Loaded from `~/.iam-policy-autopilot/config.json` on first call,
 /// cached for the lifetime of the process. If the config file doesn't exist,
 /// a new UUID is generated and persisted automatically.
-pub fn anonymous_id() -> String {
-    cached_config().anonymous_id.clone()
+#[must_use]
+pub fn installation_id() -> String {
+    cached_config().installation_id.clone()
 }
 
 /// Update the telemetry choice in the persistent config file.
@@ -192,6 +193,7 @@ pub fn set_telemetry_choice(choice: TelemetryChoice) {
 /// Get the user's persistent telemetry choice from the config file.
 ///
 /// Uses the process-level cache (loaded once from disk).
+#[must_use]
 pub fn get_telemetry_choice() -> TelemetryChoice {
     cached_config().telemetry_choice
 }
@@ -199,96 +201,100 @@ pub fn get_telemetry_choice() -> TelemetryChoice {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
     use serial_test::serial;
 
     #[test]
-    fn test_new_config_has_valid_uuid() {
+    fn test_new_config_has_valid_uuid_and_not_set() {
         let config = TelemetryConfig::new();
-        assert!(uuid::Uuid::parse_str(&config.anonymous_id).is_ok());
+        assert!(uuid::Uuid::parse_str(&config.installation_id).is_ok());
         assert_eq!(config.telemetry_choice, TelemetryChoice::NotSet);
     }
 
     #[test]
     fn test_config_serialization_roundtrip() {
         let config = TelemetryConfig::new();
-        let json = serde_json::to_string_pretty(&config).expect("should serialize");
-        let parsed: TelemetryConfig =
-            serde_json::from_str(&json).expect("should deserialize");
-        assert_eq!(config.anonymous_id, parsed.anonymous_id);
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        let parsed: TelemetryConfig = serde_json::from_str(&json).unwrap();
+        assert_eq!(config.installation_id, parsed.installation_id);
         assert_eq!(config.telemetry_choice, parsed.telemetry_choice);
     }
 
     #[test]
-    fn test_config_json_format() {
+    fn test_config_json_uses_camel_case() {
         let config = TelemetryConfig {
-            anonymous_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            installation_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
             telemetry_choice: TelemetryChoice::Enabled,
         };
-        let json = serde_json::to_string_pretty(&config).expect("should serialize");
-        assert!(json.contains("\"anonymousId\""));
-        assert!(json.contains("\"telemetryChoice\""));
-        assert!(json.contains("\"enabled\""));
-        assert!(json.contains("550e8400-e29b-41d4-a716-446655440000"));
+        let json = serde_json::to_string_pretty(&config).unwrap();
+        for needle in [
+            "\"installationId\"",
+            "\"telemetryChoice\"",
+            "\"enabled\"",
+            "550e8400",
+        ] {
+            assert!(json.contains(needle), "JSON missing: {needle}");
+        }
+    }
+
+    // =========================================================================
+    // Deserialization — parameterized over choice variants
+    // =========================================================================
+
+    #[rstest]
+    #[case::disabled(
+        r#"{"installationId":"id-1","telemetryChoice":"disabled"}"#,
+        "id-1",
+        TelemetryChoice::Disabled
+    )]
+    #[case::enabled(
+        r#"{"installationId":"id-2","telemetryChoice":"enabled"}"#,
+        "id-2",
+        TelemetryChoice::Enabled
+    )]
+    #[case::not_set(
+        r#"{"installationId":"id-3","telemetryChoice":"notSet"}"#,
+        "id-3",
+        TelemetryChoice::NotSet
+    )]
+    #[case::missing_choice(r#"{"installationId":"id-4"}"#, "id-4", TelemetryChoice::NotSet)]
+    fn test_config_deserialization(
+        #[case] json: &str,
+        #[case] expected_id: &str,
+        #[case] expected_choice: TelemetryChoice,
+    ) {
+        let config: TelemetryConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.installation_id, expected_id);
+        assert_eq!(config.telemetry_choice, expected_choice);
+    }
+
+    // =========================================================================
+    // TelemetryChoice Display — parameterized
+    // =========================================================================
+
+    #[rstest]
+    #[case::not_set(TelemetryChoice::NotSet, "notSet")]
+    #[case::enabled(TelemetryChoice::Enabled, "enabled")]
+    #[case::disabled(TelemetryChoice::Disabled, "disabled")]
+    fn test_telemetry_choice_display(#[case] choice: TelemetryChoice, #[case] expected: &str) {
+        assert_eq!(format!("{choice}"), expected);
     }
 
     #[test]
-    fn test_config_deserialization_from_new_format() {
-        let json = r#"{
-            "anonymousId": "test-uuid-123",
-            "telemetryChoice": "disabled"
-        }"#;
-        let config: TelemetryConfig =
-            serde_json::from_str(json).expect("should deserialize");
-        assert_eq!(config.anonymous_id, "test-uuid-123");
-        assert_eq!(config.telemetry_choice, TelemetryChoice::Disabled);
-    }
-
-    #[test]
-    fn test_config_deserialization_not_set() {
-        let json = r#"{
-            "anonymousId": "test-uuid-456",
-            "telemetryChoice": "notSet"
-        }"#;
-        let config: TelemetryConfig =
-            serde_json::from_str(json).expect("should deserialize");
-        assert_eq!(config.anonymous_id, "test-uuid-456");
-        assert_eq!(config.telemetry_choice, TelemetryChoice::NotSet);
-    }
-
-    #[test]
-    fn test_telemetry_choice_default_is_not_set() {
+    fn test_telemetry_choice_default() {
         assert_eq!(TelemetryChoice::default(), TelemetryChoice::NotSet);
     }
 
-    #[test]
-    fn test_telemetry_choice_display() {
-        assert_eq!(format!("{}", TelemetryChoice::NotSet), "notSet");
-        assert_eq!(format!("{}", TelemetryChoice::Enabled), "enabled");
-        assert_eq!(format!("{}", TelemetryChoice::Disabled), "disabled");
-    }
+    // =========================================================================
+    // Cached installation_id
+    // =========================================================================
 
     #[test]
     #[serial]
-    fn test_load_or_create_config_returns_valid() {
-        let id = anonymous_id();
-        assert!(uuid::Uuid::parse_str(&id).is_ok());
-    }
-
-    #[test]
-    #[serial]
-    fn test_anonymous_id_is_consistent() {
-        // Two calls should return the same ID (cached in process)
-        let id1 = anonymous_id();
-        let id2 = anonymous_id();
-        assert_eq!(id1, id2);
-    }
-
-    #[test]
-    fn test_config_default_telemetry_choice_when_missing() {
-        // When telemetryChoice is missing from JSON, should default to NotSet
-        let json = r#"{ "anonymousId": "uuid-only" }"#;
-        let config: TelemetryConfig =
-            serde_json::from_str(json).expect("should deserialize");
-        assert_eq!(config.telemetry_choice, TelemetryChoice::NotSet);
+    fn test_installation_id_valid_and_consistent() {
+        let id1 = installation_id();
+        let id2 = installation_id();
+        assert!(uuid::Uuid::parse_str(&id1).is_ok());
+        assert_eq!(id1, id2, "cached installation_id should be consistent");
     }
 }

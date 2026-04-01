@@ -5,7 +5,13 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 // Input struct matching the updated schema
-#[derive(Debug, Serialize, Deserialize, JsonSchema, iam_policy_autopilot_common::telemetry::TelemetryEventDerive)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    iam_policy_autopilot_common::telemetry::TelemetryEventDerive,
+)]
 #[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for generating policies for AccessDenied exceptions")]
 #[telemetry(command = "mcp-tool-generate-policy-for-access-denied")]

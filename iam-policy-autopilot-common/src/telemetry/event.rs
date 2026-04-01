@@ -7,7 +7,7 @@
 //! {
 //!   "command": "generate-policies",
 //!   "version": "0.1.4",
-//!   "anonymous_id": "550e8400-e29b-41d4-a716-446655440000",
+//!   "installation_id": "550e8400-e29b-41d4-a716-446655440000",
 //!   "params": { "language": "python", "pretty": true },
 //!   "result": { "success": true, "num_policies_generated": 2, "services_used": ["s3", "dynamodb"] }
 //! }
@@ -29,7 +29,7 @@ pub struct TelemetryEvent {
     /// The tool version (from `CARGO_PKG_VERSION`)
     pub version: String,
     /// A persistent session UUID for counting unique installations
-    pub anonymous_id: String,
+    pub installation_id: String,
     /// Recorded parameters with their telemetry-safe values
     #[serde(skip_serializing_if = "Option::is_none")]
     pub params: Option<HashMap<String, Value>>,
@@ -41,13 +41,13 @@ pub struct TelemetryEvent {
 impl TelemetryEvent {
     /// Create a new telemetry event for a given command.
     ///
-    /// The version and anonymous_id are automatically populated.
+    /// The version and installation_id are automatically populated.
     #[must_use]
     pub fn new(command: impl Into<String>) -> Self {
         Self {
             command: command.into(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            anonymous_id: super::config::anonymous_id(),
+            installation_id: super::config::installation_id(),
             params: None,
             result: None,
         }
@@ -81,6 +81,15 @@ impl TelemetryEvent {
         value.record_presence(self, name)
     }
 
+    /// Record a numeric parameter (e.g., count of items in a Vec).
+    #[must_use]
+    pub fn with_number(mut self, name: impl Into<String>, value: usize) -> Self {
+        self.params
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::Number(serde_json::Number::from(value)));
+        self
+    }
+
     /// Record a list parameter as a JSON array of strings.
     /// Only records the values themselves (e.g., service names), never user content.
     #[must_use]
@@ -108,6 +117,20 @@ impl TelemetryEvent {
         self
     }
 
+    /// Record a string result (builder pattern).
+    #[must_use]
+    pub fn with_result_str(mut self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.set_result_str(name, value);
+        self
+    }
+
+    /// Record a list result (builder pattern).
+    #[must_use]
+    pub fn with_result_list(mut self, name: impl Into<String>, values: &[String]) -> Self {
+        self.set_result_list(name, values);
+        self
+    }
+
     // --- In-place mutation methods ---
 
     /// Set whether the command succeeded (in-place mutation).
@@ -119,12 +142,10 @@ impl TelemetryEvent {
 
     /// Set the number of policies generated (in-place mutation).
     pub fn set_result_num_policies(&mut self, count: usize) {
-        self.result
-            .get_or_insert_with(HashMap::new)
-            .insert(
-                "num_policies_generated".to_string(),
-                Value::Number(serde_json::Number::from(count)),
-            );
+        self.result.get_or_insert_with(HashMap::new).insert(
+            "num_policies_generated".to_string(),
+            Value::Number(serde_json::Number::from(count)),
+        );
     }
 
     /// Set a string parameter (in-place mutation).
@@ -132,6 +153,48 @@ impl TelemetryEvent {
         self.params
             .get_or_insert_with(HashMap::new)
             .insert(name.into(), Value::String(value.into()));
+    }
+
+    /// Set a string result (in-place mutation).
+    pub fn set_result_str(&mut self, name: impl Into<String>, value: impl Into<String>) {
+        self.result
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::String(value.into()));
+    }
+
+    /// Set a numeric result (in-place mutation).
+    pub fn set_result_number(&mut self, name: impl Into<String>, value: usize) {
+        self.result.get_or_insert_with(HashMap::new).insert(
+            name.into(),
+            Value::Number(serde_json::Number::from(value)),
+        );
+    }
+
+    /// Set a list result as a JSON array of strings (in-place mutation).
+    pub fn set_result_list(&mut self, name: impl Into<String>, values: &[String]) {
+        let json_values: Vec<Value> = values.iter().map(|v| Value::String(v.clone())).collect();
+        self.result
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::Array(json_values));
+    }
+
+    /// Merge fields from a [`TelemetrySpanSnapshot`] into the result section.
+    ///
+    /// String fields become JSON strings; numeric fields become JSON numbers;
+    /// set fields become JSON arrays of strings.
+    /// Existing result fields (e.g., `success`) are preserved.
+    pub fn merge_result_span(&mut self, span: &super::span::TelemetrySpanSnapshot) {
+        let result = self.result.get_or_insert_with(HashMap::new);
+        for (k, v) in &span.strings {
+            result.insert(k.clone(), Value::String(v.clone()));
+        }
+        for (k, v) in &span.numbers {
+            result.insert(k.clone(), Value::Number(serde_json::Number::from(*v)));
+        }
+        for (k, values) in &span.sets {
+            let json_values: Vec<Value> = values.iter().map(|v| Value::String(v.clone())).collect();
+            result.insert(k.clone(), Value::Array(json_values));
+        }
     }
 
     /// Serialize this event to a JSON string.
@@ -174,142 +237,112 @@ impl TelemetryFieldPresence for String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::rstest;
 
     #[test]
-    fn test_event_new_has_version_and_anonymous_id() {
+    fn test_event_new_defaults() {
         let event = TelemetryEvent::new("test-command");
         assert_eq!(event.command, "test-command");
         assert!(!event.version.is_empty());
+        assert!(!event.installation_id.is_empty());
         assert!(event.params.is_none());
         assert!(event.result.is_none());
-        assert!(!event.anonymous_id.is_empty());
     }
 
-    #[test]
-    fn test_event_with_bool() {
-        let event = TelemetryEvent::new("cmd").with_bool("pretty", true);
-        let params = event.params.expect("params should be Some");
-        assert_eq!(params.get("pretty"), Some(&Value::Bool(true)));
+    // =========================================================================
+    // Parameter recording — parameterized
+    // =========================================================================
+
+    #[rstest]
+    #[case::bool_true("pretty", true)]
+    #[case::bool_false("debug", false)]
+    fn test_with_bool(#[case] key: &str, #[case] value: bool) {
+        let event = TelemetryEvent::new("cmd").with_bool(key, value);
+        assert_eq!(event.params.unwrap()[key], serde_json::json!(value));
     }
 
-    #[test]
-    fn test_event_with_str() {
-        let event = TelemetryEvent::new("cmd").with_str("language", "python");
-        let params = event.params.expect("params should be Some");
+    #[rstest]
+    #[case::language("language", "python")]
+    #[case::format("format", "json")]
+    fn test_with_str(#[case] key: &str, #[case] value: &str) {
+        let event = TelemetryEvent::new("cmd").with_str(key, value);
+        assert_eq!(event.params.unwrap()[key], serde_json::json!(value));
+    }
+
+    #[rstest]
+    #[case::non_empty(vec!["s3".into(), "ec2".into()], serde_json::json!(["s3", "ec2"]))]
+    #[case::empty(vec![], serde_json::json!([]))]
+    fn test_with_list(#[case] values: Vec<String>, #[case] expected: serde_json::Value) {
+        let event = TelemetryEvent::new("cmd").with_list("hints", &values);
+        assert_eq!(event.params.unwrap()["hints"], expected);
+    }
+
+    // =========================================================================
+    // Result recording — parameterized (builder + mutation)
+    // =========================================================================
+
+    #[rstest]
+    #[case::success_true(true)]
+    #[case::success_false(false)]
+    fn test_result_success(#[case] success: bool) {
+        let event = TelemetryEvent::new("cmd").with_result_success(success);
+        assert_eq!(event.result.unwrap()["success"], serde_json::json!(success));
+    }
+
+    #[rstest]
+    #[case::zero_builder(0, false)]
+    #[case::three_builder(3, false)]
+    #[case::five_mutation(5, true)]
+    fn test_result_num_policies(#[case] count: usize, #[case] use_mutation: bool) {
+        let event = if use_mutation {
+            let mut e = TelemetryEvent::new("cmd");
+            e.set_result_num_policies(count);
+            e
+        } else {
+            TelemetryEvent::new("cmd").with_result_num_policies(count)
+        };
         assert_eq!(
-            params.get("language"),
-            Some(&Value::String("python".to_string()))
+            event.result.unwrap()["num_policies_generated"],
+            serde_json::json!(count)
         );
     }
 
-    #[test]
-    fn test_event_with_list() {
-        let services = vec!["s3".to_string(), "ec2".to_string()];
-        let event = TelemetryEvent::new("cmd").with_list("service_hints", &services);
-        let params = event.params.expect("params should be Some");
-        let expected = Value::Array(vec![
-            Value::String("s3".to_string()),
-            Value::String("ec2".to_string()),
-        ]);
-        assert_eq!(params.get("service_hints"), Some(&expected));
-    }
+    // =========================================================================
+    // Chaining + JSON serialization
+    // =========================================================================
 
     #[test]
-    fn test_event_with_list_empty() {
-        let event = TelemetryEvent::new("cmd").with_list("service_hints", &[]);
-        let params = event.params.expect("params should be Some");
-        assert_eq!(
-            params.get("service_hints"),
-            Some(&Value::Array(Vec::new()))
-        );
-    }
-
-    #[test]
-    fn test_event_with_result_success() {
-        let event = TelemetryEvent::new("cmd").with_result_success(true);
-        let result = event.result.expect("result should be Some");
-        assert_eq!(result.get("success"), Some(&Value::Bool(true)));
-    }
-
-    #[test]
-    fn test_event_with_result_num_policies() {
-        let event = TelemetryEvent::new("cmd").with_result_num_policies(3);
-        let result = event.result.expect("result should be Some");
-        assert_eq!(
-            result.get("num_policies_generated"),
-            Some(&Value::Number(serde_json::Number::from(3)))
-        );
-    }
-
-    #[test]
-    fn test_event_chaining_with_result() {
-        let event = TelemetryEvent::new("generate-policies")
-            .with_bool("source_files", true)
-            .with_str("language", "python")
-            .with_result_success(true)
-            .with_result_num_policies(2);
-
-        assert_eq!(event.command, "generate-policies");
-        assert!(!event.anonymous_id.is_empty());
-
-        let params = event.params.expect("params should be Some");
-        assert_eq!(params.len(), 2);
-
-        let result = event.result.expect("result should be Some");
-        assert_eq!(result.len(), 2);
-        assert_eq!(result.get("success"), Some(&Value::Bool(true)));
-    }
-
-    #[test]
-    fn test_set_result_num_policies() {
-        let mut event = TelemetryEvent::new("cmd");
-        event.set_result_num_policies(5);
-        let result = event.result.expect("result should be Some");
-        assert_eq!(
-            result.get("num_policies_generated"),
-            Some(&Value::Number(serde_json::Number::from(5)))
-        );
-    }
-
-    #[test]
-    fn test_to_json_full() {
+    fn test_chaining_and_json_roundtrip() {
         let event = TelemetryEvent::new("generate-policies")
             .with_bool("pretty", true)
             .with_str("language", "python")
             .with_result_success(true)
             .with_result_num_policies(2);
 
-        let json = event.to_json().expect("should serialize");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
+        // Builder chaining produces correct counts
+        assert_eq!(event.params.as_ref().unwrap().len(), 2);
+        assert_eq!(event.result.as_ref().unwrap().len(), 2);
+
+        // JSON roundtrip — correct values and no unexpected keys
+        let parsed: serde_json::Value = serde_json::from_str(&event.to_json().unwrap()).unwrap();
 
         assert_eq!(parsed["command"], "generate-policies");
-        assert!(parsed["anonymous_id"].is_string());
+        assert!(parsed["installation_id"].is_string());
         assert_eq!(parsed["params"]["pretty"], true);
         assert_eq!(parsed["params"]["language"], "python");
         assert_eq!(parsed["result"]["success"], true);
         assert_eq!(parsed["result"]["num_policies_generated"], 2);
-    }
 
-    #[test]
-    fn test_json_only_contains_allowed_keys() {
-        let event = TelemetryEvent::new("generate-policies")
-            .with_bool("pretty", true)
-            .with_result_success(true);
-
-        let json = event.to_json().expect("should serialize");
-        let parsed: serde_json::Value = serde_json::from_str(&json).expect("should parse");
-        let obj = parsed.as_object().expect("should be object");
-
-        let allowed_keys: std::collections::HashSet<&str> =
-            ["command", "version", "anonymous_id", "params", "result"]
-                .iter()
-                .copied()
-                .collect();
-
-        for key in obj.keys() {
+        let keys: std::collections::HashSet<_> = parsed
+            .as_object()
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect();
+        for key in &keys {
             assert!(
-                allowed_keys.contains(key.as_str()),
-                "Unexpected key in telemetry payload: {key}"
+                ["command", "version", "installation_id", "params", "result"].contains(key),
+                "Unexpected key: {key}"
             );
         }
     }

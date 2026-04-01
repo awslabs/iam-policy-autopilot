@@ -241,8 +241,6 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     .await
     .context("Failed to process source files")?;
 
-    // Relies on the invariant that all source files must be of the same language, which we
-    // enforce in process_source_files
     let sdk = extracted_methods
         .metadata
         .source_files
@@ -342,6 +340,11 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .merge_policies(&final_policies)
             .context("Failed to merge IAM policies")?;
     }
+
+    iam_policy_autopilot_common::telemetry::span::record_result_number(
+        "num_policies_generated",
+        final_policies.len(),
+    );
 
     Ok(GeneratePoliciesResult {
         policies: final_policies,

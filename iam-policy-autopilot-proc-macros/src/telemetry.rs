@@ -48,6 +48,7 @@
 //! | `#[telemetry(value)]` | Records the actual value |
 //! | `#[telemetry(presence)]` | Records presence as boolean |
 //! | `#[telemetry(presence, default = "x")]` | Records `value != "x"` (String fields only) |
+//! | `#[telemetry(count)]` | Records the length of a Vec as an integer |
 //! | `#[telemetry(value, if_present)]` | Records value if `Some`, omits if `None` (Option fields) |
 //! | `#[telemetry(list)]` | Records as list if non-empty, omits otherwise (Option<Vec<String>> fields) |
 //! | (no attribute) | Field is skipped |
@@ -83,7 +84,8 @@ pub(crate) fn derive_telemetry_event_impl(input: DeriveInput) -> proc_macro2::To
 const KNOWN_CONTAINER_ATTRS: &[&str] = &["skip", "skip_notice", "command"];
 
 /// Known field-level attribute keywords inside `#[telemetry(...)]`.
-const KNOWN_FIELD_ATTRS: &[&str] = &["skip", "value", "presence", "if_present", "list", "default"];
+const KNOWN_FIELD_ATTRS: &[&str] =
+    &["skip", "value", "presence", "count", "if_present", "list", "default"];
 
 /// Parsed container-level attributes from `#[telemetry(...)]` on enums, structs, or variants.
 ///
@@ -114,6 +116,8 @@ enum FieldMode {
     /// Records whether the field is "present" (non-empty, non-None) as a boolean.
     /// If `default` is `Some(val)`, records `field != val` instead.
     Presence { default: Option<String> },
+    /// Records the length of a `Vec` as an integer.
+    Count,
     /// Records the value if the `Option` field is `Some`, omits the field entirely if `None`.
     ValueIfPresent,
     /// Records `Option<Vec<String>>` as a JSON array if non-empty, omits otherwise.
@@ -125,12 +129,13 @@ enum FieldMode {
 impl fmt::Display for FieldMode {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            FieldMode::Skip => write!(f, "not collected"),
-            FieldMode::Value => write!(f, "actual value"),
-            FieldMode::Presence { default: None } => write!(f, "presence (boolean)"),
-            FieldMode::Presence { default: Some(_) } => write!(f, "whether non-default (boolean)"),
-            FieldMode::ValueIfPresent => write!(f, "value if provided, omitted otherwise"),
-            FieldMode::List => write!(f, "list of values if non-empty, omitted otherwise"),
+            Self::Skip => write!(f, "not collected"),
+            Self::Value => write!(f, "actual value"),
+            Self::Presence { default: None } => write!(f, "presence (boolean)"),
+            Self::Presence { default: Some(_) } => write!(f, "whether non-default (boolean)"),
+            Self::Count => write!(f, "count of items"),
+            Self::ValueIfPresent => write!(f, "value if provided, omitted otherwise"),
+            Self::List => write!(f, "list of values if non-empty, omitted otherwise"),
         }
     }
 }
@@ -166,8 +171,8 @@ fn friendly_type_name(ty: &syn::Type) -> String {
             return match name.as_str() {
                 "bool" => "boolean".to_string(),
                 "String" => "string".to_string(),
-                "usize" | "u8" | "u16" | "u32" | "u64" | "u128"
-                | "isize" | "i8" | "i16" | "i32" | "i64" | "i128" => name,
+                "usize" | "u8" | "u16" | "u32" | "u64" | "u128" | "isize" | "i8" | "i16"
+                | "i32" | "i64" | "i128" => name,
                 "f32" | "f64" => name,
                 _ => name,
             };
@@ -187,9 +192,9 @@ fn friendly_type_name(ty: &syn::Type) -> String {
 /// - `Meta::List(something(...))` → `Some("something")`
 fn meta_ident_name(meta: &Meta) -> Option<String> {
     match meta {
-        Meta::Path(path) => path.get_ident().map(|id| id.to_string()),
-        Meta::NameValue(nv) => nv.path.get_ident().map(|id| id.to_string()),
-        Meta::List(list) => list.path.get_ident().map(|id| id.to_string()),
+        Meta::Path(path) => path.get_ident().map(ToString::to_string),
+        Meta::NameValue(nv) => nv.path.get_ident().map(ToString::to_string),
+        Meta::List(list) => list.path.get_ident().map(ToString::to_string),
     }
 }
 
@@ -280,6 +285,7 @@ fn parse_field_mode(attrs: &[syn::Attribute]) -> syn::Result<FieldMode> {
         let mut has_skip = false;
         let mut has_value = false;
         let mut has_presence = false;
+        let mut has_count = false;
         let mut has_if_present = false;
         let mut has_list = false;
         let mut default_val: Option<String> = None;
@@ -292,6 +298,7 @@ fn parse_field_mode(attrs: &[syn::Attribute]) -> syn::Result<FieldMode> {
                 Meta::Path(path) if path.is_ident("skip") => has_skip = true,
                 Meta::Path(path) if path.is_ident("value") => has_value = true,
                 Meta::Path(path) if path.is_ident("presence") => has_presence = true,
+                Meta::Path(path) if path.is_ident("count") => has_count = true,
                 Meta::Path(path) if path.is_ident("if_present") => has_if_present = true,
                 Meta::Path(path) if path.is_ident("list") => has_list = true,
                 // Key-value: `default = "some_string"` — only valid with `presence`
@@ -334,6 +341,9 @@ fn parse_field_mode(attrs: &[syn::Attribute]) -> syn::Result<FieldMode> {
         }
         if has_value {
             return Ok(FieldMode::Value);
+        }
+        if has_count {
+            return Ok(FieldMode::Count);
         }
         if has_presence {
             return Ok(FieldMode::Presence {
@@ -395,6 +405,9 @@ fn generate_field_code(
             if let Some(ref val) = #accessor {
                 event = event.with_str(#name_str, val.to_string());
             }
+        }),
+        FieldMode::Count => Some(quote! {
+            event = event.with_number(#name_str, #accessor.len());
         }),
         FieldMode::List => Some(quote! {
             if let Some(ref items) = #accessor {
@@ -498,9 +511,14 @@ fn derive_for_enum(
                 let deref_accessor = quote! { *#field_ident };
                 // Enum fields are bound with `ref`, so they're already references
                 let ref_accessor = quote! { #field_ident };
-                if let Some(code) =
-                    generate_field_code(&accessor, &deref_accessor, &ref_accessor, &field_ident.to_string(), &field.ty, &mode)
-                {
+                if let Some(code) = generate_field_code(
+                    &accessor,
+                    &deref_accessor,
+                    &ref_accessor,
+                    &field_ident.to_string(),
+                    &field.ty,
+                    &mode,
+                ) {
                     ref_bindings.push(quote! { ref #field_ident });
                     field_recording_code.push(code);
                 }
@@ -609,9 +627,14 @@ fn derive_for_struct(
             let deref_accessor = quote! { self.#field_ident };
             // Struct fields need explicit borrowing for trait method calls
             let ref_accessor = quote! { &self.#field_ident };
-            if let Some(code) =
-                generate_field_code(&accessor, &deref_accessor, &ref_accessor, &field_name_str, &field.ty, &mode)
-            {
+            if let Some(code) = generate_field_code(
+                &accessor,
+                &deref_accessor,
+                &ref_accessor,
+                &field_name_str,
+                &field.ty,
+                &mode,
+            ) {
                 field_recording_code.push(code);
             }
         }
@@ -672,6 +695,7 @@ mod tests {
         FieldMode::Presence { default: Some("x".to_string()) },
         "whether non-default (boolean)"
     )]
+    #[case::count(FieldMode::Count, "count of items")]
     #[case::value_if_present(FieldMode::ValueIfPresent, "value if provided, omitted otherwise")]
     #[case::list(FieldMode::List, "list of values if non-empty, omitted otherwise")]
     fn field_mode_display(#[case] mode: FieldMode, #[case] expected: &str) {
@@ -740,7 +764,10 @@ mod tests {
     ) {
         let result = parse_container_attrs(&attrs).expect("should parse successfully");
         assert_eq!(result.skip, expect_skip, "skip mismatch");
-        assert_eq!(result.skip_notice, expect_skip_notice, "skip_notice mismatch");
+        assert_eq!(
+            result.skip_notice, expect_skip_notice,
+            "skip_notice mismatch"
+        );
         assert_eq!(result.command, expect_command, "command mismatch");
     }
 
@@ -772,8 +799,11 @@ mod tests {
         match (mode, expected_pattern) {
             (FieldMode::Skip, "Skip") => {}
             (FieldMode::Value, "Value") => {}
+            (FieldMode::Count, "Count") => {}
             (FieldMode::Presence { default: None }, "Presence(None)") => {}
-            (FieldMode::Presence { default: Some(val) }, expected) if expected.starts_with("Presence(Some(") => {
+            (FieldMode::Presence { default: Some(val) }, expected)
+                if expected.starts_with("Presence(Some(") =>
+            {
                 let expected_val = expected
                     .strip_prefix("Presence(Some(")
                     .and_then(|s| s.strip_suffix("))"))
@@ -791,6 +821,7 @@ mod tests {
     #[case::skip(vec![make_telemetry_attr(quote!(skip))], "Skip")]
     #[case::value(vec![make_telemetry_attr(quote!(value))], "Value")]
     #[case::presence(vec![make_telemetry_attr(quote!(presence))], "Presence(None)")]
+    #[case::count(vec![make_telemetry_attr(quote!(count))], "Count")]
     #[case::presence_with_default(
         vec![make_telemetry_attr(quote!(presence, default = "us-east-1"))],
         "Presence(Some(us-east-1))"
@@ -804,10 +835,7 @@ mod tests {
         vec![make_telemetry_attr(quote!(skip, value))],
         "Skip"
     )]
-    fn parse_field_mode_valid(
-        #[case] attrs: Vec<syn::Attribute>,
-        #[case] expected: &str,
-    ) {
+    fn parse_field_mode_valid(#[case] attrs: Vec<syn::Attribute>, #[case] expected: &str) {
         let mode = parse_field_mode(&attrs).expect("should parse successfully");
         assert_field_mode_matches(&mode, expected);
     }
@@ -843,10 +871,7 @@ mod tests {
         "Commands :: Generate (..)"
     )]
     #[case::unit(Fields::Unit, "Commands :: Generate")]
-    fn wildcard_pattern_for_field_shapes(
-        #[case] fields: Fields,
-        #[case] expected: &str,
-    ) {
+    fn wildcard_pattern_for_field_shapes(#[case] fields: Fields, #[case] expected: &str) {
         let enum_name: syn::Ident = parse_quote!(Commands);
         let variant_name: syn::Ident = parse_quote!(Generate);
         let pattern = wildcard_pattern(&enum_name, &variant_name, &fields);
@@ -885,6 +910,11 @@ mod tests {
         field_type: "Vec<String>",
         expected_output: Some("with_telemetry_presence"),
     })]
+    #[case::count(FieldCodeTestCase {
+        mode: FieldMode::Count,
+        field_type: "Vec<String>",
+        expected_output: Some("with_number"),
+    })]
     #[case::presence_with_default(FieldCodeTestCase {
         mode: FieldMode::Presence { default: Some("us-east-1".to_string()) },
         field_type: "String",
@@ -904,8 +934,7 @@ mod tests {
         let accessor = quote!(self.field);
         let deref_accessor = quote!(self.field);
         let ref_accessor = quote!(&self.field);
-        let field_type: syn::Type =
-            syn::parse_str(test_case.field_type).expect("valid type");
+        let field_type: syn::Type = syn::parse_str(test_case.field_type).expect("valid type");
 
         let result = generate_field_code(
             &accessor,
@@ -926,7 +955,9 @@ mod tests {
             }
             Some(needle) => {
                 let code_str = result
-                    .unwrap_or_else(|| panic!("FieldMode::{:?} should produce code", test_case.mode))
+                    .unwrap_or_else(|| {
+                        panic!("FieldMode::{:?} should produce code", test_case.mode)
+                    })
                     .to_string();
                 assert!(
                     code_str.contains(needle),
@@ -951,7 +982,11 @@ mod tests {
     #[case::custom_struct("MyStruct", "MyStruct")]
     fn friendly_type_name_mapping(#[case] type_str: &str, #[case] expected: &str) {
         let ty: syn::Type = syn::parse_str(type_str).expect("valid type");
-        assert_eq!(friendly_type_name(&ty), expected, "friendly_type_name({type_str})");
+        assert_eq!(
+            friendly_type_name(&ty),
+            expected,
+            "friendly_type_name({type_str})"
+        );
     }
 
     // =========================================================================
@@ -963,14 +998,23 @@ mod tests {
     #[case::value_string(FieldMode::Value, "String", "actual value (string)")]
     #[case::value_u32(FieldMode::Value, "u32", "actual value (u32)")]
     #[case::skip(FieldMode::Skip, "String", "not collected")]
+    #[case::count(FieldMode::Count, "Vec<String>", "count of items")]
     #[case::presence(FieldMode::Presence { default: None }, "Vec<String>", "presence (boolean)")]
     #[case::presence_with_default(
         FieldMode::Presence { default: Some("x".to_string()) },
         "String",
         "whether non-default (boolean)"
     )]
-    #[case::value_if_present(FieldMode::ValueIfPresent, "Option<String>", "value if provided, omitted otherwise")]
-    #[case::list(FieldMode::List, "Option<Vec<String>>", "list of values if non-empty, omitted otherwise")]
+    #[case::value_if_present(
+        FieldMode::ValueIfPresent,
+        "Option<String>",
+        "value if provided, omitted otherwise"
+    )]
+    #[case::list(
+        FieldMode::List,
+        "Option<Vec<String>>",
+        "list of values if non-empty, omitted otherwise"
+    )]
     fn collection_mode_description_with_type(
         #[case] mode: FieldMode,
         #[case] type_str: &str,
