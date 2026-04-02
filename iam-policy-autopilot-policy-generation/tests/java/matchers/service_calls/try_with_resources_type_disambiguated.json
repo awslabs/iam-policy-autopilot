@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["try_with_resources_type_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.putObject(request)",
+        "Location": "try_with_resources_type_disambiguated.java:8.13-8.34",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3control"],
+      "Metadata": {
+        "Expr": "s3control.putObject(request)",
+        "Location": "try_with_resources_type_disambiguated.java:9.13-9.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

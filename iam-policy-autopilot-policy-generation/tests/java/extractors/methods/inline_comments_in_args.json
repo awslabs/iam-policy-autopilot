@@ -1,0 +1,33 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.putObject(\n            request,  // a line comment\n            body,     /* a block comment */\n            extra\n        )",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        },
+        {
+          "Positional": {
+            "value": { "Unresolved": "body" },
+            "position": 1,
+            "type_annotation": null
+          }
+        },
+        {
+          "Positional": {
+            "value": { "Unresolved": "extra" },
+            "position": 2,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "inline_comments_in_args.java:3.9-7.10",
+      "ReceiverDeclaration": null
+    }
+  ]
+}

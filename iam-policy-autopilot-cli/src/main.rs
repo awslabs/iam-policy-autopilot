@@ -111,13 +111,33 @@ impl GeneratePolicyCliConfig {
     }
 }
 
-const SERVICE_HINTS_LONG_HELP: &str =
-    "Space-separated list of AWS service names to filter which SDK calls are analyzed. \
-This helps reduce unnecessary permissions by limiting analysis to only the services your application actually uses. \
-For example, if your code only uses S3 and IAM services, specify '--service-hints s3 iam' to avoid \
-analyzing unrelated method calls that might match other services like Chime. \
-Note: The final policy may still include actions from services not in your hints if they are \
-required for the operations you perform (e.g., KMS actions for S3 encryption).";
+const SERVICE_HINTS_LONG_HELP: &str = "Space-separated list of AWS service names to filter \
+which SDK calls are analyzed. This helps reduce unnecessary permissions by limiting analysis to \
+only the services your application actually uses. For example, if your code only uses S3 and IAM \
+services, specify '--service-hints s3 iam' to avoid analyzing unrelated method calls that might \
+match other services like Chime. Note: The final policy may still include actions from services \
+not in your hints if they are required for the operations you perform (e.g., KMS actions for S3 \
+encryption).";
+
+const LONG_ABOUT: &str = r"Unified tool that combines IAM policy generation from source code analysis with
+automatic AccessDenied error fixing.
+
+Examples:
+
+  iam-policy-autopilot fix-access-denied \
+    'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject \
+    on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the \
+    s3:GetObject action'
+
+  iam-policy-autopilot generate-policies example.py \
+    --region us-east-1 --account 123456789012 --pretty
+
+  iam-policy-autopilot generate-policies src/**/*.py \
+    --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty
+
+  iam-policy-autopilot mcp-server
+
+  iam-policy-autopilot mcp-server --transport http --port 8001";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -126,16 +146,8 @@ required for the operations you perform (e.g., KMS actions for S3 encryption).";
     version,
     disable_version_flag = true,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
-    long_about = "Unified tool that combines IAM policy generation from source code analysis \
-with automatic AccessDenied error fixing. Supports three main operations:\n\n\
-• fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
-• generate-policies: Complete pipeline with enrichment for policy generation\n\
-• mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
-iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot mcp-server\n  \
-iam-policy-autopilot mcp-server --transport http --port 8001"
+    long_about = LONG_ABOUT,
+    before_help = "iam-policy-autopilot (IAM Policy Autopilot)",
 )]
 struct Cli {
     #[command(subcommand)]
@@ -183,7 +195,7 @@ and basic metadata without enrichment."
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1.., long_help = "One or more source code files to analyze. \
 Supports multiple programming languages including Python (.py), TypeScript (.ts), JavaScript (.js), \
-Go (.go), and others. Files are processed concurrently for better performance.")]
+Go (.go), Java (.java), and others. Files are processed concurrently for better performance.")]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)
@@ -238,13 +250,22 @@ This flag has no effect on the generate-policies subcommand."
         service_hints: Option<Vec<String>>,
     },
 
-    /// Generates complete IAM policy documents from source files
-    #[command(long_about = "\
-Generates complete IAM policy documents from source files. By default, all \
-policies are merged into a single optimized policy document. \
-Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
-TIP: Use --service-hints to specify the particular AWS services that your application uses if you know them. \
-The final policy may still include actions from other services if required for your operations.")]
+    /// Generates baseline IAM policy documents from source files
+    #[command(
+        long_about = r#"Generates baseline IAM policy documents from source files using
+deterministic static analysis. Optionally takes AWS context (region and account)
+for accurate ARN generation.
+
+Supported languages and SDKs:
+  Go          Go v2
+  Java        Java v2
+  JavaScript  JavaScript v3
+  TypeScript  JavaScript v3
+  Python      Boto3, Botocore
+
+TIP: Use --service-hints to specify the AWS services your application uses. The
+final policy may still include actions from other services if required."#
+    )]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]

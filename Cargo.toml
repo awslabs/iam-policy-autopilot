@@ -4,7 +4,8 @@ members = [
     "iam-policy-autopilot-tools",
     "iam-policy-autopilot-mcp-server",
     "iam-policy-autopilot-access-denied",
-    "iam-policy-autopilot-cli"
+    "iam-policy-autopilot-cli",
+    "xtask"
 ]
 exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
@@ -46,6 +47,7 @@ tempfile = "3.10"
 criterion = "0.5"
 proptest = "1.0"
 rstest = "0.26"
+paste = "1.0"
 
 # CLI-specific dependencies
 clap = { version = "4.5", features = ["derive", "env", "cargo"] }

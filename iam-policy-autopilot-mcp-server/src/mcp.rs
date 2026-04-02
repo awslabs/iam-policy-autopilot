@@ -51,7 +51,7 @@ impl IamAutoPilotMcpServer {
         Use this tool whenever the user mentions: writing policies, creating policies, generating policies, IAM permissions, \
         AWS permissions, access controls, policy creation, policy generation, or needs IAM policies for any purpose. \
         \
-        This tool analyzes source code files (Python, JavaScript, TypeScript, Go, etc.) to automatically generate \
+        This tool analyzes source code files (Python, JavaScript, TypeScript, Go, Java, etc.) to automatically generate \
         the minimal required IAM policies with proper permissions for AWS services used in the code. \
         \
         **WHEN TO USE THIS TOOL:** \
@@ -154,7 +154,7 @@ impl ServerHandler for IamAutoPilotMcpServer {
             - Any discussion about AWS IAM policies \
             \
             **Key capabilities:** \
-            1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go) \
+            1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go, Java) \
             2. Create minimal required permissions for AWS services used in code \
             3. Debug and fix AccessDenied issues with targeted policy generation \
             4. Apply policy fixes directly to AWS accounts \

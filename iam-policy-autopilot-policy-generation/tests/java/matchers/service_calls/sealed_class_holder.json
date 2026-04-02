@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["sealed_class_holder.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.putObject(request)",
+        "Location": "sealed_class_holder.java:16.9-16.30",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}
