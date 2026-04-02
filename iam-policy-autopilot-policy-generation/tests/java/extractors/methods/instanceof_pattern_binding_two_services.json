@@ -1,0 +1,42 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "instanceof_pattern_binding_two_services.java:7.13-7.34",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client s3",
+        "TypeName": "S3Client",
+        "Location": "instanceof_pattern_binding_two_services.java:6.13-6.42"
+      }
+    },
+    {
+      "Expr": "s3control.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "instanceof_pattern_binding_two_services.java:10.13-10.41",
+      "ReceiverDeclaration": {
+        "Expr": "S3ControlClient s3control",
+        "TypeName": "S3ControlClient",
+        "Location": "instanceof_pattern_binding_two_services.java:9.13-9.56"
+      }
+    }
+  ]
+}

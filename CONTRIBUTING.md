@@ -20,6 +20,20 @@ reported the issue. Please try to include as much information as you can. Detail
 * Anything unusual about your environment or deployment
 
 
+## Development Setup
+
+### Windows
+
+One git setting is required when working on Windows:
+
+```powershell
+git config --global core.longpaths true
+```
+
+- **`core.longpaths`** — the repository contains file paths that exceed Windows' default 260-character limit (inside the `aws-sdk-java-v2` submodule).
+
+Run this command once before cloning (or before initializing submodules if you have already cloned).
+
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 

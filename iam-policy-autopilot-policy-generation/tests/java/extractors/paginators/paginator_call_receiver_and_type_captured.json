@@ -1,0 +1,24 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "client.listResourcesPaginator(request)",
+      "Operation": "listResources",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "paginator_call_receiver_and_type_captured.java:6.9-6.47",
+      "ReceiverDeclaration": {
+        "Expr": "CloudVaultClient.create()",
+        "TypeName": "CloudVaultClient",
+        "Location": "paginator_call_receiver_and_type_captured.java:5.35-5.60"
+      }
+    }
+  ]
+}

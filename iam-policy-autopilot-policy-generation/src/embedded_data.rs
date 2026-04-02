@@ -118,6 +118,23 @@ impl Boto3UtilitiesRaw {
     }
 }
 
+/// Embedded Java SDK v2 utilities model
+///
+/// This struct provides access to the `java-sdk-v2-utilities.json` configuration
+/// that maps Java SDK utility classes (e.g. `S3TransferManager`, `S3Presigner`,
+/// `DynamoDbTable`) to their IAM operations.
+#[derive(RustEmbed)]
+#[folder = "resources/config/sdks"]
+#[include = "java-sdk-v2-utilities.json"]
+struct JavaSdkUtilitiesRaw;
+
+impl JavaSdkUtilitiesRaw {
+    /// Get the Java SDK v2 utilities model as raw bytes.
+    fn get_utilities_model() -> Option<Cow<'static, [u8]>> {
+        Self::get("java-sdk-v2-utilities.json").map(|file| file.data)
+    }
+}
+
 impl Boto3ResourcesRaw {
     /// Get a boto3 resources definition file by service name and API version
     fn get_resources_definition(service: &str, api_version: &str) -> Option<Cow<'static, [u8]>> {
@@ -301,6 +318,21 @@ impl Boto3Data {
     /// Get the boto3 utilities mapping configuration from embedded data
     pub(crate) fn get_utilities_mapping() -> Option<Cow<'static, [u8]>> {
         Boto3UtilitiesRaw::get_utilities_mapping()
+    }
+}
+
+/// Embedded Java SDK v2 data manager
+///
+/// Provides access to Java SDK v2 utility class definitions embedded in the binary.
+pub(crate) struct JavaSdkData;
+
+impl JavaSdkData {
+    /// Get the Java SDK v2 utilities model as raw bytes.
+    ///
+    /// Returns the contents of `java-sdk-v2-utilities.json`, or `None` if the
+    /// file was not embedded (should never happen in a correctly built binary).
+    pub(crate) fn get_utilities_model() -> Option<Cow<'static, [u8]>> {
+        JavaSdkUtilitiesRaw::get_utilities_model()
     }
 }
 

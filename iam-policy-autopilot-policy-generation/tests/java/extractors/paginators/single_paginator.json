@@ -1,0 +1,24 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "s3Client.listObjectsV2Paginator(request)",
+      "Operation": "listObjectsV2",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "pages",
+          "type_name": "ListObjectsV2Iterable"
+        }
+      },
+      "Location": "single_paginator.java:3.39-3.79"
+    }
+  ]
+}

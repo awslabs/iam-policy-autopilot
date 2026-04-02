@@ -1,0 +1,4 @@
+# Exclude Java test fixture files from GitHub language statistics.
+# These are input samples for Rust unit tests, not production Java code.
+iam-policy-autopilot-policy-generation/tests/**/*.java linguist-vendored
+iam-policy-autopilot-cli/tests/**/*.java linguist-vendored

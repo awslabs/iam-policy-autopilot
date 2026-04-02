@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["async_client_wildcard_import_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "client.describeResource(request)",
+        "Location": "async_client_wildcard_import_disambiguated.java:7.9-7.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

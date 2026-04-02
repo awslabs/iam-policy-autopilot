@@ -115,10 +115,55 @@ impl GitSubmoduleMetadata {
     }
 }
 
+/// Expected SHA-256 of CodegenNamingUtils.java with CRLF normalized to LF:
+///   resources/config/sdks/aws-sdk-java-v2/utils/src/main/java/
+///   software/amazon/awssdk/utils/internal/CodegenNamingUtils.java
+///
+/// The hash is computed after stripping all `\r` bytes so it is identical on
+/// Windows and Linux/macOS regardless of how git checks out the submodule.
+///
+/// If the build fails here, review the Java source for algorithm changes,
+/// update the Rust port in iam-policy-autopilot-policy-generation/src/extraction/java/matchers/naming.rs
+/// (split_on_word_boundaries / pascal_case / remove_redundant_prefixes_and_suffixes),
+/// then update this constant.
+///
+/// To recompute (on Linux/macOS where the file already has LF line endings):
+///   sha256sum resources/config/sdks/aws-sdk-java-v2/utils/src/main/java/\
+///             software/amazon/awssdk/utils/internal/CodegenNamingUtils.java
+const CODEGEN_NAMING_UTILS_EXPECTED_SHA256: &str =
+    "SHA256:929717c6fbb5a8ad07964447a5e52c23cef4cd4f702fab7b28b09ee57ceea739";
+
+fn verify_codegen_naming_utils_hash(sdk_root: &Path) {
+    let file_path = sdk_root
+        .join("utils/src/main/java/software/amazon/awssdk/utils/internal/CodegenNamingUtils.java");
+    let raw =
+        fs::read(&file_path).unwrap_or_else(|e| panic!("Cannot read CodegenNamingUtils.java: {e}"));
+    // Normalize CRLF → LF so the hash is identical on Windows and Linux/macOS.
+    let contents: Vec<u8> = raw.iter().copied().filter(|&b| b != b'\r').collect();
+    let mut ctx = Context::new(&SHA256);
+    ctx.update(&contents);
+    let actual = format!("{:?}", ctx.finish());
+    assert_eq!(
+        actual, CODEGEN_NAMING_UTILS_EXPECTED_SHA256,
+        "\n\nCodegenNamingUtils.java has changed (hash mismatch).\n\
+         Expected: {CODEGEN_NAMING_UTILS_EXPECTED_SHA256}\n\
+         Actual:   {actual}\n\n\
+         Review the Java source for algorithm changes, update the Rust port in\
+         iam-policy-autopilot-policy-generation/src/extraction/java/matchers/naming.rs\
+         (split_on_word_boundaries / pascal_case / remove_redundant_prefixes_and_suffixes), \
+         then update CODEGEN_NAMING_UTILS_EXPECTED_SHA256.\n\
+         Regenerate test cases using cargo xtask regenerate-test-cases.\n"
+    );
+}
+
 fn main() {
     println!("cargo:rerun-if-changed=resources/config/sdks/botocore-data");
     println!("cargo:rerun-if-changed=resources/config/sdks/boto3");
     println!("cargo:rerun-if-changed=scripts/generate_python_name_map.py");
+    println!(
+        "cargo:rerun-if-changed=resources/config/sdks/aws-sdk-java-v2/\
+         utils/src/main/java/software/amazon/awssdk/utils/internal/CodegenNamingUtils.java"
+    );
     println!("cargo:rerun-if-changed=resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl");
 
     // --- Auto-initialize all submodules if needed ---
@@ -140,6 +185,18 @@ fn main() {
         Path::new("resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl"),
         Some("/names/data/names_data.hcl"), // sparse-checkout pattern
     );
+    let java_sdk_root = Path::new("resources/config/sdks/aws-sdk-java-v2");
+    ensure_submodule_initialized(
+        "aws-sdk-java-v2",
+        java_sdk_root,
+        Path::new(
+            "resources/config/sdks/aws-sdk-java-v2/utils/src/main/java/\
+             software/amazon/awssdk/utils/internal/CodegenNamingUtils.java",
+        ),
+        Some("/utils/src/main/java/software/amazon/awssdk/utils/internal/CodegenNamingUtils.java"), // sparse-checkout pattern
+    );
+
+    verify_codegen_naming_utils_hash(java_sdk_root);
 
     #[allow(clippy::unwrap_used)]
     let out_dir = env::var("OUT_DIR").unwrap();

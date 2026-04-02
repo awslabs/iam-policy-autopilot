@@ -37,6 +37,7 @@ visibility.workspace = true
 # Build dependencies
 [build-dependencies]
 serde.workspace = true
+regex.workspace = true
 
 # Async runtime
 tokio.workspace = true
@@ -64,6 +65,7 @@ tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
 rstest.workspace = true
+paste.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"

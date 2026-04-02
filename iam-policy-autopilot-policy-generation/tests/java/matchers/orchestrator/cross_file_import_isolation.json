@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["cross_file_import_isolation_s3.java", "cross_file_import_isolation_s3control.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.putObject(request)",
+        "Location": "cross_file_import_isolation_s3.java:5.9-5.30",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3control"],
+      "Metadata": {
+        "Expr": "s3control.putObject(request)",
+        "Location": "cross_file_import_isolation_s3control.java:5.9-5.37",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

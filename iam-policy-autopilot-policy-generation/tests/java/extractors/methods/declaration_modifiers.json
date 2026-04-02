@@ -1,0 +1,94 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "CloudVaultClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "declaration_modifiers.java:10.46-10.71",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.describeResource(request)",
+      "Method": "describeResource",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "declaration_modifiers.java:11.13-11.45",
+      "ReceiverDeclaration": {
+        "Expr": "CloudVaultClient.create()",
+        "TypeName": "CloudVaultClient",
+        "Location": "declaration_modifiers.java:10.46-10.71"
+      }
+    },
+    {
+      "Expr": "DataLakeClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "declaration_modifiers.java:17.66-17.89",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.listObjects(request)",
+      "Method": "listObjects",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "declaration_modifiers.java:18.13-18.40",
+      "ReceiverDeclaration": {
+        "Expr": "DataLakeClient.create()",
+        "TypeName": "DataLakeClient",
+        "Location": "declaration_modifiers.java:17.66-17.89"
+      }
+    },
+    {
+      "Expr": "client.putEvents(request)",
+      "Method": "putEvents",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "declaration_modifiers.java:24.9-24.34",
+      "ReceiverDeclaration": {
+        "Expr": "final EventBridgeClient client",
+        "TypeName": "EventBridgeClient",
+        "Location": "declaration_modifiers.java:23.27-23.57"
+      }
+    },
+    {
+      "Expr": "client.getSecret(request)",
+      "Method": "getSecret",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "declaration_modifiers.java:29.9-29.34",
+      "ReceiverDeclaration": {
+        "Expr": "@SuppressWarnings(\"unused\") SecretManagerClient client",
+        "TypeName": "SecretManagerClient",
+        "Location": "declaration_modifiers.java:28.31-28.85"
+      }
+    }
+  ]
+}

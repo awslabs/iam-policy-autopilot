@@ -6,7 +6,7 @@ build-backend = "maturin"
 [project]
 name = "iam-policy-autopilot" # The name it will have on PyPI
 version = "0.1.4"
-description = "An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports applications built in Python, Go, and TypeScript."
+description = "An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports applications built in Python, Go, TypeScript, and Java."
 readme = "README.md"
 requires-python = ">=3.8"
 license = { file = "LICENSE" }
@@ -22,6 +22,7 @@ bindings = "bin"
 # not maintained Python code).
 exclude = [
     "iam-policy-autopilot-policy-generation/resources/config/sdks",
+    "iam-policy-autopilot-policy-generation/tests/resources",
     "iam-policy-autopilot-cli/tests/resources",
     "iam-policy-autopilot-mcp-server/tests/test_data",
     "target",

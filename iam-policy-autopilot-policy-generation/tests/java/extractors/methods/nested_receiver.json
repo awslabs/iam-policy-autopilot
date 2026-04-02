@@ -1,0 +1,24 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "foo.bar.client.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "nested_receiver.java:3.9-3.42"
+    },
+    {
+      "Expr": "this.services.s3Client.listBuckets()",
+      "Method": "listBuckets",
+      "Parameters": [],
+      "Location": "nested_receiver.java:4.9-4.45"
+    }
+  ]
+}
