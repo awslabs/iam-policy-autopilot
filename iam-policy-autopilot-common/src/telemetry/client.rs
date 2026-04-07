@@ -16,7 +16,7 @@ use sha2::{Digest, Sha256};
 use super::event::TelemetryEvent;
 
 /// The CloudFront distribution endpoint for telemetry ingestion.
-const TELEMETRY_ENDPOINT: &str = "https://d1c1nvl8iiaf7v.cloudfront.net/";
+const TELEMETRY_ENDPOINT: &str = "https://d3l5r34trbj0zx.cloudfront.net/";
 
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
 

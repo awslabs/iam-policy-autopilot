@@ -249,6 +249,7 @@ pub(super) fn find_receiver_declaration_from_env(
     find_receiver_declaration(node, receiver_node.text().as_ref(), source_file)
 }
 
+#[allow(clippy::cognitive_complexity)]
 pub(super) fn find_receiver_declaration(
     call_node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<ast_grep_language::Java>>,
     receiver_var_name: &str,

@@ -164,10 +164,9 @@ impl TelemetryEvent {
 
     /// Set a numeric result (in-place mutation).
     pub fn set_result_number(&mut self, name: impl Into<String>, value: usize) {
-        self.result.get_or_insert_with(HashMap::new).insert(
-            name.into(),
-            Value::Number(serde_json::Number::from(value)),
-        );
+        self.result
+            .get_or_insert_with(HashMap::new)
+            .insert(name.into(), Value::Number(serde_json::Number::from(value)));
     }
 
     /// Set a list result as a JSON array of strings (in-place mutation).

@@ -154,7 +154,10 @@ fn enum_generate_policies_records_all_field_modes() {
     // #[telemetry(value)] on String
     assert_eq!(params.get("language"), Some(&serde_json::json!("python")));
     // #[telemetry(skip)] — absent
-    assert!(params.get("debug").is_none(), "skipped field should not appear");
+    assert!(
+        params.get("debug").is_none(),
+        "skipped field should not appear"
+    );
     // #[telemetry(value, if_present)] on Some
     assert_eq!(params.get("region"), Some(&serde_json::json!("us-west-2")));
     // #[telemetry(list)] on non-empty vec
@@ -163,7 +166,10 @@ fn enum_generate_policies_records_all_field_modes() {
         Some(&serde_json::json!(["s3", "ec2"]))
     );
     // #[telemetry(presence, default = "us-east-1")] — value == default → false
-    assert_eq!(params.get("default_region"), Some(&serde_json::json!(false)));
+    assert_eq!(
+        params.get("default_region"),
+        Some(&serde_json::json!(false))
+    );
 }
 
 #[test]
@@ -454,10 +460,7 @@ fn struct_records_all_field_modes() {
 
     assert_eq!(params.get("source_files"), Some(&serde_json::json!(true)));
     assert_eq!(params.get("pretty"), Some(&serde_json::json!(true)));
-    assert_eq!(
-        params.get("region"),
-        Some(&serde_json::json!("us-west-2"))
-    );
+    assert_eq!(params.get("region"), Some(&serde_json::json!("us-west-2")));
     assert_eq!(params.get("account"), Some(&serde_json::json!(true)));
     assert_eq!(
         params.get("service_hints"),

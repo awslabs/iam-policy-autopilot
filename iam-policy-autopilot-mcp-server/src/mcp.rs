@@ -1,5 +1,7 @@
 use anyhow;
-use iam_policy_autopilot_common::telemetry::{self, span::run_with_telemetry_emit, ToTelemetryEvent};
+use iam_policy_autopilot_common::telemetry::{
+    self, span::run_with_telemetry_emit, ToTelemetryEvent,
+};
 use log::{error, info, trace};
 use rmcp::{
     handler::server::{tool::ToolRouter, wrapper::Parameters},
@@ -82,14 +84,17 @@ impl IamAutoPilotMcpServer {
         trace!("generate_application_policies input: {:#?}", params.0);
         let telemetry_event = params.0.to_telemetry_event();
 
-        run_with_telemetry_emit(telemetry_event, generate_application_policies(params.0))
-            .await
-            .inspect(|output| trace!("generate_application_policies output: {output:#?}"))
-            .map(Json)
-            .map_err(|e| {
-                error!("{e:#?}");
-                self.format_mcp_error("Failed to generate policies", e)
-            })
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            generate_application_policies(params.0),
+        ))
+        .await
+        .inspect(|output| trace!("generate_application_policies output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
+            error!("{e:#?}");
+            self.format_mcp_error("Failed to generate policies", e)
+        })
     }
 
     #[tool(
@@ -105,14 +110,17 @@ impl IamAutoPilotMcpServer {
         trace!("generate_policy_for_access_denied input: {:#?}", params.0);
         let telemetry_event = params.0.to_telemetry_event();
 
-        run_with_telemetry_emit(telemetry_event, generate_policy_for_access_denied(params.0))
-            .await
-            .inspect(|output| trace!("generate_policy_for_access_denied output: {output:#?}"))
-            .map(Json)
-            .map_err(|e| {
-                error!("{e:#?}");
-                self.format_mcp_error("Failed to generate policy for access denial fix", e)
-            })
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            generate_policy_for_access_denied(params.0),
+        ))
+        .await
+        .inspect(|output| trace!("generate_policy_for_access_denied output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
+            error!("{e:#?}");
+            self.format_mcp_error("Failed to generate policy for access denial fix", e)
+        })
     }
 
     #[tool(
@@ -136,14 +144,17 @@ impl IamAutoPilotMcpServer {
         trace!("fix_access_denied input: {:#?}", params.0);
         let telemetry_event = params.0.to_telemetry_event();
 
-        run_with_telemetry_emit(telemetry_event, fix_access_denied(context, params.0))
-            .await
-            .inspect(|output| trace!("fix_access_denied output: {output:#?}"))
-            .map(Json)
-            .map_err(|e| {
-                error!("{e:#?}");
-                self.format_mcp_error("Failed to apply access denial fix", e)
-            })
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            fix_access_denied(context, params.0),
+        ))
+        .await
+        .inspect(|output| trace!("fix_access_denied output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
+            error!("{e:#?}");
+            self.format_mcp_error("Failed to apply access denial fix", e)
+        })
     }
 }
 

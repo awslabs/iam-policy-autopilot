@@ -447,17 +447,14 @@ mod tests {
     async fn test_run_with_telemetry_emit_result(#[case] succeed: bool) {
         let input = TestInput { emit: true };
         let event = input.to_telemetry_event();
-        let result: Result<&str, String> = run_with_telemetry_emit(
-            event,
-            async {
-                record_result_str("detected_language", "python");
-                if succeed {
-                    Ok("ok")
-                } else {
-                    Err("boom".into())
-                }
-            },
-        )
+        let result: Result<&str, String> = run_with_telemetry_emit(event, async {
+            record_result_str("detected_language", "python");
+            if succeed {
+                Ok("ok")
+            } else {
+                Err("boom".into())
+            }
+        })
         .await;
 
         assert_eq!(result.is_ok(), succeed);
@@ -474,8 +471,7 @@ mod tests {
     async fn test_run_with_telemetry_emit_none_event_still_runs() {
         let input = TestInput { emit: false };
         let event = input.to_telemetry_event(); // returns None
-        let result: Result<i32, String> =
-            run_with_telemetry_emit(event, async { Ok(42) }).await;
+        let result: Result<i32, String> = run_with_telemetry_emit(event, async { Ok(42) }).await;
         assert_eq!(result.unwrap(), 42);
     }
 
@@ -485,16 +481,13 @@ mod tests {
         // by checking that the scope is active (no panic on record calls).
         let input = TestInput { emit: true };
         let event = input.to_telemetry_event();
-        let result: Result<(), String> = run_with_telemetry_emit(
-            event,
-            async {
-                record_result_str("lang", "go");
-                record_result_number("count", 5);
-                record_result_set("svc", "s3");
-                record_result_set("svc", "dynamodb");
-                Ok(())
-            },
-        )
+        let result: Result<(), String> = run_with_telemetry_emit(event, async {
+            record_result_str("lang", "go");
+            record_result_number("count", 5);
+            record_result_set("svc", "s3");
+            record_result_set("svc", "dynamodb");
+            Ok(())
+        })
         .await;
         assert!(result.is_ok());
     }

@@ -84,8 +84,15 @@ pub(crate) fn derive_telemetry_event_impl(input: DeriveInput) -> proc_macro2::To
 const KNOWN_CONTAINER_ATTRS: &[&str] = &["skip", "skip_notice", "command"];
 
 /// Known field-level attribute keywords inside `#[telemetry(...)]`.
-const KNOWN_FIELD_ATTRS: &[&str] =
-    &["skip", "value", "presence", "count", "if_present", "list", "default"];
+const KNOWN_FIELD_ATTRS: &[&str] = &[
+    "skip",
+    "value",
+    "presence",
+    "count",
+    "if_present",
+    "list",
+    "default",
+];
 
 /// Parsed container-level attributes from `#[telemetry(...)]` on enums, structs, or variants.
 ///
