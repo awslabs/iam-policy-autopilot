@@ -1,0 +1,23 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "sealed_class_holder.java:16.9-16.30",
+      "ReceiverDeclaration": {
+        "Expr": "s3",
+        "TypeName": "S3Client",
+        "Location": "sealed_class_holder.java:8.28-8.30"
+      }
+    }
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "SourceFiles": ["upload_file_fqn_type.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "PutObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "transferManager.uploadFile(req)",
+        "Location": "upload_file_fqn_type.java:4.9-4.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "CreateMultipartUpload",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "transferManager.uploadFile(req)",
+        "Location": "upload_file_fqn_type.java:4.9-4.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "UploadPart",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "transferManager.uploadFile(req)",
+        "Location": "upload_file_fqn_type.java:4.9-4.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "CompleteMultipartUpload",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "transferManager.uploadFile(req)",
+        "Location": "upload_file_fqn_type.java:4.9-4.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "AbortMultipartUpload",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "transferManager.uploadFile(req)",
+        "Location": "upload_file_fqn_type.java:4.9-4.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

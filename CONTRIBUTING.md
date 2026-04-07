@@ -20,6 +20,20 @@ reported the issue. Please try to include as much information as you can. Detail
 * Anything unusual about your environment or deployment
 
 
+## Development Setup
+
+### Windows
+
+One git setting is required when working on Windows:
+
+```powershell
+git config --global core.longpaths true
+```
+
+- **`core.longpaths`** — the repository contains file paths that exceed Windows' default 260-character limit (inside the `aws-sdk-java-v2` submodule).
+
+Run this command once before cloning (or before initializing submodules if you have already cloned).
+
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
@@ -35,6 +49,35 @@ To send us a pull request, please:
 4. Commit to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+
+### Code Style & Linting
+
+Ensure your changes pass all linters. The CI will enforce these checks automatically.
+
+**Rust**
+
+```bash
+# Format all Rust code
+cargo fmt --all
+
+# Run Clippy (warnings are treated as errors in CI)
+cargo clippy --workspace
+```
+
+**Python** (scripts in `iam-policy-autopilot-policy-generation/scripts/`)
+
+```bash
+# Lint
+ruff check .
+
+# Format
+ruff format .
+
+# Check formatting without modifying files (as CI does)
+ruff format --check .
+```
+
+Ruff is configured in [`pyproject.toml`](pyproject.toml) at the repository root. Install it with `pip install ruff` or via your package manager.
 
 ### Commit Message Guidelines
 

@@ -1,0 +1,82 @@
+[
+  {
+    "name": "explain_all_resources",
+    "inputs": {
+      "source_files": ["app.py"],
+      "language": "python",
+      "region": "us-east-1",
+      "account": "123456789012",
+      "individual_policies": false,
+      "tf_dir": true,
+      "tf_files": [],
+      "tfvars": [],
+      "tfstate": [],
+      "explain_resource_filters": ["*"]
+    },
+    "expected_output": "expected_all_explanations.json"
+  },
+  {
+    "name": "explain_s3_only",
+    "inputs": {
+      "source_files": ["app.py"],
+      "language": "python",
+      "region": "us-east-1",
+      "account": "123456789012",
+      "individual_policies": false,
+      "tf_dir": true,
+      "tf_files": [],
+      "tfvars": [],
+      "tfstate": [],
+      "explain_resource_filters": ["arn:*:s3:::*"]
+    },
+    "expected_output": "expected_s3_only_explanations.json"
+  },
+  {
+    "name": "explain_no_matching_filter",
+    "inputs": {
+      "source_files": ["app.py"],
+      "language": "python",
+      "region": "us-east-1",
+      "account": "123456789012",
+      "individual_policies": false,
+      "tf_dir": true,
+      "tf_files": [],
+      "tfvars": [],
+      "tfstate": [],
+      "explain_resource_filters": ["arn:aws:ec2:*"]
+    },
+    "expected_output": "expected_no_match_explanations.json"
+  },
+  {
+    "name": "explain_multiple_filters",
+    "inputs": {
+      "source_files": ["app.py"],
+      "language": "python",
+      "region": "us-east-1",
+      "account": "123456789012",
+      "individual_policies": false,
+      "tf_dir": true,
+      "tf_files": [],
+      "tfvars": [],
+      "tfstate": [],
+      "explain_resource_filters": ["arn:*:s3:::*", "arn:*:sqs:*"]
+    },
+    "expected_output": "expected_s3_sqs_explanations.json"
+  },
+  {
+    "name": "no_explain_resources",
+    "inputs": {
+      "source_files": ["app.py"],
+      "language": "python",
+      "region": "us-east-1",
+      "account": "123456789012",
+      "individual_policies": false,
+      "tf_dir": true,
+      "tf_files": [],
+      "tfvars": [],
+      "tfstate": [],
+      "explain_resource_filters": null
+    },
+    "expected_output": "expected_no_explanations.json"
+  }
+]

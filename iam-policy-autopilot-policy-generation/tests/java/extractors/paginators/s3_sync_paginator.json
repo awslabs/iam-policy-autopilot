@@ -1,0 +1,29 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "s3.listObjectsV2Paginator(listReq)",
+      "Operation": "listObjectsV2",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "listReq" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "listRes",
+          "type_name": "ListObjectsV2Iterable"
+        }
+      },
+      "Location": "s3_sync_paginator.java:12.41-12.75",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client s3",
+        "TypeName": "S3Client",
+        "Location": "s3_sync_paginator.java:6.14-6.25"
+      }
+    }
+  ]
+}

@@ -266,7 +266,7 @@ where
 
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
     pub(crate) service_reference_mapping: HashMap<String, Url>,
@@ -302,6 +302,7 @@ fn deserialize_service_reference_mapping(
 /// with exact service name matching and thread-safe caching. Service names
 /// must match exactly between input and Service Reference Name (case-sensitive).
 #[derive(Debug)]
+
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
@@ -329,6 +330,29 @@ impl RemoteServiceReferenceLoader {
             cache_location: cache_location.unwrap_or_else(Self::get_default_cache_location),
             cache_expiry_seconds: cache_expiry_seconds.unwrap_or(DEFAULT_CACHE_DURATION_IN_SECONDS),
         })
+    }
+
+    /// Creates a loader that always returns `None` for any service.
+    /// Useful in tests that don't need real SDF data.
+    #[cfg(test)]
+
+    pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
+        let loader = Self {
+            client: Self::create_client()?,
+            service_reference_mapping: OnceCell::new(),
+            service_cache: RwLock::new(HashMap::new()),
+            mapping_url: String::new(),
+            disable_cache: true,
+            cache_location: Self::get_default_cache_location(),
+            cache_expiry_seconds: DEFAULT_CACHE_DURATION_IN_SECONDS,
+        };
+        // Pre-initialize with an empty mapping so no network call is ever made.
+        let _ = loader
+            .service_reference_mapping
+            .set(ServiceReferenceMapping {
+                service_reference_mapping: HashMap::new(),
+            });
+        Ok(loader)
     }
 
     async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
@@ -435,6 +459,18 @@ impl RemoteServiceReferenceLoader {
             }
         }
         false
+    }
+
+    pub(crate) async fn get_resource_arns(
+        &self,
+        service_name: &str,
+        resource_type: &str,
+    ) -> Option<Vec<String>> {
+        if let Ok(Some(service_ref)) = self.load(service_name).await {
+            service_ref.resources.get(resource_type).cloned()
+        } else {
+            None
+        }
     }
 
     pub(crate) async fn load(

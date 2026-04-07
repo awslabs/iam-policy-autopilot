@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub(crate) mod engine;
 pub(crate) mod extractor;
 pub(crate) mod go;
+pub(crate) mod java;
 pub(crate) mod javascript;
 pub(crate) mod python;
 pub(crate) mod sdk_model;
@@ -18,8 +19,13 @@ pub(crate) mod shared;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
+pub(crate) mod terraform;
+
 // Re-export main types for convenience
 pub use engine::Engine;
+// Not part of the stable public API — exposed only for integration tests in tests/.
+#[doc(hidden)]
+pub use sdk_model::ServiceDiscovery;
 pub(crate) use sdk_model::ServiceModelIndex;
 pub(crate) use service_hints::ServiceHintsProcessor;
 
@@ -100,23 +106,6 @@ pub mod core {
         }
     }
 
-    /// Usage of the method call result, either assigned or in a call chain.
-    #[derive(Debug, Clone, Hash, Serialize, Deserialize, PartialEq, Eq, JsonSchema)]
-    pub enum MethodCallResultUsage {
-        /// Method call result assigned, e.g., ListObjectsV2Iterable listRes = s3.listObjectsV2Paginator(listReq);
-        Assigned {
-            /// The variable name
-            variable_name: String,
-            /// The type name, if present
-            type_name: Option<String>,
-        },
-        /// Method call result used in chain, e.g., s3.listObjectsV2Paginator(listReq).stream()...;
-        Chained {
-            /// The expression of the call chain
-            expr: String,
-        },
-    }
-
     /// Metadata for a parsed method call
     ///
     /// Contains detailed information about a method call including parameters,
@@ -151,11 +140,6 @@ pub mod core {
         /// Receiver variable name (e.g., "s3_client", "ec2Client")
         #[serde(skip_serializing_if = "Option::is_none")]
         pub(crate) receiver: Option<String>,
-
-        /// The way the method call's result is used
-        /// Example: `RunInstancesResponse response = ec2Client.runInstances(...);` -> Assigned {...}
-        #[serde(skip_serializing_if = "Option::is_none")]
-        pub(crate) usage: Option<MethodCallResultUsage>,
     }
 
     impl SdkMethodCallMetadata {
@@ -173,7 +157,6 @@ pub mod core {
                 location,
                 parameters: Vec::new(),
                 receiver: None,
-                usage: None,
             }
         }
 
@@ -188,14 +171,6 @@ pub mod core {
         #[must_use]
         pub(crate) fn with_receiver(mut self, receiver: String) -> Self {
             self.receiver = Some(receiver);
-            self
-        }
-
-        /// Set the assigned variable name and type, if available (e.g., Assigned { variable_name: "response", type_name: None } in `var response = client.method()`)
-        #[must_use]
-        #[allow(dead_code)]
-        pub(crate) fn with_usage(mut self, usage: MethodCallResultUsage) -> Self {
-            self.usage = Some(usage);
             self
         }
 

@@ -191,14 +191,8 @@ impl ResourceMatcher {
         // Store the original service name from parsed_call for use in explanations
         let original_service_name = service_name;
 
-        let initial = Operation::from_call(
-            parsed_call,
-            service_name,
-            &self.service_cfg,
-            self.sdk,
-            service_reference_loader,
-        )
-        .await?;
+        let initial =
+            Operation::from_call(parsed_call, service_name, &self.service_cfg, self.sdk).await?;
 
         log::debug!("Expanded {initial:?}");
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found

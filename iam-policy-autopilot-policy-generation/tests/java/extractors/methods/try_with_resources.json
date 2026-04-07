@@ -1,0 +1,56 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "try_with_resources.java:6.28-6.45",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "S3ControlClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "try_with_resources.java:7.42-7.66",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "try_with_resources.java:8.13-8.34",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "try_with_resources.java:6.28-6.45"
+      }
+    },
+    {
+      "Expr": "s3control.putObject(request)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "try_with_resources.java:9.13-9.41",
+      "ReceiverDeclaration": {
+        "Expr": "S3ControlClient.create()",
+        "TypeName": "S3ControlClient",
+        "Location": "try_with_resources.java:7.42-7.66"
+      }
+    }
+  ]
+}

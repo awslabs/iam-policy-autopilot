@@ -1,0 +1,18 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "client.textBlockArg(\"\"\"\n                my-bucket\n                \"\"\")",
+      "Method": "textBlockArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "                my-bucket\n                " },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "text_block_arg.java:3.9-5.21"
+    }
+  ]
+}

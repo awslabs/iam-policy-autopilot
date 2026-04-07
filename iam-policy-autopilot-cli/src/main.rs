@@ -105,6 +105,16 @@ struct GeneratePolicyCliConfig {
     cache_expiry: Option<String>,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
+    /// Optional Terraform project directory
+    terraform_dir: Option<PathBuf>,
+    /// Optional individual Terraform files
+    terraform_files: Vec<PathBuf>,
+    /// Optional paths to terraform.tfstate files
+    tfstate: Vec<PathBuf>,
+    /// Optional explicit .tfvars file paths
+    tfvars: Vec<PathBuf>,
+    /// Optional ARN patterns to filter resource binding explanations
+    explain_resources: Option<Vec<String>>,
 }
 
 impl GeneratePolicyCliConfig {
@@ -128,13 +138,33 @@ impl GeneratePolicyCliConfig {
     }
 }
 
-const SERVICE_HINTS_LONG_HELP: &str =
-    "Space-separated list of AWS service names to filter which SDK calls are analyzed. \
-This helps reduce unnecessary permissions by limiting analysis to only the services your application actually uses. \
-For example, if your code only uses S3 and IAM services, specify '--service-hints s3 iam' to avoid \
-analyzing unrelated method calls that might match other services like Chime. \
-Note: The final policy may still include actions from services not in your hints if they are \
-required for the operations you perform (e.g., KMS actions for S3 encryption).";
+const SERVICE_HINTS_LONG_HELP: &str = "Space-separated list of AWS service names to filter \
+which SDK calls are analyzed. This helps reduce unnecessary permissions by limiting analysis to \
+only the services your application actually uses. For example, if your code only uses S3 and IAM \
+services, specify '--service-hints s3 iam' to avoid analyzing unrelated method calls that might \
+match other services like Chime. Note: The final policy may still include actions from services \
+not in your hints if they are required for the operations you perform (e.g., KMS actions for S3 \
+encryption).";
+
+const LONG_ABOUT: &str = r"Unified tool that combines IAM policy generation from source code analysis with
+automatic AccessDenied error fixing.
+
+Examples:
+
+  iam-policy-autopilot fix-access-denied \
+    'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject \
+    on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the \
+    s3:GetObject action'
+
+  iam-policy-autopilot generate-policies example.py \
+    --region us-east-1 --account 123456789012 --pretty
+
+  iam-policy-autopilot generate-policies src/**/*.py \
+    --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty
+
+  iam-policy-autopilot mcp-server
+
+  iam-policy-autopilot mcp-server --transport http --port 8001";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -143,16 +173,8 @@ required for the operations you perform (e.g., KMS actions for S3 encryption).";
     version,
     disable_version_flag = true,
     about = "Generate IAM policies from source code and fix AccessDenied errors",
-    long_about = "Unified tool that combines IAM policy generation from source code analysis \
-with automatic AccessDenied error fixing. Supports three main operations:\n\n\
-• fix-access-denied: Fix AccessDenied errors by analyzing and applying IAM policy changes\n\
-• generate-policies: Complete pipeline with enrichment for policy generation\n\
-• mcp-server: Start MCP server for IDE integration. Uses STDIO transport by default.\n\n\
-iam-policy-autopilot fix-access-denied 'User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key because no identity-based policy allows the s3:GetObject action'\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot generate-policies tests/resources/test_example.py --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty\n  \
-iam-policy-autopilot mcp-server\n  \
-iam-policy-autopilot mcp-server --transport http --port 8001"
+    long_about = LONG_ABOUT,
+    before_help = "iam-policy-autopilot (IAM Policy Autopilot)",
 )]
 struct Cli {
     #[command(subcommand)]
@@ -160,6 +182,7 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+#[allow(clippy::large_enum_variant)]
 enum Commands {
     /// Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
     #[command(
@@ -199,7 +222,7 @@ and basic metadata without enrichment."
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1.., long_help = "One or more source code files to analyze. \
 Supports multiple programming languages including Python (.py), TypeScript (.ts), JavaScript (.js), \
-Go (.go), and others. Files are processed concurrently for better performance.")]
+Go (.go), Java (.java), and others. Files are processed concurrently for better performance.")]
         source_files: Vec<PathBuf>,
 
         /// Enable debug logging output to stderr (most verbose)
@@ -254,13 +277,22 @@ This flag has no effect on the generate-policies subcommand."
         service_hints: Option<Vec<String>>,
     },
 
-    /// Generates complete IAM policy documents from source files
-    #[command(long_about = "\
-Generates complete IAM policy documents from source files. By default, all \
-policies are merged into a single optimized policy document. \
-Optionally takes AWS context (region and account) for accurate ARN generation.\n\n\
-TIP: Use --service-hints to specify the particular AWS services that your application uses if you know them. \
-The final policy may still include actions from other services if required for your operations.")]
+    /// Generates baseline IAM policy documents from source files
+    #[command(
+        long_about = r#"Generates baseline IAM policy documents from source files using
+deterministic static analysis. Optionally takes AWS context (region and account)
+for accurate ARN generation.
+
+Supported languages and SDKs:
+  Go          Go v2
+  Java        Java v2
+  JavaScript  JavaScript v3
+  TypeScript  JavaScript v3
+  Python      Boto3, Botocore
+
+TIP: Use --service-hints to specify the AWS services your application uses. The
+final policy may still include actions from other services if required."#
+    )]
     GeneratePolicies {
         /// Source files to analyze for SDK method extraction
         #[arg(required = true, num_args = 1..)]
@@ -391,6 +423,68 @@ Examples:\n  \
 --explain 's3:*' 'dynamodb:*' # Explain S3 and DynamoDB actions"
         )]
         explain: Option<Vec<String>>,
+
+        /// Terraform project directory for resolving ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tf-dir",
+            long_help = "Directory containing Terraform .tf files. When provided, the tool parses \
+Terraform resources to discover AWS infrastructure and generates more precise IAM policies by \
+using concrete resource names in ARNs, when possible. .tf files discovered in the Terraform \
+directory are combined with any files specified via --tf-files."
+        )]
+        terraform_dir: Option<PathBuf>,
+
+        /// One or more .tf file(s) for resolving ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tf-files",
+            num_args = 1..,
+            long_help = "One or more individual Terraform .tf files to parse for AWS resource definitions. \
+When provided, the tool parses Terraform resources to discover AWS infrastructure and generates \
+more precise IAM policies by using concrete resource names in ARNs, when possible. These files \
+are combined with any directory specified via --tf-dir."
+        )]
+        terraform_files: Vec<PathBuf>,
+
+        /// One or more .tfvars file(s) for variable overrides
+        #[arg(
+            long = "tfvars",
+            num_args = 1..,
+            long_help = "One or more .tfvars files for overriding Terraform variable values. When \
+provided, these files are used to resolve variable references in resource definitions, enabling \
+more precise IAM policies by using concrete resource names in ARNs. These files take precedence \
+over auto-discovered terraform.tfvars and *.auto.tfvars files from the Terraform directory. \
+Applied in order (later files override earlier ones). This is equivalent to Terraform's \
+-var-file= CLI flag."
+        )]
+        tfvars: Vec<PathBuf>,
+
+        /// One or more .tfstate file(s) for resolving exact deployed ARNs to use in resource block in generated policies
+        #[arg(
+            long = "tfstate",
+            num_args = 1..,
+            long_help = "One or more terraform.tfstate files containing deployed resource state. \
+When provided, the tool uses actual deployed resource ARNs to generate more precise IAM policies. \
+State-derived ARNs take precedence over those derived from .tf files. Can be used with --tf-dir, \
+--tf-files, or independently."
+        )]
+        tfstate: Vec<PathBuf>,
+
+        /// Generate explanations for why resource ARNs were added, filtered to specified patterns
+        #[arg(
+            long = "explain-resources",
+            num_args = 1..,
+            long_help = "Show where concrete resource ARNs in the generated policy came from \
+(Terraform source file, state file, etc.). Accepts one or more ARN glob patterns to filter which \
+resources are explained. Only works when Terraform inputs (--tf-dir, --tf-files, or --tfstate) \
+are also provided.\n\n\
+Examples:\n  \
+--explain-resources '*'                                                        # Explain all resource ARNs\n  \
+--explain-resources 'arn:aws:s3:::*'                                           # Explain only S3 bucket ARNs\n  \
+--explain-resources 'arn:*:dynamodb:*'                                         # Explain only DynamoDB ARNs\n  \
+--explain-resources 'arn:aws:s3:::*' 'arn:aws:sqs:*'                           # Explain S3 and SQS ARNs\n \
+--explain-resources 'arn:aws:dynamodb:us-east-1:123456789012:table/users-prod' # Explain specific resource ARNs"
+        )]
+        explain_resources: Option<Vec<String>>,
     },
 
     /// Start MCP server
@@ -535,6 +629,11 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         cache_location: config.cache_location.clone(),
         cache_expiry_seconds,
         explain_filters: config.explain.clone(),
+        terraform_dir: config.terraform_dir.clone(),
+        terraform_files: config.terraform_files.clone(),
+        tfstate_paths: config.tfstate.clone(),
+        tfvars_files: config.tfvars.clone(),
+        explain_resource_filters: config.explain_resources.clone(),
     })
     .await?;
 
@@ -660,6 +759,11 @@ async fn main() {
             cache_expiry,
             service_hints,
             explain,
+            terraform_dir,
+            terraform_files,
+            tfstate,
+            tfvars,
+            explain_resources,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -685,6 +789,11 @@ async fn main() {
                 cache_location,
                 cache_expiry,
                 explain,
+                terraform_dir,
+                terraform_files,
+                tfstate,
+                tfvars,
+                explain_resources,
             };
 
             match handle_generate_policy(&config).await {

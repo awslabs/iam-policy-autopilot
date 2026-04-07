@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["sqs_batch_receive_message.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "ReceiveMessage",
+      "PossibleServices": ["sqs"],
+      "Metadata": {
+        "Expr": "batchManager.receiveMessage(req)",
+        "Location": "sqs_batch_receive_message.java:5.9-5.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "GetQueueAttributes",
+      "PossibleServices": ["sqs"],
+      "Metadata": {
+        "Expr": "batchManager.receiveMessage(req)",
+        "Location": "sqs_batch_receive_message.java:5.9-5.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

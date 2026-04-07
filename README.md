@@ -3,7 +3,7 @@
 
 # IAM Policy Autopilot
 
-An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports applications built in Python, Go, and TypeScript. 
+An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports policy generation for applications built in Python, Go, TypeScript, JavaScript, and Java — see [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation).
 
 We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls). 
 
@@ -15,6 +15,7 @@ We want to hear from you. Ask questions or share ideas in [Discussions](https://
 - [Best Practices and Considerations](#best-practices-and-considerations)
 - [Getting Started](#getting-started)
 - [CLI Usage](#cli-usage)
+- [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation)
 - [Build Instructions](#build-instructions)
 - [Workspace Structure](#workspace-structure)
 - [Development](#development)
@@ -72,6 +73,16 @@ iam-policy-autopilot generate-policies ./src/app.py --pretty
 This significantly reduces unnecessary permissions and generates more targeted policies. Note that the final policy may still include actions from services not in your hints if they're required for the operations you perform (e.g., KMS actions for S3 encryption).
 
 **Note**: When using the MCP server integration with AI coding assistants, the assistant is expected to automatically provide appropriate service hints based on your code context. The `--service-hints` option is primarily for CLI usage.
+
+### Supported Languages and SDKs for policy generation
+
+| Language | SDK |
+|---|---|
+| Go | [AWS SDK for Go v2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/welcome.html) |
+| Java | [AWS SDK for Java v2](https://docs.aws.amazon.com/sdk-for-java/v2/) |
+| JavaScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
+| TypeScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
+| Python | [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [Botocore](https://botocore.amazonaws.com/v1/documentation/api/latest/index.html) |
 
 ## Getting Started
 
@@ -336,6 +347,7 @@ iam-policy-autopilot mcp-server --transport http
 
 - [Rust](https://rustup.rs/) (latest stable version)
 - Git
+- Python 3
 - [CMake](https://cmake.org/) (Windows only)
 
 ### Setup
