@@ -23,21 +23,16 @@ const CONFIG_FILE_NAME: &str = "config.json";
 /// - `NotSet`: The user has not made a choice yet. The notice should be shown.
 /// - `Enabled`: The user explicitly opted in.
 /// - `Disabled`: The user explicitly opted out.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum TelemetryChoice {
     /// User has not made a choice. Notice should be shown.
+    #[default]
     NotSet,
     /// User explicitly opted in.
     Enabled,
     /// User explicitly opted out.
     Disabled,
-}
-
-impl Default for TelemetryChoice {
-    fn default() -> Self {
-        Self::NotSet
-    }
 }
 
 impl std::fmt::Display for TelemetryChoice {
