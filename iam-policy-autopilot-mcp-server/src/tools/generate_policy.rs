@@ -87,9 +87,13 @@ pub async fn generate_application_policies(
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
 
-        // true by default, if we want to allow the user to change it we should
-        // accept it as part of the cli input when starting the mcp server
-        disable_file_system_cache: true,
+        // use default values for service reference, if we want to allow the user to change it we
+        // should accept it as part of the cli input when starting the mcp server
+        service_reference_url: None,
+        disable_file_system_cache: false,
+        cache_location: None,
+        cache_expiry_seconds: None,
+
         // No explanations for MCP server by default
         explain_filters: None,
         terraform_dir: input.tf_dir.map(std::path::PathBuf::from),

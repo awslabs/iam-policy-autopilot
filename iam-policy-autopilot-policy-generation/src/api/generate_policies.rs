@@ -180,7 +180,12 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         config.aws_context.partition, config.aws_context.region, config.aws_context.account
     );
 
-    let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
+    let mut enrichment_engine = EnrichmentEngine::new(
+        config.service_reference_url.clone(),
+        config.disable_file_system_cache,
+        config.cache_location.clone(),
+        config.cache_expiry_seconds,
+    )?;
 
     // --- Optional Terraform resolution ---
     let has_terraform_inputs = config.terraform_dir.is_some()

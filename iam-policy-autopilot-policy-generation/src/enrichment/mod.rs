@@ -667,9 +667,8 @@ pub(crate) mod mock_remote_service_reference {
             .mount(&mock_server)
             .await;
 
-        let loader = RemoteServiceReferenceLoader::new(true)
-            .unwrap()
-            .with_mapping_url(mock_server_url);
+        let loader =
+            RemoteServiceReferenceLoader::new(Some(mock_server_url), true, None, None).unwrap();
 
         (mock_server, loader)
     }
@@ -798,9 +797,8 @@ pub(crate) mod mock_remote_service_reference {
             .mount(&mock_server)
             .await;
 
-        let loader = RemoteServiceReferenceLoader::new(true)
-            .unwrap()
-            .with_mapping_url(mock_server_url);
+        let loader =
+            RemoteServiceReferenceLoader::new(Some(mock_server_url), true, None, None).unwrap();
 
         (mock_server, loader)
     }

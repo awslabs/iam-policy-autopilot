@@ -16,8 +16,10 @@
 //!
 //! See `types::ExitCode` for the enum definition.
 
+use regex::Regex;
 use std::path::PathBuf;
 use std::process;
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -40,6 +42,11 @@ use crate::commands::print_version_info;
 
 /// Default port for mcp server for Http Transport
 static MCP_HTTP_DEFAULT_PORT: u16 = 8001;
+
+/// Regex for parsing cache expiry duration. For now we only support hours.
+#[allow(clippy::unwrap_used)]
+static CACHE_EXPIRY_DURATION_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new("^([0-9]+)h$").unwrap());
 
 /// Shared CLI configuration for both subcommands
 #[derive(Debug, Clone)]
@@ -88,8 +95,14 @@ struct GeneratePolicyCliConfig {
     upload_policies: Option<String>,
     /// Enable minimal policy size by allowing cross-service merging
     minimal_policy_size: bool,
+    /// The URL from which to fetch service reference data
+    service_reference_url: Option<String>,
     /// Disable file system caching for service references
     disable_cache: bool,
+    /// File system location for caching service references
+    cache_location: Option<PathBuf>,
+    /// Cache expiry duration string for service references
+    cache_expiry: Option<String>,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
@@ -107,6 +120,20 @@ struct GeneratePolicyCliConfig {
 impl GeneratePolicyCliConfig {
     /// Validate the configuration
     fn validate(&self) -> Result<()> {
+        if self
+            .cache_location
+            .as_deref()
+            .is_some_and(|cache_location| !cache_location.exists())
+        {
+            anyhow::bail!("Cache location does not exist");
+        }
+        if self
+            .cache_expiry
+            .as_ref()
+            .is_some_and(|cache_expiry| !CACHE_EXPIRY_DURATION_REGEX.is_match(cache_expiry))
+        {
+            anyhow::bail!("Invalid cache expiry duration");
+        }
         self.shared.validate()
     }
 }
@@ -338,12 +365,39 @@ for better organization."
 
         /// Disable file system caching for service references
         #[arg(
+            long = "service-reference-url",
+            long_help = "The URL from which to fetch service reference data. \
+By default, service reference data is fetched from servicereference.us-east-1.amazonaws.com."
+        )]
+        service_reference_url: Option<String>,
+
+        /// Disable file system caching for service references
+        #[arg(
             long = "disable-cache",
             long_help = "When enabled, disables file system caching for service reference data. \
-By default, service reference data is cached in the system temp directory for 6 hours to improve performance. \
+By default, service reference data is cached locally to improve performance. \
 Use this flag to force fresh data retrieval on every run."
         )]
         disable_cache: bool,
+
+        /// Change file system location for caching service references
+        #[arg(
+            long = "cache-location",
+            long_help = "A custom path for file system caching of service reference data. \
+By default, service reference data is cached in the system temp directory. \
+Use this flag to force a different directory to be used."
+        )]
+        cache_location: Option<PathBuf>,
+
+        /// Disable file system caching for service references
+        #[arg(
+            long = "cache-expiry",
+            long_help = "The duration for which to use cached service reference data. \
+By default, service reference data is cached for 6 hours. \
+Use this flag to provide a custom cache duration. \
+Currently, only hours are supported ('{n}h')."
+        )]
+        cache_expiry: Option<String>,
 
         /// Filter extracted SDK calls to specific AWS services
         #[arg(
@@ -546,6 +600,21 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             service_names: names.clone(),
         });
 
+    let cache_expiry_seconds = if let Some(cache_expiry) = &config.cache_expiry {
+        Some(
+            CACHE_EXPIRY_DURATION_REGEX
+                .captures(cache_expiry)
+                .and_then(|captures| captures.get(1))
+                .and_then(|hours| hours.as_str().parse::<u64>().ok())
+                .map(|hours| hours * 60 * 60)
+                .ok_or(anyhow::anyhow!(
+                    "failed to parse cache expiry as a duration string"
+                ))?,
+        )
+    } else {
+        None
+    };
+
     let result = generate_policies(&GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: config.shared.source_files.clone(),
@@ -555,7 +624,10 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
+        service_reference_url: config.service_reference_url.clone(),
         disable_file_system_cache: config.disable_cache,
+        cache_location: config.cache_location.clone(),
+        cache_expiry_seconds,
         explain_filters: config.explain.clone(),
         terraform_dir: config.terraform_dir.clone(),
         terraform_files: config.terraform_files.clone(),
@@ -681,7 +753,10 @@ async fn main() {
             individual_policies,
             upload_policies,
             minimal_policy_size,
+            service_reference_url,
             disable_cache,
+            cache_location,
+            cache_expiry,
             service_hints,
             explain,
             terraform_dir,
@@ -709,7 +784,10 @@ async fn main() {
                 individual_policies,
                 upload_policies,
                 minimal_policy_size,
+                service_reference_url,
                 disable_cache,
+                cache_location,
+                cache_expiry,
                 explain,
                 terraform_dir,
                 terraform_files,

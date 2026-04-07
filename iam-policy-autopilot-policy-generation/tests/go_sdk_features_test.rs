@@ -72,7 +72,7 @@ func main() {
         "Should extract Uploader.Upload method call"
     );
 
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(None, false, None, None).unwrap();
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Other)
         .await
@@ -152,7 +152,7 @@ func main() {
         .await
         .expect("Extraction should succeed");
 
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(None, false, None, None).unwrap();
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Other)
         .await

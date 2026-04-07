@@ -69,7 +69,10 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
         aws_context: AwsContext::new(inputs.region.clone(), inputs.account.clone()).unwrap(),
         individual_policies: inputs.individual_policies,
         minimize_policy_size: false,
+        service_reference_url: None,
         disable_file_system_cache: false,
+        cache_location: None,
+        cache_expiry_seconds: None,
         explain_filters: None,
         terraform_dir: if inputs.tf_dir {
             Some(fixture_dir.to_path_buf())
