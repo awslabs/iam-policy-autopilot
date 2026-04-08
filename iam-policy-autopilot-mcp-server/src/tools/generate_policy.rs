@@ -196,7 +196,10 @@ mod tests {
             tfvars: None,
         };
 
-        let expected_output = include_str!("../testdata/test_generate_application_policy");
+        // Normalize line endings: on Windows, Git may check out with \r\n,
+        // but serde_json::to_string_pretty always uses \n.
+        let expected_output =
+            include_str!("../testdata/test_generate_application_policy").replace('\r', "");
 
         // deserialize from json into IamPolicy
         let mut iam_policy = IamPolicy::new();
@@ -295,7 +298,8 @@ mod tests {
             tfvars: None,
         };
 
-        let expected_output = include_str!("../testdata/test_generate_application_policy");
+        let expected_output =
+            include_str!("../testdata/test_generate_application_policy").replace('\r', "");
 
         let mut iam_policy = IamPolicy::new();
         iam_policy.add_statement(Statement::new(
