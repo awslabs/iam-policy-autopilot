@@ -53,6 +53,14 @@ impl Engine {
     ) -> Result<Vec<EnrichedSdkMethodCall<'a>>> {
         let unique_services = self.get_unique_services(extracted_methods);
 
+        // Record each detected service into the telemetry span (no-ops if no scope active)
+        for service in &unique_services {
+            iam_policy_autopilot_common::telemetry::span::record_result_set(
+                "services_used",
+                service,
+            );
+        }
+
         let service_cfg = service_configuration::load_service_configuration()?;
 
         let fas_maps = self

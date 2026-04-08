@@ -63,12 +63,6 @@ impl<'a> Engine<'a> {
         for enriched_call in enriched_calls {
             let policy = self.generate_policy_for_call(enriched_call)?;
             policies.push(policy);
-
-            // Record service into telemetry span (no-ops if no scope active)
-            iam_policy_autopilot_common::telemetry::span::record_result_set(
-                "services_used",
-                &enriched_call.service,
-            );
         }
 
         Ok(policies)

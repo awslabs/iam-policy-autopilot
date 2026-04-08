@@ -143,12 +143,6 @@ impl Engine {
         // Disambiguate and validate method calls against SDK definitions
         extractor.disambiguate(&mut all_extraction_results, &service_index);
 
-        // Record detected language into telemetry span (no-ops if no scope active)
-        iam_policy_autopilot_common::telemetry::span::record_result_str(
-            "detected_language",
-            &language.to_string(),
-        );
-
         let method_calls: Vec<crate::SdkMethodCall> = all_extraction_results
             .into_iter()
             .flat_map(super::extractor::ExtractorResult::method_calls)
