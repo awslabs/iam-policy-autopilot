@@ -67,12 +67,11 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
-
-      - name: Run tests
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo test --workspace --verbose
 
   test-windows:
     name: Test Windows
@@ -98,6 +97,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
 
@@ -121,6 +123,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
 
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
