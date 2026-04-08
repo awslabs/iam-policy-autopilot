@@ -226,7 +226,7 @@ mod tests {
             "\"installationId\"",
             "\"telemetryChoice\"",
             "\"enabled\"",
-            "550e8400",
+            "550e8400-e29b-41d4-a716-446655440000",
         ] {
             assert!(json.contains(needle), "JSON missing: {needle}");
         }
@@ -278,6 +278,23 @@ mod tests {
     #[test]
     fn test_telemetry_choice_default() {
         assert_eq!(TelemetryChoice::default(), TelemetryChoice::NotSet);
+    }
+
+    /// Verify `home_dir()` resolves to a real, existing directory on the native platform.
+    ///
+    /// On macOS/Linux: uses `$HOME` (e.g., `/Users/alice` or `/home/alice`)
+    /// On Windows CI: uses `%USERPROFILE%` (e.g., `C:\Users\runneradmin`)
+    ///
+    /// This test runs unmodified on all CI platforms (Linux, macOS, Windows)
+    /// and validates that the env-var resolution produces a valid directory.
+    #[test]
+    fn test_home_dir_resolves_to_existing_directory_on_native_platform() {
+        let dir = home_dir();
+        assert!(dir.is_some(), "home_dir() should resolve on CI runners");
+        let path = dir.unwrap();
+        assert!(path.is_absolute(), "home directory should be an absolute path: {path:?}");
+        assert!(path.exists(), "home directory should exist on disk: {path:?}");
+        assert!(path.is_dir(), "home directory should be a directory: {path:?}");
     }
 
     // =========================================================================
