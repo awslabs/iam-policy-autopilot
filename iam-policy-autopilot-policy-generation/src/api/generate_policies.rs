@@ -241,6 +241,8 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     .await
     .context("Failed to process source files")?;
 
+    // Relies on the invariant that all source files must be of the same language, which we
+    // enforce in process_source_files
     let sdk = extracted_methods
         .metadata
         .source_files
