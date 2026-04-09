@@ -90,11 +90,16 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
 /// - Sorts arrays by serialized form (non-deterministic HashMap iteration)
 /// - Strips absolute fixture directory prefix from all string values
 fn normalize(v: &serde_json::Value, fixture_dir: &Path) -> serde_json::Value {
-    let prefix = fixture_dir.to_str().unwrap_or("");
+    // Normalize the prefix to forward slashes so it matches the forward-slash
+    // paths produced by Location::to_gnu_format() on all platforms.
+    // On Windows, PathBuf uses `\`, but to_gnu_format() converts to `/`.
+    let raw = fixture_dir.to_string_lossy();
+    let cleaned = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
+    let prefix = cleaned.replace('\\', "/");
 
     match v {
         serde_json::Value::String(s) => {
-            let stripped = s.strip_prefix(prefix).unwrap_or(s);
+            let stripped = s.strip_prefix(&*prefix).unwrap_or(s);
             let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
             serde_json::Value::String(stripped.to_string())
         }
