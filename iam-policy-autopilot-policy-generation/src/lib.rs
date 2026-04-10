@@ -243,16 +243,10 @@ impl Location {
     ///
     /// Always uses forward slashes in the path, regardless of OS, to produce
     /// consistent output on all platforms. GNU format uses `/` as the path separator.
-    /// On Windows, strips the extended-length path prefix (`\\?\`) that
-    /// `std::fs::canonicalize()` and absolute `PathBuf` operations can produce.
     #[must_use]
     pub fn to_gnu_format(&self) -> String {
-        let raw = self.file_path.to_string_lossy();
-        // Strip the Windows extended-length path prefix (\\?\) — it's an internal
-        // Windows API detail, not meaningful in GNU-format user-facing output.
-        let cleaned = raw.strip_prefix(r"\\?\").unwrap_or(&raw);
-        // Use forward slashes universally — PathBuf uses `\` on Windows
-        let path_str = cleaned.replace('\\', "/");
+        // Use forward slashes universally — PathBuf::display() uses `\` on Windows
+        let path_str = self.file_path.to_string_lossy().replace('\\', "/");
         let (start_line, start_col) = self.start_position;
         let (end_line, end_col) = self.end_position;
 
