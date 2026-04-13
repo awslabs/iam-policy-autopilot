@@ -6,7 +6,7 @@ AWS IAM Policy Autopilot is configured to collect telemetry to provide  usage pa
 
 Telemetry records **only** which commands and parameters are used, and whether the command succeeded. It **never** collects file paths, file contents, AWS account IDs, AWS regions, credentials, or policy content.
 
-<!-- BEGIN AUTO-GENERATED TELEMETRY TABLE -->
+<!-- BEGIN TELEMETRY TABLE -->
 
 ### CLI: `generate-policies` Command
 
@@ -70,7 +70,7 @@ Telemetry records **only** which commands and parameters are used, and whether t
 | `access_denied_fix_policy` | presence (boolean) |
 | `error_message` | presence (boolean) |
 
-<!-- END AUTO-GENERATED TELEMETRY TABLE -->
+<!-- END TELEMETRY TABLE -->
 
 <!-- BEGIN RESULT DATA TABLE -->
 

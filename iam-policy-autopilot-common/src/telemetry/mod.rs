@@ -28,9 +28,9 @@ pub use config::{
 };
 pub use event::TelemetryEvent;
 
-/// HTML comment markers that delimit the auto-generated parameter tables in TELEMETRY.md.
-const TELEMETRY_TABLE_BEGIN: &str = "<!-- BEGIN AUTO-GENERATED TELEMETRY TABLE -->";
-const TELEMETRY_TABLE_END: &str = "<!-- END AUTO-GENERATED TELEMETRY TABLE -->";
+/// HTML comment markers that delimit the parameter tables in TELEMETRY.md.
+const TELEMETRY_TABLE_BEGIN: &str = "<!-- BEGIN TELEMETRY TABLE -->";
+const TELEMETRY_TABLE_END: &str = "<!-- END TELEMETRY TABLE -->";
 
 /// Extract `(command, field_name)` pairs from TELEMETRY.md sections matching
 /// `### {header_prefix}: \`command\``.
@@ -44,11 +44,11 @@ pub fn parse_doc_fields(
 ) -> std::collections::HashSet<(String, String)> {
     let start = markdown
         .find(TELEMETRY_TABLE_BEGIN)
-        .expect("TELEMETRY.md missing BEGIN AUTO-GENERATED TELEMETRY TABLE marker")
+        .expect("TELEMETRY.md missing BEGIN TELEMETRY TABLE marker")
         + TELEMETRY_TABLE_BEGIN.len();
     let end = markdown
         .find(TELEMETRY_TABLE_END)
-        .expect("TELEMETRY.md missing END AUTO-GENERATED TELEMETRY TABLE marker");
+        .expect("TELEMETRY.md missing END TELEMETRY TABLE marker");
     let section = &markdown[start..end];
 
     let prefix = format!("### {header_prefix}: `");
