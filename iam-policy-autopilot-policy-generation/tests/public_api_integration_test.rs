@@ -66,7 +66,7 @@ def download_object():
     );
 
     let extracted_methods = extraction_engine
-        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .extract_sdk_method_calls(Language::Python, vec![source_file], None)
         .await
         .expect("Extraction should succeed");
 
@@ -250,7 +250,7 @@ def multi_service_operations():
     );
 
     let extracted = extraction_engine
-        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .extract_sdk_method_calls(Language::Python, vec![source_file], None)
         .await
         .expect("Should extract methods");
 
@@ -323,7 +323,7 @@ class TestClass:
         SourceFile::with_language(temp_path, simple_python.to_string(), Language::Python);
 
     let extracted = extraction_engine
-        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .extract_sdk_method_calls(Language::Python, vec![source_file], None)
         .await
         .expect("Should extract methods");
 
@@ -407,7 +407,7 @@ def start_policy_generation():
         SourceFile::with_language(temp_path, python_source.to_string(), Language::Python);
 
     let extracted = extraction_engine
-        .extract_sdk_method_calls(Language::Python, vec![source_file])
+        .extract_sdk_method_calls(Language::Python, vec![source_file], None)
         .await
         .expect("Extraction should succeed");
 

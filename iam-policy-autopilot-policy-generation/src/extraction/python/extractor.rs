@@ -1,23 +1,41 @@
 //! SDK method extraction for Python using ast-grep
 
+use std::path::Path;
+
+use crate::extraction::external_library_models::LibraryModelRegistry;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::python::disambiguation::MethodDisambiguator;
+use crate::extraction::python::library_call_extractor::LibraryCallExtractor;
 use crate::extraction::python::paginator_extractor::PaginatorExtractor;
 use crate::extraction::python::resource_direct_calls_extractor::ResourceDirectCallsExtractor;
 use crate::extraction::python::waiters_extractor::WaitersExtractor;
 use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
-use crate::{Location, ServiceModelIndex, SourceFile};
+use crate::{Language, Location, ServiceModelIndex, SourceFile};
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Python;
 use async_trait::async_trait;
 
-pub(crate) struct PythonExtractor;
+pub(crate) struct PythonExtractor {
+    library_model_registry: Option<LibraryModelRegistry>,
+}
 
 impl PythonExtractor {
     /// Create a new Python extractor instance
     pub(crate) fn new() -> Self {
-        Self
+        Self {
+            library_model_registry: None,
+        }
+    }
+
+    /// Create a new Python extractor with external library model support.
+    pub(crate) fn with_library_models(library_models_path: Option<&Path>) -> Self {
+        let mut extractor = Self::new();
+        match LibraryModelRegistry::load(Language::Python, library_models_path) {
+            Ok(registry) => extractor.library_model_registry = Some(registry),
+            Err(e) => log::warn!("Failed to load external library model registry: {e:#}"),
+        }
+        extractor
     }
 
     /// Parse a single method call match into a SdkMethodCall
@@ -121,11 +139,25 @@ impl Extractor for PythonExtractor {
                     let paginator_calls = paginator_extractor.extract_paginate_method_calls(ast);
                     method_calls.extend(paginator_calls);
 
-                    // Clone the method calls to pass to disambiguate_method_calls
+                    // Extract external library calls separately. They already
+                    // have known `possible_services` from the model and must NOT
+                    // go through the disambiguator. The disambiguator's parameter-shape
+                    // validation would reject them because library call arguments
+                    // differ from the underlying SDK operation's input shape.
+                    let library_calls = if let Some(registry) = &self.library_model_registry {
+                        let library_extractor = LibraryCallExtractor::new(registry);
+                        library_extractor.extract_library_method_calls(ast)
+                    } else {
+                        Vec::new()
+                    };
+
+                    // Disambiguate only the direct SDK calls (not library-derived ones)
                     let filtered_and_mapped =
                         method_disambiguator.disambiguate_method_calls(method_calls.clone());
-                    // Replace the method calls in place
+
+                    // Merge: disambiguated direct calls + library-derived calls
                     *method_calls = filtered_and_mapped;
+                    method_calls.extend(library_calls);
                 }
                 ExtractorResult::Go(_, _, _) => {
                     // This shouldn't happen in Python extractor, but handle gracefully

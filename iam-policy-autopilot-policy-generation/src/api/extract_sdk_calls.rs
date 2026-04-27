@@ -19,6 +19,7 @@ pub async fn extract_sdk_calls(config: &ExtractSdkCallsConfig) -> Result<Extract
         &config.source_files,
         config.language.as_deref(),
         config.service_hints.clone(),
+        config.library_models_path.as_deref(),
     )
     .await
     .context("Failed to process source files")

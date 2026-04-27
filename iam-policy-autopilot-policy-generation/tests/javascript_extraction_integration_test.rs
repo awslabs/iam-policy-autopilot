@@ -72,7 +72,7 @@ createMyBucket();
 
     // Extract operations from the source code
     let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file], None)
         .await;
 
     match result {
@@ -164,7 +164,7 @@ const { DynamoDB } = require("@aws-sdk/client-dynamodb");
 
     // Extract operations from the source code
     let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file], None)
         .await;
 
     match result {
@@ -243,7 +243,7 @@ const { DynamoDBClient, ListTablesCommand } = require("@aws-sdk/client-dynamodb"
 
     // Extract operations from the source code
     let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file], None)
         .await;
 
     match result {
@@ -462,7 +462,7 @@ runS3Operations();
 
     // Extract operations from the source code
     let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file], None)
         .await;
 
     match result {
@@ -589,7 +589,7 @@ for await (const page of paginator) {
 
     // Extract operations from the source code
     let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
+        .extract_sdk_method_calls(Language::JavaScript, vec![source_file], None)
         .await;
 
     match result {

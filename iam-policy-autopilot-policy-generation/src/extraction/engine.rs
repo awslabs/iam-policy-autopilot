@@ -52,6 +52,7 @@ impl Engine {
         &self,
         language: Language,
         source_files: Vec<SourceFile>,
+        library_models_path: Option<&Path>,
     ) -> Result<ExtractedMethods> {
         let start_time = Instant::now();
 
@@ -98,7 +99,11 @@ impl Engine {
 
         #[allow(unreachable_patterns)]
         let extractor: Arc<dyn Extractor + Send + Sync> = match language {
-            Language::Python => Arc::new(extraction::python::extractor::PythonExtractor::new()),
+            Language::Python => Arc::new(
+                extraction::python::extractor::PythonExtractor::with_library_models(
+                    library_models_path,
+                ),
+            ),
             Language::Go => Arc::new(extraction::go::extractor::GoExtractor::new()),
             Language::JavaScript => {
                 Arc::new(extraction::javascript::extractor::JavaScriptExtractor::new())
@@ -275,7 +280,7 @@ def helper_function():
 
         // Test that we can call the extraction method without errors
         let result = extractor
-            .extract_sdk_method_calls(Language::Python, vec![source_file])
+            .extract_sdk_method_calls(Language::Python, vec![source_file], None)
             .await;
 
         // The result should be Ok, even if no methods are found
@@ -297,7 +302,7 @@ def helper_function():
 
         // Test with empty source files list
         let result = extractor
-            .extract_sdk_method_calls(Language::Python, vec![])
+            .extract_sdk_method_calls(Language::Python, vec![], None)
             .await;
 
         // Should return an error for empty source files list

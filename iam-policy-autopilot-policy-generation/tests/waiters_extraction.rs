@@ -571,6 +571,7 @@ class WaiterTest {{
             source_files: vec![file_path.clone()],
             language: Some(language.to_lowercase()),
             service_hints: None,
+            library_models_path: None,
         };
 
         match extract_sdk_calls(&config).await {

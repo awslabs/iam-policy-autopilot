@@ -17,6 +17,7 @@ pub(crate) async fn process_source_files(
     source_files: &[PathBuf],
     language_override: Option<&str>,
     service_hints: Option<ServiceHints>,
+    library_models_path: Option<&Path>,
 ) -> Result<ExtractedMethods> {
     trace!("Processing {} source files", source_files.len());
 
@@ -67,7 +68,7 @@ pub(crate) async fn process_source_files(
 
     // Extract SDK method calls from the loaded source files
     let mut results = extractor
-        .extract_sdk_method_calls(language, loaded_source_files)
+        .extract_sdk_method_calls(language, loaded_source_files, library_models_path)
         .await
         .context("Failed to extract SDK method calls from source files")?;
 

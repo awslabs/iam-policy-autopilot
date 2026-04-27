@@ -237,6 +237,10 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         &all_source_files,
         config.extract_sdk_calls_config.language.as_deref(),
         config.extract_sdk_calls_config.service_hints.clone(),
+        config
+            .extract_sdk_calls_config
+            .library_models_path
+            .as_deref(),
     )
     .await
     .context("Failed to process source files")?;

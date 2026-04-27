@@ -70,7 +70,7 @@ async fn test_go_extraction_to_policy_generation_integration() {
     let extraction_engine = ExtractionEngine::new();
 
     match extraction_engine
-        .extract_sdk_method_calls(Language::Go, vec![source_file])
+        .extract_sdk_method_calls(Language::Go, vec![source_file], None)
         .await
     {
         Ok(extracted_methods) => {

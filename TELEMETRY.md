@@ -29,6 +29,7 @@ Telemetry records **only** which commands and parameters are used, and whether t
 | `tfvars` | presence (boolean) |
 | `tfstate` | presence (boolean) |
 | `explain_resources` | presence (boolean) |
+| `library_models` | presence (boolean) |
 | `debug` | not collected |
 
 ### CLI: `fix-access-denied` Command

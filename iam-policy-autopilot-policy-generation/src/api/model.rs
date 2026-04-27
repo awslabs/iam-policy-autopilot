@@ -77,6 +77,8 @@ pub struct ExtractSdkCallsConfig {
     pub language: Option<String>,
     /// Optional service hints for filtering
     pub service_hints: Option<ServiceHints>,
+    /// Optional path to external library model file(s)
+    pub library_models_path: Option<PathBuf>,
 }
 
 // Todo: Find a better place for this or refactor rest of the code to use model
