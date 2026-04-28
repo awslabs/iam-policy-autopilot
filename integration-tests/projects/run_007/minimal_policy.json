@@ -1,0 +1,26 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "ses:SendEmail"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:ses:*:*:configuration-set/*",
+        "arn:aws:ses:*:*:identity/*",
+        "arn:aws:ses:*:*:template/*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}
