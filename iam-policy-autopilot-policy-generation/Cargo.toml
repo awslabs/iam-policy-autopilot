@@ -70,6 +70,7 @@ paste.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"
+serial_test.workspace = true
 iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]}
 
 # Documentation configuration
