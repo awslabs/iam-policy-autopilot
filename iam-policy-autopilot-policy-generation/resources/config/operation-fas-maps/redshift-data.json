@@ -1,0 +1,23 @@
+{
+    "Name": "redshift-data",
+    "Operations": [
+         {
+            "Name" : "ExecuteStatement",
+            "FasOperations": [{
+                "Operation": "GetCredentials",
+                "Service": "redshift-serverless",
+                "Context": {}
+            },
+            {
+                "Operation": "GetCredentialsWithIAM",
+                "Service": "redshift",
+                "Context": {}
+            },
+            {
+                "Operation": "GetClusterCredentials",
+                "Service": "redshift",
+                "Context": {}
+            }]
+        }
+    ]
+}
