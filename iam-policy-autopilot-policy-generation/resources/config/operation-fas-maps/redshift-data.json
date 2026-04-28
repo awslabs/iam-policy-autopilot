@@ -9,7 +9,7 @@
                 "Context": {}
             },
             {
-                "Operation": "GetCredentialsWithIAM",
+                "Operation": "GetClusterCredentialsWithIAM",
                 "Service": "redshift",
                 "Context": {}
             },
