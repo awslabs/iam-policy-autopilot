@@ -1,0 +1,7 @@
+# CDK build artifacts
+**/cdk/cdk.out/
+**/cdk/cdk.context.json
+**/cdk/package-lock.json
+
+# Scan results
+scan_results/
