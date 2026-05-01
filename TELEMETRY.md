@@ -4,7 +4,7 @@ AWS IAM Policy Autopilot is configured to collect telemetry to provide  usage pa
 
 ## What Is Collected
 
-Telemetry records **only** which commands and parameters are used, and whether the command succeeded. It **never** collects file paths, file contents, AWS account IDs, AWS regions, credentials, or policy content.
+Telemetry records which commands and parameters are used, and whether the command succeeded. It **never** collects file paths, file contents, AWS account IDs, AWS regions, credentials, or policy content.
 
 <!-- BEGIN TELEMETRY TABLE -->
 
@@ -93,6 +93,16 @@ A persistent UUID v4 is stored in `~/.iam-policy-autopilot/config.json` as `inst
 ## Data Retention
 
 The telemetry events are retained only for 60 days.
+
+## Server-Side Access Logs
+
+
+To protect the availability and integrity of the telemetry ingestion endpoint, IP addresses may be recorded in server-side access logs in a redacted format. These IP addresses are:
+
+* **Collected solely** for the purpose of detecting and preventing Distributed Denial of Service (DDoS) attacks against the telemetry endpoint.
+* **Stored in redacted format** and kept completely separate from the telemetry data described above — they cannot be associated with the telemetry events.
+* **Retained for a maximum of 7 days**, after which they are automatically deleted.
+* **Not included** in the client-side telemetry payload at any time.
 
 ## How to Opt Out
 
