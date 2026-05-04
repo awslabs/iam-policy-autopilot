@@ -3,5 +3,29 @@
 **/cdk/cdk.context.json
 **/cdk/package-lock.json
 
+# Runtime-generated config (written by deploy.sh at CDK deploy time)
+**/config.json
+
+# Node.js dependencies
+**/node_modules/
+
+# Go compiled binaries
+# Matches any file named "script" (no extension) inside a go/ directory
+**/go/script
+# Matches compiled binaries with run-ID names (e.g. run_005-98c7d54c)
+**/go/run_*
+
+# NPM lock files (reproducible from package.json)
+**/package-lock.json
+
+# Java build output
+**/target/
+
+# Python virtual environments
+**/.venv/
+
+# Run results
+run_results/
+
 # Scan results
 scan_results/

@@ -20,16 +20,18 @@ set -euo pipefail
 
 STACK_NAME="DataPipelineStack-run002-7beb16a2"
 CONFIG_FILE="$(dirname "$0")/../config.json"
+CDK_OUTPUTS=$(mktemp "${TMPDIR:-/tmp}/cdk-outputs.XXXXXXXXXX.json")
+trap 'rm -f "$CDK_OUTPUTS"' EXIT
 
 echo "==> Deploying CDK stack: $STACK_NAME"
-npx cdk deploy "$STACK_NAME" --require-approval never --outputs-file /tmp/cdk-outputs.json
+npx cdk deploy "$STACK_NAME" --require-approval never --outputs-file "$CDK_OUTPUTS"
 
 echo "==> Extracting stack outputs..."
-BUCKET_NAME=$(jq -r ".\"$STACK_NAME\".BucketName"      /tmp/cdk-outputs.json)
-KMS_KEY_ID=$(jq -r ".\"$STACK_NAME\".KmsKeyId"         /tmp/cdk-outputs.json)
-KMS_KEY_ARN=$(jq -r ".\"$STACK_NAME\".KmsKeyArn"       /tmp/cdk-outputs.json)
-STATE_MACHINE_ARN=$(jq -r ".\"$STACK_NAME\".StateMachineArn" /tmp/cdk-outputs.json)
-LOG_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".LogGroupName" /tmp/cdk-outputs.json)
+BUCKET_NAME=$(jq -r ".\"$STACK_NAME\".BucketName"      "$CDK_OUTPUTS")
+KMS_KEY_ID=$(jq -r ".\"$STACK_NAME\".KmsKeyId"         "$CDK_OUTPUTS")
+KMS_KEY_ARN=$(jq -r ".\"$STACK_NAME\".KmsKeyArn"       "$CDK_OUTPUTS")
+STATE_MACHINE_ARN=$(jq -r ".\"$STACK_NAME\".StateMachineArn" "$CDK_OUTPUTS")
+LOG_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".LogGroupName" "$CDK_OUTPUTS")
 REGION=$(aws configure get region 2>/dev/null || echo "${AWS_DEFAULT_REGION:-us-east-1}")
 
 echo "==> Writing $CONFIG_FILE"

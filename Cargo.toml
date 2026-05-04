@@ -7,6 +7,7 @@ members = [
     "iam-policy-autopilot-mcp-server",
     "iam-policy-autopilot-access-denied",
     "iam-policy-autopilot-cli",
+    "integration-tests/runner",
     "xtask"
 ]
 exclude = ["iam-policy-autopilot-lints"]

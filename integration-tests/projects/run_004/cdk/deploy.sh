@@ -3,17 +3,19 @@ set -euo pipefail
 
 STACK_NAME="MLMonitoringStack-run002-b82fea53"
 CONFIG_FILE="$(dirname "$0")/../config.json"
+CDK_OUTPUTS=$(mktemp "${TMPDIR:-/tmp}/cdk-outputs.XXXXXXXXXX.json")
+trap 'rm -f "$CDK_OUTPUTS"' EXIT
 
 echo "==> Deploying CDK stack: $STACK_NAME"
-npx cdk deploy "$STACK_NAME" --require-approval never --outputs-file /tmp/cdk-outputs.json
+npx cdk deploy "$STACK_NAME" --require-approval never --outputs-file "$CDK_OUTPUTS"
 
 echo "==> Extracting stack outputs..."
-CLUSTER_NAME=$(jq -r ".\"$STACK_NAME\".ClusterName" /tmp/cdk-outputs.json)
-CLUSTER_ARN=$(jq -r ".\"$STACK_NAME\".ClusterArn" /tmp/cdk-outputs.json)
-LOG_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".LogGroupName" /tmp/cdk-outputs.json)
-KMS_KEY_ID=$(jq -r ".\"$STACK_NAME\".KmsKeyId" /tmp/cdk-outputs.json)
-KMS_KEY_ARN=$(jq -r ".\"$STACK_NAME\".KmsKeyArn" /tmp/cdk-outputs.json)
-RESOURCE_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".ResourceGroupName" /tmp/cdk-outputs.json)
+CLUSTER_NAME=$(jq -r ".\"$STACK_NAME\".ClusterName" "$CDK_OUTPUTS")
+CLUSTER_ARN=$(jq -r ".\"$STACK_NAME\".ClusterArn" "$CDK_OUTPUTS")
+LOG_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".LogGroupName" "$CDK_OUTPUTS")
+KMS_KEY_ID=$(jq -r ".\"$STACK_NAME\".KmsKeyId" "$CDK_OUTPUTS")
+KMS_KEY_ARN=$(jq -r ".\"$STACK_NAME\".KmsKeyArn" "$CDK_OUTPUTS")
+RESOURCE_GROUP_NAME=$(jq -r ".\"$STACK_NAME\".ResourceGroupName" "$CDK_OUTPUTS")
 REGION=$(aws configure get region 2>/dev/null || echo "${AWS_DEFAULT_REGION:-us-east-1}")
 
 echo "==> Writing $CONFIG_FILE"

@@ -1,0 +1,37 @@
+[package]
+name = "runner"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Integration-test runner: CDK deploy → iam-policy-autopilot → exec role → run → CDK destroy"
+
+# We add a library as this code can be reused (e.g., for running scientific experiments---which we did)
+[lib]
+name = "runner"
+path = "src/lib.rs"
+
+[[bin]]
+name = "runner"
+path = "src/main.rs"
+
+[dependencies]
+aws-config        = { workspace = true, features = ["behavior-version-latest"] }
+aws-sdk-iam       = { workspace = true }
+aws-sdk-sts       = { workspace = true }
+tokio             = { workspace = true, features = ["full"] }
+clap              = { workspace = true }
+serde             = { workspace = true }
+serde_json        = { workspace = true }
+chrono            = { workspace = true }
+anyhow            = { workspace = true }
+thiserror         = { workspace = true }
+tracing           = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+rstest     = { workspace = true }
+serde_json = { workspace = true }
+serde      = { workspace = true }
+
+[lints]
+workspace = true

@@ -1,0 +1,96 @@
+name: Nightly Integration Tests
+
+on:
+  schedule:
+    # Every day at 05:00 UTC
+    - cron: '0 5 * * *'
+  workflow_dispatch: # allow manual trigger from the Actions UI
+
+permissions:
+  id-token: write   # required for OIDC → AWS credential exchange
+  contents: read
+
+env:
+  RUST_LOG: info
+
+jobs:
+  integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90   # CDK deploy + multi-language runs can take a while
+
+    steps:
+      # ── 1. Check out repository (with submodules for SDK metadata) ──────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # ── 2. Set up Rust toolchain ────────────────────────────────────────
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artefacts
+        uses: Swatinem/rust-cache@v2
+
+      # ── 3. Build workspace (iam-policy-autopilot + runner) ──────────────
+      # The runner invokes iam-policy-autopilot via `cargo run --bin`, so
+      # the full workspace must be built.  Building in release mode keeps
+      # the actual test runs fast.
+      - name: Build workspace
+        run: cargo build --workspace --release
+
+      # ── 4. Language runtimes ────────────────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Java 21 (Corretto)
+        uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '21'
+
+      - name: Install Maven
+        run: sudo apt-get update && sudo apt-get install -y maven
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install CDK and TypeScript tooling
+        run: npm install -g aws-cdk typescript ts-node
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      # ── 5. AWS credentials via OIDC ─────────────────────────────────────
+      # Uses GitHub OIDC to assume an IAM role — no long-lived secrets.
+      # The role ARN is stored as a repository secret.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.INTEGRATION_TEST_ROLE_ARN }}
+          aws-region: us-east-1
+          # Mask the account ID in logs
+          mask-aws-account-id: true
+
+      # ── 6. Run integration tests ────────────────────────────────────────
+      - name: Run integration tests
+        run: |
+          cargo run --release -p runner -- \
+            --projects-dir ./integration-tests/projects \
+            --region us-east-1 \
+            --results-dir ./integration-test-results
+
+      # ── 7. Upload results ───────────────────────────────────────────────
+      - name: Upload test results
+        if: always()   # upload even if the test step fails
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results-${{ github.run_id }}
+          path: integration-test-results/
+          retention-days: 30
