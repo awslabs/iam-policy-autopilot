@@ -1,3 +1,30 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [0.2.0] - 2026-05-04
+
+### Added
+- This release adds anonymous usage telemetry. Set IAM_POLICY_AUTOPILOT_TELEMETRY=0 to disable. See TELEMETRY.md for details (#174)
+- Automated submodule update (#137)
+- Allowing overriding http bind address (#159)
+- Resource arn refinement using terraform (#157)
+- Add support for Java language (#134)
+- FAS model for redshift-data:ExecuteStatement (#181)
+
+### Changed
+
+- Replace duplicated `CallInfo` with shared `WaiterCallPattern` (#139)
+- Replace duplicated paginator methods with shared `PaginatorCallPattern` (#149)
+
+### Documentation
+- Add telemetry documentation (#184)
+
+### Fixed
+
+- Support eu sovereign cloud (#103)
+- Aws_python_case_conversion (#163)
+
 ## [Unreleased]
 
 ### Added
