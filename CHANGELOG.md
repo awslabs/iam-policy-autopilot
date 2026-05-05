@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- ARN generation for EU Sovereign Cloud (#103)
+- Added support for EU sovereign cloud partition. Providing `--region eusc-de-east-1` will generate policies for the EU sovereign cloud.  (#103)
 - Adopt botocore's snake_case conversion logic for AWS operation and waiter names, run it at build time (via Python), and embed the resulting lookup map into the Rust binary for both forward (PascalCase → snake_case) and reverse (snake_case → PascalCase) runtime lookups. Only non-trivial mappings are included to keep the binary small. (#163)
 
 ## [0.1.4] - 2026-01-30
