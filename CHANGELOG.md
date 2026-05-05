@@ -2,19 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.2.0] - 2026-05-04
+## [Unreleased]
+
+## [0.2.0] - 2026-05-05
 
 ### Features
 
-- IAM policy generation for Java applications — Customers using the AWS SDK for Java (v1 or v2) can now automatically extract the AWS API calls their code makes and generate least-privilege IAM policies from them — the same capability previously available only for Python/boto3 users. This eliminates manual policy authoring for Java workloads and reduces the risk of over-permissioned roles (#134)
-- More precise IAM policies from Terraform — When generating or analyzing IAM policies for Terraform configurations, the tool now refines resource ARNs in policy blocks to be more specific (e.g., narrowing arn:aws:s3:::* down to the actual bucket/resource referenced). This helps customers achieve least-privilege policies directly from their Terraform code, reducing overly permissive access without manual ARN editing (#157)
+- IAM Policy Autopilot now supports policy generation for Java applications. (#134)
+- When provided with Terraform configurations or plans, IAM Policy Autopilot now generates more precise resource blocks, e.g., narrowing arn:aws:s3:::* down to the actual bucket/resource referenced. (#157)
+- IAM Policy Autopilot now supports overriding the default HTTP bind address of the MCP server. (#159)
 - This release adds anonymous usage telemetry. Set IAM_POLICY_AUTOPILOT_TELEMETRY=0 to disable. See TELEMETRY.md for details (#174)
-- Configurable HTTP bind address — Users can now override the default bind address (e.g., via a BIND_ADDRESS environment variable), making it straightforward to run the tool in containers, Kubernetes pods, or other environments (#159)
 
 ### Fixed
 
-- Added support for EU sovereign cloud partition. Providing `--region eusc-de-east-1` will generate policies for the EU sovereign cloud.  (#103)
-- Adopt botocore's snake_case conversion logic for AWS operation and waiter names, run it at build time (via Python), and embed the resulting lookup map into the Rust binary for both forward (PascalCase → snake_case) and reverse (snake_case → PascalCase) runtime lookups. Only non-trivial mappings are included to keep the binary small. (#163)
+- Added support for EU sovereign cloud partition. Providing --region eusc-de-east-1 will generate policies for the EU sovereign cloud. (#103)
+- Fixed issues where we did not correctly convert casing when analyzing Python applications (#163)
 
 ## [0.1.4] - 2026-01-30
 
