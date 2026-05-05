@@ -46,8 +46,8 @@ To send us a pull request, please:
 
 1. Fork the repository.
 2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
+3. Ensure local tests pass (`cargo test --workspace`).
+4. Push signed commits (see [Signing Commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits)) to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
 
