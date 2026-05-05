@@ -1,7 +1,3 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
 ## [Unreleased]
 
 ## [0.2.0] - 2026-05-05
@@ -15,7 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 
-- Added support for EU sovereign cloud partition. Providing --region eusc-de-east-1 will generate policies for the EU sovereign cloud. (#103)
+- Added support for EU sovereign cloud partition. Providing `--region eusc-de-east-1` will generate policies for the EU sovereign cloud. (#103)
 - Fixed issues where we did not correctly convert casing when analyzing Python applications (#163)
 
 ## [0.1.4] - 2026-01-30
