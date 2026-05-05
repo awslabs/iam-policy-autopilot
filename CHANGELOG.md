@@ -4,34 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [0.2.0] - 2026-05-04
 
-### Added
+### Features
 
+- IAM policy generation for Java applications — Customers using the AWS SDK for Java (v1 or v2) can now automatically extract the AWS API calls their code makes and generate least-privilege IAM policies from them — the same capability previously available only for Python/boto3 users. This eliminates manual policy authoring for Java workloads and reduces the risk of over-permissioned roles (#134)
+- More precise IAM policies from Terraform — When generating or analyzing IAM policies for Terraform configurations, the tool now refines resource ARNs in policy blocks to be more specific (e.g., narrowing arn:aws:s3:::* down to the actual bucket/resource referenced). This helps customers achieve least-privilege policies directly from their Terraform code, reducing overly permissive access without manual ARN editing (#157)
 - This release adds anonymous usage telemetry. Set IAM_POLICY_AUTOPILOT_TELEMETRY=0 to disable. See TELEMETRY.md for details (#174)
-- Automated submodule update (#137)
-- Allowing overriding http bind address (#159)
-- Resource arn refinement using terraform (#157)
-- Add support for Java language (#134)
-- FAS model for redshift-data:ExecuteStatement (#181)
-
-### Changed
-
-- Replace duplicated `CallInfo` with shared `WaiterCallPattern` (#139)
-- Replace duplicated paginator methods with shared `PaginatorCallPattern` (#149)
-
-### Documentation
-
-- Add telemetry documentation (#184)
+- Configurable HTTP bind address — Users can now override the default bind address (e.g., via a BIND_ADDRESS environment variable), making it straightforward to run the tool in containers, Kubernetes pods, or other environments (#159)
 
 ### Fixed
 
-- Support eu sovereign cloud (#103)
-- Aws_python_case_conversion (#163)
-
-## [Unreleased]
-
-### Added
-
-- Added support for EU sovereign cloud partition. Providing `--region eusc-de-east-1` will generate policies for the EU sovereign cloud. (#103)
+- ARN generation for EU Sovereign Cloud (#103)
+- Adopt botocore's snake_case conversion logic for AWS operation and waiter names, run it at build time (via Python), and embed the resulting lookup map into the Rust binary for both forward (PascalCase → snake_case) and reverse (snake_case → PascalCase) runtime lookups. Only non-trivial mappings are included to keep the binary small. (#163)
 
 ## [0.1.4] - 2026-01-30
 
