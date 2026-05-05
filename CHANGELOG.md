@@ -5,6 +5,7 @@ All notable changes to this project will be documented in this file.
 ## [0.2.0] - 2026-05-04
 
 ### Added
+
 - This release adds anonymous usage telemetry. Set IAM_POLICY_AUTOPILOT_TELEMETRY=0 to disable. See TELEMETRY.md for details (#174)
 - Automated submodule update (#137)
 - Allowing overriding http bind address (#159)
@@ -18,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - Replace duplicated paginator methods with shared `PaginatorCallPattern` (#149)
 
 ### Documentation
+
 - Add telemetry documentation (#184)
 
 ### Fixed
