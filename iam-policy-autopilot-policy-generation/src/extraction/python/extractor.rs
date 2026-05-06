@@ -1,7 +1,5 @@
 //! SDK method extraction for Python using ast-grep
 
-use std::path::Path;
-
 use crate::extraction::external_library_models::LibraryModelRegistry;
 use crate::extraction::extractor::{Extractor, ExtractorResult};
 use crate::extraction::python::common::ArgumentExtractor;
@@ -21,21 +19,18 @@ pub(crate) struct PythonExtractor {
 }
 
 impl PythonExtractor {
-    /// Create a new Python extractor instance
+    /// Create a new Python extractor, loading built-in external library models.
     pub(crate) fn new() -> Self {
+        let library_model_registry = match LibraryModelRegistry::load(Language::Python) {
+            Ok(registry) => Some(registry),
+            Err(e) => {
+                log::warn!("Failed to load external library model registry: {e:#}");
+                None
+            }
+        };
         Self {
-            library_model_registry: None,
+            library_model_registry,
         }
-    }
-
-    /// Create a new Python extractor with external library model support.
-    pub(crate) fn with_library_models(library_models_path: Option<&Path>) -> Self {
-        let mut extractor = Self::new();
-        match LibraryModelRegistry::load(Language::Python, library_models_path) {
-            Ok(registry) => extractor.library_model_registry = Some(registry),
-            Err(e) => log::warn!("Failed to load external library model registry: {e:#}"),
-        }
-        extractor
     }
 
     /// Parse a single method call match into a SdkMethodCall

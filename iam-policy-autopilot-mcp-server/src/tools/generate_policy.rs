@@ -98,8 +98,6 @@ pub async fn generate_application_policies(
             // Maybe we should let the llm figure out the language
             language: None,
             service_hints,
-            // TODO: expose library_models_path as an MCP tool parameter
-            library_models_path: None,
         },
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,

@@ -717,7 +717,6 @@ from aws_lambda_powertools.utilities import (
                     sdk_operations: sdk_operations.clone(),
                     parameter_constraints: vec![],
                 }],
-                source_path: None,
             };
 
             // Build a LibraryModelRegistry with this model
@@ -836,7 +835,7 @@ from aws_lambda_powertools.utilities import (
 
     /// Helper: load the built-in LibraryModelRegistry for Python.
     fn load_python_registry() -> LibraryModelRegistry {
-        LibraryModelRegistry::load(crate::Language::Python, None)
+        LibraryModelRegistry::load(crate::Language::Python)
             .expect("built-in Python registry should load successfully")
     }
 
@@ -990,7 +989,6 @@ result = params.get_parameter("/my/param")
                     parameter_constraints: vec![],
                 },
             ],
-            source_path: None,
         };
 
         let registry = registry_from_model(model);
@@ -1057,7 +1055,6 @@ result = store.get_store("key", backend="dynamodb")
                     parameter_constraints: vec![],
                 },
             ],
-            source_path: None,
         };
 
         let registry = registry_from_model(model);

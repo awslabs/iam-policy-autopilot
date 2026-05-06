@@ -57,8 +57,6 @@ struct SharedConfig {
     full_output: bool,
     /// Optional service hints for filtering
     service_hints: Option<Vec<String>>,
-    /// Optional path to external library model file(s)
-    library_models_path: Option<PathBuf>,
 }
 
 impl SharedConfig {
@@ -257,16 +255,6 @@ This flag has no effect on the generate-policies subcommand."
             long_help = SERVICE_HINTS_LONG_HELP,
         )]
         service_hints: Option<Vec<String>>,
-
-        /// Path to external library model file(s) for detecting permissions from third-party library calls
-        #[arg(
-            long = "library-models",
-            long_help = "Path to external library model file(s) for detecting permissions from \
-third-party library calls. When a directory is provided, all .json files within it are loaded. \
-When a single .json file is provided, that file is loaded. Library models describe how third-party \
-library function calls (e.g., aws_lambda_powertools) map to underlying AWS SDK operations."
-        )]
-        library_models: Option<PathBuf>,
     },
 
     /// Generates baseline IAM policy documents from source files
@@ -468,17 +456,6 @@ Examples:\n  \
         )]
         #[telemetry(presence)]
         explain_resources: Option<Vec<String>>,
-
-        /// Path to external library model file(s) for detecting permissions from third-party library calls
-        #[arg(
-            long = "library-models",
-            long_help = "Path to external library model file(s) for detecting permissions from \
-third-party library calls. When a directory is provided, all .json files within it are loaded. \
-When a single .json file is provided, that file is loaded. Library models describe how third-party \
-library function calls (e.g., aws_lambda_powertools) map to underlying AWS SDK operations."
-        )]
-        #[telemetry(presence)]
-        library_models: Option<PathBuf>,
     },
 
     /// Start MCP server
@@ -585,7 +562,6 @@ async fn handle_extract_sdk_calls(config: &SharedConfig) -> Result<()> {
         source_files: config.source_files.clone(),
         language: config.language.clone(),
         service_hints,
-        library_models_path: config.library_models_path.clone(),
     })
     .await?;
 
@@ -627,7 +603,6 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             source_files: config.shared.source_files.clone(),
             language: config.shared.language.clone(),
             service_hints,
-            library_models_path: config.shared.library_models_path.clone(),
         },
         aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
         individual_policies: config.individual_policies,
@@ -745,7 +720,6 @@ async fn main() {
             language,
             full_output,
             service_hints,
-            library_models,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -759,7 +733,6 @@ async fn main() {
                 language,
                 full_output,
                 service_hints,
-                library_models_path: library_models,
             };
 
             match handle_extract_sdk_calls(&config).await {
@@ -790,7 +763,6 @@ async fn main() {
             tfstate,
             tfvars,
             explain_resources,
-            library_models,
         } => {
             // Initialize logging
             if let Err(e) = init_logging(debug) {
@@ -805,7 +777,6 @@ async fn main() {
                     language,
                     full_output,
                     service_hints,
-                    library_models_path: library_models,
                 },
                 region,
                 account,

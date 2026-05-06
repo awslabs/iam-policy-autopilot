@@ -63,7 +63,7 @@ func main() {
 
     let extraction_engine = ExtractionEngine::new();
     let extracted = extraction_engine
-        .extract_sdk_method_calls(Language::Go, vec![source_file], None)
+        .extract_sdk_method_calls(Language::Go, vec![source_file])
         .await
         .expect("Extraction should succeed");
 
@@ -148,7 +148,7 @@ func main() {
 
     let extraction_engine = ExtractionEngine::new();
     let extracted = extraction_engine
-        .extract_sdk_method_calls(Language::Go, vec![source_file], None)
+        .extract_sdk_method_calls(Language::Go, vec![source_file])
         .await
         .expect("Extraction should succeed");
 

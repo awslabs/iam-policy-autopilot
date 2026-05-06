@@ -79,7 +79,6 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
             source_files: inputs.source_files.iter().map(|f| resolve(f)).collect(),
             language: Some(inputs.language.clone()),
             service_hints: None,
-            library_models_path: None,
         },
         aws_context: AwsContext::new(inputs.region.clone(), inputs.account.clone()).unwrap(),
         individual_policies: inputs.individual_policies,

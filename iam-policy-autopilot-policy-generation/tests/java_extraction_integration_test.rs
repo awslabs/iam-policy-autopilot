@@ -32,7 +32,7 @@ public class S3Example {
     );
     let engine = ExtractionEngine::new();
     let result = engine
-        .extract_sdk_method_calls(Language::Java, vec![source_file], None)
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
         .await;
     match result {
         Ok(extracted_methods) => {
@@ -91,7 +91,7 @@ public class S3Example {
     );
     let engine = ExtractionEngine::new();
     let result = engine
-        .extract_sdk_method_calls(Language::Java, vec![source_file], None)
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
         .await;
     match result {
         Ok(extracted_methods) => {
@@ -134,7 +134,7 @@ public class NoSdkExample {
     );
     let engine = ExtractionEngine::new();
     let result = engine
-        .extract_sdk_method_calls(Language::Java, vec![source_file], None)
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
         .await;
     match result {
         Ok(extracted_methods) => {
