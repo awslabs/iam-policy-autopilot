@@ -11,7 +11,6 @@ use ast_grep_language::Python;
 use crate::extraction::external_library_models::{
     CallPattern, CallType, ExternalLibraryModel, LibraryModelRegistry,
 };
-use crate::extraction::python::node_kinds;
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{AstWithSourceFile, SdkMethodCall, SdkMethodCallMetadata};
 use crate::{Language, Location};
@@ -293,18 +292,6 @@ impl<'a> LibraryCallExtractor<'a> {
             let object_text = object_node.text().to_string();
             let method_name = method_node.text().to_string();
 
-            // Get the argument nodes for constraint checking
-            let args_nodes = env.get_multiple_matches("ARGS");
-
-            // Try to match against each call pattern in the model.
-            // Prefer constrained patterns over unconstrained ones when constraints
-            // are satisfied. NOTE: unsatisfied constraints currently fall back to
-            // the unconstrained pattern, which may produce false positives for
-            // non-AWS values (e.g., backend="redis"). Revisit when a real model
-            // uses constraints.
-            let mut best_match: Option<&CallPattern> = None;
-            let mut best_is_constrained = false;
-
             for pattern in &model.call_patterns {
                 if pattern.function_name != method_name {
                     continue;
@@ -331,34 +318,11 @@ impl<'a> LibraryCallExtractor<'a> {
                     continue;
                 }
 
-                // Check parameter constraints if present
-                let has_constraints = !pattern.parameter_constraints.is_empty();
-                if has_constraints {
-                    let constraints_satisfied =
-                        self.check_parameter_constraints(&args_nodes, pattern);
-
-                    if constraints_satisfied {
-                        // Constrained pattern with satisfied constraints — always preferred
-                        if !best_is_constrained {
-                            best_match = Some(pattern);
-                            best_is_constrained = true;
-                        }
-                    }
-                    // If constraints not satisfied, skip this pattern
-                } else {
-                    // Unconstrained pattern — use only if no constrained match yet
-                    if best_match.is_none() {
-                        best_match = Some(pattern);
-                    }
-                }
-            }
-
-            // Convert the best match to SdkMethodCall entries
-            if let Some(matched_pattern) = best_match {
+                // First matching pattern wins
                 let matched_node = node_match.get_node();
-                let calls =
-                    Self::to_sdk_method_calls(matched_pattern, matched_node, &ast.source_file);
+                let calls = Self::to_sdk_method_calls(pattern, matched_node, &ast.source_file);
                 results.extend(calls);
+                break;
             }
         }
 
@@ -382,44 +346,6 @@ impl<'a> LibraryCallExtractor<'a> {
         } else {
             false
         }
-    }
-
-    /// Check if the actual call arguments satisfy the parameter constraints of a pattern.
-    ///
-    /// Walks the matched `$$$ARGS` nodes looking for keyword arguments that match the
-    /// constraint's `parameter_name` and `expected_value`.
-    fn check_parameter_constraints(
-        &self,
-        args_nodes: &[ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>],
-        pattern: &CallPattern,
-    ) -> bool {
-        // All constraints must be satisfied
-        pattern.parameter_constraints.iter().all(|constraint| {
-            args_nodes.iter().any(|child| {
-                if child.kind() != node_kinds::KEYWORD_ARGUMENT {
-                    return false;
-                }
-
-                // keyword_argument structure: name = value
-                let kw_children: Vec<_> = child.children().collect();
-                if kw_children.len() < 3 {
-                    return false;
-                }
-
-                let param_name = kw_children[0].text().to_string();
-                if param_name != constraint.parameter_name {
-                    return false;
-                }
-
-                // The value is the last child (after the `=` sign)
-                let value_node = &kw_children[kw_children.len() - 1];
-                let value_text = value_node.text().to_string();
-
-                // Strip quotes from string literals for comparison
-                let stripped_value = strip_string_quotes(&value_text);
-                stripped_value == constraint.expected_value
-            })
-        })
     }
 
     /// Convert a matched call pattern to `SdkMethodCall` entries.
@@ -455,23 +381,6 @@ impl<'a> LibraryCallExtractor<'a> {
             })
             .collect()
     }
-}
-
-/// Strip surrounding quotes from a string literal value.
-///
-/// Handles single quotes, double quotes, and triple-quoted strings.
-fn strip_string_quotes(s: &str) -> &str {
-    // Triple-quoted strings
-    if (s.starts_with("\"\"\"") && s.ends_with("\"\"\""))
-        || (s.starts_with("'''") && s.ends_with("'''"))
-    {
-        return &s[3..s.len() - 3];
-    }
-    // Single or double quoted strings
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
-        return &s[1..s.len() - 1];
-    }
-    s
 }
 
 #[cfg(test)]
@@ -715,7 +624,6 @@ from aws_lambda_powertools.utilities import (
                     function_name: function_name.clone(),
                     call_type: CallType::ModuleLevel,
                     sdk_operations: sdk_operations.clone(),
-                    parameter_constraints: vec![],
                 }],
             };
 
@@ -839,11 +747,6 @@ from aws_lambda_powertools.utilities import (
             .expect("built-in Python registry should load successfully")
     }
 
-    /// Helper: build a registry from a single custom model.
-    fn registry_from_model(model: ExternalLibraryModel) -> LibraryModelRegistry {
-        LibraryModelRegistry::from_models(vec![model])
-    }
-
     #[test]
     fn test_get_parameter_with_from_import_produces_ssm_sdk_call() {
         let source = r#"
@@ -946,141 +849,6 @@ result = params.get_parameter("/my/param")
             "metadata expr should contain the aliased call expression, got: {}",
             metadata.expr
         );
-    }
-
-    #[test]
-    fn test_parameter_constraint_satisfied_produces_sdk_call() {
-        // Create a custom model with a constrained pattern:
-        // get_store(..., backend="dynamodb") → dynamodb:GetItem
-        // and an unconstrained fallback:
-        // get_store(...) → ssm:GetParameter
-        let model = ExternalLibraryModel {
-            library_name: "test_constrained_lib".to_string(),
-            language: crate::Language::Python,
-            version: None,
-            call_patterns: vec![
-                CallPattern {
-                    module_path: "test_constrained_lib.store".to_string(),
-                    function_name: "get_store".to_string(),
-                    call_type: CallType::ModuleLevel,
-                    sdk_operations: vec![
-                        crate::extraction::external_library_models::SdkOperationMapping {
-                            service: "dynamodb".to_string(),
-                            operation: "GetItem".to_string(),
-                        },
-                    ],
-                    parameter_constraints: vec![
-                        crate::extraction::external_library_models::ParameterConstraint {
-                            parameter_name: "backend".to_string(),
-                            expected_value: "dynamodb".to_string(),
-                        },
-                    ],
-                },
-                CallPattern {
-                    module_path: "test_constrained_lib.store".to_string(),
-                    function_name: "get_store".to_string(),
-                    call_type: CallType::ModuleLevel,
-                    sdk_operations: vec![
-                        crate::extraction::external_library_models::SdkOperationMapping {
-                            service: "ssm".to_string(),
-                            operation: "GetParameter".to_string(),
-                        },
-                    ],
-                    parameter_constraints: vec![],
-                },
-            ],
-        };
-
-        let registry = registry_from_model(model);
-
-        // Test with satisfied constraint: backend="dynamodb"
-        let source_satisfied = r#"
-from test_constrained_lib import store
-
-result = store.get_store("key", backend="dynamodb")
-"#;
-        let ast = create_test_ast(source_satisfied);
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(
-            results.len(),
-            1,
-            "satisfied constraint should produce 1 SdkMethodCall"
-        );
-        let call = &results[0];
-        assert_eq!(
-            call.possible_services,
-            vec!["dynamodb"],
-            "constrained pattern should match when constraint is satisfied"
-        );
-        assert_eq!(call.name, "get_item");
-    }
-
-    #[test]
-    fn test_parameter_constraint_unsatisfied_falls_back_to_unconstrained() {
-        // Same model as above with constrained + unconstrained patterns
-        let model = ExternalLibraryModel {
-            library_name: "test_constrained_lib".to_string(),
-            language: crate::Language::Python,
-            version: None,
-            call_patterns: vec![
-                CallPattern {
-                    module_path: "test_constrained_lib.store".to_string(),
-                    function_name: "get_store".to_string(),
-                    call_type: CallType::ModuleLevel,
-                    sdk_operations: vec![
-                        crate::extraction::external_library_models::SdkOperationMapping {
-                            service: "dynamodb".to_string(),
-                            operation: "GetItem".to_string(),
-                        },
-                    ],
-                    parameter_constraints: vec![
-                        crate::extraction::external_library_models::ParameterConstraint {
-                            parameter_name: "backend".to_string(),
-                            expected_value: "dynamodb".to_string(),
-                        },
-                    ],
-                },
-                CallPattern {
-                    module_path: "test_constrained_lib.store".to_string(),
-                    function_name: "get_store".to_string(),
-                    call_type: CallType::ModuleLevel,
-                    sdk_operations: vec![
-                        crate::extraction::external_library_models::SdkOperationMapping {
-                            service: "ssm".to_string(),
-                            operation: "GetParameter".to_string(),
-                        },
-                    ],
-                    parameter_constraints: vec![],
-                },
-            ],
-        };
-
-        let registry = registry_from_model(model);
-
-        // Test with unsatisfied constraint: backend="redis" (not "dynamodb")
-        let source_unsatisfied = r#"
-from test_constrained_lib import store
-
-result = store.get_store("key", backend="redis")
-"#;
-        let ast = create_test_ast(source_unsatisfied);
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(
-            results.len(),
-            1,
-            "unsatisfied constraint should fall back to unconstrained pattern"
-        );
-        let call = &results[0];
-        assert_eq!(
-            call.possible_services,
-            vec!["ssm"],
-            "should fall back to unconstrained pattern (ssm)"
-        );
-        assert_eq!(call.name, "get_parameter");
     }
 
     #[test]

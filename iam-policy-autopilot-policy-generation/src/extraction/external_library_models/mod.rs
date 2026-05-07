@@ -45,9 +45,6 @@ pub(crate) struct CallPattern {
     pub call_type: CallType,
     /// AWS SDK operations this call maps to
     pub sdk_operations: Vec<SdkOperationMapping>,
-    /// Optional parameter constraints for conditional matching
-    #[serde(default)]
-    pub parameter_constraints: Vec<ParameterConstraint>,
 }
 
 /// Discriminator for how the function is invoked.
@@ -67,15 +64,6 @@ pub(crate) struct SdkOperationMapping {
     pub service: String,
     /// AWS operation name in PascalCase (e.g., "GetParameter")
     pub operation: String,
-}
-
-/// Optional constraint for conditional matching based on call arguments.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ParameterConstraint {
-    /// Parameter name to check
-    pub parameter_name: String,
-    /// Expected literal value
-    pub expected_value: String,
 }
 
 /// Registry of external library models, indexed by (language, library_name).
@@ -212,8 +200,7 @@ mod tests {
                             "service": "ssm",
                             "operation": "GetParameter"
                         }
-                    ],
-                    "parameter_constraints": []
+                    ]
                 },
                 {
                     "module_path": "aws_lambda_powertools.utilities.parameters",
@@ -224,8 +211,7 @@ mod tests {
                             "service": "secretsmanager",
                             "operation": "GetSecretValue"
                         }
-                    ],
-                    "parameter_constraints": []
+                    ]
                 }
             ]
         }"#;
@@ -245,7 +231,6 @@ mod tests {
         assert_eq!(p0.sdk_operations.len(), 1);
         assert_eq!(p0.sdk_operations[0].service, "ssm");
         assert_eq!(p0.sdk_operations[0].operation, "GetParameter");
-        assert!(p0.parameter_constraints.is_empty());
 
         let p1 = &model.call_patterns[1];
         assert_eq!(p1.module_path, "aws_lambda_powertools.utilities.parameters");
@@ -254,7 +239,6 @@ mod tests {
         assert_eq!(p1.sdk_operations.len(), 1);
         assert_eq!(p1.sdk_operations[0].service, "secretsmanager");
         assert_eq!(p1.sdk_operations[0].operation, "GetSecretValue");
-        assert!(p1.parameter_constraints.is_empty());
     }
 
     #[test]
@@ -291,27 +275,5 @@ mod tests {
         let model: ExternalLibraryModel =
             serde_json::from_str(json).expect("should parse model without version");
         assert_eq!(model.version, None);
-    }
-
-    #[test]
-    fn optional_parameter_constraints_defaults_to_empty_when_absent() {
-        let json = r#"{
-            "library_name": "some_lib",
-            "language": "go",
-            "call_patterns": [
-                {
-                    "module_path": "some_lib.mod",
-                    "function_name": "do_thing",
-                    "call_type": "instance_method",
-                    "sdk_operations": [
-                        { "service": "dynamodb", "operation": "PutItem" }
-                    ]
-                }
-            ]
-        }"#;
-
-        let model: ExternalLibraryModel =
-            serde_json::from_str(json).expect("should parse model without parameter_constraints");
-        assert!(model.call_patterns[0].parameter_constraints.is_empty());
     }
 }

@@ -11,8 +11,7 @@
           "service": "ssm",
           "operation": "GetParameter"
         }
-      ],
-      "parameter_constraints": []
+      ]
     },
     {
       "module_path": "aws_lambda_powertools.utilities.parameters",
@@ -23,8 +22,7 @@
           "service": "secretsmanager",
           "operation": "GetSecretValue"
         }
-      ],
-      "parameter_constraints": []
+      ]
     }
   ]
 }

@@ -98,9 +98,7 @@ impl Engine {
 
         #[allow(unreachable_patterns)]
         let extractor: Arc<dyn Extractor + Send + Sync> = match language {
-            Language::Python => {
-                Arc::new(extraction::python::extractor::PythonExtractor::new())
-            }
+            Language::Python => Arc::new(extraction::python::extractor::PythonExtractor::new()),
             Language::Go => Arc::new(extraction::go::extractor::GoExtractor::new()),
             Language::JavaScript => {
                 Arc::new(extraction::javascript::extractor::JavaScriptExtractor::new())
