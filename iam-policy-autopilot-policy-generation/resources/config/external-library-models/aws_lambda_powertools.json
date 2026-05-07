@@ -1,6 +1,7 @@
 {
   "library_name": "aws_lambda_powertools",
   "language": "python",
+  "version": "3.14.0",
   "call_patterns": [
     {
       "module_path": "aws_lambda_powertools.utilities.parameters",
