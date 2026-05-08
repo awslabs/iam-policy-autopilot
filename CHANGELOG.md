@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-08
+
+### Fixed
+
+- Updated MCP server dependencies (#194)
+
 ## [0.2.0] - 2026-05-05
 
 ### Features
