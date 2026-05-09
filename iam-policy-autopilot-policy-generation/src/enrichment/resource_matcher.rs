@@ -542,6 +542,9 @@ mod tests {
                              }
          )).await;
 
+        // Re-fetch the index so the loader picks up the newly-added service
+        loader.refresh_index().await.unwrap();
+
         let result = matcher.enrich_method_call(&parsed_call, &loader).await;
         if let Err(ref e) = result {
             println!("Error: {:?}", e);
@@ -696,6 +699,9 @@ mod tests {
                     } ]
                 })).await;
 
+        // Re-fetch the index so the loader picks up the newly-added service
+        loader.refresh_index().await.unwrap();
+
         let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
         // Create SdkMethodCall for connectparticipant:send_message
@@ -783,6 +789,9 @@ mod tests {
             }),
         )
         .await;
+
+        // Re-fetch the index so the loader picks up the newly-added service
+        service_reference_loader.refresh_index().await.unwrap();
 
         let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
 
@@ -1286,6 +1295,9 @@ mod tests {
 
         mock_rds_service_reference(&mock_server).await;
 
+        // Re-fetch the index so the loader picks up the newly-added service
+        loader.refresh_index().await.unwrap();
+
         let parsed_method = SdkMethodCall {
             name: "modify_db_cluster".to_string(),
             possible_services: vec!["rds".to_string()],
@@ -1312,6 +1324,9 @@ mod tests {
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
         mock_rds_service_reference(&mock_server).await;
+
+        // Re-fetch the index so the loader picks up the newly-added service
+        loader.refresh_index().await.unwrap();
 
         // Go SDK extracts operation names in PascalCase (e.g., CreateDBCluster)
         let parsed_method = SdkMethodCall {

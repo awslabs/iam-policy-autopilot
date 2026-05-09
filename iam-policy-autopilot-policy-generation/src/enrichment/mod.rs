@@ -592,8 +592,8 @@ pub(crate) mod mock_remote_service_reference {
         Mock::given(method("GET"))
             .and(path("/"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                {"service": "s3", "url": format!("{}/s3.json", mock_server_url)},
-                {"service": service_name, "url": format!("{}/{}.json", mock_server_url, service_name)}
+                {"service": "s3", "url": format!("{}/s3.json", mock_server_url), "modified": 1000},
+                {"service": service_name, "url": format!("{}/{}.json", mock_server_url, service_name), "modified": 1000}
             ])))
             .with_priority(1)
             .mount(mock_server)
@@ -615,7 +615,7 @@ pub(crate) mod mock_remote_service_reference {
         Mock::given(method("GET"))
             .and(path("/"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                {"service": "s3", "url": format!("{}/s3.json", mock_server_url)}
+                {"service": "s3", "url": format!("{}/s3.json", mock_server_url), "modified": 1000}
             ])))
             .mount(&mock_server)
             .await;
@@ -670,6 +670,7 @@ pub(crate) mod mock_remote_service_reference {
         let loader = RemoteServiceReferenceLoader::new(true)
             .unwrap()
             .with_mapping_url(mock_server_url);
+        loader.refresh_index().await.unwrap();
 
         (mock_server, loader)
     }
@@ -685,7 +686,7 @@ pub(crate) mod mock_remote_service_reference {
         Mock::given(method("GET"))
             .and(path("/"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
-                {"service": "s3", "url": format!("{}/s3.json", mock_server_url)}
+                {"service": "s3", "url": format!("{}/s3.json", mock_server_url), "modified": 1000}
             ])))
             .mount(&mock_server)
             .await;
@@ -801,6 +802,7 @@ pub(crate) mod mock_remote_service_reference {
         let loader = RemoteServiceReferenceLoader::new(true)
             .unwrap()
             .with_mapping_url(mock_server_url);
+        loader.refresh_index().await.unwrap();
 
         (mock_server, loader)
     }
