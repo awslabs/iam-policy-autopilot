@@ -435,7 +435,7 @@ mod tests {
 
         let service_cfg = create_test_service_configuration();
 
-        let (_, service_reference_loader) =
+        let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
         let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
@@ -577,7 +577,7 @@ mod tests {
             metadata: None,
         };
 
-        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping().await;
+        let (_mock_server, loader) = mock_remote_service_reference::setup_mock_server_with_loader_without_operation_to_action_mapping().await;
 
         let result = matcher.enrich_method_call(&parsed_call, &loader).await;
         assert!(
@@ -855,7 +855,7 @@ mod tests {
             resource_overrides,
         };
 
-        let (_, service_reference_loader) =
+        let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
         let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
