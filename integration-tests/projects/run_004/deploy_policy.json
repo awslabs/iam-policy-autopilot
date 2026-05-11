@@ -265,6 +265,12 @@
           "iam:PassedToService": "cloudformation.amazonaws.com"
         }
       }
+    },
+    {
+      "Sid": "AssumeCdkRoles",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::*:role/cdk-*"
     }
   ]
 }
