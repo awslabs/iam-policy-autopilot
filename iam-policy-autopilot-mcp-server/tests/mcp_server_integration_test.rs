@@ -1,9 +1,9 @@
 use std::path::Path;
 
-use rmcp::model::InitializeRequestParam;
+use rmcp::model::InitializeRequestParams;
 use rmcp::RoleClient;
 use rmcp::{
-    model::{CallToolRequestParam, ClientCapabilities, ClientInfo, Implementation},
+    model::{CallToolRequestParams, ClientInfo, Implementation},
     service::RunningService,
     transport::{StreamableHttpClientTransport, TokioChildProcess},
     RmcpError, ServiceExt,
@@ -44,7 +44,7 @@ async fn wait_for_server_ready(bind_address: &str, port: u16, max_attempts: u32)
 async fn setup_http_with_bind_address(
     port: u16,
     bind_address: &str,
-) -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
+) -> (RunningService<RoleClient, InitializeRequestParams>, Child) {
     // Start HTTP server as a background process using debug binary
     let mut command = Command::new("../target/debug/iam-policy-autopilot");
     command
@@ -73,24 +73,17 @@ async fn setup_http_with_bind_address(
     // Create HTTP client transport
     let transport =
         StreamableHttpClientTransport::from_uri(format!("http://{bind_address}:{port}/mcp"));
-    let client_info = ClientInfo {
-        protocol_version: Default::default(),
-        capabilities: ClientCapabilities::default(),
-        client_info: Implementation {
-            name: "test http client".to_string(),
-            title: None,
-            version: "0.0.1".to_string(),
-            website_url: None,
-            icons: None,
-        },
-    };
+    let client_info = ClientInfo::new(
+        Default::default(),
+        Implementation::new("test http client", "0.0.1"),
+    );
 
     let client = client_info.serve(transport).await.unwrap();
 
     (client, server_process)
 }
 
-async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParam>, Child) {
+async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParams>, Child) {
     setup_http_with_bind_address(8001, "127.0.0.1").await
 }
 
@@ -132,16 +125,18 @@ async fn test_stdio_generate_policy() {
 
     let client = setup_stdio().await;
     let tool_result = client
-        .call_tool(CallToolRequestParam {
-            name: "generate_application_policies".into(),
-            arguments: json!({
-                "SourceFiles": [test_file],
-                "Region": "us-east-1",
-                "Account": "123456789012"
-            })
-            .as_object()
-            .cloned(),
-        })
+        .call_tool(
+            CallToolRequestParams::new("generate_application_policies").with_arguments(
+                json!({
+                    "SourceFiles": [test_file],
+                    "Region": "us-east-1",
+                    "Account": "123456789012"
+                })
+                .as_object()
+                .cloned()
+                .expect("test arguments should be a valid JSON object"),
+            ),
+        )
         .await
         .unwrap();
 
@@ -152,14 +147,17 @@ async fn test_stdio_generate_policy() {
 async fn test_stdio_generate_policy_for_access_denied() {
     let client = setup_stdio().await;
     let tool_result = client
-        .call_tool(CallToolRequestParam {
-            name: "generate_policy_for_access_denied".into(),
-            arguments: json!({
-                "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
-            })
-            .as_object()
-            .cloned(),
-        })
+        .call_tool(
+            CallToolRequestParams::new("generate_policy_for_access_denied")
+                .with_arguments(
+                    json!({
+                        "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
+                    })
+                    .as_object()
+                    .cloned()
+                    .expect("test arguments should be a valid JSON object"),
+                ),
+        )
         .await
         .unwrap();
 
@@ -211,16 +209,18 @@ async fn test_http_generate_policy() {
 
     let (client, mut server_process) = setup_http_with_bind_address(8002, "127.0.0.1").await;
     let tool_result = client
-        .call_tool(CallToolRequestParam {
-            name: "generate_application_policies".into(),
-            arguments: json!({
-                "SourceFiles": [test_file],
-                "Region": "us-east-1",
-                "Account": "123456789012"
-            })
-            .as_object()
-            .cloned(),
-        })
+        .call_tool(
+            CallToolRequestParams::new("generate_application_policies").with_arguments(
+                json!({
+                    "SourceFiles": [test_file],
+                    "Region": "us-east-1",
+                    "Account": "123456789012"
+                })
+                .as_object()
+                .cloned()
+                .expect("test arguments should be a valid JSON object"),
+            ),
+        )
         .await
         .unwrap();
 
@@ -235,14 +235,17 @@ async fn test_http_generate_policy() {
 async fn test_http_generate_policy_for_access_denied() {
     let (client, mut server_process) = setup_http_with_bind_address(8003, "127.0.0.1").await;
     let tool_result = client
-        .call_tool(CallToolRequestParam {
-            name: "generate_policy_for_access_denied".into(),
-            arguments: json!({
-                "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
-            })
-            .as_object()
-            .cloned(),
-        })
+        .call_tool(
+            CallToolRequestParams::new("generate_policy_for_access_denied")
+                .with_arguments(
+                    json!({
+                        "ErrorMessage": "User: arn:aws:iam::123456789012:user/test-user is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::test-bucket/test-file.txt"
+                    })
+                    .as_object()
+                    .cloned()
+                    .expect("test arguments should be a valid JSON object"),
+                ),
+        )
         .await
         .unwrap();
 

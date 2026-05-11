@@ -572,7 +572,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_functionality() {
-        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
+        let (_mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
 
         let loader = std::sync::Arc::new(loader);
         let mut handles = vec![];
@@ -605,7 +606,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_memory_cache_expiry() {
-        let (_, loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
+        let (_mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
 
         // Load and cache s3
         let result = loader.load("s3").await;
@@ -736,7 +738,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_filesystem_cache() {
-        let (_, mut loader) = mock_remote_service_reference::setup_mock_server_with_loader().await;
+        let (_mock_server, mut loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
         // setup_mock_server_with_loader disables file system cache by default
         loader.disable_file_system_cache = false;
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");

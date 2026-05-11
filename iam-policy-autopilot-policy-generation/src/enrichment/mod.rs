@@ -676,8 +676,6 @@ pub(crate) mod mock_remote_service_reference {
 
     pub(crate) async fn setup_mock_server_with_loader() -> (MockServer, RemoteServiceReferenceLoader)
     {
-        // Add small delay to avoid port conflicts in parallel tests
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         let mock_server = MockServer::start().await;
         let mock_server_url = mock_server.uri();
 

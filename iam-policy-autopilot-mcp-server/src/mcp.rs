@@ -4,7 +4,7 @@ use iam_policy_autopilot_common::telemetry::{
 };
 use log::{error, info, trace};
 use rmcp::{
-    handler::server::{tool::ToolRouter, wrapper::Parameters},
+    handler::server::wrapper::Parameters,
     model::{
         ErrorCode, LoggingLevel, LoggingMessageNotificationParam, ServerCapabilities, ServerInfo,
     },
@@ -22,20 +22,15 @@ use crate::tools::{
     GeneratePolicyForAccessDeniedInput, GeneratePolicyForAccessDeniedOutput,
 };
 
-// Define the server struct
 #[derive(Clone)]
 struct IamAutoPilotMcpServer {
-    tool_router: ToolRouter<Self>,
     log_file: Option<String>,
 }
 
 #[tool_router]
 impl IamAutoPilotMcpServer {
     pub fn new(log_file: Option<String>) -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-            log_file,
-        }
+        Self { log_file }
     }
 
     fn format_mcp_error(&self, msg: &str, e: anyhow::Error) -> McpError {
@@ -161,11 +156,12 @@ impl IamAutoPilotMcpServer {
 #[tool_handler]
 impl ServerHandler for IamAutoPilotMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder()
-            .enable_tools()
-            .build(),
-            instructions: Some("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+        )
+        .with_instructions("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
             \
             **ALWAYS use the generate_application_policies tool when users mention:** \
             - Writing policies, creating policies, generating policies \
@@ -183,9 +179,7 @@ impl ServerHandler for IamAutoPilotMcpServer {
             **CRITICAL: When generating policies, you MUST include ALL relevant source files that interact with AWS services.** \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
-            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.".to_string()),
-                ..Default::default()
-        }
+            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.")
     }
 
     /// Called after the MCP handshake completes. Sends the telemetry notice
