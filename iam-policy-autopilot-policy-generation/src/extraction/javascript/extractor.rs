@@ -525,211 +525,100 @@ const command = new GetObjectCommand({ Bucket: 'test', Key: 'test.txt' });
         }
     }
 
-    #[tokio::test]
-    async fn test_wildcard_import_command_extraction() {
-        let extractor = JavaScriptExtractor::new();
-        let source_code = r#"
+    #[rstest::rstest]
+    #[case::namespace_command(
+        r#"
 import * as S3 from "@aws-sdk/client-s3";
-
 const client = new S3.S3Client({ region: "us-east-1" });
-
 async function createBucket() {
     const command = new S3.CreateBucketCommand({ Bucket: "my-bucket" });
     await client.send(command);
 }
-        "#;
-
-        let result = extractor.parse(&create_source_file(source_code)).await;
-        let method_calls = result.method_calls_ref();
-
-        // Should find CreateBucket operation from namespace-prefixed command
-        assert!(
-            !method_calls.is_empty(),
-            "Should find operations from wildcard import"
-        );
-
-        let create_bucket_op = method_calls
-            .iter()
-            .find(|call| call.name == "CreateBucket")
-            .expect("Should find CreateBucket operation from S3.CreateBucketCommand");
-
-        // Should be associated with s3 service
-        assert_eq!(
-            create_bucket_op.possible_services,
-            vec!["s3"],
-            "Should associate with s3 service"
-        );
-
-        println!("✅ Wildcard import command extraction works!");
-    }
-
-    #[tokio::test]
-    async fn test_wildcard_import_waiter_extraction() {
-        let extractor = JavaScriptExtractor::new();
-        let source_code = r#"
+        "#,
+        &[("s3", "CreateBucket")],
+    )]
+    #[case::namespace_waiter(
+        r#"
 import * as S3 from "@aws-sdk/client-s3";
-
 const client = new S3.S3Client({ region: "us-east-1" });
-
 async function waitForBucket() {
     await S3.waitUntilBucketExists(
         { client, maxWaitTime: 300 },
         { Bucket: "my-bucket" }
     );
 }
-        "#;
-
-        let result = extractor.parse(&create_source_file(source_code)).await;
-        let method_calls = result.method_calls_ref();
-
-        // Should find waiter operation from namespace-prefixed waiter
-        assert!(
-            !method_calls.is_empty(),
-            "Should find waiter from wildcard import"
-        );
-
-        // The waiter name "BucketExists" will be resolved to actual operation in filter_map
-        let waiter_call = method_calls
-            .iter()
-            .find(|call| call.name == "BucketExists")
-            .expect("Should find BucketExists waiter from S3.waitUntilBucketExists");
-
-        // Should be associated with s3 service
-        assert_eq!(
-            waiter_call.possible_services,
-            vec!["s3"],
-            "Should associate with s3 service"
-        );
-
-        println!("✅ Wildcard import waiter extraction works!");
-    }
-
-    #[tokio::test]
-    async fn test_wildcard_import_paginator_extraction() {
-        let extractor = JavaScriptExtractor::new();
-        let source_code = r#"
+        "#,
+        &[("s3", "BucketExists")],
+    )]
+    #[case::namespace_paginator(
+        r#"
 import * as S3 from "@aws-sdk/client-s3";
-
 const client = new S3.S3Client({ region: "us-east-1" });
-
 async function listAllObjects() {
     const paginator = S3.paginateListObjectsV2(
         { client },
         { Bucket: "my-bucket" }
     );
-    
     for await (const page of paginator) {
         console.log(page.Contents);
     }
 }
-        "#;
-
-        let result = extractor.parse(&create_source_file(source_code)).await;
-        let method_calls = result.method_calls_ref();
-
-        // Should find paginator operation from namespace-prefixed paginator
-        assert!(
-            !method_calls.is_empty(),
-            "Should find paginator from wildcard import"
-        );
-
-        let list_op = method_calls
-            .iter()
-            .find(|call| call.name == "ListObjectsV2")
-            .expect("Should find ListObjectsV2 operation from S3.paginateListObjectsV2");
-
-        // Should be associated with s3 service
-        assert_eq!(
-            list_op.possible_services,
-            vec!["s3"],
-            "Should associate with s3 service"
-        );
-
-        println!("✅ Wildcard import paginator extraction works!");
-    }
-
-    #[tokio::test]
-    async fn test_wildcard_import_multiple_services() {
-        let extractor = JavaScriptExtractor::new();
-        let source_code = r#"
+        "#,
+        &[("s3", "ListObjectsV2")],
+    )]
+    #[case::multiple_services(
+        r#"
 import * as S3 from "@aws-sdk/client-s3";
 import * as DynamoDB from "@aws-sdk/client-dynamodb";
-
 async function multiServiceOperations() {
     const s3Client = new S3.S3Client({ region: "us-east-1" });
     const dynamoClient = new DynamoDB.DynamoDBClient({ region: "us-east-1" });
-    
-    const getCommand = new S3.GetObjectCommand({
-        Bucket: "my-bucket",
-        Key: "my-key"
-    });
+    const getCommand = new S3.GetObjectCommand({ Bucket: "my-bucket", Key: "my-key" });
     await s3Client.send(getCommand);
-    
-    const queryCommand = new DynamoDB.QueryCommand({
-        TableName: "my-table"
-    });
+    const queryCommand = new DynamoDB.QueryCommand({ TableName: "my-table" });
     await dynamoClient.send(queryCommand);
 }
-        "#;
-
-        let result = extractor.parse(&create_source_file(source_code)).await;
-        let method_calls = result.method_calls_ref();
-
-        // Should find operations from both services
-        assert!(
-            method_calls.len() >= 2,
-            "Should find operations from multiple wildcard imports"
-        );
-
-        // Check S3 operation
-        let get_object_op = method_calls
-            .iter()
-            .find(|call| call.name == "GetObject")
-            .expect("Should find GetObject from S3");
-        assert_eq!(get_object_op.possible_services, vec!["s3"]);
-
-        // Check DynamoDB operation
-        let query_op = method_calls
-            .iter()
-            .find(|call| call.name == "Query")
-            .expect("Should find Query from DynamoDB");
-        assert_eq!(query_op.possible_services, vec!["dynamodb"]);
-
-        println!("✅ Multiple wildcard imports work correctly!");
-    }
-
-    #[tokio::test]
-    async fn test_wildcard_import_lib_dynamodb_expansion() {
-        let extractor = JavaScriptExtractor::new();
-        // Wildcard import of a lib-* package should expand commands through the mapping
-        let source_code = r#"
+        "#,
+        &[("s3", "GetObject"), ("dynamodb", "Query")],
+    )]
+    #[case::lib_dynamodb_expansion(
+        r#"
 import * as dynamoLib from "@aws-sdk/lib-dynamodb";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
-
-const client = DynamoDBDocumentClient.from(new DynamoDBClient({}));
-
+const client = dynamoLib.DynamoDBDocumentClient.from(new DynamoDBClient({}));
 async function putItem() {
     const command = new dynamoLib.PutCommand({ TableName: "my-table", Item: { id: "1" } });
     await client.send(command);
 }
-        "#;
-
+        "#,
+        &[("dynamodb", "PutItem")],
+    )]
+    #[tokio::test]
+    async fn test_wildcard_import_extraction(
+        #[case] source_code: &str,
+        #[case] expected_operations: &[(&str, &str)],
+    ) {
+        let extractor = JavaScriptExtractor::new();
         let result = extractor.parse(&create_source_file(source_code)).await;
         let method_calls = result.method_calls_ref();
 
-        // PutCommand from lib-dynamodb should expand to PutItemCommand -> PutItem
-        let put_item_op = method_calls
-            .iter()
-            .find(|call| call.name == "PutItem")
-            .expect("PutCommand from lib-dynamodb should expand to PutItem operation");
-
-        assert_eq!(put_item_op.possible_services, vec!["dynamodb"]);
-
-        // Verify no double-extraction: should appear exactly once
-        let put_item_count = method_calls
-            .iter()
-            .filter(|call| call.name == "PutItem")
-            .count();
-        assert_eq!(put_item_count, 1, "PutItem should not be double-extracted");
+        for &(expected_service, expected_op) in expected_operations {
+            let call = method_calls
+                .iter()
+                .find(|c| c.name == expected_op)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "expected operation '{}' not found; got: {:?}",
+                        expected_op,
+                        method_calls.iter().map(|c| &c.name).collect::<Vec<_>>()
+                    )
+                });
+            assert_eq!(
+                call.possible_services,
+                vec![expected_service],
+                "service mismatch for '{}'",
+                expected_op
+            );
+        }
     }
 }
