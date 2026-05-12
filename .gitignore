@@ -5,7 +5,6 @@ node_modules
 .vscode-test/
 *.vsix
 doc
-Cargo.lock
 target/
 build
 .DS_Store
