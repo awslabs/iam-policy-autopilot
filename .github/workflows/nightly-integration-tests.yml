@@ -12,6 +12,7 @@ permissions:
 
 env:
   RUST_LOG: info
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   integration-tests:
@@ -66,6 +67,7 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.22'
+          cache: false
 
       # ── 5. AWS credentials via OIDC ─────────────────────────────────────
       # Uses GitHub OIDC to assume an IAM role — no long-lived secrets.
