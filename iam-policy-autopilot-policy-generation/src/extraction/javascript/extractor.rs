@@ -598,6 +598,11 @@ async function putItem() {
         #[case] source_code: &str,
         #[case] expected_operations: &[(&str, &str)],
     ) {
+        assert!(
+            !expected_operations.is_empty(),
+            "each test case must assert at least one (service, operation) pair"
+        );
+
         let extractor = JavaScriptExtractor::new();
         let result = extractor.parse(&create_source_file(source_code)).await;
         let method_calls = result.method_calls_ref();

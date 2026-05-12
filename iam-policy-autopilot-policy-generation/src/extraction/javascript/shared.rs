@@ -3,6 +3,8 @@
 //! This module contains common functionality shared between JavaScript and TypeScript
 //! extractors.
 
+use std::collections::HashSet;
+
 use crate::extraction::javascript::types::{ImportInfo, JavaScriptScanResults};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
 use crate::Location;
@@ -102,6 +104,7 @@ impl ExtractionUtils {
         T: ast_grep_language::LanguageExt,
     {
         let mut method_calls = Vec::new();
+        let mut handled_names = HashSet::new();
 
         // Load library mappings once for reuse across all extraction functions
         let lib_mappings = load_libraries_mapping();
@@ -111,6 +114,7 @@ impl ExtractionUtils {
             scan_results,
             scanner,
             lib_mappings.as_ref(),
+            &mut handled_names,
         ));
 
         // Extract operations from paginate function imports (e.g., paginateQuery -> Query operation)
@@ -118,22 +122,30 @@ impl ExtractionUtils {
             scan_results,
             scanner,
             lib_mappings.as_ref(),
+            &mut handled_names,
         ));
 
         // Extract operations from waiter function imports (e.g., waitUntilBucketExists -> BucketExists waiter)
-        method_calls.extend(Self::extract_waiter_operations(scan_results, scanner));
+        method_calls.extend(Self::extract_waiter_operations(
+            scan_results,
+            scanner,
+            &mut handled_names,
+        ));
 
         // Extract operations from CommandInput imports (e.g., QueryCommandInput -> Query operation)
         method_calls.extend(Self::extract_command_input_operations(
             scan_results,
             scanner,
+            &mut handled_names,
         ));
 
         // Extract operations from generic lib-* class imports (e.g., Upload -> multiple S3 commands)
+        // Uses handled_names to skip names already processed by the extractors above
         method_calls.extend(Self::extract_library_class_operations(
             scan_results,
             scanner,
             lib_mappings.as_ref(),
+            &handled_names,
         ));
 
         method_calls
@@ -144,6 +156,7 @@ impl ExtractionUtils {
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
         lib_mappings: Option<&JsV3LibrariesMapping>,
+        handled_names: &mut HashSet<String>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_language::LanguageExt,
@@ -166,6 +179,7 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a Command type (ends with "Command")
                     if import_info.original_name.ends_with("Command") {
+                        handled_names.insert(import_info.original_name.clone());
                         // Try to find the actual constructor instantiation with arguments
                         // Use the local name for the search (handles renames)
                         let result = scanner
@@ -199,6 +213,7 @@ impl ExtractionUtils {
                     for (command_name, usage) in
                         scanner.find_namespace_command_with_args(namespace, "Command")
                     {
+                        handled_names.insert(command_name.clone());
                         let expanded =
                             Self::expand_lib_names(is_lib, &service, &command_name, lib_mappings);
                         for name in expanded {
@@ -219,6 +234,7 @@ impl ExtractionUtils {
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
         lib_mappings: Option<&JsV3LibrariesMapping>,
+        handled_names: &mut HashSet<String>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_language::LanguageExt,
@@ -241,6 +257,7 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a paginate function (starts with "paginate")
                     if import_info.original_name.starts_with("paginate") {
+                        handled_names.insert(import_info.original_name.clone());
                         // Try to find the actual paginate function call with arguments
                         // Use the local name for the search (handles renames)
                         let result = scanner
@@ -255,11 +272,13 @@ impl ExtractionUtils {
                             lib_mappings,
                         );
 
-                        // Create operations for each expanded paginator
-                        for paginator_name in expanded {
-                            let operation_name = Self::strip_paginator_prefix(&paginator_name);
+                        for name in expanded {
+                            let operation_name = name
+                                .strip_suffix("Command")
+                                .or_else(|| name.strip_prefix("paginate"))
+                                .unwrap_or(&name);
                             operations.push(Self::build_sdk_method_call(
-                                &operation_name,
+                                operation_name,
                                 &service,
                                 &result,
                             ));
@@ -272,11 +291,15 @@ impl ExtractionUtils {
                     for (paginator_name, usage) in
                         scanner.find_namespace_paginate_with_args(namespace)
                     {
+                        handled_names.insert(paginator_name.clone());
                         let expanded =
                             Self::expand_lib_names(is_lib, &service, &paginator_name, lib_mappings);
                         for name in expanded {
-                            let op = Self::strip_paginator_prefix(&name);
-                            operations.push(Self::build_sdk_method_call(&op, &service, &usage));
+                            let op = name
+                                .strip_suffix("Command")
+                                .or_else(|| name.strip_prefix("paginate"))
+                                .unwrap_or(&name);
+                            operations.push(Self::build_sdk_method_call(op, &service, &usage));
                         }
                     }
                 }
@@ -292,6 +315,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_waiter_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
+        handled_names: &mut HashSet<String>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_language::LanguageExt,
@@ -312,6 +336,7 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a waiter function (starts with "waitUntil")
                     if let Some(waiter_name) = import_info.original_name.strip_prefix("waitUntil") {
+                        handled_names.insert(import_info.original_name.clone());
                         // Try to find the actual waiter function call with arguments
                         // Use the local name for the search (handles renames)
                         let result = scanner
@@ -332,6 +357,7 @@ impl ExtractionUtils {
                 // Wildcard imports (e.g., import * as S3 from '@aws-sdk/client-s3')
                 if let Some(namespace) = &sublibrary_info.wildcard_namespace {
                     for (waiter_name, usage) in scanner.find_namespace_waiter_with_args(namespace) {
+                        handled_names.insert(waiter_name.clone());
                         if let Some(waiter_state) = waiter_name.strip_prefix("waitUntil") {
                             operations.push(Self::build_sdk_method_call(
                                 waiter_state,
@@ -351,6 +377,7 @@ impl ExtractionUtils {
     pub(crate) fn extract_command_input_operations<T>(
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
+        handled_names: &mut HashSet<String>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_language::LanguageExt,
@@ -370,6 +397,7 @@ impl ExtractionUtils {
                 for import_info in &sublibrary_info.imports {
                     // Check if this is a CommandInput or Input type
                     let operation_name = if import_info.original_name.ends_with("CommandInput") {
+                        handled_names.insert(import_info.original_name.clone());
                         // Extract operation name by removing "CommandInput" suffix
                         import_info.original_name.strip_suffix("CommandInput")
                     } else {
@@ -410,6 +438,7 @@ impl ExtractionUtils {
         scan_results: &JavaScriptScanResults,
         scanner: &mut crate::extraction::javascript::scanner::ASTScanner<T>,
         lib_mappings: Option<&JsV3LibrariesMapping>,
+        handled_names: &HashSet<String>,
     ) -> Vec<SdkMethodCall>
     where
         T: ast_grep_language::LanguageExt,
@@ -437,8 +466,7 @@ impl ExtractionUtils {
 
                 // Named imports (e.g., import { Upload } from '@aws-sdk/lib-storage')
                 for import_info in &sublibrary_info.imports {
-                    // Skip if already handled by other extractors
-                    if Self::is_command_name_pattern(&import_info.original_name) {
+                    if handled_names.contains(&import_info.original_name) {
                         continue;
                     }
 
@@ -474,8 +502,7 @@ impl ExtractionUtils {
 
                     if let Some(service_mappings) = service_mappings {
                         for (class_name, expanded_commands) in service_mappings {
-                            // Skip classes already handled by command/paginate/waiter extractors
-                            if Self::is_command_name_pattern(class_name) {
+                            if handled_names.contains(class_name) {
                                 continue;
                             }
 
@@ -596,13 +623,6 @@ impl ExtractionUtils {
 
     /// Check if a name matches any of the known AWS SDK Command/paginate/waiter/Input patterns
     /// that are handled by other extractors
-    fn is_command_name_pattern(name: &str) -> bool {
-        name.ends_with("Command")
-            || name.starts_with("paginate")
-            || name.starts_with("waitUntil")
-            || name.ends_with("CommandInput")
-    }
-
     /// Expand a name through lib-* mappings if applicable, or return it as-is for client-* packages.
     fn expand_lib_names(
         is_lib: bool,
@@ -621,17 +641,6 @@ impl ExtractionUtils {
                 })
         } else {
             vec![name.to_string()]
-        }
-    }
-
-    /// Strip paginator/command prefixes to get the operation name.
-    fn strip_paginator_prefix(name: &str) -> String {
-        if let Some(cmd) = name.strip_suffix("Command") {
-            cmd.to_string()
-        } else if let Some(op) = name.strip_prefix("paginate") {
-            op.to_string()
-        } else {
-            name.to_string()
         }
     }
 
