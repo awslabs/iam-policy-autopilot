@@ -16,6 +16,14 @@ pub struct LangConfig {
     pub run_cmd: fn(&Path) -> Vec<String>,
 }
 
+/// Join a directory path with a relative component and return a String that
+/// always uses forward slashes as separators. This ensures consistent command
+/// arguments across platforms (Windows uses `\` in `Path::join`).
+fn path_join_unix(dir: &Path, relative: &str) -> String {
+    let joined = dir.join(relative);
+    joined.to_string_lossy().replace('\\', "/")
+}
+
 #[must_use]
 pub fn language_configs() -> HashMap<&'static str, LangConfig> {
     let mut m = HashMap::new();
@@ -26,8 +34,8 @@ pub fn language_configs() -> HashMap<&'static str, LangConfig> {
             script_file: "script.py",
             run_cmd: |dir| {
                 vec![
-                    dir.join(".venv/bin/python3").to_string_lossy().into(),
-                    dir.join("script.py").to_string_lossy().into(),
+                    path_join_unix(dir, ".venv/bin/python3"),
+                    path_join_unix(dir, "script.py"),
                 ]
             },
         },
@@ -36,13 +44,7 @@ pub fn language_configs() -> HashMap<&'static str, LangConfig> {
         "go",
         LangConfig {
             script_file: "script.go",
-            run_cmd: |dir| {
-                vec![
-                    "go".into(),
-                    "run".into(),
-                    dir.join("script.go").to_string_lossy().into(),
-                ]
-            },
+            run_cmd: |dir| vec!["go".into(), "run".into(), path_join_unix(dir, "script.go")],
         },
     );
     m.insert(
@@ -55,7 +57,7 @@ pub fn language_configs() -> HashMap<&'static str, LangConfig> {
                     "compile".into(),
                     "exec:java".into(),
                     "-f".into(),
-                    dir.join("pom.xml").to_string_lossy().into(),
+                    path_join_unix(dir, "pom.xml"),
                     "-Dexec.mainClass=Script".into(),
                 ]
             },
@@ -69,7 +71,7 @@ pub fn language_configs() -> HashMap<&'static str, LangConfig> {
                 vec![
                     "npx".into(),
                     "ts-node".into(),
-                    dir.join("script.ts").to_string_lossy().into(),
+                    path_join_unix(dir, "script.ts"),
                 ]
             },
         },
