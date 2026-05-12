@@ -12,7 +12,6 @@ permissions:
 
 env:
   RUST_LOG: info
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   integration-tests:
@@ -22,7 +21,7 @@ jobs:
     steps:
       # ── 1. Check out repository (with submodules for SDK metadata) ──────
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           submodules: recursive
 
@@ -41,39 +40,39 @@ jobs:
         run: cargo build --workspace --release
 
       # ── 4. Language runtimes ────────────────────────────────────────────
-      - name: Set up Python 3.11
-        uses: actions/setup-python@v5
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v6
         with:
-          python-version: '3.11'
+          python-version: '3.14'
 
-      - name: Set up Java 21 (Corretto)
-        uses: actions/setup-java@v4
+      - name: Set up Java 25 (Corretto)
+        uses: actions/setup-java@v5
         with:
           distribution: corretto
-          java-version: '21'
+          java-version: '25'
 
       - name: Install Maven
         run: sudo apt-get update && sudo apt-get install -y maven
 
-      - name: Set up Node 20
-        uses: actions/setup-node@v4
+      - name: Set up Node 24
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Install CDK and TypeScript tooling
         run: npm install -g aws-cdk typescript ts-node
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version: '1.26'
           cache: false
 
       # ── 5. AWS credentials via OIDC ─────────────────────────────────────
       # Uses GitHub OIDC to assume an IAM role — no long-lived secrets.
       # The role ARN is stored as a repository secret.
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ secrets.INTEGRATION_TEST_ROLE_ARN }}
           aws-region: us-east-1
@@ -91,7 +90,7 @@ jobs:
       # ── 7. Upload results ───────────────────────────────────────────────
       - name: Upload test results
         if: always()   # upload even if the test step fails
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: integration-test-results-${{ github.run_id }}
           path: integration-test-results/
