@@ -12,6 +12,7 @@ permissions:
 
 env:
   RUST_LOG: info
+  DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY: true
 
 jobs:
   integration-tests:
