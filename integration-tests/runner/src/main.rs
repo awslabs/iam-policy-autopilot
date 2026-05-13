@@ -354,7 +354,6 @@ async fn run_all(cli: &Cli) -> Result<()> {
         }
 
         // ── Step 2: Per-language pipeline ──────────────────────────────────
-        let mut any_success = false;
         for lang in &languages {
             let lang_cfg = &all_configs[lang];
             let lang_results_dir = results_run_dir.join(lang);
@@ -372,12 +371,9 @@ async fn run_all(cli: &Cli) -> Result<()> {
                 &caller_arn,
             )
             .await;
-            if result.success {
-                any_success = true;
-            }
             report.language_results.insert(lang.to_string(), result);
         }
-        report.overall_success = any_success;
+        report.overall_success = report.language_results.values().all(|r| r.success);
 
         // ── Step 2b: Policy minimization (opt-in, Java only) ───────────────
         if cli.minimize_policy {
