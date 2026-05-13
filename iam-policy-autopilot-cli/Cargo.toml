@@ -13,7 +13,6 @@ iam-policy-autopilot-tools = { path = "../iam-policy-autopilot-tools" }
 
 anyhow = { workspace = true }
 clap = { workspace = true }
-atty = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

@@ -70,7 +70,6 @@ predicates = "3.1"
 serial_test = "3.4"
 
 # IAM Policy Autopilot specific dependencies
-atty = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1.23", features = ["v4"] }
 aws-lc-rs = "1.16.3"
