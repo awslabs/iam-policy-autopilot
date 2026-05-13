@@ -181,17 +181,27 @@ pub(crate) async fn assume_role_env(
                 return Ok(Some(env_vars));
             }
             Err(e) => {
-                let wait = 2u64.pow(attempt); // 1, 2, 4, 8, 16, 32, 64, 128 s
-                debug!(
-                    "sts:AssumeRole attempt {}/{} failed for role '{}' ({}), retrying in {}s ...",
-                    attempt + 1,
-                    MAX_ATTEMPTS,
-                    target_role_name,
-                    e,
-                    wait
-                );
-                sleep(Duration::from_secs(wait)).await;
                 last_err = anyhow!("sts:AssumeRole failed for role '{target_role_name}': {e}");
+                if attempt + 1 < MAX_ATTEMPTS {
+                    let wait = 2u64.pow(attempt); // 1, 2, 4, 8, 16, 32, 64 s
+                    debug!(
+                        "sts:AssumeRole attempt {}/{} failed for role '{}' ({}), retrying in {}s ...",
+                        attempt + 1,
+                        MAX_ATTEMPTS,
+                        target_role_name,
+                        e,
+                        wait
+                    );
+                    sleep(Duration::from_secs(wait)).await;
+                } else {
+                    debug!(
+                        "sts:AssumeRole attempt {}/{} failed for role '{}' ({}) — no retries remaining",
+                        attempt + 1,
+                        MAX_ATTEMPTS,
+                        target_role_name,
+                        e,
+                    );
+                }
             }
         }
     }
