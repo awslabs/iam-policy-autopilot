@@ -6,7 +6,7 @@
     {
       "module_path": "aws_lambda_powertools.utilities.parameters",
       "function_name": "get_parameter",
-      "call_type": "module_level",
+      "call_type": "function",
       "sdk_operations": [
         {
           "service": "ssm",
@@ -17,7 +17,7 @@
     {
       "module_path": "aws_lambda_powertools.utilities.parameters",
       "function_name": "get_secret",
-      "call_type": "module_level",
+      "call_type": "function",
       "sdk_operations": [
         {
           "service": "secretsmanager",

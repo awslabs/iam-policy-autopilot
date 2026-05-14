@@ -27,7 +27,7 @@ pub(crate) struct ExternalLibraryModel {
     pub library_name: String,
     /// Target programming language
     pub language: Language,
-    /// Semver version constraint (informational, not enforced at runtime)
+    /// Library version this model was built against (informational, not enforced at runtime)
     #[serde(default)]
     pub version: Option<String>,
     /// List of call patterns that map library calls to SDK operations
@@ -39,21 +39,26 @@ pub(crate) struct ExternalLibraryModel {
 pub(crate) struct CallPattern {
     /// Module path (e.g., "aws_lambda_powertools.utilities.parameters")
     pub module_path: String,
+    /// Class or type name for `StaticMethod`/`InstanceMethod` patterns (e.g., "SSMProvider")
+    #[serde(default)]
+    pub class_name: Option<String>,
     /// Function or method name (e.g., "get_parameter")
     pub function_name: String,
-    /// Whether this is a module-level call or instance method call
+    /// The kind of callable this pattern represents
     pub call_type: CallType,
     /// AWS SDK operations this call maps to
     pub sdk_operations: Vec<SdkOperationMapping>,
 }
 
-/// Discriminator for how the function is invoked.
+/// Describes the kind of callable in the source library.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum CallType {
-    /// Called on an imported module: `parameters.get_parameter(...)`
-    ModuleLevel,
-    /// Called on an instantiated object: `provider.get(...)`
+    /// A function defined in a module/namespace: `mod.func()`, `pkg.Func()`, `func()`
+    Function,
+    /// A method called on a class/type: `Class.method()`, `Type::method()`
+    StaticMethod,
+    /// A method called on an instance: `obj.method()`, `obj->method()`
     InstanceMethod,
 }
 
@@ -66,14 +71,13 @@ pub(crate) struct SdkOperationMapping {
     pub operation: String,
 }
 
-/// Registry of external library models, indexed by (language, library_name).
+/// Registry of external library models, indexed by language.
 ///
 /// The registry discovers, loads, and indexes all built-in external library
 /// models for a given language. Built-in models are embedded at compile time
 /// via `rust-embed`.
 pub(crate) struct LibraryModelRegistry {
-    /// Models indexed by (language, library_name) for fast lookup.
-    models: HashMap<(Language, String), ExternalLibraryModel>,
+    models: HashMap<Language, Vec<ExternalLibraryModel>>,
 }
 
 impl LibraryModelRegistry {
@@ -83,26 +87,29 @@ impl LibraryModelRegistry {
     pub(crate) fn load(language: Language) -> Result<Self> {
         let builtin_models = Self::load_builtin_models(language);
 
-        let mut models = HashMap::new();
+        let mut models: HashMap<Language, Vec<ExternalLibraryModel>> = HashMap::new();
         for model in builtin_models {
-            let key = (model.language, model.library_name.clone());
-            models
-                .entry(key)
-                .and_modify(|existing: &mut ExternalLibraryModel| {
-                    existing.call_patterns.extend(model.call_patterns.clone());
-                })
-                .or_insert(model);
+            let lang = model.language;
+            let entry = models.entry(lang).or_default();
+            if let Some(existing) = entry
+                .iter_mut()
+                .find(|m| m.library_name == model.library_name)
+            {
+                existing.call_patterns.extend(model.call_patterns);
+            } else {
+                entry.push(model);
+            }
         }
 
         Ok(Self { models })
     }
 
     /// Get all models for a given language.
-    pub(crate) fn models_for_language(&self, language: Language) -> Vec<&ExternalLibraryModel> {
+    pub(crate) fn models_for_language(&self, language: Language) -> &[ExternalLibraryModel] {
         self.models
-            .values()
-            .filter(|model| model.language == language)
-            .collect()
+            .get(&language)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
     }
 
     /// Load built-in models from embedded resources, filtering by language.
@@ -115,24 +122,19 @@ impl LibraryModelRegistry {
         let mut models = Vec::new();
 
         for file_name in ExternalLibraryModelsAsset::iter() {
-            let file_path = std::path::Path::new(file_name.as_ref());
-
-            let embedded_file = if let Some(f) = ExternalLibraryModelsAsset::get(file_name.as_ref())
-            {
-                f
-            } else {
-                log::warn!(
-                    "Failed to read embedded external library model '{}'",
-                    file_path.display()
-                );
-                continue;
-            };
+            let embedded_file =
+                ExternalLibraryModelsAsset::get(file_name.as_ref()).unwrap_or_else(|| {
+                    panic!(
+                        "Failed to read embedded external library model '{}'",
+                        file_name.as_ref()
+                    )
+                });
 
             match serde_json::from_slice::<ExternalLibraryModel>(&embedded_file.data).with_context(
                 || {
                     format!(
                         "Failed to parse external library model '{}'",
-                        file_path.display()
+                        file_name.as_ref()
                     )
                 },
             ) {
@@ -149,7 +151,7 @@ impl LibraryModelRegistry {
                 Err(e) => {
                     log::warn!(
                         "Skipping invalid built-in external library model '{}': {:#}",
-                        file_path.display(),
+                        file_name.as_ref(),
                         e
                     );
                 }
@@ -171,10 +173,9 @@ impl LibraryModelRegistry {
     /// rather than loaded from files.
     #[cfg(test)]
     pub(crate) fn from_models(models: Vec<ExternalLibraryModel>) -> Self {
-        let mut map = HashMap::new();
+        let mut map: HashMap<Language, Vec<ExternalLibraryModel>> = HashMap::new();
         for model in models {
-            let key = (model.language, model.library_name.clone());
-            map.insert(key, model);
+            map.entry(model.language).or_default().push(model);
         }
         Self { models: map }
     }
@@ -194,7 +195,7 @@ mod tests {
                 {
                     "module_path": "aws_lambda_powertools.utilities.parameters",
                     "function_name": "get_parameter",
-                    "call_type": "module_level",
+                    "call_type": "function",
                     "sdk_operations": [
                         {
                             "service": "ssm",
@@ -205,7 +206,7 @@ mod tests {
                 {
                     "module_path": "aws_lambda_powertools.utilities.parameters",
                     "function_name": "get_secret",
-                    "call_type": "module_level",
+                    "call_type": "function",
                     "sdk_operations": [
                         {
                             "service": "secretsmanager",
@@ -227,7 +228,7 @@ mod tests {
         let p0 = &model.call_patterns[0];
         assert_eq!(p0.module_path, "aws_lambda_powertools.utilities.parameters");
         assert_eq!(p0.function_name, "get_parameter");
-        assert_eq!(p0.call_type, CallType::ModuleLevel);
+        assert_eq!(p0.call_type, CallType::Function);
         assert_eq!(p0.sdk_operations.len(), 1);
         assert_eq!(p0.sdk_operations[0].service, "ssm");
         assert_eq!(p0.sdk_operations[0].operation, "GetParameter");
@@ -235,17 +236,24 @@ mod tests {
         let p1 = &model.call_patterns[1];
         assert_eq!(p1.module_path, "aws_lambda_powertools.utilities.parameters");
         assert_eq!(p1.function_name, "get_secret");
-        assert_eq!(p1.call_type, CallType::ModuleLevel);
+        assert_eq!(p1.call_type, CallType::Function);
         assert_eq!(p1.sdk_operations.len(), 1);
         assert_eq!(p1.sdk_operations[0].service, "secretsmanager");
         assert_eq!(p1.sdk_operations[0].operation, "GetSecretValue");
     }
 
     #[test]
-    fn call_type_module_level_serializes_to_snake_case() {
+    fn call_type_function_serializes_to_snake_case() {
         let json =
-            serde_json::to_string(&CallType::ModuleLevel).expect("serialization should succeed");
-        assert_eq!(json, r#""module_level""#);
+            serde_json::to_string(&CallType::Function).expect("serialization should succeed");
+        assert_eq!(json, r#""function""#);
+    }
+
+    #[test]
+    fn call_type_static_method_serializes_to_snake_case() {
+        let json =
+            serde_json::to_string(&CallType::StaticMethod).expect("serialization should succeed");
+        assert_eq!(json, r#""static_method""#);
     }
 
     #[test]
@@ -264,7 +272,7 @@ mod tests {
                 {
                     "module_path": "some_lib.mod",
                     "function_name": "do_thing",
-                    "call_type": "module_level",
+                    "call_type": "function",
                     "sdk_operations": [
                         { "service": "s3", "operation": "GetObject" }
                     ]

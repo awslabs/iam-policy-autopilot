@@ -26,11 +26,19 @@ mod import_node_kinds {
     pub(super) const WILDCARD_IMPORT: &str = "wildcard_import";
 }
 
+/// Resolved import information from a Python source file.
+pub(crate) struct ResolvedImports {
+    /// Mapping from local name to canonical dotted module path.
+    imports: HashMap<String, String>,
+    /// Module paths that had `from X import *` (wildcard imports).
+    wildcard_modules: Vec<String>,
+}
+
 /// Resolve Python import statements from the AST into a mapping from local
 /// names to canonical module paths.
 ///
-/// Returns a `HashMap<String, String>` where the key is the local name used
-/// in code and the value is the canonical dotted module path.
+/// Returns a `ResolvedImports` where `imports` maps local names to canonical
+/// dotted module paths, and `wildcard_modules` lists module paths that used `from X import *`.
 ///
 /// # Import patterns handled
 ///
@@ -41,25 +49,33 @@ mod import_node_kinds {
 /// | `from X.Y import func` | `"func"` | `"X.Y.func"` |
 /// | `import X.Y as Z` | `"Z"` | `"X.Y"` |
 /// | `import X.Y` | `"X"` | `"X.Y"` |
-pub(crate) fn resolve_imports(ast: &AstWithSourceFile<Python>) -> HashMap<String, String> {
+///
+/// Wildcard imports (`from X import *`) are recorded in `wildcard_modules`
+/// for later expansion against loaded model patterns.
+pub(crate) fn resolve_imports(ast: &AstWithSourceFile<Python>) -> ResolvedImports {
     let mut imports: HashMap<String, String> = HashMap::new();
+    let mut wildcard_modules: Vec<String> = Vec::new();
     let root = ast.ast.root();
 
     for node_match in root.find_all("from $MODULE import $$$NAMES") {
-        resolve_import_from_statement(node_match.get_node(), &mut imports);
+        resolve_import_from_statement(node_match.get_node(), &mut imports, &mut wildcard_modules);
     }
 
     for node_match in root.find_all("import $$$MODULES") {
         resolve_import_statement(node_match.get_node(), &mut imports);
     }
 
-    imports
+    ResolvedImports {
+        imports,
+        wildcard_modules,
+    }
 }
 
 /// Resolve a `from X import Y [as Z], ...` statement.
 fn resolve_import_from_statement(
     node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
     imports: &mut HashMap<String, String>,
+    wildcard_modules: &mut Vec<String>,
 ) {
     let children: Vec<_> = node.children().collect();
 
@@ -99,8 +115,9 @@ fn resolve_import_from_statement(
             }
 
             if child_kind == import_node_kinds::WILDCARD_IMPORT {
-                // TODO: wildcard imports (`from X import *`) could be resolved
-                // using the loaded model's function names for the module path.
+                if !module_path.is_empty() {
+                    wildcard_modules.push(module_path.clone());
+                }
                 continue;
             }
 
@@ -246,24 +263,46 @@ impl<'a> LibraryCallExtractor<'a> {
         &self,
         ast: &AstWithSourceFile<Python>,
     ) -> Vec<SdkMethodCall> {
-        let resolved_imports = resolve_imports(ast);
+        let resolved = resolve_imports(ast);
 
-        if resolved_imports.is_empty() {
+        let models = self.registry.models_for_language(Language::Python);
+
+        let mut imports = resolved.imports;
+        if imports.is_empty() && resolved.wildcard_modules.is_empty() {
             return Vec::new();
         }
 
-        let models = self.registry.models_for_language(Language::Python);
-        let mut all_calls = Vec::new();
+        // Expand wildcard imports using model call patterns:
+        // `from X import *` synthesizes entries for each function the model
+        // declares under module path X.
+        for wildcard_module in &resolved.wildcard_modules {
+            for model in models {
+                for pattern in &model.call_patterns {
+                    if pattern.module_path == *wildcard_module {
+                        let canonical = format!("{}.{}", wildcard_module, pattern.function_name);
+                        imports
+                            .entry(pattern.function_name.clone())
+                            .or_insert(canonical);
+                    }
+                }
+            }
+        }
 
+        let mut all_calls = Vec::new();
         for model in models {
-            let calls = self.match_call_patterns(ast, &resolved_imports, model);
+            let calls = self.match_call_patterns(ast, &imports, model);
             all_calls.extend(calls);
         }
 
         all_calls
     }
 
-    /// Match call patterns from a model against `$OBJ.$METHOD($$$ARGS)` call sites.
+    /// Match call patterns from a model against call sites in the AST.
+    ///
+    /// Uses a single `$FUNC($$$ARGS)` pass over all call nodes, then branches:
+    /// - Dotted callee (`parameters.get_parameter`) -> split into object + method,
+    ///   check qualified import resolution
+    /// - Simple callee (`get_parameter`) -> check direct import resolution
     fn match_call_patterns(
         &self,
         ast: &AstWithSourceFile<Python>,
@@ -273,79 +312,132 @@ impl<'a> LibraryCallExtractor<'a> {
         let mut results = Vec::new();
         let root = ast.ast.root();
 
-        // Use the same find_all pattern as PythonExtractor::parse()
-        let pattern = "$OBJ.$METHOD($$$ARGS)";
-
-        for node_match in root.find_all(pattern) {
+        for node_match in root.find_all("$FUNC($$$ARGS)") {
             let env = node_match.get_env();
-
-            // Extract the object and method name from the match environment
-            let object_node = match env.get_match("OBJ") {
-                Some(node) => node,
-                None => continue,
-            };
-            let method_node = match env.get_match("METHOD") {
+            let func_node = match env.get_match("FUNC") {
                 Some(node) => node,
                 None => continue,
             };
 
-            let object_text = object_node.text().to_string();
-            let method_name = method_node.text().to_string();
+            let func_text = func_node.text().to_string();
 
-            for pattern in &model.call_patterns {
-                if pattern.function_name != method_name {
-                    continue;
-                }
-
-                // Check if the object matches a resolved import for this pattern's module_path
-                let matches_import = match pattern.call_type {
-                    CallType::ModuleLevel => self.matches_module_level_import(
-                        &object_text,
-                        resolved_imports,
-                        &pattern.module_path,
-                    ),
-                    CallType::InstanceMethod => {
-                        // TODO: InstanceMethod requires variable type tracking to
-                        // determine that e.g. `provider = SSMProvider()` makes
-                        // `provider.get(...)` an SSM call. Without it, any
-                        // `xxx.get(...)` would match if the module is imported.
-                        // Skip until variable type tracking is available.
-                        continue;
-                    }
+            let func_kind = func_node.kind();
+            let matched_pattern = if func_kind.as_ref() == "attribute" {
+                let (object_text, method_name) = match func_text.rsplit_once('.') {
+                    Some(pair) => pair,
+                    None => continue,
                 };
+                self.match_qualified_call(object_text, method_name, resolved_imports, model)
+            } else if func_kind.as_ref() == "identifier" {
+                self.match_direct_call(&func_text, resolved_imports, model)
+            } else {
+                continue;
+            };
 
-                if !matches_import {
-                    continue;
-                }
-
-                // First matching pattern wins
+            if let Some(pattern) = matched_pattern {
                 let matched_node = node_match.get_node();
                 let calls = Self::to_sdk_method_calls(pattern, matched_node, &ast.source_file);
                 results.extend(calls);
-                break;
             }
         }
 
         results
     }
 
-    /// Check if the object resolves to a module-level import matching the pattern's module path.
-    fn matches_module_level_import(
+    /// Match a qualified call like `parameters.get_parameter(...)`.
+    fn match_qualified_call<'m>(
+        &self,
+        object_text: &str,
+        method_name: &str,
+        resolved_imports: &HashMap<String, String>,
+        model: &'m ExternalLibraryModel,
+    ) -> Option<&'m CallPattern> {
+        for pattern in &model.call_patterns {
+            if pattern.function_name != method_name {
+                continue;
+            }
+
+            let matches = match pattern.call_type {
+                CallType::Function => self.matches_imported_module(
+                    object_text,
+                    resolved_imports,
+                    &pattern.module_path,
+                ),
+                CallType::StaticMethod => {
+                    let class_name = match &pattern.class_name {
+                        Some(name) => name,
+                        None => continue,
+                    };
+                    self.matches_imported_class(
+                        object_text,
+                        resolved_imports,
+                        &pattern.module_path,
+                        class_name,
+                    )
+                }
+                CallType::InstanceMethod => {
+                    // TODO: requires variable type tracking.
+                    continue;
+                }
+            };
+
+            if matches {
+                return Some(pattern);
+            }
+        }
+        None
+    }
+
+    /// Match a direct call like `get_parameter(...)` from `from X import func`
+    /// or wildcard imports.
+    fn match_direct_call<'m>(
+        &self,
+        func_name: &str,
+        resolved_imports: &HashMap<String, String>,
+        model: &'m ExternalLibraryModel,
+    ) -> Option<&'m CallPattern> {
+        let canonical = resolved_imports.get(func_name)?;
+
+        for pattern in &model.call_patterns {
+            if pattern.function_name != func_name {
+                continue;
+            }
+
+            let expected_canonical = format!("{}.{}", pattern.module_path, pattern.function_name);
+            if canonical == &expected_canonical {
+                return Some(pattern);
+            }
+        }
+        None
+    }
+
+    /// Check if the object resolves to an imported module matching the pattern's module path.
+    fn matches_imported_module(
         &self,
         object_text: &str,
         resolved_imports: &HashMap<String, String>,
         pattern_module_path: &str,
     ) -> bool {
-        if let Some(canonical_path) = resolved_imports.get(object_text) {
-            // The canonical path should match the pattern's module_path exactly,
-            // or the canonical path should be a prefix that the pattern's module_path
-            // starts with (for cases like `import X.Y` where local name is `X`
-            // and canonical is `X.Y`, matching pattern module_path `X.Y`).
-            canonical_path == pattern_module_path
-                || pattern_module_path.starts_with(&format!("{canonical_path}."))
-        } else {
-            false
-        }
+        resolved_imports
+            .get(object_text)
+            .is_some_and(|canonical_path| canonical_path == pattern_module_path)
+    }
+
+    /// Check if the object resolves to an imported class from the expected module.
+    ///
+    /// Handles `from X.Y import ClassName` (canonical: `X.Y.ClassName`)
+    /// and `from X.Y import ClassName as Alias` (alias maps to `X.Y.ClassName`).
+    fn matches_imported_class(
+        &self,
+        object_text: &str,
+        resolved_imports: &HashMap<String, String>,
+        module_path: &str,
+        class_name: &str,
+    ) -> bool {
+        let expected_canonical = format!("{module_path}.{class_name}");
+        resolved_imports
+            .get(object_text)
+            .is_some_and(|canonical_path| canonical_path == &expected_canonical)
     }
 
     /// Convert a matched call pattern to `SdkMethodCall` entries.
@@ -389,6 +481,7 @@ mod tests {
     use ast_grep_core::tree_sitter::LanguageExt;
     use ast_grep_language::Python;
     use proptest::prelude::*;
+    use rstest::rstest;
     use std::path::PathBuf;
 
     use crate::SourceFile;
@@ -403,116 +496,208 @@ mod tests {
         AstWithSourceFile::new(ast_grep, source_file)
     }
 
-    #[test]
-    fn test_from_x_import_y() {
-        let ast = create_test_ast("from aws_lambda_powertools.utilities import parameters");
-        let imports = resolve_imports(&ast);
+    #[rstest]
+    #[case::from_x_import_y(
+        "from aws_lambda_powertools.utilities import parameters",
+        &[("parameters", "aws_lambda_powertools.utilities.parameters")],
+        &[],
+    )]
+    #[case::from_x_import_y_as_z(
+        "from aws_lambda_powertools.utilities import parameters as params",
+        &[("params", "aws_lambda_powertools.utilities.parameters")],
+        &[],
+    )]
+    #[case::from_x_y_import_func(
+        "from aws_lambda_powertools.utilities.parameters import get_parameter",
+        &[("get_parameter", "aws_lambda_powertools.utilities.parameters.get_parameter")],
+        &[],
+    )]
+    #[case::import_x_y_as_z(
+        "import aws_lambda_powertools.utilities.parameters as params",
+        &[("params", "aws_lambda_powertools.utilities.parameters")],
+        &[],
+    )]
+    #[case::import_x_y_no_alias(
+        "import aws_lambda_powertools.utilities.parameters",
+        &[("aws_lambda_powertools", "aws_lambda_powertools.utilities.parameters")],
+        &[],
+    )]
+    #[case::multiple_imports(
+        "from aws_lambda_powertools.utilities import parameters, idempotency",
+        &[
+            ("parameters", "aws_lambda_powertools.utilities.parameters"),
+            ("idempotency", "aws_lambda_powertools.utilities.idempotency"),
+        ],
+        &[],
+    )]
+    #[case::parenthesized_imports(
+        "from aws_lambda_powertools.utilities import (\n    parameters,\n    idempotency\n)",
+        &[
+            ("parameters", "aws_lambda_powertools.utilities.parameters"),
+            ("idempotency", "aws_lambda_powertools.utilities.idempotency"),
+        ],
+        &[],
+    )]
+    #[case::no_imports(
+        "x = 1\nprint(x)",
+        &[],
+        &[],
+    )]
+    #[case::wildcard_import(
+        "from os import *",
+        &[],
+        &["os"],
+    )]
+    fn test_import_resolution(
+        #[case] source: &str,
+        #[case] expected_imports: &[(&str, &str)],
+        #[case] expected_wildcards: &[&str],
+    ) {
+        let ast = create_test_ast(source);
+        let resolved = resolve_imports(&ast);
 
-        assert_eq!(imports.len(), 1);
-        let canonical = imports.get("parameters").expect("should have 'parameters'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.parameters");
+        assert_eq!(resolved.imports.len(), expected_imports.len());
+        for (local_name, canonical) in expected_imports {
+            let actual = resolved
+                .imports
+                .get(*local_name)
+                .unwrap_or_else(|| panic!("should have '{local_name}'"));
+            assert_eq!(actual, canonical);
+        }
+
+        assert_eq!(resolved.wildcard_modules.len(), expected_wildcards.len());
+        for expected in expected_wildcards {
+            assert!(
+                resolved.wildcard_modules.contains(&expected.to_string()),
+                "wildcard_modules should contain '{expected}'",
+            );
+        }
     }
 
-    #[test]
-    fn test_from_x_import_y_as_z() {
-        let ast =
-            create_test_ast("from aws_lambda_powertools.utilities import parameters as params");
-        let imports = resolve_imports(&ast);
-
-        assert_eq!(imports.len(), 1);
-        let canonical = imports.get("params").expect("should have 'params'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.parameters");
+    /// Helper: load the built-in LibraryModelRegistry for Python.
+    fn load_python_registry() -> LibraryModelRegistry {
+        LibraryModelRegistry::load(crate::Language::Python)
+            .expect("built-in Python registry should load successfully")
     }
 
-    #[test]
-    fn test_from_x_y_import_func() {
-        let ast =
-            create_test_ast("from aws_lambda_powertools.utilities.parameters import get_parameter");
-        let imports = resolve_imports(&ast);
+    #[rstest]
+    #[case::from_import(
+        "from aws_lambda_powertools.utilities import parameters\nresult = parameters.get_parameter(\"/my/param\")\n",
+        "get_parameter",
+        "ssm",
+        "parameters.get_parameter",
+    )]
+    #[case::get_secret(
+        "from aws_lambda_powertools.utilities import parameters\nsecret = parameters.get_secret(\"/my/secret\")\n",
+        "get_secret_value",
+        "secretsmanager",
+        "parameters.get_secret",
+    )]
+    #[case::aliased_from_import(
+        "from aws_lambda_powertools.utilities import parameters as params\nresult = params.get_parameter(\"/my/param\")\n",
+        "get_parameter",
+        "ssm",
+        "params.get_parameter",
+    )]
+    #[case::import_as_alias(
+        "import aws_lambda_powertools.utilities.parameters as params\nresult = params.get_parameter(\"/my/param\")\n",
+        "get_parameter",
+        "ssm",
+        "params.get_parameter",
+    )]
+    #[case::wildcard_import(
+        "from aws_lambda_powertools.utilities.parameters import *\nresult = get_parameter(\"/my/param\")\n",
+        "get_parameter",
+        "ssm",
+        "get_parameter",
+    )]
+    #[case::direct_function_import(
+        "from aws_lambda_powertools.utilities.parameters import get_parameter\nresult = get_parameter(\"/my/param\")\n",
+        "get_parameter",
+        "ssm",
+        "get_parameter",
+    )]
+    fn test_library_call_extraction(
+        #[case] source: &str,
+        #[case] expected_name: &str,
+        #[case] expected_service: &str,
+        #[case] expected_expr_substr: &str,
+    ) {
+        let ast = create_test_ast(source);
+        let registry = load_python_registry();
+        let extractor = LibraryCallExtractor::new(&registry);
+        let results = extractor.extract_library_method_calls(&ast);
 
-        assert_eq!(imports.len(), 1);
-        let canonical = imports
-            .get("get_parameter")
-            .expect("should have 'get_parameter'");
-        assert_eq!(
-            canonical,
-            "aws_lambda_powertools.utilities.parameters.get_parameter"
+        assert_eq!(results.len(), 1, "should produce exactly 1 SdkMethodCall");
+        let call = &results[0];
+        assert_eq!(call.name, expected_name);
+        assert_eq!(call.possible_services, vec![expected_service]);
+        assert!(call.metadata.is_some());
+        let metadata = call.metadata.as_ref().unwrap();
+        assert!(
+            metadata.expr.contains(expected_expr_substr),
+            "metadata expr should contain '{}', got: {}",
+            expected_expr_substr,
+            metadata.expr
         );
     }
 
-    #[test]
-    fn test_import_x_y_as_z() {
-        let ast = create_test_ast("import aws_lambda_powertools.utilities.parameters as params");
-        let imports = resolve_imports(&ast);
-
-        assert_eq!(imports.len(), 1);
-        let canonical = imports.get("params").expect("should have 'params'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.parameters");
-    }
-
-    #[test]
-    fn test_import_x_y_no_alias() {
-        let ast = create_test_ast("import aws_lambda_powertools.utilities.parameters");
-        let imports = resolve_imports(&ast);
-
-        assert_eq!(imports.len(), 1);
-        let canonical = imports
-            .get("aws_lambda_powertools")
-            .expect("should have 'aws_lambda_powertools'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.parameters");
-    }
-
-    #[test]
-    fn test_from_x_import_multiple() {
-        let ast =
-            create_test_ast("from aws_lambda_powertools.utilities import parameters, idempotency");
-        let imports = resolve_imports(&ast);
-
-        assert_eq!(imports.len(), 2);
-
-        let canonical = imports.get("parameters").expect("should have 'parameters'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.parameters");
-
-        let canonical = imports
-            .get("idempotency")
-            .expect("should have 'idempotency'");
-        assert_eq!(canonical, "aws_lambda_powertools.utilities.idempotency");
-    }
-
-    #[test]
-    fn test_no_imports() {
-        let ast = create_test_ast("x = 1\nprint(x)");
-        let imports = resolve_imports(&ast);
-        assert!(imports.is_empty());
-    }
-
-    #[test]
-    fn test_wildcard_import_is_skipped() {
-        let ast = create_test_ast("from os import *");
-        let imports = resolve_imports(&ast);
-        // Wildcard imports are skipped for now (see TODO in resolve_import_from_statement)
-        assert!(imports.is_empty());
-    }
-
-    #[test]
-    fn test_parenthesized_from_import() {
-        let source = r#"
-from aws_lambda_powertools.utilities import (
-    parameters,
-    idempotency
-)
-"#;
+    #[rstest]
+    #[case::no_matching_imports("import os\nimport json\nresult = os.path.join(\"/a\", \"b\")\n")]
+    #[case::matching_import_no_matching_call(
+        "from aws_lambda_powertools.utilities import parameters\nx = parameters.some_other_function()\n",
+    )]
+    fn test_no_library_calls_detected(#[case] source: &str) {
         let ast = create_test_ast(source);
-        let imports = resolve_imports(&ast);
+        let registry = load_python_registry();
+        let extractor = LibraryCallExtractor::new(&registry);
+        let results = extractor.extract_library_method_calls(&ast);
 
-        assert_eq!(imports.len(), 2);
-        assert!(imports.contains_key("parameters"));
-        assert!(imports.contains_key("idempotency"));
+        assert!(
+            results.is_empty(),
+            "should produce zero results, got: {:?}",
+            results
+        );
     }
 
-    // ---- Property-based test strategies ----
+    #[rstest]
+    #[case::direct_import(
+        "from aws_lambda_powertools.utilities.parameters import SSMProvider\nresult = SSMProvider.get(\"/my/param\")\n",
+    )]
+    #[case::aliased_import(
+        "from aws_lambda_powertools.utilities.parameters import SSMProvider as SSM\nresult = SSM.get(\"/my/param\")\n",
+    )]
+    fn test_static_method_call(#[case] source: &str) {
+        let model = ExternalLibraryModel {
+            library_name: "aws_lambda_powertools".to_string(),
+            language: crate::Language::Python,
+            version: None,
+            call_patterns: vec![CallPattern {
+                module_path: "aws_lambda_powertools.utilities.parameters".to_string(),
+                class_name: Some("SSMProvider".to_string()),
+                function_name: "get".to_string(),
+                call_type: CallType::StaticMethod,
+                sdk_operations: vec![
+                    crate::extraction::external_library_models::SdkOperationMapping {
+                        service: "ssm".to_string(),
+                        operation: "GetParameter".to_string(),
+                    },
+                ],
+            }],
+        };
+        let registry = LibraryModelRegistry::from_models(vec![model]);
+        let ast = create_test_ast(source);
+        let extractor = LibraryCallExtractor::new(&registry);
+        let results = extractor.extract_library_method_calls(&ast);
 
-    /// Generate a valid Python identifier: starts with a letter, followed by letters/digits/underscores.
+        assert_eq!(results.len(), 1, "static method call should be detected");
+        let call = &results[0];
+        assert_eq!(call.name, "get_parameter");
+        assert_eq!(call.possible_services, vec!["ssm"]);
+    }
+
+    // ---- Property-based tests ----
+
     fn arb_python_identifier() -> impl Strategy<Value = String> {
         "[a-z][a-z0-9_]{0,15}".prop_filter("must not be Python keyword", |s| {
             !matches!(
@@ -554,21 +739,15 @@ from aws_lambda_powertools.utilities import (
         })
     }
 
-    /// Generate a dotted module path like `abc.def.ghi` with 2-4 segments.
     fn arb_module_path() -> impl Strategy<Value = String> {
         proptest::collection::vec(arb_python_identifier(), 2..=4)
             .prop_map(|segments| segments.join("."))
     }
 
-    // Feature: external-library-models, Property 5: Library call detection produces correct SdkMethodCalls
-
-    /// Generate a PascalCase operation name like `GetParameter` or `CreateBucket`.
     fn arb_pascal_case_operation() -> impl Strategy<Value = String> {
-        // Generate 1-3 capitalized words and concatenate them
         proptest::collection::vec("[A-Z][a-z]{2,8}", 1..=3).prop_map(|words| words.join(""))
     }
 
-    /// Generate a non-empty vec of SdkOperationMapping with valid service and PascalCase operation.
     fn arb_sdk_operations(
     ) -> impl Strategy<Value = Vec<crate::extraction::external_library_models::SdkOperationMapping>>
     {
@@ -588,10 +767,6 @@ from aws_lambda_powertools.utilities import (
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(100))]
 
-        /// For any source file that imports a module matching a loaded model and
-        /// contains a function call matching a CallPattern, the LibraryCallExtractor
-        /// produces exactly N SdkMethodCall entries (where N = number of sdk_operations
-        /// in the matched pattern), each with correct service, operation name, and metadata.
         #[test]
         fn prop_library_call_detection_produces_correct_sdk_method_calls(
             module_path in arb_module_path(),
@@ -599,40 +774,30 @@ from aws_lambda_powertools.utilities import (
             alias_name in arb_python_identifier(),
             sdk_operations in arb_sdk_operations(),
         ) {
-            // The module_path must have at least 2 segments so we can split into parent + module_name
             let segments: Vec<&str> = module_path.split('.').collect();
             prop_assume!(segments.len() >= 2);
-
-            // Ensure alias differs from function_name to avoid ambiguity
             prop_assume!(alias_name != function_name);
 
-            // Split module_path into parent (for `from` clause) and last component (the module name)
             let last_dot = module_path.rfind('.').unwrap();
             let module_parent = &module_path[..last_dot];
             let module_name = &module_path[last_dot + 1..];
-
-            // Ensure alias differs from module_name to make the test more interesting
             prop_assume!(alias_name != module_name);
 
-            // Build the model with a single call pattern
             let model = ExternalLibraryModel {
                 library_name: format!("test_lib_{}", module_name),
                 language: crate::Language::Python,
                 version: None,
                 call_patterns: vec![CallPattern {
                     module_path: module_path.clone(),
+                    class_name: None,
                     function_name: function_name.clone(),
-                    call_type: CallType::ModuleLevel,
+                    call_type: CallType::Function,
                     sdk_operations: sdk_operations.clone(),
                 }],
             };
 
-            // Build a LibraryModelRegistry with this model
             let registry = LibraryModelRegistry::from_models(vec![model]);
 
-            // Construct Python source code:
-            //   from <module_parent> import <module_name> as <alias_name>
-            //   <alias_name>.<function_name>()
             let source_code = format!(
                 "from {} import {} as {}\n{}.{}()\n",
                 module_parent, module_name, alias_name, alias_name, function_name
@@ -649,11 +814,9 @@ from aws_lambda_powertools.utilities import (
                 source_file,
             );
 
-            // Run extraction
             let extractor = LibraryCallExtractor::new(&registry);
             let results = extractor.extract_library_method_calls(&ast_with_path);
 
-            // Assert exactly N SdkMethodCall entries (N = number of sdk_operations)
             let expected_count = sdk_operations.len();
             prop_assert_eq!(
                 results.len(),
@@ -664,11 +827,9 @@ from aws_lambda_powertools.utilities import (
                 source_code
             );
 
-            // Assert each SdkMethodCall has correct service, operation name, and metadata
             for (i, result) in results.iter().enumerate() {
                 let expected_op = &sdk_operations[i];
 
-                // Check possible_services contains the correct service
                 prop_assert_eq!(
                     &result.possible_services,
                     &vec![expected_op.service.clone()],
@@ -678,7 +839,6 @@ from aws_lambda_powertools.utilities import (
                     result.possible_services
                 );
 
-                // Check operation name is converted from PascalCase to snake_case
                 let expected_name =
                     ServiceDiscovery::operation_to_method_name(&expected_op.operation, crate::Language::Python);
                 prop_assert_eq!(
@@ -690,7 +850,6 @@ from aws_lambda_powertools.utilities import (
                     result.name
                 );
 
-                // Check metadata is present
                 let metadata = result.metadata.as_ref();
                 prop_assert!(
                     metadata.is_some(),
@@ -699,7 +858,6 @@ from aws_lambda_powertools.utilities import (
                 );
                 let metadata = metadata.unwrap();
 
-                // Check metadata contains the source expression (the call text)
                 let expected_call_expr = format!("{}.{}()", alias_name, function_name);
                 prop_assert_eq!(
                     &metadata.expr,
@@ -710,7 +868,6 @@ from aws_lambda_powertools.utilities import (
                     metadata.expr
                 );
 
-                // Check metadata has the correct file path
                 prop_assert_eq!(
                     &metadata.location.file_path,
                     &file_path,
@@ -720,14 +877,8 @@ from aws_lambda_powertools.utilities import (
                     metadata.location.file_path
                 );
 
-                // Check metadata has a valid line number (line 2, since import is line 1)
-                prop_assert!(
-                    metadata.location.start_position.0 > 0,
-                    "SdkMethodCall[{}] metadata line number should be > 0 but got {}",
-                    i,
-                    metadata.location.start_position.0
-                );
-                // The call is on line 2 (1-based)
+                // All results come from the same call site (line 2), since one call
+                // pattern can map to multiple SdkOperationMappings.
                 prop_assert_eq!(
                     metadata.location.start_position.0,
                     2,
@@ -737,158 +888,5 @@ from aws_lambda_powertools.utilities import (
                 );
             }
         }
-    }
-
-    // ---- Unit tests for library call extraction ----
-
-    /// Helper: load the built-in LibraryModelRegistry for Python.
-    fn load_python_registry() -> LibraryModelRegistry {
-        LibraryModelRegistry::load(crate::Language::Python)
-            .expect("built-in Python registry should load successfully")
-    }
-
-    #[test]
-    fn test_get_parameter_with_from_import_produces_ssm_sdk_call() {
-        let source = r#"
-from aws_lambda_powertools.utilities import parameters
-
-result = parameters.get_parameter("/my/param")
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(results.len(), 1, "should produce exactly 1 SdkMethodCall");
-        let call = &results[0];
-        assert_eq!(call.name, "get_parameter");
-        assert_eq!(call.possible_services, vec!["ssm"]);
-        assert!(call.metadata.is_some());
-        let metadata = call.metadata.as_ref().unwrap();
-        assert!(
-            metadata.expr.contains("parameters.get_parameter"),
-            "metadata expr should contain the call expression, got: {}",
-            metadata.expr
-        );
-    }
-
-    #[test]
-    fn test_get_secret_produces_secretsmanager_sdk_call() {
-        let source = r#"
-from aws_lambda_powertools.utilities import parameters
-
-secret = parameters.get_secret("/my/secret")
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(results.len(), 1, "should produce exactly 1 SdkMethodCall");
-        let call = &results[0];
-        assert_eq!(call.name, "get_secret_value");
-        assert_eq!(call.possible_services, vec!["secretsmanager"]);
-        assert!(call.metadata.is_some());
-        let metadata = call.metadata.as_ref().unwrap();
-        assert!(
-            metadata.expr.contains("parameters.get_secret"),
-            "metadata expr should contain the call expression, got: {}",
-            metadata.expr
-        );
-    }
-
-    #[test]
-    fn test_aliased_from_import_detected() {
-        let source = r#"
-from aws_lambda_powertools.utilities import parameters as params
-
-result = params.get_parameter("/my/param")
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(results.len(), 1, "aliased import should still be detected");
-        let call = &results[0];
-        assert_eq!(call.name, "get_parameter");
-        assert_eq!(call.possible_services, vec!["ssm"]);
-        assert!(call.metadata.is_some());
-        let metadata = call.metadata.as_ref().unwrap();
-        assert!(
-            metadata.expr.contains("params.get_parameter"),
-            "metadata expr should contain the aliased call expression, got: {}",
-            metadata.expr
-        );
-    }
-
-    #[test]
-    fn test_import_as_alias_detected() {
-        let source = r#"
-import aws_lambda_powertools.utilities.parameters as params
-
-result = params.get_parameter("/my/param")
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert_eq!(
-            results.len(),
-            1,
-            "import ... as alias should still be detected"
-        );
-        let call = &results[0];
-        assert_eq!(call.name, "get_parameter");
-        assert_eq!(call.possible_services, vec!["ssm"]);
-        assert!(call.metadata.is_some());
-        let metadata = call.metadata.as_ref().unwrap();
-        assert!(
-            metadata.expr.contains("params.get_parameter"),
-            "metadata expr should contain the aliased call expression, got: {}",
-            metadata.expr
-        );
-    }
-
-    #[test]
-    fn test_no_matching_imports_produces_zero_results() {
-        let source = r#"
-import os
-import json
-
-result = os.path.join("/a", "b")
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert!(
-            results.is_empty(),
-            "source with no matching imports should produce zero results, got: {:?}",
-            results
-        );
-    }
-
-    #[test]
-    fn test_matching_import_but_no_matching_call_produces_zero_results() {
-        let source = r#"
-from aws_lambda_powertools.utilities import parameters
-
-# Import is present but no matching function call is made
-x = parameters.some_other_function()
-y = 42
-"#;
-        let ast = create_test_ast(source);
-        let registry = load_python_registry();
-        let extractor = LibraryCallExtractor::new(&registry);
-        let results = extractor.extract_library_method_calls(&ast);
-
-        assert!(
-            results.is_empty(),
-            "matching import but no matching call should produce zero results, got: {:?}",
-            results
-        );
     }
 }
