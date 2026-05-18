@@ -24,7 +24,7 @@ fn serialize_conditions<S>(conditions: &Vec<Condition>, serializer: S) -> Result
 where
     S: Serializer,
 {
-    let mut condition_map = HashMap::new();
+    let mut condition_map: HashMap<&str, HashMap<&String, Vec<&String>>> = HashMap::new();
 
     for condition in conditions {
         let operator_str = match condition.operator {
@@ -32,11 +32,12 @@ where
             crate::enrichment::Operator::StringLike => "StringLike",
         };
 
-        let operator_conditions = condition_map
+        condition_map
             .entry(operator_str)
-            .or_insert_with(HashMap::new);
-
-        operator_conditions.insert(&condition.key, &condition.values);
+            .or_default()
+            .entry(&condition.key)
+            .or_default()
+            .extend(condition.values.iter());
     }
 
     condition_map.serialize(serializer)
@@ -282,5 +283,108 @@ mod tests {
         assert!(json.contains("\"Policy\":"));
         assert!(json.contains("\"PolicyType\":\"Identity\""));
         assert!(json.contains("\"Version\":\"2012-10-17\""));
+    }
+
+    #[rstest::rstest]
+    #[case::duplicate_operator_key_merges_values(
+        vec![
+            ("StringEquals", "kms:ViaService", vec!["s3.us-east-1.amazonaws.com"]),
+            ("StringEquals", "kms:ViaService", vec!["dynamodb.us-east-1.amazonaws.com"]),
+        ],
+        serde_json::json!({
+            "StringEquals": {
+                "kms:ViaService": ["s3.us-east-1.amazonaws.com", "dynamodb.us-east-1.amazonaws.com"]
+            }
+        }),
+    )]
+    #[case::different_keys_same_operator(
+        vec![
+            ("StringEquals", "kms:ViaService", vec!["s3.us-east-1.amazonaws.com"]),
+            ("StringEquals", "aws:RequestedRegion", vec!["us-east-1"]),
+        ],
+        serde_json::json!({
+            "StringEquals": {
+                "kms:ViaService": ["s3.us-east-1.amazonaws.com"],
+                "aws:RequestedRegion": ["us-east-1"]
+            }
+        }),
+    )]
+    #[case::mixed_operators_same_key(
+        vec![
+            ("StringEquals", "aws:RequestedRegion", vec!["us-east-1"]),
+            ("StringLike", "aws:RequestedRegion", vec!["eu-*"]),
+        ],
+        serde_json::json!({
+            "StringEquals": { "aws:RequestedRegion": ["us-east-1"] },
+            "StringLike": { "aws:RequestedRegion": ["eu-*"] }
+        }),
+    )]
+    #[case::empty_values(
+        vec![
+            ("StringEquals", "kms:ViaService", vec!["s3.us-east-1.amazonaws.com"]),
+            ("StringEquals", "kms:ViaService", vec![]),
+        ],
+        serde_json::json!({
+            "StringEquals": {
+                "kms:ViaService": ["s3.us-east-1.amazonaws.com"]
+            }
+        }),
+    )]
+    fn test_serialize_conditions(
+        #[case] raw_conditions: Vec<(&str, &str, Vec<&str>)>,
+        #[case] expected_condition: serde_json::Value,
+    ) {
+        use crate::enrichment::{Condition, Operator};
+
+        assert!(
+            !raw_conditions.is_empty(),
+            "each test case must have at least one condition"
+        );
+
+        let conditions: Vec<Condition> = raw_conditions
+            .into_iter()
+            .map(|(op, key, vals)| Condition {
+                operator: match op {
+                    "StringEquals" => Operator::StringEquals,
+                    "StringLike" => Operator::StringLike,
+                    _ => panic!("unknown operator: {op}"),
+                },
+                key: key.to_string(),
+                values: vals.into_iter().map(String::from).collect(),
+            })
+            .collect();
+
+        let statement = Statement::allow(vec!["kms:Decrypt".to_string()], vec!["*".to_string()])
+            .with_conditions(conditions);
+
+        let json: serde_json::Value = serde_json::to_value(&statement).unwrap();
+        let actual_condition = json
+            .get("Condition")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
+
+        fn sort_arrays(v: &serde_json::Value) -> serde_json::Value {
+            match v {
+                serde_json::Value::Array(arr) => {
+                    let mut sorted: Vec<_> = arr.iter().map(sort_arrays).collect();
+                    sorted.sort_by(|a, b| a.to_string().cmp(&b.to_string()));
+                    serde_json::Value::Array(sorted)
+                }
+                serde_json::Value::Object(map) => {
+                    let m = map
+                        .iter()
+                        .map(|(k, v)| (k.clone(), sort_arrays(v)))
+                        .collect();
+                    serde_json::Value::Object(m)
+                }
+                other => other.clone(),
+            }
+        }
+
+        assert_eq!(
+            sort_arrays(&actual_condition),
+            sort_arrays(&expected_condition),
+            "Condition block mismatch.\n  actual: {actual_condition}\n  expected: {expected_condition}"
+        );
     }
 }
