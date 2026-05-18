@@ -166,6 +166,24 @@ fn main() {
     );
     println!("cargo:rerun-if-changed=resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl");
 
+    // Rstest's `#[files(...)]` macro evaluates its glob at compile time, so a
+    // freshly added test fixture is invisible until cargo decides to rebuild
+    // the test crate. Without explicit rerun-if-changed entries on the
+    // fixture roots, dropping a new fixture in does NOT trigger a rebuild —
+    // you have to also touch a `.rs` file (or run `cargo clean`). See
+    // https://github.com/awslabs/iam-policy-autopilot/issues/171 and the
+    // upstream rstest issue at https://github.com/la10736/rstest/issues/220.
+    //
+    // Watch the directory roots that contain fixture trees consumed by
+    // `#[files(...)]` invocations in this crate. Cargo dedupes inputs, so
+    // listing each root individually rather than the parent `tests/` keeps
+    // the watcher tight (avoids re-running this build script for unrelated
+    // test source changes).
+    println!("cargo:rerun-if-changed=tests/java/extractors");
+    println!("cargo:rerun-if-changed=tests/java/entry_point");
+    println!("cargo:rerun-if-changed=tests/java/matchers");
+    println!("cargo:rerun-if-changed=tests/resources/terraform");
+
     // --- Auto-initialize all submodules if needed ---
     ensure_submodule_initialized(
         "botocore",
