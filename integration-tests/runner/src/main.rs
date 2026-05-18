@@ -373,7 +373,6 @@ async fn run_all(cli: &Cli) -> Result<()> {
             .await;
             report.language_results.insert(lang.to_string(), result);
         }
-        report.overall_success = report.language_results.values().all(|r| r.success);
 
         // ── Step 2b: Policy minimization (opt-in, Java only) ───────────────
         if cli.minimize_policy {
@@ -423,6 +422,12 @@ async fn run_all(cli: &Cli) -> Result<()> {
             let ok = cdk_destroy(&run_dir, deploy_role_arn, &cli.region, &sts).await?;
             report.cdk_destroy = CdkStepResult::done(ok);
         }
+
+        // Compute overall success: all languages must pass AND CDK destroy
+        // must not have failed (skipped is acceptable).
+        let languages_ok = report.language_results.values().all(|r| r.success);
+        let destroy_ok = report.cdk_destroy.is_skipped() || report.cdk_destroy.is_ok();
+        report.overall_success = languages_ok && destroy_ok;
 
         // ── Step 3b: Cleanup deploy role ────────────────────────────────────
         if let Some(ref info) = deploy_role_info {
