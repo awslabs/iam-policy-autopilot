@@ -133,7 +133,7 @@ where
 
     let subset: Vec<Value> = indices.iter().map(|&i| all_policies[i].clone()).collect();
     *runs_performed += 1;
-    warn!(
+    info!(
         "[ddmin] run #{}: {} ({} policies, {} actions): {:?}",
         runs_performed,
         label,
@@ -144,7 +144,7 @@ where
 
     let result = run_fn(subset).await;
     let passed = matches!(result, Ok(true));
-    warn!(
+    info!(
         "[ddmin] run #{}: {} → {}",
         runs_performed,
         label,
