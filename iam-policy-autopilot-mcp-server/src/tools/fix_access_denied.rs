@@ -1,8 +1,8 @@
 use crate::tools::policy_autopilot;
 use anyhow::Error;
 use anyhow::{bail, Context};
-use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult};
-use log::{debug, error, warn};
+use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult, PolicyDocument};
+use log::{error, warn};
 use rmcp::{
     elicit_safe,
     service::{ElicitationError, RequestContext},
@@ -96,14 +96,10 @@ pub async fn fix_access_denied(
     context: RequestContext<RoleServer>,
     input: FixAccessDeniedInput,
 ) -> Result<FixAccessDeniedOutput, Error> {
-    // Parse the error message to extract principal ARN using the plan method
+    // Parse the error message to extract principal information
     let plan = policy_autopilot::plan(&input.error_message)
         .await
-        .context("Failed to generate access denied fix policy from error message")?;
-
-    let policy_str = serde_json::to_string(&plan.policy).context("Failed to serialize policy")?;
-
-    debug!("Generated policy: {policy_str}");
+        .context("Failed to parse access denied error message")?;
 
     // Get confirmation from the user
     let elicit_result = context
@@ -126,14 +122,22 @@ pub async fn fix_access_denied(
         Ok(Some(UserConfirmation(true))) => { /* no-op */ }
         Ok(Some(UserConfirmation(false)) | None) => {
             return Ok(FixAccessDeniedOutput {
-                policy: policy_str,
+                policy: input.access_denied_fix_policy,
                 fix_result: None,
             });
         }
     }
 
+    let user_policy: PolicyDocument = serde_json::from_str(&input.access_denied_fix_policy)
+        .context("Failed to parse user-confirmed policy JSON")?;
+
+    let plan_with_user_policy = iam_policy_autopilot_access_denied::PlanResult {
+        policy: user_policy,
+        ..plan
+    };
+
     let apply = policy_autopilot::apply(
-        &plan,
+        &plan_with_user_policy,
         ApplyOptions {
             skip_confirmation: true,
             skip_tty_check: true,
@@ -143,7 +147,7 @@ pub async fn fix_access_denied(
     .context("Failed to apply access denied fix")?;
 
     Ok(FixAccessDeniedOutput {
-        policy: policy_str,
+        policy: input.access_denied_fix_policy,
         fix_result: Some(FixResult::from(apply)),
     })
 }

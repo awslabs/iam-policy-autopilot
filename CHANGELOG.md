@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- Fixed `fix_access_denied` MCP tool ignoring the user-confirmed policy and applying a regenerated one instead
+
 ## [0.2.1] - 2026-05-08
 
 ### Fixed
