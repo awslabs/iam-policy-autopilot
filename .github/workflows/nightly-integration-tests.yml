@@ -16,6 +16,7 @@ env:
 
 jobs:
   integration-tests:
+    if: github.repository == 'awslabs/iam-policy-autopilot'
     runs-on: ubuntu-latest
     timeout-minutes: 90   # CDK deploy + multi-language runs can take a while
 
