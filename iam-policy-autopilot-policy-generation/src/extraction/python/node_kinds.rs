@@ -18,3 +18,6 @@ pub(crate) const KEYWORD_ARGUMENT: &str = "keyword_argument";
 
 /// A dictionary splat/unpacking operator (e.g., `**kwargs`)
 pub(crate) const DICTIONARY_SPLAT: &str = "dictionary_splat";
+
+/// A function definition node (e.g., `def func_name(args): body`)
+pub(crate) const FUNCTION_DEFINITION: &str = "function_definition";
