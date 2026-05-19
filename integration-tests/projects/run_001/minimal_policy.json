@@ -1,0 +1,33 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "redshift-data:ExecuteStatement"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:redshift:*:*:cluster:*"
+      ]
+    },
+    {
+      "Action": [
+        "redshift-data:DescribeStatement"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "redshift:GetClusterCredentials"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:redshift:*:*:dbuser:*/adminuser",
+        "arn:aws:redshift:*:*:dbname:*/securitydb"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}
