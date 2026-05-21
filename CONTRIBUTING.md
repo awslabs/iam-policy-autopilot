@@ -80,6 +80,12 @@ ruff format --check .
 
 Ruff is configured in [`pyproject.toml`](pyproject.toml) at the repository root. Install it with `pip install ruff` or via your package manager.
 
+### Changelog
+
+If your change is user-facing (new feature, bug fix, breaking change), add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `[Unreleased]` section as part of your PR. This keeps the changelog accurate and ready for the next release.
+
+Use these subsection headings: **Added**, **Changed**, **Fixed**, **Removed**.
+
 ### Commit Message Guidelines
 
 We follow [Conventional Commits](https://www.conventionalcommits.org/) for commit messages. This helps with automated changelog generation and makes the commit history more readable.
