@@ -3,10 +3,11 @@
 
 # IAM Policy Autopilot
 
+<!-- Test: verifying Slack notification workflow -->
+
 An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports policy generation for applications built in Python, Go, TypeScript, JavaScript, and Java — see [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation).
 
-We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls). 
-
+We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls).
 
 ## Table of Contents
 
@@ -76,13 +77,13 @@ This significantly reduces unnecessary permissions and generates more targeted p
 
 ### Supported Languages and SDKs for policy generation
 
-| Language | SDK |
-|---|---|
-| Go | [AWS SDK for Go v2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/welcome.html) |
-| Java | [AWS SDK for Java v2](https://docs.aws.amazon.com/sdk-for-java/v2/) |
-| JavaScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
-| TypeScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
-| Python | [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [Botocore](https://botocore.amazonaws.com/v1/documentation/api/latest/index.html) |
+| Language   | SDK                                                                                                                                                            |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Go         | [AWS SDK for Go v2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/welcome.html)                                                                    |
+| Java       | [AWS SDK for Java v2](https://docs.aws.amazon.com/sdk-for-java/v2/)                                                                                            |
+| JavaScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)                                                                           |
+| TypeScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/)                                                                           |
+| Python     | [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [Botocore](https://botocore.amazonaws.com/v1/documentation/api/latest/index.html) |
 
 ## Getting Started
 
@@ -243,13 +244,15 @@ IAM Policy Autopilot has an associated [Kiro power](https://kiro.dev/blog/introd
 #### Enabling the IAM Policy Autopilot Kiro Power
 
 To enable the IAM Policy Autopilot Kiro Power, first install the `uv` package manager by [following these instructions](https://docs.astral.sh/uv/getting-started/installation/). Then, do the following steps within Kiro:
+
 1. Go to the "Powers" menu in the menubar on the left-hand-side.
 2. Click `Add Custom Power` -> `Import power from Github`
 3. In the text prompt that then appears, enter `https://github.com/awslabs/iam-policy-autopilot/tree/main/power-iam-policy-autopilot`.
 4. Kiro should automatically install a new Kiro power called `IAM Policy Autopilot` within your Kiro code editor. This power should be visible in the `Powers` menu.
 
 If the above steps for installing the power from a GitHub repository URL does not work, you can also clone the repository and import the power directly, by doing the following:
-1. Clone the git repository `https://github.com/awslabs/iam-policy-autopilot`, and remember the directory to where you cloned the repo. 
+
+1. Clone the git repository `https://github.com/awslabs/iam-policy-autopilot`, and remember the directory to where you cloned the repo.
 2. Go to the "Powers" menu in the menubar on the left-hand-side.
 3. Click `Add Custom Power` -> `Import power from a folder`
 4. In the text prompt that then appears, select the `power-iam-policy-autopilot` folder in your cloned repository. For instance, if the repository is cloned to `~/workplace/iam-policy-autopilot`, you should select or enter `~/workplace/iam-policy-autopilot/power-iam-policy-autopilot`.
@@ -257,10 +260,11 @@ If the above steps for installing the power from a GitHub repository URL does no
 
 #### Why use IAM Policy Autopilot's Kiro Power?
 
-Kiro powers generally offer [a more refined experience than traditional MCP servers](https://kiro.dev/blog/introducing-powers/) because they enable MCP tools to be loaded more selectively & deliberately, reducing LLM token usage and avoiding LLM context overcrowding. 
+Kiro powers generally offer [a more refined experience than traditional MCP servers](https://kiro.dev/blog/introducing-powers/) because they enable MCP tools to be loaded more selectively & deliberately, reducing LLM token usage and avoiding LLM context overcrowding.
 
 IAM Policy Autopilot's Kiro power specifically enhances the traditional MCP experience, for multiple reasons:
-1. This Kiro Power provides your LLM agent with **more steering guidance**, offering it more information on the specific use cases and best practices of our MCP tooling. 
+
+1. This Kiro Power provides your LLM agent with **more steering guidance**, offering it more information on the specific use cases and best practices of our MCP tooling.
 2. This Kiro power prompts your LLM agent to give a **tutorial of the MCP tools** offered by IAM Policy Autopilot, allowing you to better understand how our MCP tooling assists your use case.
 3. This Kiro Power provides your LLM agent with **step-by-step onboarding validation**, allowing it to detect any problems with installations and provide remediation steps for those problems.
 
@@ -303,6 +307,7 @@ iam-policy-autopilot generate-policies \
 ```
 
 Options:
+
 - `--region <REGION>` - AWS region for resource ARNs
 - `--account <ACCOUNT>` - AWS account ID for resource ARNs
 - `--service-hints <SERVICES>` - Limit analysis to only the services your application actually uses if you know them. This helps reduce unnecessary permissions.
@@ -323,6 +328,7 @@ iam-policy-autopilot fix-access-denied \
 ```
 
 Options:
+
 - `--yes` - Auto-apply policy changes without confirmation
 
 **mcp-server** - Start MCP server locally
@@ -332,6 +338,7 @@ iam-policy-autopilot mcp-server [OPTIONS]
 ```
 
 Options:
+
 - `--transport <TRANSPORT>` - Transport type: `stdio` (default) or `http`
 
 Example with HTTP transport:
