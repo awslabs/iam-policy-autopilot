@@ -60,6 +60,16 @@ pub enum ExtractorError {
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
 
+    /// Network errors for HTTP requests to external endpoints
+    #[error("Network error: {message}")]
+    Network {
+        /// Detailed error message
+        message: String,
+        /// Underlying network error
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
     /// Input validation errors for user-provided data
     #[error("Validation error: {message}")]
     Validation {
