@@ -55,6 +55,18 @@ To send us a pull request, please:
 
 Ensure your changes pass all linters. The CI will enforce these checks automatically.
 
+### Pre-commit Hooks
+
+The repository includes a pre-commit configuration for local checks.
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install hooks into .git/hooks/pre-commit
+pre-commit install
+```
+
 **Rust**
 
 ```bash
