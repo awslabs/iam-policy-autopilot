@@ -440,9 +440,8 @@ impl RemoteServiceReferenceLoader {
             .user_agent(user_agent)
             .build()
             .map_err(|e| ExtractorError::Configuration {
-                message: format!(
-                    "Failed to initialize the HTTP client for the service reference endpoint: {e}"
-                ),
+                message: "Failed to initialize the HTTP client for the service reference endpoint"
+                    .to_string(),
                 source: Some(Box::new(e)),
             })
     }

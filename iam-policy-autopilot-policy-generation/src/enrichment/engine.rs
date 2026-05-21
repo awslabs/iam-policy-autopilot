@@ -149,8 +149,9 @@ impl Engine {
                 }
                 Err(e) => {
                     return Err(ExtractorError::enrichment_error(
-                        method.possible_services.join(", "),
-                        format!("Failed to enrich method call '{}': {e}", method.name),
+                        &method.name,
+                        &method.possible_services,
+                        format!("{e}"),
                     ));
                 }
             }
