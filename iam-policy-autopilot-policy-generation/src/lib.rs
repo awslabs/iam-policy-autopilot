@@ -53,7 +53,7 @@ use serde::Serialize;
 
 use crate::errors::ExtractorError;
 
-/// Default number of enriched resources at which an action's resource list is collapsed to `*`.
+/// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
 pub const DEFAULT_RESOURCE_CUTOFF: usize = 5;
 
 /// Language that is analyzed

@@ -3,7 +3,7 @@
 ### Added
 
 - Support for namespace imports in TypeScript/JavaScript (#190)
-- Added a configurable resource cutoff for policy generation resource lists.
+- Added a configurable resource cutoff for policy generation resource lists (#217)
 
 ### Fixed
 

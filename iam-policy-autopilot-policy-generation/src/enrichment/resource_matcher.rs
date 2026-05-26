@@ -158,6 +158,7 @@ pub(crate) struct ResourceMatcher {
 }
 
 impl ResourceMatcher {
+    #[cfg(test)]
     pub(crate) fn new(
         service_cfg: Arc<ServiceConfiguration>,
         fas_maps: OperationFasMaps,

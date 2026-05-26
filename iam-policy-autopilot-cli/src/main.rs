@@ -94,8 +94,8 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
-    /// Number of enriched resources at which a resource list is collapsed to wildcard
-    resource_cutoff: usize,
+    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
+    resource_cutoff: Option<usize>,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
@@ -376,17 +376,15 @@ Use this flag to force fresh data retrieval on every run."
         #[telemetry(value)]
         disable_cache: bool,
 
-        /// Resource-list cutoff before generated policies use wildcard resources
+        /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
         #[arg(
             long = "resource-cutoff",
-            default_value_t = DEFAULT_RESOURCE_CUTOFF,
             value_parser = parse_positive_usize,
-            long_help = "Number of enriched resources at which an action's resource list is \
-collapsed to '*' instead of emitting every resource-specific ARN. The default preserves the \
-previous behavior."
+            long_help = "Resource lists with at least this many entries are collapsed to '*' \
+instead of emitting every resource-specific ARN. Default: 5."
         )]
-        #[telemetry(value)]
-        resource_cutoff: usize,
+        #[telemetry(value, if_present)]
+        resource_cutoff: Option<usize>,
 
         /// Filter extracted SDK calls to specific AWS services
         #[arg(
@@ -633,7 +631,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
-        resource_cutoff: config.resource_cutoff,
+        resource_cutoff: config.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
         explain_filters: config.explain.clone(),
         terraform_dir: config.tf_dir.clone(),
         terraform_files: config.tf_files.clone(),

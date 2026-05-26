@@ -68,7 +68,8 @@ pub struct GeneratePoliciesInput {
     pub tfvars: Option<Vec<String>>,
 
     #[schemars(
-        description = "Number of enriched resources at which a generated policy uses wildcard resources instead of every resource-specific ARN. Defaults to 5."
+        description = "Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.",
+        range(min = 1)
     )]
     #[telemetry(value, if_present)]
     pub resource_cutoff: Option<usize>,
@@ -88,6 +89,11 @@ pub async fn generate_application_policies(
 ) -> Result<GeneratePoliciesOutput, Error> {
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
+    let resource_cutoff = input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF);
+    anyhow::ensure!(
+        resource_cutoff > 0,
+        "resource_cutoff must be greater than zero"
+    );
 
     // Convert service_hints from Vec<String> to ServiceHints if provided
     let service_hints = input.service_hints.map(|hints| ServiceHints {
@@ -108,7 +114,7 @@ pub async fn generate_application_policies(
         },
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
-        resource_cutoff: input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
+        resource_cutoff,
 
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
@@ -255,6 +261,29 @@ mod tests {
         let result = generate_application_policies(input).await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_generate_application_policies_rejects_zero_resource_cutoff() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: Some("us-east-1".to_string()),
+            account: Some("123456789012".to_string()),
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: Some(0),
+        };
+
+        let result = generate_application_policies(input).await;
+
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("resource_cutoff must be greater than zero"));
     }
 
     #[test]

@@ -22,7 +22,7 @@ Telemetry records which commands and parameters are used, and whether the comman
 | `upload_policies` | presence (boolean) |
 | `minimal_policy_size` | actual value (boolean) |
 | `disable_cache` | actual value (boolean) |
-| `resource_cutoff` | actual value (usize) |
+| `resource_cutoff` | value if provided, omitted otherwise |
 | `service_hints` | list of values if non-empty, omitted otherwise |
 | `explain` | list of values if non-empty, omitted otherwise |
 | `tf_dir` | presence (boolean) |

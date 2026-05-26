@@ -38,7 +38,7 @@ impl Engine {
 
     /// Create a new MethodEnrichmentEngine with a custom resource cutoff.
     ///
-    /// The cutoff controls when a long resource list is collapsed to a wildcard resource.
+    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
     pub fn with_resource_cutoff(
         disable_file_system_cache: bool,
         resource_cutoff: usize,
@@ -87,11 +87,8 @@ impl Engine {
             .load_fas_maps_for_services(&unique_services, &service_cfg)
             .await?;
 
-        let resource_matcher = if self.resource_cutoff == crate::DEFAULT_RESOURCE_CUTOFF {
-            ResourceMatcher::new(service_cfg, fas_maps, sdk)
-        } else {
-            ResourceMatcher::with_resource_cutoff(service_cfg, fas_maps, sdk, self.resource_cutoff)
-        };
+        let resource_matcher =
+            ResourceMatcher::with_resource_cutoff(service_cfg, fas_maps, sdk, self.resource_cutoff);
         let enriched_calls = self
             .enrich_all_methods(extracted_methods, &resource_matcher)
             .await?;

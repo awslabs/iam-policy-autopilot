@@ -21,10 +21,9 @@ pub struct GeneratePolicyConfig {
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
-    /// Number of enriched resources at which a resource list is collapsed to `*`.
+    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
     ///
-    /// The value must be greater than zero. Use
-    /// [`crate::DEFAULT_RESOURCE_CUTOFF`] to preserve the default behavior.
+    /// The value must be greater than zero.
     pub resource_cutoff: usize,
     /// Generate explanations for why actions were added, filtered by patterns.
     /// - `None`: No explanations generated
