@@ -25,6 +25,7 @@ exclude = [
     "iam-policy-autopilot-policy-generation/tests/resources",
     "iam-policy-autopilot-cli/tests/resources",
     "iam-policy-autopilot-mcp-server/tests/test_data",
+    "integration-tests/projects",
     "target",
 ]
 

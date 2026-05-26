@@ -1,0 +1,73 @@
+name: CDK Security Scan
+
+on:
+  pull_request:
+    paths:
+      - 'integration-tests/projects/*/cdk/**'
+      - 'integration-tests/projects/scan_cdk_security.sh'
+  workflow_dispatch: # allow manual trigger from the Actions UI
+
+permissions:
+  contents: read
+
+jobs:
+  security-scan:
+    name: Checkov CDK Security Scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      # ── 1. Check out repository ────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      # ── 2. Set up Node.js for CDK synthesis ────────────────────────────
+      - name: Set up Node 20
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      # ── 3. Set up Python for Checkov ───────────────────────────────────
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      # ── 4. Install Checkov ─────────────────────────────────────────────
+      - name: Install Checkov
+        run: pip install checkov
+
+      # ── 5. Synthesize all CDK stacks ───────────────────────────────────
+      # Uses --no-lookups so no AWS credentials are required.
+      # Synthesis failures are tolerated (|| true) because some stacks may
+      # require context values only available at deploy time.
+      - name: Synthesize CDK stacks
+        run: |
+          cd integration-tests/projects
+          for run_dir in run_*/cdk; do
+            echo "==> Synthesizing $(dirname "$run_dir")..."
+            cd "$run_dir"
+            npm install --silent
+            AWS_DEFAULT_REGION=us-east-1 npx cdk synth --quiet --no-lookups 2>/dev/null || true
+            cd - > /dev/null
+          done
+
+      # ── 6. Run Checkov security scan ───────────────────────────────────
+      # scan_cdk_security.sh exits 1 if any non-skipped findings are
+      # detected, which fails the workflow and blocks the PR.
+      # --no-synth: step 5 already synthesized with --no-lookups (no AWS
+      # credentials needed); skip the script's auto-synth to avoid
+      # re-running without --no-lookups.
+      - name: Run Checkov security scan
+        run: |
+          cd integration-tests/projects
+          bash scan_cdk_security.sh --no-synth
+
+      # ── 7. Upload scan results ─────────────────────────────────────────
+      - name: Upload scan results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: checkov-scan-results-${{ github.run_id }}
+          path: integration-tests/projects/scan_results/
+          retention-days: 14

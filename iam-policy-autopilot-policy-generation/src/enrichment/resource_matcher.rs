@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use super::{Action, Context, EnrichedSdkMethodCall, Explanation, Reason, Resource};
+use super::{Action, Context, EnrichedSdkMethodCall, Explanation, OperationKey, Reason, Resource};
 use crate::enrichment::operation_fas_map::{OperationFasMap, OperationFasMaps};
 use crate::enrichment::service_reference::ServiceReference;
 use crate::enrichment::{Condition, Operation, ServiceReferenceLoader};
@@ -15,9 +15,20 @@ use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::ServiceConfiguration;
 use crate::{SdkMethodCall, SdkType};
 
+/// A node in the FAS expansion dependency graph.
+#[derive(Clone, Debug)]
+struct FasNode {
+    /// The actual operation this node represents.
+    operation: Arc<Operation>,
+    /// Parent operations that triggered this one in the FAS expansion.
+    parents: Vec<OperationKey>,
+}
+
+/// FAS expansion result, keyed by `OperationKey` (service + name + context)
+/// so that cycle detection ignores `source` information.
 #[derive(Clone, Debug)]
 struct FasExpansion {
-    dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>>,
+    nodes: HashMap<OperationKey, FasNode>,
 }
 
 impl FasExpansion {
@@ -26,23 +37,30 @@ impl FasExpansion {
         fas_maps: &OperationFasMaps,
         initial: Operation,
     ) -> Self {
-        let mut dependency_graph: HashMap<Arc<Operation>, Vec<Arc<Operation>>> = HashMap::new();
+        let mut nodes: HashMap<OperationKey, FasNode> = HashMap::new();
+        let initial_key = OperationKey::from(&initial);
         let initial_arc = Arc::new(initial);
 
-        dependency_graph.insert(Arc::clone(&initial_arc), Vec::new()); // Root has no dependencies
+        nodes.insert(
+            initial_key.clone(),
+            FasNode {
+                operation: Arc::clone(&initial_arc),
+                parents: Vec::new(),
+            },
+        );
 
-        let mut to_process = vec![Arc::clone(&initial_arc)];
+        let mut to_process = vec![initial_key];
 
         while !to_process.is_empty() {
             let mut newly_discovered = Vec::new();
 
-            for current in &to_process {
-                let service_name = &current.service;
+            for current_key in &to_process {
+                let service_name = &current_key.service;
 
                 match Self::find_operation_fas_map_for_service(service_cfg, fas_maps, service_name)
                 {
                     Some(operation_fas_map) => {
-                        let service_operation_name = current.service_operation_name();
+                        let service_operation_name = current_key.service_operation_name();
                         log::debug!("Looking up operation {service_operation_name}");
 
                         if let Some(additional_operations) = operation_fas_map
@@ -50,16 +68,22 @@ impl FasExpansion {
                             .get(&service_operation_name)
                         {
                             for additional_op in additional_operations {
-                                let new_op = Arc::new(Operation::from(additional_op.clone()));
+                                let new_op = Operation::from(additional_op.clone());
+                                let new_key = OperationKey::from(&new_op);
 
-                                if let Some(existing_deps) = dependency_graph.get_mut(&new_op) {
-                                    // Operation already exists, add this dependency relationship
-                                    existing_deps.push(Arc::clone(current));
+                                if let Some(existing_node) = nodes.get_mut(&new_key) {
+                                    // Operation already exists, add this parent relationship
+                                    existing_node.parents.push(current_key.clone());
                                 } else {
                                     // New operation
-                                    dependency_graph
-                                        .insert(Arc::clone(&new_op), vec![Arc::clone(current)]);
-                                    newly_discovered.push(Arc::clone(&new_op));
+                                    nodes.insert(
+                                        new_key.clone(),
+                                        FasNode {
+                                            operation: Arc::new(new_op),
+                                            parents: vec![current_key.clone()],
+                                        },
+                                    );
+                                    newly_discovered.push(new_key);
                                 }
                             }
                         } else {
@@ -80,9 +104,9 @@ impl FasExpansion {
 
         log::debug!(
             "FAS expansion completed with {} total operations",
-            dependency_graph.len()
+            nodes.len()
         );
-        Self { dependency_graph }
+        Self { nodes }
     }
 
     /// Find OperationFas map for a specific service
@@ -101,18 +125,21 @@ impl FasExpansion {
     }
 
     fn operations(&self) -> impl Iterator<Item = &Arc<Operation>> {
-        self.dependency_graph.keys()
+        self.nodes.values().map(|node| &node.operation)
     }
 
-    fn complete_provenance_chain(&self, op: Arc<Operation>) -> Vec<Arc<Operation>> {
+    fn complete_provenance_chain(&self, op: &Arc<Operation>) -> Vec<Arc<Operation>> {
+        let key = OperationKey::from(op.as_ref());
         let mut result = vec![];
-        if let Some(deps) = self.dependency_graph.get(&op) {
-            for dep in deps {
-                result.push(Arc::clone(dep));
+        if let Some(node) = self.nodes.get(&key) {
+            for dep_key in &node.parents {
+                if let Some(dep_node) = self.nodes.get(dep_key) {
+                    result.push(Arc::clone(&dep_node.operation));
+                }
             }
         }
-        // Add the initial operation
-        result.push(Arc::clone(&op));
+        // Add the operation itself
+        result.push(Arc::clone(op));
         result
     }
 }
@@ -143,6 +170,7 @@ impl ResourceMatcher {
         if parsed_call.possible_services.is_empty() {
             return Err(ExtractorError::enrichment_error(
                 &parsed_call.name,
+                &parsed_call.possible_services,
                 "No matching services found for method call",
             ));
         }
@@ -198,7 +226,7 @@ impl ResourceMatcher {
         // Use fixed-point algorithm to safely expand FAS operations until no new operations are found
         let fas_expansion = FasExpansion::new(&self.service_cfg, &self.fas_maps, initial);
 
-        log::debug!("to\n{:?}", fas_expansion.dependency_graph);
+        log::debug!("to\n{:?}", fas_expansion.nodes);
 
         let mut enriched_actions = vec![];
 
@@ -251,7 +279,7 @@ impl ResourceMatcher {
                                     )));
                                 }
 
-                                let ops = fas_expansion.complete_provenance_chain(Arc::clone(op));
+                                let ops = fas_expansion.complete_provenance_chain(op);
 
                                 // Create explanation for this action
                                 let explanation = Explanation {
@@ -328,7 +356,7 @@ impl ResourceMatcher {
         // Create explanation for fallback action
         let explanation = Explanation {
             reasons: vec![Reason::new(
-                fas_expansion_result.complete_provenance_chain(Arc::clone(op)),
+                fas_expansion_result.complete_provenance_chain(op),
             )],
         };
 
@@ -989,7 +1017,7 @@ mod tests {
         let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial);
 
         assert_eq!(
-            fas_expansion.dependency_graph.len(),
+            fas_expansion.nodes.len(),
             3,
             "Should have exactly 3 operations: GetObject, Decrypt, Log"
         );
@@ -1079,10 +1107,7 @@ mod tests {
             .collect();
 
         // 3 operations, note that GetObject occurs twice, once with and once without context
-        assert!(
-            fas_expansion.dependency_graph.len() == 3,
-            "Should have 3 operations"
-        );
+        assert!(fas_expansion.nodes.len() == 3, "Should have 3 operations");
 
         // Verify expected operations are present
         assert!(operation_names.contains("service-a:GetObject"));
@@ -1145,7 +1170,7 @@ mod tests {
 
         // We have 5 operations, note that GetObject occurs twice, once with context and the initial one without
         assert!(
-            fas_expansion.dependency_graph.len() == 5,
+            fas_expansion.nodes.len() == 5,
             "Should have 5 operations in the cycle"
         );
     }
@@ -1165,7 +1190,7 @@ mod tests {
 
         let fas_expansion = FasExpansion::new(&service_cfg, &fas_maps, initial.clone());
         assert_eq!(
-            fas_expansion.dependency_graph.len(),
+            fas_expansion.nodes.len(),
             1,
             "Should contain only the initial operation"
         );
@@ -1225,7 +1250,7 @@ mod tests {
 
         // Should have exactly 1 operation since A->A with same context creates no new operations
         assert_eq!(
-            fas_expansion.dependency_graph.len(),
+            fas_expansion.nodes.len(),
             1,
             "Self-cycle with identical context should result in exactly 1 operation"
         );

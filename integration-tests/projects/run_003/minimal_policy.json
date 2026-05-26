@@ -1,0 +1,59 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "kms:GenerateDataKey"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ]
+    },
+    {
+      "Action": [
+        "states:DescribeExecution"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:states:*:*:execution:*:*",
+        "arn:aws:states:*:*:express:*:*:*"
+      ]
+    },
+    {
+      "Action": [
+        "states:StartExecution"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:states:*:*:stateMachine:*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}

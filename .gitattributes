@@ -3,6 +3,9 @@
 iam-policy-autopilot-policy-generation/tests/**/*.java linguist-vendored
 iam-policy-autopilot-cli/tests/**/*.java linguist-vendored
 
+# Exclude integration test projects
+integration-tests/projects/**/* linguist-vendored
+
 # Force LF line endings for test fixture files used in string comparisons.
 # Source fixtures are parsed by tree-sitter which preserves line endings in AST nodes.
 # JSON/testdata fixtures are compared against serde_json output which always uses \n.

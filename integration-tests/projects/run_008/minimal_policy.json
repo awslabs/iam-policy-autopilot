@@ -1,0 +1,32 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "logs:CreateLogStream"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:*:log-stream:*"
+      ]
+    },
+    {
+      "Action": [
+        "servicecatalog:ListPortfolios"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "logs:PutLogEvents"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:*:log-stream:*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}

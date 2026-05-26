@@ -1,0 +1,76 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "kms:Decrypt"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "secretsmanager.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ],
+      "Sid": "AllowSECRETSMANAGERDecrypt"
+    },
+    {
+      "Action": [
+        "secretsmanager:GetSecretValue"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:secretsmanager:*:*:secret:*"
+      ],
+      "Sid": "AllowSECRETSMANAGERGetSecretValue1"
+    },
+    {
+      "Action": [
+        "kms:Decrypt"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "sns.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ],
+      "Sid": "AllowSNSDecrypt"
+    },
+    {
+      "Action": [
+        "sns:Publish"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:sns:*:*:*"
+      ],
+      "Sid": "AllowSNSPublish1"
+    },
+    {
+      "Action": [
+        "kms:GenerateDataKey"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "sns.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ],
+      "Sid": "AllowSNSGenerateDataKey2"
+    }
+  ],
+  "Version": "2012-10-17"
+}

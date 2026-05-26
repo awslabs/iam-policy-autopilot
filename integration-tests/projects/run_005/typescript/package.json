@@ -1,0 +1,20 @@
+{
+  "name": "run-003-3cbeaff7-typescript",
+  "version": "1.0.0",
+  "description": "Secure Repository Monitoring — data-plane script (CDK-refactored)",
+  "main": "script.js",
+  "scripts": {
+    "start": "ts-node script.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.0.0",
+    "@aws-sdk/client-sns": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}

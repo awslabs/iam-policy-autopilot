@@ -1,0 +1,21 @@
+{
+  "name": "run-001-3478634b-typescript",
+  "version": "1.0.0",
+  "description": "AWS File Processing Monitoring System — data-plane script (CDK-refactored)",
+  "main": "script.js",
+  "scripts": {
+    "start": "ts-node script.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-cloudwatch": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-sqs": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}

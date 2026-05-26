@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
-      submodules: ${{ steps.filter.outputs.submodules }}
+      config: ${{ steps.filter.outputs.config }}
       python: ${{ steps.filter.outputs.python }}
-      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.submodules == 'true' }}
+      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.config == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,10 +30,8 @@ jobs:
               - '**/Cargo.lock'
               - '**/rust-toolchain'
               - '**/.cargo/**'
-            submodules:
-              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
-              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
-              - 'iam-policy-autopilot-policy-generation/resources/config/terraform/**'
+            config:
+              - 'iam-policy-autopilot-policy-generation/resources/config/**'
             python:
               - 'iam-policy-autopilot-policy-generation/scripts/**/*.py'
               - 'pyproject.toml'
@@ -187,6 +185,30 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           args: "format --check ."
+
+  unused-deps:
+    name: Unused Dependencies (cargo-machete)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+
+      - name: Check for unused dependencies
+        run: cargo machete
 
   custom-lints:
     name: Custom Lints (dylint)
