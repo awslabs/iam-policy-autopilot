@@ -186,6 +186,32 @@ jobs:
         with:
           args: "format --check ."
 
+  lsp-integration:
+    name: LSP Integration Tests
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install LSP test dependencies
+        run: |
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install 'ty>=0.0.39,<0.1' 'boto3-stubs[essential]'
+          echo "$VIRTUAL_ENV/bin" >> $GITHUB_PATH
+
+      - name: Run LSP integration tests
+        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test -- --ignored
+
   unused-deps:
     name: Unused Dependencies (cargo-machete)
     needs: [changes]
