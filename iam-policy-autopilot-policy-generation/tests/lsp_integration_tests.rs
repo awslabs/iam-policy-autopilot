@@ -25,6 +25,23 @@ impl TestWorkspace {
     fn new() -> std::io::Result<Self> {
         let temp_dir = TempDir::new()?;
         let root_path = temp_dir.path().to_path_buf();
+
+        // ty resolves third-party imports by looking for a .venv in the project root.
+        // Since test workspaces are temp directories, we write a pyproject.toml pointing
+        // ty to the active Python environment so it can find boto3-stubs.
+        let python_prefix = std::process::Command::new("python3")
+            .args(["-c", "import sys; print(sys.prefix)"])
+            .output()
+            .ok()
+            .and_then(|o| String::from_utf8(o.stdout).ok())
+            .unwrap_or_default();
+        let python_prefix = python_prefix.trim();
+
+        std::fs::write(
+            root_path.join("pyproject.toml"),
+            format!("[tool.ty.environment]\npython = \"{python_prefix}\"\n"),
+        )?;
+
         Ok(Self {
             _temp_dir: temp_dir,
             root_path,
