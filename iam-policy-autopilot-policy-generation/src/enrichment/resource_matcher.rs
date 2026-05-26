@@ -149,17 +149,42 @@ impl FasExpansion {
 /// This struct provides the core functionality for the 3-stage enrichment pipeline,
 /// combining parsed method calls with operation action maps and Service
 /// Definition Files to produce complete IAM metadata.
-#[derive(derive_new::new, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub(crate) struct ResourceMatcher {
     service_cfg: Arc<ServiceConfiguration>,
     fas_maps: OperationFasMaps,
     sdk: SdkType,
+    resource_cutoff: usize,
 }
 
-// TODO: Make this configurable: https://github.com/awslabs/iam-policy-autopilot/issues/19
-const RESOURCE_CUTOFF: usize = 5;
-
 impl ResourceMatcher {
+    pub(crate) fn new(
+        service_cfg: Arc<ServiceConfiguration>,
+        fas_maps: OperationFasMaps,
+        sdk: SdkType,
+    ) -> Self {
+        Self::with_resource_cutoff(service_cfg, fas_maps, sdk, crate::DEFAULT_RESOURCE_CUTOFF)
+    }
+
+    pub(crate) fn with_resource_cutoff(
+        service_cfg: Arc<ServiceConfiguration>,
+        fas_maps: OperationFasMaps,
+        sdk: SdkType,
+        resource_cutoff: usize,
+    ) -> Self {
+        assert!(
+            resource_cutoff > 0,
+            "resource_cutoff must be greater than zero"
+        );
+
+        Self {
+            service_cfg,
+            fas_maps,
+            sdk,
+            resource_cutoff,
+        }
+    }
+
     /// Enrich a parsed method call with OperationAction maps, FAS maps, and Service
     /// Reference data
     pub(crate) async fn enrich_method_call<'b>(
@@ -263,7 +288,7 @@ impl ResourceMatcher {
                                         &service_reference,
                                     )?;
                                 let enriched_resources =
-                                    if RESOURCE_CUTOFF <= enriched_resources.len() {
+                                    if self.resource_cutoff <= enriched_resources.len() {
                                         vec![Resource::new("*".to_string(), None)]
                                     } else {
                                         enriched_resources
@@ -441,6 +466,59 @@ mod tests {
         })
     }
 
+    async fn mock_s3_service_reference_with_resources(
+        mock_server: &wiremock::MockServer,
+        resource_count: usize,
+    ) {
+        let action_resources: Vec<_> = (0..resource_count)
+            .map(|index| serde_json::json!({ "Name": format!("resource-{index}") }))
+            .collect();
+        let resources: Vec<_> = (0..resource_count)
+            .map(|index| {
+                serde_json::json!({
+                    "Name": format!("resource-{index}"),
+                    "ARNFormats": [
+                        format!("arn:${{Partition}}:s3:::resource-{index}/${{ResourceName}}")
+                    ]
+                })
+            })
+            .collect();
+
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "s3",
+            serde_json::json!({
+                "Name": "s3",
+                "Actions": [
+                    {
+                        "Name": "GetObject",
+                        "Resources": action_resources
+                    }
+                ],
+                "Resources": resources,
+                "Operations": [
+                    {
+                        "Name": "GetObject",
+                        "AuthorizedActions": [
+                            {
+                                "Name": "GetObject",
+                                "Service": "s3"
+                            }
+                        ],
+                        "SDK": [
+                            {
+                                "Name": "s3",
+                                "Method": "get_object",
+                                "Package": "Boto3"
+                            }
+                        ]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
     #[tokio::test]
     async fn test_enrich_method_call() {
         use std::collections::HashMap;
@@ -500,6 +578,56 @@ mod tests {
         assert_eq!(enriched_calls.len(), 1);
         assert_eq!(enriched_calls[0].method_name, "get_object");
         assert_eq!(enriched_calls[0].service, "s3");
+    }
+
+    #[tokio::test]
+    async fn test_default_resource_cutoff_collapses_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF)
+            .await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
+    }
+
+    #[tokio::test]
+    async fn test_custom_resource_cutoff_preserves_smaller_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::with_resource_cutoff(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF + 1,
+        );
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF)
+            .await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources.len(), crate::DEFAULT_RESOURCE_CUTOFF);
+        assert!(action.resources.iter().all(|resource| resource.name != "*"));
     }
 
     #[tokio::test]

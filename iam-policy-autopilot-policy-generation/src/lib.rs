@@ -53,6 +53,9 @@ use serde::Serialize;
 
 use crate::errors::ExtractorError;
 
+/// Default number of enriched resources at which an action's resource list is collapsed to `*`.
+pub const DEFAULT_RESOURCE_CUTOFF: usize = 5;
+
 /// Language that is analyzed
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]

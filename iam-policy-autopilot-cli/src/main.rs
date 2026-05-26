@@ -29,6 +29,7 @@ use iam_policy_autopilot_policy_generation::api::model::{
 };
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
+use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
 
@@ -93,6 +94,8 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
+    /// Number of enriched resources at which a resource list is collapsed to wildcard
+    resource_cutoff: usize,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
@@ -112,6 +115,16 @@ impl GeneratePolicyCliConfig {
     fn validate(&self) -> Result<()> {
         self.shared.validate()
     }
+}
+
+fn parse_positive_usize(value: &str) -> std::result::Result<usize, String> {
+    let parsed = value
+        .parse::<usize>()
+        .map_err(|e| format!("invalid positive integer: {e}"))?;
+    if parsed == 0 {
+        return Err("value must be greater than zero".to_string());
+    }
+    Ok(parsed)
 }
 
 const SERVICE_HINTS_LONG_HELP: &str = "Space-separated list of AWS service names to filter \
@@ -363,6 +376,18 @@ Use this flag to force fresh data retrieval on every run."
         #[telemetry(value)]
         disable_cache: bool,
 
+        /// Resource-list cutoff before generated policies use wildcard resources
+        #[arg(
+            long = "resource-cutoff",
+            default_value_t = DEFAULT_RESOURCE_CUTOFF,
+            value_parser = parse_positive_usize,
+            long_help = "Number of enriched resources at which an action's resource list is \
+collapsed to '*' instead of emitting every resource-specific ARN. The default preserves the \
+previous behavior."
+        )]
+        #[telemetry(value)]
+        resource_cutoff: usize,
+
         /// Filter extracted SDK calls to specific AWS services
         #[arg(
             long = "service-hints",
@@ -608,6 +633,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         disable_file_system_cache: config.disable_cache,
+        resource_cutoff: config.resource_cutoff,
         explain_filters: config.explain.clone(),
         terraform_dir: config.tf_dir.clone(),
         terraform_files: config.tf_files.clone(),
@@ -756,6 +782,7 @@ async fn main() {
             upload_policies,
             minimal_policy_size,
             disable_cache,
+            resource_cutoff,
             service_hints,
             explain,
             tf_dir,
@@ -784,6 +811,7 @@ async fn main() {
                 upload_policies,
                 minimal_policy_size,
                 disable_cache,
+                resource_cutoff,
                 explain,
                 tf_dir,
                 tf_files,

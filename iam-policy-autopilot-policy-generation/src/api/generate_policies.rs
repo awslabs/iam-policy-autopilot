@@ -175,12 +175,20 @@ fn filter_explanations(
 pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
     let pipeline_start = Instant::now();
 
+    anyhow::ensure!(
+        config.resource_cutoff > 0,
+        "resource_cutoff must be greater than zero"
+    );
+
     debug!(
         "Using AWS context: partition={:?}, region={:?}, account={:?}",
         config.aws_context.partition, config.aws_context.region, config.aws_context.account
     );
 
-    let mut enrichment_engine = EnrichmentEngine::new(config.disable_file_system_cache)?;
+    let mut enrichment_engine = EnrichmentEngine::with_resource_cutoff(
+        config.disable_file_system_cache,
+        config.resource_cutoff,
+    )?;
 
     // --- Optional Terraform resolution ---
     let has_terraform_inputs = config.terraform_dir.is_some()

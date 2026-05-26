@@ -4,6 +4,7 @@ use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
 };
+use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -65,6 +66,12 @@ pub struct GeneratePoliciesInput {
     )]
     #[telemetry(presence)]
     pub tfvars: Option<Vec<String>>,
+
+    #[schemars(
+        description = "Number of enriched resources at which a generated policy uses wildcard resources instead of every resource-specific ARN. Defaults to 5."
+    )]
+    #[telemetry(value, if_present)]
+    pub resource_cutoff: Option<usize>,
 }
 
 // Output struct for the generated IAM policy
@@ -101,6 +108,7 @@ pub async fn generate_application_policies(
         },
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
+        resource_cutoff: input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
 
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
@@ -194,6 +202,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -239,6 +248,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -258,6 +268,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -293,6 +304,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");

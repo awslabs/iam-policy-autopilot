@@ -84,6 +84,7 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
         individual_policies: inputs.individual_policies,
         minimize_policy_size: false,
         disable_file_system_cache: false,
+        resource_cutoff: iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF,
         explain_filters: None,
         terraform_dir: if inputs.tf_dir {
             Some(fixture_dir.to_path_buf())

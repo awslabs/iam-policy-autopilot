@@ -23,6 +23,8 @@ use crate::{SdkMethodCall, SdkType};
 pub struct Engine {
     /// Service Reference loader
     service_reference_loader: ServiceReferenceLoader,
+    /// Resource-list cutoff passed to the resource matcher.
+    resource_cutoff: usize,
 }
 
 impl Engine {
@@ -31,8 +33,26 @@ impl Engine {
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
     pub fn new(disable_file_system_cache: bool) -> Result<Self> {
+        Self::with_resource_cutoff(disable_file_system_cache, crate::DEFAULT_RESOURCE_CUTOFF)
+    }
+
+    /// Create a new MethodEnrichmentEngine with a custom resource cutoff.
+    ///
+    /// The cutoff controls when a long resource list is collapsed to a wildcard resource.
+    pub fn with_resource_cutoff(
+        disable_file_system_cache: bool,
+        resource_cutoff: usize,
+    ) -> Result<Self> {
+        if resource_cutoff == 0 {
+            return Err(ExtractorError::Validation {
+                message: "resource_cutoff must be greater than zero".to_string(),
+                field: Some("resource_cutoff".to_string()),
+            });
+        }
+
         Ok(Self {
             service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
+            resource_cutoff,
         })
     }
 
@@ -67,7 +87,11 @@ impl Engine {
             .load_fas_maps_for_services(&unique_services, &service_cfg)
             .await?;
 
-        let resource_matcher = ResourceMatcher::new(service_cfg, fas_maps, sdk);
+        let resource_matcher = if self.resource_cutoff == crate::DEFAULT_RESOURCE_CUTOFF {
+            ResourceMatcher::new(service_cfg, fas_maps, sdk)
+        } else {
+            ResourceMatcher::with_resource_cutoff(service_cfg, fas_maps, sdk, self.resource_cutoff)
+        };
         let enriched_calls = self
             .enrich_all_methods(extracted_methods, &resource_matcher)
             .await?;
