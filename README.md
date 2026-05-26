@@ -14,6 +14,7 @@ We want to hear from you. Ask questions or share ideas in [Discussions](https://
 - [How is IAM Policy Autopilot helpful?](#how-is-iam-policy-autopilot-helpful)
 - [Best Practices and Considerations](#best-practices-and-considerations)
 - [Getting Started](#getting-started)
+- [Network Requirements](#network-requirements)
 - [CLI Usage](#cli-usage)
 - [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation)
 - [Build Instructions](#build-instructions)
@@ -263,6 +264,32 @@ IAM Policy Autopilot's Kiro power specifically enhances the traditional MCP expe
 1. This Kiro Power provides your LLM agent with **more steering guidance**, offering it more information on the specific use cases and best practices of our MCP tooling. 
 2. This Kiro power prompts your LLM agent to give a **tutorial of the MCP tools** offered by IAM Policy Autopilot, allowing you to better understand how our MCP tooling assists your use case.
 3. This Kiro Power provides your LLM agent with **step-by-step onboarding validation**, allowing it to detect any problems with installations and provide remediation steps for those problems.
+
+## Network Requirements
+
+IAM Policy Autopilot makes HTTPS requests at runtime to the AWS service reference endpoint to fetch up-to-date AWS service metadata used for policy generation. This endpoint must be reachable from the machine running the tool.
+
+### Corporate networks and proxies
+
+If your network uses a web proxy, set the `HTTPS_PROXY` environment variable:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+```
+
+See the [reqwest proxy documentation](https://docs.rs/reqwest/latest/reqwest/#proxies) for supported proxy URL formats.
+
+### SSL inspection
+
+IAM Policy Autopilot uses your operating system's native certificate store for TLS verification. If your network performs SSL/TLS inspection (traffic re-signing), the inspection CA certificate must be installed in your OS certificate store. Consult your IT team if you are unsure whether this is already configured.
+
+### Firewall allowlisting
+
+If outbound HTTPS traffic is restricted, allow access to:
+
+| Endpoint | Protocol | Purpose |
+|---|---|---|
+| `servicereference.us-east-1.amazonaws.com` | HTTPS | AWS service metadata for policy generation |
 
 ## CLI Usage
 
