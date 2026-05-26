@@ -30,7 +30,7 @@ pub mod policy_generation;
 // Export api for public use
 pub mod api;
 
-// LSP client for Python type information
+// LSP client for type information extraction
 pub mod lsp;
 
 use std::fmt::Display;

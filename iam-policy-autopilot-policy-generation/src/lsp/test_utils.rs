@@ -108,7 +108,7 @@ mod tests {
     #[test]
     #[should_panic(expected = "not found in fixture")]
     fn test_find_position_missing() {
-        find_position(fixtures::SIMPLE_BOTO3, "nonexistent_symbol");
+        let _ = find_position(fixtures::SIMPLE_BOTO3, "nonexistent_symbol");
     }
 
     #[test]

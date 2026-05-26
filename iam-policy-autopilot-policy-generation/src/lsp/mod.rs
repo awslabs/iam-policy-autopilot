@@ -320,6 +320,11 @@ impl<C: LspServerConfig> LspClient<C> {
     }
 
     /// Shutdown the LSP server gracefully.
+    ///
+    /// This method:
+    /// 1. Sends a shutdown request with a configurable timeout
+    /// 2. Sends an exit notification
+    /// 3. Waits for the process to exit
     pub async fn shutdown(mut self) -> Result<(), LspError> {
         timeout(self.options.shutdown_timeout, self.server.shutdown(()))
             .await
