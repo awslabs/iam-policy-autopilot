@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 description = "Core library for IAM permission analysis and AWS SDK method extraction"
 
+[package.metadata.cargo-machete]
+ignored = ["hcl-rs"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
@@ -30,10 +33,7 @@ async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
 hcl-rs.workspace = true
-toml.workspace = true
 walkdir.workspace = true
-visibility.workspace = true
-
 
 # Build dependencies
 [build-dependencies]
