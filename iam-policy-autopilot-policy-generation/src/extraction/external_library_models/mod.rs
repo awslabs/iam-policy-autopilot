@@ -88,9 +88,9 @@ impl LibraryModelRegistry {
     pub(crate) fn load(language: Language) -> Result<Self> {
         let builtin_models = Self::load_builtin_models(language);
 
-        let mut models: HashMap<Language, Vec<ExternalLibraryModel>> = HashMap::new();
-        for model in builtin_models {
-            models.entry(model.language).or_default().push(model);
+        let mut models = HashMap::new();
+        if !builtin_models.is_empty() {
+            models.insert(language, builtin_models);
         }
 
         Ok(Self { models })
