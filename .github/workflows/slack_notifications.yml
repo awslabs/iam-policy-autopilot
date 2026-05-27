@@ -4,7 +4,7 @@ on:
   issues:
   issue_comment:
   pull_request_target:
-     types: [opened, reopened, edited]
+    types: [opened, reopened, edited]
   pull_request_review_comment:
   pull_request_review:
   discussion:
@@ -19,12 +19,195 @@ jobs:
     permissions:
       contents: read
     steps:
-      - name: Send Event Notification
-        continue-on-error: true
-        uses: rtCamp/action-slack-notify@cdf0a2130cbcdfd82ba5fcac8e076370bf381b36
+      - name: Determine event context
+        id: context
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const event = context.eventName;
+            const action = context.payload.action;
+            const sender = context.payload.sender.login;
+            const repo = context.repo.repo;
+
+            let emoji, label, url, title, number;
+
+            switch (event) {
+              case 'issues':
+                emoji = '🐛';
+                label = 'Issue';
+                url = context.payload.issue.html_url;
+                title = context.payload.issue.title;
+                number = context.payload.issue.number;
+                break;
+              case 'issue_comment':
+                emoji = '💬';
+                label = 'Comment';
+                url = context.payload.comment.html_url;
+                title = context.payload.issue.title;
+                number = context.payload.issue.number;
+                break;
+              case 'pull_request_target':
+                emoji = '🔀';
+                label = 'PR';
+                url = context.payload.pull_request.html_url;
+                title = context.payload.pull_request.title;
+                number = context.payload.pull_request.number;
+                break;
+              case 'pull_request_review':
+                emoji = '👀';
+                label = 'Review';
+                url = context.payload.review.html_url;
+                title = context.payload.pull_request.title;
+                number = context.payload.pull_request.number;
+                break;
+              case 'pull_request_review_comment':
+                emoji = '📝';
+                label = 'Review Comment';
+                url = context.payload.comment.html_url;
+                title = context.payload.pull_request.title;
+                number = context.payload.pull_request.number;
+                break;
+              case 'discussion':
+                emoji = '🗣️';
+                label = 'Discussion';
+                url = context.payload.discussion.html_url;
+                title = context.payload.discussion.title;
+                number = context.payload.discussion.number;
+                break;
+              case 'discussion_comment':
+                emoji = '💬';
+                label = 'Discussion Comment';
+                url = context.payload.comment.html_url;
+                title = context.payload.discussion.title;
+                number = context.payload.discussion.number;
+                break;
+              default:
+                emoji = '📢';
+                label = 'Event';
+                url = '';
+                title = '';
+                number = '';
+            }
+
+            // Escape for safe JSON embedding
+            const safeTitle = (title || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+
+            core.setOutput('emoji', emoji);
+            core.setOutput('label', label);
+            core.setOutput('url', url);
+            core.setOutput('title', safeTitle);
+            core.setOutput('number', String(number));
+            core.setOutput('sender', sender);
+            core.setOutput('action', action);
+            core.setOutput('repo', repo);
+
+      - name: Resolve mentions
+        id: mentions
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const mapJson = process.env.SLACK_ALIAS_MAP || '{}';
+            let slackMap = {};
+            try { slackMap = JSON.parse(mapJson); } catch (e) { slackMap = {}; }
+
+            const sender = context.payload.sender.login;
+            const event = context.eventName;
+            const action = context.payload.action;
+
+            function resolve(username) {
+              const id = slackMap[username];
+              return id ? `<@${id}>` : `@${username}`;
+            }
+
+            let targets = new Set();
+
+            switch (event) {
+              case 'pull_request_target':
+                if (action === 'opened' || action === 'reopened') {
+                  const reviewers = context.payload.pull_request.requested_reviewers || [];
+                  for (const r of reviewers) {
+                    targets.add(r.login);
+                  }
+                }
+                break;
+              case 'pull_request_review':
+              case 'pull_request_review_comment':
+                targets.add(context.payload.pull_request.user.login);
+                break;
+              case 'issues':
+                const assignees = context.payload.issue.assignees || [];
+                for (const a of assignees) {
+                  targets.add(a.login);
+                }
+                break;
+              case 'issue_comment':
+                targets.add(context.payload.issue.user.login);
+                const issueAssignees = context.payload.issue.assignees || [];
+                for (const a of issueAssignees) {
+                  targets.add(a.login);
+                }
+                break;
+              case 'discussion_comment':
+                targets.add(context.payload.discussion.user.login);
+                break;
+            }
+
+            // Never ping the sender about their own action
+            targets.delete(sender);
+
+            const mentionsList = [...targets].map(resolve).join(' ');
+            core.setOutput('mentions', mentionsList);
         env:
-          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_TITLE: '${{ github.event_name }}: ${{ github.event.repository.name }}'
-          SLACK_FOOTER: ''
-          MSG_MINIMAL: true
-          SLACK_MESSAGE: 'By ${{ github.event.sender.login }} - ${{ github.event.action }} - ${{ github.event.issue.html_url || github.event.pull_request.html_url || github.event.discussion.html_url || github.event.comment.html_url }}'
+          SLACK_ALIAS_MAP: ${{ vars.SLACK_ALIAS_MAP }}
+
+      - name: Send Slack notification
+        continue-on-error: true
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} #${{ steps.context.outputs.number }} ${{ steps.context.outputs.action }} by ${{ steps.context.outputs.sender }} in ${{ steps.context.outputs.repo }}",
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {
+                    "type": "plain_text",
+                    "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} ${{ steps.context.outputs.action }}",
+                    "emoji": true
+                  }
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "<${{ steps.context.outputs.url }}|#${{ steps.context.outputs.number }} ${{ steps.context.outputs.title }}>"
+                  },
+                  "accessory": {
+                    "type": "button",
+                    "text": {
+                      "type": "plain_text",
+                      "text": "View"
+                    },
+                    "url": "${{ steps.context.outputs.url }}"
+                  }
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Action by:* ${{ steps.context.outputs.sender }}  •  *Repo:* ${{ steps.context.outputs.repo }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ steps.mentions.outputs.mentions && format('cc {0}', steps.mentions.outputs.mentions) || ' ' }}"
+                  }
+                }
+              ]
+            }
