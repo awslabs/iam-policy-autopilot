@@ -55,6 +55,18 @@ To send us a pull request, please:
 
 Ensure your changes pass all linters. The CI will enforce these checks automatically.
 
+### Pre-commit Hooks
+
+The repository includes a pre-commit configuration for local checks.
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install hooks into .git/hooks/pre-commit
+pre-commit install
+```
+
 **Rust**
 
 ```bash
@@ -79,6 +91,12 @@ ruff format --check .
 ```
 
 Ruff is configured in [`pyproject.toml`](pyproject.toml) at the repository root. Install it with `pip install ruff` or via your package manager.
+
+### Changelog
+
+If your change is user-facing (new feature, bug fix, breaking change), add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `[Unreleased]` section as part of your PR. This keeps the changelog accurate and ready for the next release.
+
+Use these subsection headings: **Added**, **Changed**, **Fixed**, **Removed**.
 
 ### Commit Message Guidelines
 

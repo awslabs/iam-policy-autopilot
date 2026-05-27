@@ -286,8 +286,11 @@ fn deserialize_service_reference_mapping(
     for entry in entries {
         let url = Url::parse(&entry.url).map_err(|e| {
             ExtractorError::service_reference_parse_error_with_source(
-                "RemoteServiceReferenceLoaderMappingInitialization",
-                "Failed to parse service reference mapping",
+                &entry.service,
+                format!(
+                    "Failed to parse URL '{}' in service reference mapping",
+                    entry.url
+                ),
                 e,
             )
         })?;
@@ -311,13 +314,18 @@ pub(crate) struct RemoteServiceReferenceLoader {
     disable_file_system_cache: bool,
 }
 
+const DEFAULT_MAPPING_URL: &str = "https://servicereference.us-east-1.amazonaws.com";
+const MAPPING_URL_ENV_VAR: &str = "IAM_POLICY_AUTOPILOT_SERVICE_REFERENCE_URL";
+
 impl RemoteServiceReferenceLoader {
     pub(crate) fn new(disable_file_system_cache: bool) -> crate::errors::Result<Self> {
+        let mapping_url =
+            std::env::var(MAPPING_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_MAPPING_URL.to_string());
         Ok(Self {
             client: Self::create_client()?,
             service_reference_mapping: OnceCell::new(),
             service_cache: RwLock::new(HashMap::new()),
-            mapping_url: "https://servicereference.us-east-1.amazonaws.com".to_string(),
+            mapping_url,
             disable_file_system_cache,
         })
     }
@@ -361,44 +369,49 @@ impl RemoteServiceReferenceLoader {
                     .get(&self.mapping_url)
                     .send()
                     .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            "RemoteServiceReferenceLoaderMappingInitialization",
-                            "Failed to send request".to_string(),
-                            e,
-                        )
+                    .map_err(|e| ExtractorError::Network {
+                        message: format!(
+                            "Failed to connect to the service reference endpoint at '{}'. \
+                             Verify that this URL is reachable from your network \
+                             (e.g. not blocked by a firewall or VPN). \
+                             If you need to route through a proxy, \
+                             set the HTTPS_PROXY environment variable \
+                             (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
+                            self.mapping_url
+                        ),
+                        source: Some(Box::new(e)),
                     })?
                     .error_for_status()
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            "RemoteServiceReferenceLoaderMappingInitialization",
-                            "Failed to fetch mapping".to_string(),
-                            e,
-                        )
+                    .map_err(|e| ExtractorError::Network {
+                        message: format!(
+                            "Service reference endpoint at '{}' returned an error status",
+                            self.mapping_url
+                        ),
+                        source: Some(Box::new(e)),
                     })?
                     .text()
                     .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            "RemoteServiceReferenceLoaderMappingInitialization",
-                            "Failed to read response".to_string(),
-                            e,
-                        )
+                    .map_err(|e| ExtractorError::Network {
+                        message: format!(
+                            "Failed to read response body from service reference endpoint at '{}'",
+                            self.mapping_url
+                        ),
+                        source: Some(Box::new(e)),
                     })?;
 
                 let json_value: serde_json::Value =
                     serde_json::from_str(&json_text).map_err(|e| {
                         ExtractorError::service_reference_parse_error_with_source(
-                            "RemoteServiceReferenceLoaderMappingInitialization",
-                            "Failed to parse JSON".to_string(),
+                            &self.mapping_url,
+                            "Failed to parse JSON from service reference endpoint".to_string(),
                             e,
                         )
                     })?;
 
                 let mapping = deserialize_service_reference_mapping(json_value).map_err(|e| {
                     ExtractorError::service_reference_parse_error_with_source(
-                        "RemoteServiceReferenceLoaderMappingInitialization",
-                        "Failed to deserialize mapping".to_string(),
+                        &self.mapping_url,
+                        "Failed to deserialize service reference mapping".to_string(),
                         e,
                     )
                 })?;
@@ -426,12 +439,10 @@ impl RemoteServiceReferenceLoader {
         Client::builder()
             .user_agent(user_agent)
             .build()
-            .map_err(|e| {
-                ExtractorError::service_reference_parse_error_with_source(
-                    "RemoteServiceReferenceLoaderClientInitialization",
-                    "Failed to create service reference client".to_string(),
-                    e,
-                )
+            .map_err(|e| ExtractorError::Configuration {
+                message: "Failed to initialize the HTTP client for the service reference endpoint"
+                    .to_string(),
+                source: Some(Box::new(e)),
             })
     }
 
@@ -953,5 +964,29 @@ mod tests {
         let authorized_action = &operation.authorized_actions[0];
 
         assert!(authorized_action.context.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_network_failure_error_message() {
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url("http://127.0.0.1:1".to_string());
+
+        let result = loader.load("s3").await;
+        assert!(result.is_err());
+
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("Failed to connect to the service reference endpoint"),
+            "Error should contain connection failure guidance, got: {err}"
+        );
+        assert!(
+            err.contains("http://127.0.0.1:1"),
+            "Error should contain the URL that was attempted, got: {err}"
+        );
+        assert!(
+            err.contains("HTTPS_PROXY"),
+            "Error should mention HTTPS_PROXY env var, got: {err}"
+        );
     }
 }

@@ -1,8 +1,14 @@
 ## [Unreleased]
 
+### Added
+
+- Support for namespace imports in TypeScript/JavaScript (#190)
+
 ### Fixed
 
-- Fixed `fix_access_denied` MCP tool ignoring the user-confirmed policy and applying a regenerated one instead
+- `fix_access_denied` MCP tool now applies the user-confirmed policy instead of regenerating one (#202)
+- `--explain` now shows every call site when the same operation appears multiple times (#188)
+- Condition values for the same key are now merged instead of overwritten when serializing policies (#199)
 
 ## [0.2.1] - 2026-05-08
 
@@ -12,7 +18,7 @@
 
 ## [0.2.0] - 2026-05-05
 
-### Features
+### Added
 
 - IAM Policy Autopilot now supports policy generation for Java applications. (#134)
 - When provided with Terraform configurations or plans, IAM Policy Autopilot now generates more precise resource blocks, e.g., narrowing arn:aws:s3:::* down to the actual bucket/resource referenced. (#157)
@@ -44,22 +50,22 @@
 
 ## [0.1.2] - 2025-12-15
 
-## Fixed
+### Fixed
 
 - Use SDK info to find the operation from a method name. Fixes a bug where `modify_db_cluster` (and similar names) was renamed incorrectly to `ModifyDbCluster` instead of `ModifyDBCluster`. (#70)
 - Reduce false positive findings by fixing Go SDK parameter extraction. It now uses required arguments correctly to disambiguate possible services. (#50)
 
-## Added
+### Added
 
 - Added installation script for MacOS and Linux. (#44)
 
-## Changed
+### Changed
 
 - We now add the policy ID `IamPolicyAutopilot` in the access denied workflow.  (#48)
 - Updated Cargo.toml description. (#46)
 
 ## [0.1.1] - 2025-11-26
 
-### 🚀 Features
+### Added
 
 - Initial release

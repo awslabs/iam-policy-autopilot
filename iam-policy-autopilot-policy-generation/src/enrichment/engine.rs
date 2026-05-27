@@ -150,7 +150,8 @@ impl Engine {
                 Err(e) => {
                     return Err(ExtractorError::enrichment_error(
                         &method.name,
-                        format!("Failed to enrich method call: {e}"),
+                        &method.possible_services,
+                        format!("{e}"),
                     ));
                 }
             }

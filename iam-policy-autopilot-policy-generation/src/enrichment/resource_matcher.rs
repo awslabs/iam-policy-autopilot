@@ -170,6 +170,7 @@ impl ResourceMatcher {
         if parsed_call.possible_services.is_empty() {
             return Err(ExtractorError::enrichment_error(
                 &parsed_call.name,
+                &parsed_call.possible_services,
                 "No matching services found for method call",
             ));
         }
