@@ -265,7 +265,7 @@ impl<'a> LibraryCallExtractor<'a> {
     ) -> Vec<SdkMethodCall> {
         let resolved = resolve_imports(ast);
 
-        let models = self.registry.models_for_language(Language::Python);
+        let models = self.registry.models();
 
         let mut imports = resolved.imports;
         if imports.is_empty() && resolved.wildcard_modules.is_empty() {

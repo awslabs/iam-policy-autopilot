@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use anyhow::{Context, Result};
 use rust_embed::RustEmbed;
 use serde::{Deserialize, Serialize};
@@ -71,47 +69,23 @@ pub(crate) struct SdkOperationMapping {
     pub operation: String,
 }
 
-/// Registry of external library models, indexed by language.
+/// Registry of external library models for a given language.
 ///
-/// The registry discovers, loads, and indexes all built-in external library
-/// models for a given language. Built-in models are embedded at compile time
-/// via `rust-embed`.
+/// The registry discovers and loads all built-in external library models at
+/// construction time. Built-in models are embedded at compile time via `rust-embed`.
 pub(crate) struct LibraryModelRegistry {
-    models: HashMap<Language, Vec<ExternalLibraryModel>>,
+    models: Vec<ExternalLibraryModel>,
 }
 
 impl LibraryModelRegistry {
     /// Create a new registry, loading built-in models for the given language.
-    ///
-    /// Panics if an embedded file cannot be read (indicates a build-time bug).
-    /// Built-in models that fail to parse are logged as warnings and skipped.
-    pub(crate) fn load(language: Language) -> Result<Self> {
-        let builtin_models = Self::load_builtin_models(language);
-
-        let mut models = HashMap::new();
-        if !builtin_models.is_empty() {
-            models.insert(language, builtin_models);
-        }
-
-        Ok(Self { models })
-    }
-
-    /// Get all models for a given language.
-    pub(crate) fn models_for_language(&self, language: Language) -> &[ExternalLibraryModel] {
-        self.models
-            .get(&language)
-            .map(Vec::as_slice)
-            .unwrap_or_default()
-    }
-
-    /// Load built-in models from embedded resources, filtering by language.
     ///
     /// Iterates over all `.json` files in the embedded `external-library-models/`
     /// directory, parses each one, and collects models that match the requested
     /// language. Panics if an embedded file listed by `iter()` cannot be read
     /// (this should never happen). If a file fails to parse, a warning is logged
     /// and the model is skipped (extraction is not halted).
-    fn load_builtin_models(language: Language) -> Vec<ExternalLibraryModel> {
+    pub(crate) fn load(language: Language) -> Result<Self> {
         let mut models = Vec::new();
 
         for file_name in ExternalLibraryModelsAsset::iter() {
@@ -157,7 +131,12 @@ impl LibraryModelRegistry {
             language
         );
 
-        models
+        Ok(Self { models })
+    }
+
+    /// Get all loaded models.
+    pub(crate) fn models(&self) -> &[ExternalLibraryModel] {
+        &self.models
     }
 
     /// Create a registry from a pre-built list of models.
@@ -166,11 +145,7 @@ impl LibraryModelRegistry {
     /// rather than loaded from files.
     #[cfg(test)]
     pub(crate) fn from_models(models: Vec<ExternalLibraryModel>) -> Self {
-        let mut map: HashMap<Language, Vec<ExternalLibraryModel>> = HashMap::new();
-        for model in models {
-            map.entry(model.language).or_default().push(model);
-        }
-        Self { models: map }
+        Self { models }
     }
 }
 
