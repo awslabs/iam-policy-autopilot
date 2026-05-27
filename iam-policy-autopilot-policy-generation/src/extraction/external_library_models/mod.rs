@@ -90,16 +90,7 @@ impl LibraryModelRegistry {
 
         let mut models: HashMap<Language, Vec<ExternalLibraryModel>> = HashMap::new();
         for model in builtin_models {
-            let lang = model.language;
-            let entry = models.entry(lang).or_default();
-            if let Some(existing) = entry
-                .iter_mut()
-                .find(|m| m.library_name == model.library_name)
-            {
-                existing.call_patterns.extend(model.call_patterns);
-            } else {
-                entry.push(model);
-            }
+            models.entry(model.language).or_default().push(model);
         }
 
         Ok(Self { models })
