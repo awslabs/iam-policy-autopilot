@@ -7,7 +7,7 @@
 //! Run with: `cargo test --features integ-test -- --ignored`
 
 use iam_policy_autopilot_policy_generation::lsp::{
-    test_utils::{find_position, fixtures, is_lsp_ready},
+    test_utils::{find_position, python},
     LspError, TyLspClient,
 };
 use rstest::rstest;
@@ -73,23 +73,23 @@ impl TestWorkspace {
 #[serial]
 #[ignore]
 async fn test_hover_returns_expected_type(#[case] needle: &str, #[case] expected: &str) {
-    if !is_lsp_ready() {
+    if !python::is_ready() {
         panic!("LSP integration tests require ty + boto3-stubs");
     }
 
     let workspace = TestWorkspace::new().unwrap();
     let file_path = workspace
-        .create_file("test.py", fixtures::SIMPLE_BOTO3)
+        .create_file("test.py", python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
     let mut client = TyLspClient::create(&workspace.root_path).await.unwrap();
     client
-        .open_document(&file_path, fixtures::SIMPLE_BOTO3)
+        .open_document(&file_path, python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
-    let (line, col) = find_position(fixtures::SIMPLE_BOTO3, needle);
+    let (line, col) = find_position(python::fixtures::SIMPLE_BOTO3, needle);
     let hover = client
         .hover(&workspace.file_uri("test.py"), line, col)
         .await
@@ -107,31 +107,31 @@ async fn test_hover_returns_expected_type(#[case] needle: &str, #[case] expected
 #[serial]
 #[ignore]
 async fn test_multiple_documents() {
-    if !is_lsp_ready() {
+    if !python::is_ready() {
         panic!("LSP integration tests require ty + boto3-stubs");
     }
 
     let workspace = TestWorkspace::new().unwrap();
     let file1 = workspace
-        .create_file("file1.py", fixtures::SIMPLE_BOTO3)
+        .create_file("file1.py", python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
     let file2 = workspace
-        .create_file("file2.py", fixtures::MULTIPLE_SERVICES)
+        .create_file("file2.py", python::fixtures::MULTIPLE_SERVICES)
         .await
         .unwrap();
 
     let mut client = TyLspClient::create(&workspace.root_path).await.unwrap();
     client
-        .open_document(&file1, fixtures::SIMPLE_BOTO3)
+        .open_document(&file1, python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
     client
-        .open_document(&file2, fixtures::MULTIPLE_SERVICES)
+        .open_document(&file2, python::fixtures::MULTIPLE_SERVICES)
         .await
         .unwrap();
 
-    let (line, col) = find_position(fixtures::SIMPLE_BOTO3, "s3_client");
+    let (line, col) = find_position(python::fixtures::SIMPLE_BOTO3, "s3_client");
     let hover1 = client
         .hover(&workspace.file_uri("file1.py"), line, col)
         .await
@@ -141,7 +141,7 @@ async fn test_multiple_documents() {
         "Expected S3Client in file1, got: {hover1:?}"
     );
 
-    let (line, col) = find_position(fixtures::MULTIPLE_SERVICES, "s3 =");
+    let (line, col) = find_position(python::fixtures::MULTIPLE_SERVICES, "s3 =");
     let hover2 = client
         .hover(&workspace.file_uri("file2.py"), line, col)
         .await
@@ -158,19 +158,19 @@ async fn test_multiple_documents() {
 #[serial]
 #[ignore]
 async fn test_hover_on_empty_file() {
-    if !is_lsp_ready() {
+    if !python::is_ready() {
         panic!("LSP integration tests require ty + boto3-stubs");
     }
 
     let workspace = TestWorkspace::new().unwrap();
     let file_path = workspace
-        .create_file("empty.py", fixtures::EMPTY)
+        .create_file("empty.py", python::fixtures::EMPTY)
         .await
         .unwrap();
 
     let mut client = TyLspClient::create(&workspace.root_path).await.unwrap();
     client
-        .open_document(&file_path, fixtures::EMPTY)
+        .open_document(&file_path, python::fixtures::EMPTY)
         .await
         .unwrap();
 
@@ -187,19 +187,19 @@ async fn test_hover_on_empty_file() {
 #[serial]
 #[ignore]
 async fn test_hover_on_invalid_position() {
-    if !is_lsp_ready() {
+    if !python::is_ready() {
         panic!("LSP integration tests require ty + boto3-stubs");
     }
 
     let workspace = TestWorkspace::new().unwrap();
     let file_path = workspace
-        .create_file("test.py", fixtures::SIMPLE_BOTO3)
+        .create_file("test.py", python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
     let mut client = TyLspClient::create(&workspace.root_path).await.unwrap();
     client
-        .open_document(&file_path, fixtures::SIMPLE_BOTO3)
+        .open_document(&file_path, python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
@@ -229,23 +229,23 @@ async fn test_server_not_found_error() {
 #[serial]
 #[ignore]
 async fn test_open_same_document_twice() {
-    if !is_lsp_ready() {
+    if !python::is_ready() {
         panic!("LSP integration tests require ty + boto3-stubs");
     }
 
     let workspace = TestWorkspace::new().unwrap();
     let file_path = workspace
-        .create_file("test.py", fixtures::SIMPLE_BOTO3)
+        .create_file("test.py", python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
     let mut client = TyLspClient::create(&workspace.root_path).await.unwrap();
     client
-        .open_document(&file_path, fixtures::SIMPLE_BOTO3)
+        .open_document(&file_path, python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
     client
-        .open_document(&file_path, fixtures::SIMPLE_BOTO3)
+        .open_document(&file_path, python::fixtures::SIMPLE_BOTO3)
         .await
         .unwrap();
 
