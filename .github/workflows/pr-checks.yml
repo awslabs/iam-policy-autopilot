@@ -209,7 +209,7 @@ jobs:
           echo "${{ github.workspace }}/.lsp-venv/bin" >> $GITHUB_PATH
 
       - name: Run LSP integration tests
-        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test -- --ignored
+        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test --test lsp_integration_tests -- --ignored
 
   unused-deps:
     name: Unused Dependencies (cargo-machete)
