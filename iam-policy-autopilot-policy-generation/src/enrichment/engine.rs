@@ -32,17 +32,7 @@ impl Engine {
     ///
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
-    pub fn new(disable_file_system_cache: bool) -> Result<Self> {
-        Self::with_resource_cutoff(disable_file_system_cache, crate::DEFAULT_RESOURCE_CUTOFF)
-    }
-
-    /// Create a new MethodEnrichmentEngine with a custom resource cutoff.
-    ///
-    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
-    pub fn with_resource_cutoff(
-        disable_file_system_cache: bool,
-        resource_cutoff: usize,
-    ) -> Result<Self> {
+    pub fn new(disable_file_system_cache: bool, resource_cutoff: usize) -> Result<Self> {
         if resource_cutoff == 0 {
             return Err(ExtractorError::Validation {
                 message: "resource_cutoff must be greater than zero".to_string(),
@@ -88,7 +78,7 @@ impl Engine {
             .await?;
 
         let resource_matcher =
-            ResourceMatcher::with_resource_cutoff(service_cfg, fas_maps, sdk, self.resource_cutoff);
+            ResourceMatcher::new(service_cfg, fas_maps, sdk, self.resource_cutoff);
         let enriched_calls = self
             .enrich_all_methods(extracted_methods, &resource_matcher)
             .await?;
@@ -200,7 +190,7 @@ mod tests {
 
     #[test]
     fn test_get_unique_services() {
-        let engine = Engine::new(false).unwrap();
+        let engine = Engine::new(false, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
 
         let extracted_methods = create_test_extracted_methods();
         let services = engine.get_unique_services(&extracted_methods);
@@ -234,7 +224,7 @@ mod tests {
         }
 
         println!("\nSetting up enrichment engine...");
-        let mut enrichment_engine = Engine::new(true).unwrap();
+        let mut enrichment_engine = Engine::new(true, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
         println!("Enrichment engine initialized");
 
         println!("\nRunning enrichment on all operations...");

@@ -158,16 +158,7 @@ pub(crate) struct ResourceMatcher {
 }
 
 impl ResourceMatcher {
-    #[cfg(test)]
     pub(crate) fn new(
-        service_cfg: Arc<ServiceConfiguration>,
-        fas_maps: OperationFasMaps,
-        sdk: SdkType,
-    ) -> Self {
-        Self::with_resource_cutoff(service_cfg, fas_maps, sdk, crate::DEFAULT_RESOURCE_CUTOFF)
-    }
-
-    pub(crate) fn with_resource_cutoff(
         service_cfg: Arc<ServiceConfiguration>,
         fas_maps: OperationFasMaps,
         sdk: SdkType,
@@ -545,7 +536,12 @@ mod tests {
         let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
         let parsed_call = create_test_parsed_method_call();
 
         // Create operation action map file
@@ -584,7 +580,12 @@ mod tests {
     #[tokio::test]
     async fn test_default_resource_cutoff_collapses_resource_list() {
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let mock_server = wiremock::MockServer::start().await;
         let loader = ServiceReferenceLoader::new(true)
@@ -606,7 +607,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_resource_cutoff_preserves_smaller_resource_list() {
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::with_resource_cutoff(
+        let matcher = ResourceMatcher::new(
             config,
             HashMap::new(),
             SdkType::Boto3,
@@ -661,7 +662,12 @@ mod tests {
             resource_overrides: HashMap::new(),
         };
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -727,7 +733,12 @@ mod tests {
         // Service configuration without s3 in no_operation_action_map
         let service_cfg = create_empty_service_config();
 
-        let matcher = ResourceMatcher::new(service_cfg, HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            service_cfg,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
@@ -853,7 +864,12 @@ mod tests {
                     } ]
                 })).await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create SdkMethodCall for connectparticipant:send_message
         let parsed_call = SdkMethodCall {
@@ -941,7 +957,12 @@ mod tests {
         )
         .await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create parsed method call for get_user
         let parsed_call = SdkMethodCall {
@@ -1015,7 +1036,12 @@ mod tests {
         let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create parsed method call for get_object
         let parsed_call = SdkMethodCall {
@@ -1433,7 +1459,12 @@ mod tests {
     async fn test_boto3_method_name_requires_lookup() {
         // Test that boto3 methods are correctly mapped using service reference SDK mapping
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -1460,7 +1491,12 @@ mod tests {
     async fn test_non_boto3_sdk_uses_extracted_name_directly() {
         // Test that non-Boto3 SDKs (e.g., Go) use the extracted operation name directly without renaming
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Other);
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Other,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
