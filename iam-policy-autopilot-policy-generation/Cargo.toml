@@ -46,7 +46,6 @@ tokio = { workspace = true, features = ["process", "io-util"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rust-embed = { version = "8.11", features = ["include-exclude"] }
-reqwest = { version = "0.12.4", default-features = false }
 tokio = { version = "1.0", features = ["rt", "macros", "sync"] }
 getrandom = { version = "0.2", features = ["js"] }
 
@@ -72,7 +71,7 @@ integ-test = []
 # Development features
 dev = ["tokio/test-util"]
 # WASM target — disables filesystem caching, TTL expiry, and native-only subsystems.
-# Prefer this over raw `cfg(target_arch = "wasm32")` for intent clarity.
+# Uses emscripten fetch instead of reqwest for HTTP.
 wasm = []
 
 # Development dependencies

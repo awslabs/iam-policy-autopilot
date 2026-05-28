@@ -22,6 +22,7 @@ use crate::errors::{ExtractorError, Result};
 /// - Efficient directory traversal with early termination on errors
 /// - Pattern compilation is cached when possible
 /// - Large directories are processed incrementally
+#[cfg(not(feature = "wasm"))]
 #[derive(Debug, Clone)]
 pub struct FileSystemProvider;
 

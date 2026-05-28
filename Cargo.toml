@@ -9,7 +9,8 @@ members = [
     "iam-policy-autopilot-cli",
     "integration-tests/runner",
     "xtask",
-    "iam-policy-autopilot-wasm"
+    "iam-policy-autopilot-wasm",
+    "iam-policy-autopilot-wasm-emscripten"
 ]
 exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
@@ -87,7 +88,7 @@ strsim = "0.11"
 
 # Additional workspace configuration
 [workspace.lints.rust]
-unsafe_code = "forbid"
+unsafe_code = "deny"
 dead_code = "deny"
 
 [workspace.lints.clippy]

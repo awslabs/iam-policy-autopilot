@@ -1,0 +1,18 @@
+[package]
+name = "iam-policy-autopilot-wasm-emscripten"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Emscripten-based WebAssembly build of IAM Policy Autopilot with full extraction support."
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false, features = ["wasm", "tree-sitter"] }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tokio = { version = "1.0", features = ["rt", "macros"] }
