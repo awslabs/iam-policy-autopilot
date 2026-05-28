@@ -36,10 +36,7 @@ pub async fn generate_policies_from_source(
     config: &GenerateFromSourceConfig,
 ) -> Result<GeneratePoliciesResult> {
     if config.source_files.is_empty() {
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     // 1. Extract SDK calls
@@ -50,10 +47,7 @@ pub async fn generate_policies_from_source(
         .context("Failed to extract SDK method calls")?;
 
     if extracted.methods.is_empty() {
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     let sdk = config.language.sdk_type();
@@ -91,8 +85,5 @@ pub async fn generate_policies_from_source(
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
 
-    Ok(GeneratePoliciesResult {
-        policies: merged,
-        explanations: None,
-    })
+    Ok(GeneratePoliciesResult::new(merged, None))
 }

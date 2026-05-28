@@ -2,9 +2,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    embedded_data::BotocoreData, enrichment::terraform::ResourceBindingExplanation,
+    embedded_data::BotocoreData,
     enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
+#[cfg(feature = "tree-sitter")]
+use crate::enrichment::terraform::ResourceBindingExplanation;
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
@@ -57,8 +59,21 @@ pub struct GeneratePoliciesResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanations: Option<Explanations>,
     /// Explanations for where resource ARNs came from (Terraform bindings)
+    #[cfg(feature = "tree-sitter")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
+}
+
+impl GeneratePoliciesResult {
+    /// Create a new result with policies and optional explanations.
+    pub fn new(policies: Vec<PolicyWithMetadata>, explanations: Option<Explanations>) -> Self {
+        Self {
+            policies,
+            explanations,
+            #[cfg(feature = "tree-sitter")]
+            resource_binding_explanations: None,
+        }
+    }
 }
 
 /// Service hints for filtering SDK method calls

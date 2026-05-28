@@ -10,7 +10,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::RwLock;
+#[cfg(feature = "tree-sitter")]
+use tokio::sync::Semaphore;
+#[cfg(feature = "tree-sitter")]
 use tokio::task::JoinSet;
 
 use convert_case::{Case, Casing};
@@ -86,6 +89,7 @@ impl ServiceMetadata {
     /// - `"EC2"` → `"Ec2"` (→ `Ec2Client`)
     /// - `"DynamoDB"` → `"DynamoDb"` (→ `DynamoDbClient`)
     /// - `"IAM"` → `"Iam"` (→ `IamClient`)
+    #[cfg(feature = "tree-sitter")]
     pub(crate) fn java_service_name(&self) -> String {
         crate::extraction::java::matchers::naming::java_service_name(&self.service_id)
     }

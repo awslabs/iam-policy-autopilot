@@ -8,3 +8,11 @@
 mod policy;
 
 pub use policy::validate_and_generate_policies;
+
+use wasm_bindgen::prelude::*;
+
+/// Initialize panic hook for better error messages in the browser console.
+#[wasm_bindgen(start)]
+pub fn start() {
+    console_error_panic_hook::set_once();
+}

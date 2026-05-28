@@ -221,11 +221,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     if all_source_files.is_empty() {
         info!("No source files found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     // Create the extractor
@@ -262,11 +258,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Handle empty method lists gracefully
     if extracted_methods.is_empty() {
         info!("No methods found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     // Run the complete enrichment pipeline
@@ -343,16 +335,16 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .context("Failed to merge IAM policies")?;
     }
 
+    #[cfg(feature = "telemetry")]
     iam_policy_autopilot_common::telemetry::span::record_result_number(
         "num_policies_generated",
         final_policies.len(),
     );
 
-    Ok(GeneratePoliciesResult {
-        policies: final_policies,
-        explanations,
-        resource_binding_explanations: binding_explanations,
-    })
+    let mut result = GeneratePoliciesResult::new(final_policies, explanations);
+    result.resource_binding_explanations = binding_explanations;
+
+    Ok(result)
 }
 
 #[cfg(test)]

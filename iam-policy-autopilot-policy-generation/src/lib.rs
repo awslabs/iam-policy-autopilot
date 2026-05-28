@@ -35,6 +35,7 @@ pub mod policy_generation;
 pub mod api;
 
 // LSP client for type information extraction
+#[cfg(not(target_arch = "wasm32"))]
 pub mod lsp;
 
 use std::fmt::Display;
@@ -42,9 +43,11 @@ use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
 #[cfg(feature = "tree-sitter")]
-pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
+pub use extraction::{Engine as ExtractionEngine, ExtractedMethods};
+pub use extraction::{SdkMethodCall, SourceFile};
 // Not part of the stable public API — exposed only for integration tests in tests/.
 #[doc(hidden)]
+#[cfg(feature = "tree-sitter")]
 pub use extraction::ServiceDiscovery;
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,

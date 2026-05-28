@@ -12,8 +12,10 @@ use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::{
     collections::HashMap,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
+#[cfg(not(target_arch = "wasm32"))]
+use std::time::SystemTime;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 #[cfg(not(target_arch = "wasm32"))]
@@ -311,7 +313,10 @@ fn deserialize_service_reference_mapping(
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
+    #[cfg(not(target_arch = "wasm32"))]
     service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
+    #[cfg(target_arch = "wasm32")]
+    service_cache: RwLock<HashMap<String, ServiceReference>>,
     mapping_url: String,
     #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     disable_file_system_cache: bool,
@@ -492,11 +497,21 @@ impl RemoteServiceReferenceLoader {
         &self,
         service_name: &str,
     ) -> crate::errors::Result<Option<ServiceReference>> {
-        if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
-            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
-                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                    return Ok(Some(cached.clone()));
+        // Check in-memory cache
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
+                if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
+                    if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                        return Ok(Some(cached.clone()));
+                    }
                 }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            if let Some(cached) = self.service_cache.read().await.get(service_name) {
+                return Ok(Some(cached.clone()));
             }
         }
 
@@ -563,9 +578,15 @@ impl RemoteServiceReferenceLoader {
                     let cache_path = Self::get_cache_path(service_name);
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
+                #[cfg(not(target_arch = "wasm32"))]
                 self.service_cache.write().await.insert(
                     service_name.to_string(),
                     (service_ref.clone(), SystemTime::now()),
+                );
+                #[cfg(target_arch = "wasm32")]
+                self.service_cache.write().await.insert(
+                    service_name.to_string(),
+                    service_ref.clone(),
                 );
                 Ok(Option::Some(service_ref))
             }

@@ -38,10 +38,7 @@ pub async fn generate_policies_from_sdk_calls(
     config: &GenerateFromSdkCallsConfig,
 ) -> Result<GeneratePoliciesResult> {
     if config.sdk_calls.is_empty() {
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     let sdk = config.language.sdk_type();
@@ -58,10 +55,7 @@ pub async fn generate_policies_from_sdk_calls(
     let resolved_calls = resolve_services(&config.sdk_calls, config.language).await?;
 
     if resolved_calls.is_empty() {
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::new(vec![], None));
     }
 
     // Enrich (filesystem cache disabled — no FS in WASM)
@@ -92,10 +86,7 @@ pub async fn generate_policies_from_sdk_calls(
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
 
-    Ok(GeneratePoliciesResult {
-        policies: merged,
-        explanations: None,
-    })
+    Ok(GeneratePoliciesResult::new(merged, None))
 }
 
 /// Resolve `possible_services` for SDK calls that have empty service lists.
