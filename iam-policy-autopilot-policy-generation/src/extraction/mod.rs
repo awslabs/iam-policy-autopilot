@@ -379,7 +379,7 @@ pub mod output {
 
         /// Get current timestamp as ISO 8601 string
         fn current_timestamp() -> String {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(feature = "wasm"))]
             {
                 use std::time::{SystemTime, UNIX_EPOCH};
                 SystemTime::now()
@@ -390,7 +390,7 @@ pub mod output {
                     })
                     .unwrap_or_else(|_| "0".to_string())
             }
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(feature = "wasm")]
             {
                 "0".to_string()
             }

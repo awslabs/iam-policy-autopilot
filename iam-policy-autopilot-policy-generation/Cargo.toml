@@ -71,6 +71,9 @@ telemetry = ["iam-policy-autopilot-common"]
 integ-test = []
 # Development features
 dev = ["tokio/test-util"]
+# WASM target — disables filesystem caching, TTL expiry, and native-only subsystems.
+# Prefer this over raw `cfg(target_arch = "wasm32")` for intent clarity.
+wasm = []
 
 # Development dependencies
 [dev-dependencies]

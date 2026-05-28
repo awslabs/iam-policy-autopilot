@@ -3,6 +3,11 @@
 //! This module provides functionality to load AWS service definition files
 //! from the filesystem with exact service name matching and caching for
 //! performance optimization.
+//!
+//! Caching is abstracted behind the [`ServiceCache`] trait, with platform-specific
+//! implementations:
+//! - **Native** (`NativeServiceCache`): In-memory TTL + optional filesystem persistence.
+//! - **WASM** (`WasmServiceCache`): In-memory only, no expiry (session-scoped).
 
 use crate::enrichment::Context;
 use crate::errors::ExtractorError;
@@ -10,22 +15,18 @@ use crate::providers::JsonProvider;
 use reqwest::{Client, Url};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    time::Duration,
-};
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::SystemTime;
-#[cfg(not(target_arch = "wasm32"))]
+use std::collections::HashMap;
+#[cfg(not(feature = "wasm"))]
 use std::path::PathBuf;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
+use std::time::{Duration, SystemTime};
+#[cfg(not(feature = "wasm"))]
 use tokio::fs;
 use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 5 minutes.
-// We can allow cache duration override in future.
+#[cfg(not(feature = "wasm"))]
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
@@ -313,13 +314,75 @@ fn deserialize_service_reference_mapping(
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
-    #[cfg(not(target_arch = "wasm32"))]
-    service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
-    #[cfg(target_arch = "wasm32")]
-    service_cache: RwLock<HashMap<String, ServiceReference>>,
+    cache: ServiceCache,
     mapping_url: String,
-    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+    #[cfg_attr(feature = "wasm", allow(dead_code))]
     disable_file_system_cache: bool,
+}
+
+// ---------------------------------------------------------------------------
+// ServiceCache — platform-specific caching strategy
+// ---------------------------------------------------------------------------
+
+/// Abstraction over the in-memory service reference cache.
+///
+/// Native builds store entries with a timestamp for TTL expiry.
+/// WASM builds store entries without expiry (session-scoped).
+#[derive(Debug)]
+struct ServiceCache {
+    inner: RwLock<HashMap<String, CacheEntry>>,
+}
+
+#[cfg(not(feature = "wasm"))]
+type CacheEntry = (ServiceReference, SystemTime);
+
+#[cfg(feature = "wasm")]
+type CacheEntry = ServiceReference;
+
+impl ServiceCache {
+    fn new() -> Self {
+        Self {
+            inner: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Returns a cached entry if it exists and has not expired.
+    async fn get(&self, service_name: &str) -> Option<ServiceReference> {
+        let guard = self.inner.read().await;
+        let entry = guard.get(service_name)?;
+
+        #[cfg(not(feature = "wasm"))]
+        {
+            let (cached, timestamp) = entry;
+            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
+                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                    return Some(cached.clone());
+                }
+            }
+            None
+        }
+
+        #[cfg(feature = "wasm")]
+        {
+            Some(entry.clone())
+        }
+    }
+
+    /// Insert or update a cache entry.
+    async fn insert(&self, service_name: String, service_ref: ServiceReference) {
+        #[cfg(not(feature = "wasm"))]
+        {
+            self.inner
+                .write()
+                .await
+                .insert(service_name, (service_ref, SystemTime::now()));
+        }
+
+        #[cfg(feature = "wasm")]
+        {
+            self.inner.write().await.insert(service_name, service_ref);
+        }
+    }
 }
 
 const DEFAULT_MAPPING_URL: &str = "https://servicereference.us-east-1.amazonaws.com";
@@ -332,7 +395,7 @@ impl RemoteServiceReferenceLoader {
         Ok(Self {
             client: Self::create_client()?,
             service_reference_mapping: OnceCell::new(),
-            service_cache: RwLock::new(HashMap::new()),
+            cache: ServiceCache::new(),
             mapping_url,
             disable_file_system_cache,
         })
@@ -346,7 +409,7 @@ impl RemoteServiceReferenceLoader {
         let loader = Self {
             client: Self::create_client()?,
             service_reference_mapping: OnceCell::new(),
-            service_cache: RwLock::new(HashMap::new()),
+            cache: ServiceCache::new(),
             mapping_url: String::new(),
             disable_file_system_cache: true,
         };
@@ -454,7 +517,7 @@ impl RemoteServiceReferenceLoader {
             })
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "wasm"))]
     fn get_cache_dir() -> PathBuf {
         // not using tempfile crate
         // instead, using the std to resolve temp dir and then manage the file itself
@@ -464,12 +527,12 @@ impl RemoteServiceReferenceLoader {
         cache_dir
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "wasm"))]
     fn get_cache_path(service_name: &str) -> PathBuf {
         Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "wasm"))]
     async fn is_cache_valid(path: &PathBuf) -> bool {
         if let Ok(metadata) = fs::metadata(path).await {
             if let Ok(modified) = metadata.modified() {
@@ -498,25 +561,12 @@ impl RemoteServiceReferenceLoader {
         service_name: &str,
     ) -> crate::errors::Result<Option<ServiceReference>> {
         // Check in-memory cache
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
-                if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
-                    if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                        return Ok(Some(cached.clone()));
-                    }
-                }
-            }
-        }
-        #[cfg(target_arch = "wasm32")]
-        {
-            if let Some(cached) = self.service_cache.read().await.get(service_name) {
-                return Ok(Some(cached.clone()));
-            }
+        if let Some(cached) = self.cache.get(service_name).await {
+            return Ok(Some(cached));
         }
 
         // Filesystem cache — not available on WASM
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(feature = "wasm"))]
         {
             let cache_path = Self::get_cache_path(service_name);
             if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
@@ -524,10 +574,9 @@ impl RemoteServiceReferenceLoader {
                     if let Ok(service_ref) =
                         JsonProvider::parse::<ServiceReference>(&content).await
                     {
-                        self.service_cache.write().await.insert(
-                            service_name.to_string(),
-                            (service_ref.clone(), SystemTime::now()),
-                        );
+                        self.cache
+                            .insert(service_name.to_string(), service_ref.clone())
+                            .await;
                         return Ok(Some(service_ref));
                     }
                 }
@@ -572,23 +621,16 @@ impl RemoteServiceReferenceLoader {
                             e,
                         )
                     })?;
-                // persist content into the temp file as well
-                #[cfg(not(target_arch = "wasm32"))]
+                // Persist to filesystem cache (native only)
+                #[cfg(not(feature = "wasm"))]
                 if !self.disable_file_system_cache {
                     let cache_path = Self::get_cache_path(service_name);
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                self.service_cache.write().await.insert(
-                    service_name.to_string(),
-                    (service_ref.clone(), SystemTime::now()),
-                );
-                #[cfg(target_arch = "wasm32")]
-                self.service_cache.write().await.insert(
-                    service_name.to_string(),
-                    service_ref.clone(),
-                );
-                Ok(Option::Some(service_ref))
+                self.cache
+                    .insert(service_name.to_string(), service_ref.clone())
+                    .await;
+                Ok(Some(service_ref))
             }
             None => Ok(None),
         }
@@ -606,7 +648,7 @@ mod tests {
         assert!(loader.is_ok());
 
         let loader = loader.unwrap();
-        assert!(loader.service_cache.read().await.is_empty());
+        assert!(loader.cache.inner.read().await.is_empty());
     }
 
     #[tokio::test]
@@ -641,15 +683,16 @@ mod tests {
         }
 
         // Verify cache is populated
-        let cached = loader.service_cache.read().await.get("s3").cloned();
+        let cached = loader.cache.get("s3").await;
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().0.service_name, "s3");
+        assert_eq!(cached.unwrap().service_name, "s3");
 
         // Verify cache is unique
-        assert_eq!(loader.service_cache.read().await.len(), 1);
+        assert_eq!(loader.cache.inner.read().await.len(), 1);
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_memory_cache_expiry() {
         let (_mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -661,7 +704,7 @@ mod tests {
         // Manually expire the cache by setting old timestamp
         let expired_time =
             SystemTime::now() - Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS + 1);
-        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
+        if let Some(entry) = loader.cache.inner.write().await.get_mut("s3") {
             entry.1 = expired_time;
         }
 
@@ -670,10 +713,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify cache has fresh timestamp
-        let cached = loader.service_cache.read().await.get("s3").cloned();
+        let guard = loader.cache.inner.read().await;
+        let cached = guard.get("s3");
         assert!(cached.is_some());
         let (_, timestamp) = cached.unwrap();
-        let elapsed = SystemTime::now().duration_since(timestamp).unwrap();
+        let elapsed = SystemTime::now().duration_since(*timestamp).unwrap();
         assert!(elapsed < Duration::from_secs(10));
     }
 
@@ -751,6 +795,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_get_cache_dir() {
         let cache_dir = RemoteServiceReferenceLoader::get_cache_dir();
         assert!(cache_dir.ends_with("IAMPolicyAutopilot"));
@@ -758,6 +803,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_get_cache_path() {
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
         assert!(
@@ -767,12 +813,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_is_cache_valid_nonexistent() {
         let path = PathBuf::from("/nonexistent/path/file.json");
         assert!(!RemoteServiceReferenceLoader::is_cache_valid(&path).await);
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_is_cache_valid_fresh() {
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("test_fresh");
         let _ = fs::write(&cache_path, "test content").await;
@@ -782,6 +830,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(feature = "wasm"))]
     async fn test_filesystem_cache() {
         let (_mock_server, mut loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;

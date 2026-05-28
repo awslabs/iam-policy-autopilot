@@ -214,7 +214,7 @@ pub enum ExtractorError {
 
 impl ExtractorError {
     /// Create a file system error with operation context
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "wasm"))]
     pub(crate) fn file_system(
         operation: impl Into<String>,
         path: impl Into<PathBuf>,
@@ -257,7 +257,7 @@ impl ExtractorError {
     }
 
     /// Create a method extraction error
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(not(feature = "wasm"))]
     pub(crate) fn method_extraction(
         language: impl Into<String>,
         path: impl Into<PathBuf>,
