@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["var_wildcard_import_two_services.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault", "datastore"],
+      "Metadata": {
+        "Expr": "client.describeResource(request)",
+        "Location": "var_wildcard_import_two_services.java:16.9-16.41",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

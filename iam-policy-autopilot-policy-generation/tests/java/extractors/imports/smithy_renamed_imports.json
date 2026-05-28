@@ -1,0 +1,22 @@
+{
+  "ExpectedImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.cloudwatchlogs.CloudWatchLogsClient",
+      "Service": "logs",
+      "Location": "smithy_renamed_imports.java:1.1-1.76",
+      "IsStatic": false
+    },
+    {
+      "Expr": "software.amazon.awssdk.services.elasticloadbalancing.ElasticLoadBalancingClient",
+      "Service": "elb",
+      "Location": "smithy_renamed_imports.java:2.1-2.88",
+      "IsStatic": false
+    },
+    {
+      "Expr": "software.amazon.awssdk.services.cognitoidentityprovider.CognitoIdentityProviderClient",
+      "Service": "cognito-idp",
+      "Location": "smithy_renamed_imports.java:3.1-3.94",
+      "IsStatic": false
+    }
+  ]
+}

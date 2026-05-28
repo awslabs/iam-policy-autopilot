@@ -1,0 +1,74 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "client.stringArg(\"my-bucket\")",
+      "Method": "stringArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "my-bucket" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "literal_args.java:3.9-3.38"
+    },
+    {
+      "Expr": "client.intArg(42)",
+      "Method": "intArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "42" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "literal_args.java:4.9-4.26"
+    },
+    {
+      "Expr": "client.boolArg(true)",
+      "Method": "boolArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "true" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "literal_args.java:5.9-5.29"
+    },
+    {
+      "Expr": "client.nullArg(null)",
+      "Method": "nullArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "null" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "literal_args.java:6.9-6.29"
+    },
+    {
+      "Expr": "client.identArg(request)",
+      "Method": "identArg",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "literal_args.java:7.9-7.33"
+    }
+  ]
+}

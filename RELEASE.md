@@ -7,7 +7,6 @@ This document outlines the steps to create a new release.
 - Write access to the repository
 - Git configured with your credentials
 - Review our [contributing guideline](https://github.com/awslabs/iam-policy-autopilot/blob/main/CONTRIBUTING.md)
-- [git-cliff](https://github.com/orhun/git-cliff) installed for changelog generation
 
 ## Quick Reference
 
@@ -90,28 +89,9 @@ cargo build
 ./target/debug/iam-policy-autopilot --version
 ```
 
-### 3. Generate/Update Changelog
+### 3. Finalize Changelog
 
-#### Using git-cliff
-
-If you have [git-cliff](https://github.com/orhun/git-cliff) installed:
-
-```bash
-# For first release (no previous tags)
-git cliff --tag X.Y.Z --unreleased -o CHANGELOG.md
-
-# For subsequent releases (prepend to existing CHANGELOG.md)
-# Replace PREV_TAG with the previous release tag (e.g., 0.1.0)
-git cliff PREV_TAG..HEAD --tag X.Y.Z --prepend CHANGELOG.md
-
-# Preview without writing to file
-git cliff PREV_TAG..HEAD --tag X.Y.Z
-```
-
-**Important:** 
-- Use `-o` for first release (creates/overwrites file)
-- Use `--prepend` for subsequent releases (adds new release at top, keeps old releases)
-- git-cliff requires conventional commit messages (feat:, fix:, etc.) to generate meaningful changelogs
+Rename the `[Unreleased]` section to the new version and date, then add a fresh empty `[Unreleased]` heading at the top.
 
 ### 4. Commit and Push Changes
 
@@ -200,14 +180,6 @@ If PyPI publishing fails:
 If version verification fails:
 - Ensure both `Cargo.toml` and `pyproject.toml` versions match the git tag exactly
 - Rebuild and verify: `cargo build && ./target/debug/iam-policy-autopilot --version`
-
-### Empty Changelog from git-cliff
-
-If git-cliff generates an empty changelog:
-- **First release**: Use `--unreleased` flag: `git cliff --tag X.Y.Z --unreleased -o CHANGELOG.md`
-- **No conventional commits**: Ensure commits follow the format `type: description` (feat:, fix:, etc.)
-- **Check commits**: Run `git log --oneline` to verify commit messages
-- **Preview output**: Run `git cliff --tag X.Y.Z --unreleased` without `-o` to see what would be generated
 
 ### Checking Existing Tags
 

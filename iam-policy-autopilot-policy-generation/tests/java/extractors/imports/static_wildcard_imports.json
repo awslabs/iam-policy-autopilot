@@ -1,0 +1,16 @@
+{
+  "ExpectedImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.s3.S3Client.*",
+      "Service": "s3",
+      "Location": "static_wildcard_imports.java:1.1-1.61",
+      "IsStatic": true
+    },
+    {
+      "Expr": "software.amazon.awssdk.services.lambda.LambdaClient.*",
+      "Service": "lambda",
+      "Location": "static_wildcard_imports.java:2.1-2.69",
+      "IsStatic": true
+    }
+  ]
+}

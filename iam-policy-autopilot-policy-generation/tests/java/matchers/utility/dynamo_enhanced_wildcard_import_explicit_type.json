@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["dynamo_enhanced_wildcard_import_explicit_type.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "PutItem",
+      "PossibleServices": ["dynamodb"],
+      "Metadata": {
+        "Expr": "table.putItem(item)",
+        "Location": "dynamo_enhanced_wildcard_import_explicit_type.java:8.9-8.28",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "item" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

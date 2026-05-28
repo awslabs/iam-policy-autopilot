@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["bedrock_invoke_model.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "invokeModel",
+      "PossibleServices": ["bedrock-runtime"],
+      "Metadata": {
+        "Expr": "bedrockClient.invokeModel(InvokeModelRequest.builder().build())",
+        "Location": "bedrock_invoke_model.java:7.40-7.103",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "InvokeModelRequest.builder().build()" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,244 @@
+{
+  "Services": {
+    "s3": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2006-03-01",
+        "serviceId": "S3"
+      },
+      "operations": {
+        "GetObject": {
+          "name": "GetObject",
+          "input": null
+        },
+        "PutObject": {
+          "name": "PutObject",
+          "input": null
+        },
+        "ListBuckets": {
+          "name": "ListBuckets",
+          "input": null
+        },
+        "ListObjectsV2": {
+          "name": "ListObjectsV2",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "s3control": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2006-03-01",
+        "serviceId": "S3Control"
+      },
+      "operations": {
+        "PutObject": {
+          "name": "PutObject",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "bedrock-runtime": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2023-09-30",
+        "serviceId": "Bedrock Runtime"
+      },
+      "operations": {
+        "InvokeModel": {
+          "name": "InvokeModel",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "dynamodb": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2012-08-10",
+        "serviceId": "DynamoDB"
+      },
+      "operations": {
+        "DescribeTable": {
+          "name": "DescribeTable",
+          "input": null
+        },
+        "ListTables": {
+          "name": "ListTables",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "resource-groups": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2017-11-27",
+        "serviceId": "Resource Groups"
+      },
+      "operations": {
+        "CreateGroup": {
+          "name": "CreateGroup",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "xray": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2016-04-12",
+        "serviceId": "XRay"
+      },
+      "operations": {
+        "CreateGroup": {
+          "name": "CreateGroup",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "cloudvault": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "CloudVault"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        },
+        "ListResources": {
+          "name": "ListResources",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "datastore": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DataStore"
+      },
+      "operations": {
+        "DescribeResource": {
+          "name": "DescribeResource",
+          "input": null
+        },
+        "ListResources": {
+          "name": "ListResources",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "cloudcluster": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "CloudCluster"
+      },
+      "operations": {
+        "DescribeCluster": {
+          "name": "DescribeCluster",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "datacluster": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DataCluster"
+      },
+      "operations": {
+        "GetCluster": {
+          "name": "GetCluster",
+          "input": null
+        }
+      },
+      "shapes": {}
+    },
+    "dynamodbv2": {
+      "version": null,
+      "metadata": {
+        "apiVersion": "2024-01-01",
+        "serviceId": "DynamoDB V2"
+      },
+      "operations": {
+        "DescribeTable": {
+          "name": "DescribeTable",
+          "input": null
+        },
+        "ListTables": {
+          "name": "ListTables",
+          "input": null
+        }
+      },
+      "shapes": {}
+    }
+  },
+  "MethodLookup": {
+    "getObject": [
+      { "service_name": "s3", "operation_name": "GetObject" }
+    ],
+    "putObject": [
+      { "service_name": "s3", "operation_name": "PutObject" },
+      { "service_name": "s3control", "operation_name": "PutObject" }
+    ],
+    "listBuckets": [
+      { "service_name": "s3", "operation_name": "ListBuckets" }
+    ],
+    "listObjectsV2": [
+      { "service_name": "s3", "operation_name": "ListObjectsV2" }
+    ],
+    "invokeModel": [
+      { "service_name": "bedrock-runtime", "operation_name": "InvokeModel" }
+    ],
+    "describeTable": [
+      { "service_name": "dynamodb",   "operation_name": "DescribeTable" },
+      { "service_name": "dynamodbv2", "operation_name": "DescribeTable" }
+    ],
+    "listTables": [
+      { "service_name": "dynamodb",   "operation_name": "ListTables" },
+      { "service_name": "dynamodbv2", "operation_name": "ListTables" }
+    ],
+    "createGroup": [
+      { "service_name": "resource-groups", "operation_name": "CreateGroup" },
+      { "service_name": "xray",            "operation_name": "CreateGroup" }
+    ],
+    "describeResource": [
+      { "service_name": "cloudvault", "operation_name": "DescribeResource" },
+      { "service_name": "datastore",  "operation_name": "DescribeResource" }
+    ],
+    "listResources": [
+      { "service_name": "cloudvault", "operation_name": "ListResources" },
+      { "service_name": "datastore",  "operation_name": "ListResources" }
+    ]
+  },
+  "WaiterLookup": {
+    "bucketExists": [
+      { "service_name": "s3", "operation_name": "HeadBucket" }
+    ],
+    "tableExists": [
+      { "service_name": "dynamodb",   "operation_name": "DescribeTable" },
+      { "service_name": "dynamodbv2", "operation_name": "DescribeTable" }
+    ],
+    "tableNotExists": [
+      { "service_name": "dynamodb", "operation_name": "DescribeTable" }
+    ],
+    "resourceReady": [
+      { "service_name": "cloudvault", "operation_name": "DescribeResource" },
+      { "service_name": "datastore",  "operation_name": "DescribeResource" }
+    ],
+    "clusterActive": [
+      { "service_name": "cloudcluster", "operation_name": "DescribeCluster" },
+      { "service_name": "datacluster",  "operation_name": "GetCluster" }
+    ]
+  }
+}

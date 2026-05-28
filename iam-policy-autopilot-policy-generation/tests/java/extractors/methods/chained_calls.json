@@ -1,0 +1,58 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "s3Client.putObject(PutObjectRequest.builder().bucket(\"my-bucket\").key(\"my-key\").build())",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "PutObjectRequest.builder().bucket(\"my-bucket\").key(\"my-key\").build()" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "chained_calls.java:3.9-3.97"
+    },
+    {
+      "Expr": "PutObjectRequest.builder().bucket(\"my-bucket\").key(\"my-key\").build()",
+      "Method": "build",
+      "Parameters": [],
+      "Location": "chained_calls.java:3.28-3.96"
+    },
+    {
+      "Expr": "PutObjectRequest.builder().bucket(\"my-bucket\").key(\"my-key\")",
+      "Method": "key",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "my-key" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "chained_calls.java:3.28-3.88"
+    },
+    {
+      "Expr": "PutObjectRequest.builder().bucket(\"my-bucket\")",
+      "Method": "bucket",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "my-bucket" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "chained_calls.java:3.28-3.74"
+    },
+    {
+      "Expr": "PutObjectRequest.builder()",
+      "Method": "builder",
+      "Parameters": [],
+      "Location": "chained_calls.java:3.28-3.54"
+    }
+  ]
+}

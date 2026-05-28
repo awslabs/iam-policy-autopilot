@@ -1,0 +1,26 @@
+{
+  "SourceFiles": ["multiple_files_file1.java", "multiple_files_file2.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listBuckets",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.listBuckets()",
+        "Location": "multiple_files_file1.java:5.9-5.25",
+        "Parameters": []
+      }
+    },
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.putObject(req)",
+        "Location": "multiple_files_file2.java:5.9-5.26",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "ExpectedUtilityImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.s3.presigner.S3Presigner",
+      "UtilityName": "s3",
+      "ClassName": "S3Presigner",
+      "Location": "s3_presigner.java:1.1-1.65"
+    }
+  ]
+}

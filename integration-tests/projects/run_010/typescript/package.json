@@ -1,0 +1,14 @@
+{
+  "name": "run-005-9a05981d-typescript",
+  "version": "0.1.0",
+  "scripts": { "start": "ts-node script.ts" },
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.0.0",
+    "@aws-sdk/client-sts": "^3.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "ts-node": "^10.0.0",
+    "@types/node": "^20.0.0"
+  }
+}

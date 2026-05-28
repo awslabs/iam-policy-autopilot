@@ -1,0 +1,51 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "sqs:DeleteMessage"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:sqs:*:*:*"
+      ]
+    },
+    {
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "sqs:ReceiveMessage"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:sqs:*:*:*"
+      ]
+    },
+    {
+      "Action": [
+        "sqs:SendMessage"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:sqs:*:*:*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}

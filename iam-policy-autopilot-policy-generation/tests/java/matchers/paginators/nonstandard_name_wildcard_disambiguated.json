@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["nonstandard_name_wildcard_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listTables",
+      "PossibleServices": ["dynamodb"],
+      "Metadata": {
+        "Expr": "client.listTablesPaginator(request)",
+        "Location": "nonstandard_name_wildcard_disambiguated.java:11.9-11.44",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

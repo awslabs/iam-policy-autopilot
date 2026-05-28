@@ -1,0 +1,19 @@
+{
+  "name": "run-002-b82fea53-typescript",
+  "version": "1.0.0",
+  "description": "ML Monitoring Platform — data-plane script (CDK-refactored)",
+  "main": "script.js",
+  "scripts": {
+    "start": "ts-node script.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sts": "^3.0.0",
+    "@aws-sdk/client-xray": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.0.0",
+    "typescript": "^5.0.0"
+  }
+}

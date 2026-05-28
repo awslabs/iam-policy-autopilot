@@ -1,0 +1,16 @@
+{
+  "name": "run-005-98c7d54c-cdk",
+  "version": "0.1.0",
+  "scripts": { "build": "tsc", "cdk": "cdk" },
+  "devDependencies": {
+    "aws-cdk": "^2.100.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0",
+    "source-map-support": "^0.5.21"
+  }
+}

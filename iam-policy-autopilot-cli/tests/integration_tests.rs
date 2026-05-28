@@ -110,7 +110,7 @@ fn test_generate_policy_help() {
         .assert()
         .success()
         .stdout(predicate::str::contains(
-            "Generates complete IAM policy documents from source files",
+            "Generates baseline IAM policy documents from source files",
         ))
         .stdout(predicate::str::contains("--pretty"));
 }
@@ -343,6 +343,11 @@ fn test_comprehensive_real_files_extract_sdk_calls_javascript() {
     test_comprehensive_real_files_extract_sdk_calls_for_extension("js");
 }
 
+#[test]
+fn test_comprehensive_real_files_extract_sdk_calls_java() {
+    test_comprehensive_real_files_extract_sdk_calls_for_extension("java");
+}
+
 fn test_comprehensive_real_files_extract_sdk_calls_for_extension(extension: &str) {
     let test_files = get_test_files(extension);
 
@@ -416,6 +421,11 @@ fn test_comprehensive_real_files_generate_policy_typescript() {
 #[test]
 fn test_comprehensive_real_files_generate_policy_javascript() {
     test_comprehensive_real_files_generate_policy_for_extension("js");
+}
+
+#[test]
+fn test_comprehensive_real_files_generate_policy_java() {
+    test_comprehensive_real_files_generate_policy_for_extension("java");
 }
 
 fn test_comprehensive_real_files_generate_policy_for_extension(extension: &str) {
@@ -849,5 +859,201 @@ fn test_dictionary_unpacking_file() {
                 "Operation should have 'PossibleServices' field"
             );
         }
+    }
+}
+
+#[test]
+fn test_end_to_end_with_handler_py() {
+    // Inline a realistic Lambda handler that uses aws_lambda_powertools to fetch
+    // config from SSM Parameter Store and secrets from Secrets Manager.
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_file = temp_dir.path().join("handler.py");
+    fs::write(
+        &test_file,
+        r#"
+import os
+import json
+from aws_lambda_powertools.utilities import parameters
+
+CONFIG_PARAMETER_NAME = os.environ.get("CONFIG_PARAMETER_NAME", "/app/config")
+DB_SECRET_ARN = os.environ.get("DB_SECRET_ARN")
+
+def get_config():
+    return parameters.get_parameter(CONFIG_PARAMETER_NAME, transform="json", max_age=300)
+
+def get_db_credentials():
+    secrets = parameters.get_secret(DB_SECRET_ARN, transform="json", max_age=60)
+    return secrets.get("password")
+
+def handler(event, context):
+    config = get_config()
+    db_password = get_db_credentials()
+    return {
+        "statusCode": 200,
+        "body": json.dumps({
+            "config_loaded": config is not None,
+            "db_password_present": db_password is not None,
+        }),
+    }
+"#,
+    )
+    .expect("Failed to write test file");
+
+    let output = extract_sdk_calls_command()
+        .arg("--full-output")
+        .arg(test_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
+
+    let methods = json.as_array().expect("Output should be an array");
+
+    // The inline source uses aws_lambda_powertools parameters utility:
+    //   parameters.get_parameter → ssm:GetParameter
+    //   parameters.get_secret → secretsmanager:GetSecretValue
+    let empty_arr = vec![];
+    let mut found_get_parameter = false;
+    let mut found_get_secret_value = false;
+
+    for method in methods {
+        let name = method["Name"].as_str().unwrap_or_default();
+        let services: Vec<&str> = method["PossibleServices"]
+            .as_array()
+            .unwrap_or(&empty_arr)
+            .iter()
+            .filter_map(|s| s.as_str())
+            .collect();
+
+        if name == "get_parameter" && services.contains(&"ssm") {
+            found_get_parameter = true;
+        }
+        if name == "get_secret_value" && services.contains(&"secretsmanager") {
+            found_get_secret_value = true;
+        }
+    }
+
+    assert!(
+        found_get_parameter,
+        "Should detect ssm:GetParameter from parameters.get_parameter(). Methods: {stdout}"
+    );
+    assert!(
+        found_get_secret_value,
+        "Should detect secretsmanager:GetSecretValue from parameters.get_secret(). Methods: {stdout}"
+    );
+}
+
+#[test]
+fn test_enrichment_compatibility_library_calls() {
+    let temp_dir = TempDir::new().expect("Failed to create temp directory");
+    let test_file = temp_dir.path().join("test_enrichment.py");
+    fs::write(
+        &test_file,
+        r#"
+from aws_lambda_powertools.utilities import parameters
+
+def handler(event, context):
+    config = parameters.get_parameter("/app/config")
+    secret = parameters.get_secret("my-secret-arn")
+    return {"config": config, "secret": secret}
+"#,
+    )
+    .expect("Failed to write test file");
+
+    // Run the full generate-policies pipeline
+    let output = generate_policy_command()
+        .arg("--region")
+        .arg("us-east-1")
+        .arg("--account")
+        .arg("123456789012")
+        .arg("--pretty")
+        .arg(test_file.to_str().unwrap())
+        .assert()
+        .success();
+
+    let stdout = String::from_utf8(output.get_output().stdout.clone()).unwrap();
+    let json: Value = serde_json::from_str(&stdout).expect("Invalid JSON output");
+
+    // Verify the output has the expected policy structure
+    assert!(json.is_object(), "Output should be an object");
+    let policies = json["Policies"]
+        .as_array()
+        .expect("Should have Policies array");
+    assert!(
+        !policies.is_empty(),
+        "Should generate at least one policy from library calls"
+    );
+
+    // Collect all actions and resources from all policy statements
+    let mut all_actions: Vec<String> = Vec::new();
+    let mut all_resources: Vec<String> = Vec::new();
+    for policy_with_type in policies {
+        let statements = policy_with_type["Policy"]["Statement"]
+            .as_array()
+            .expect("Policy should have Statement array");
+
+        for statement in statements {
+            // Verify standard IAM policy structure
+            assert!(
+                statement.get("Effect").is_some(),
+                "Statement should have Effect"
+            );
+            assert!(
+                statement.get("Action").is_some(),
+                "Statement should have Action"
+            );
+            assert!(
+                statement.get("Resource").is_some(),
+                "Statement should have Resource"
+            );
+
+            if let Some(actions) = statement["Action"].as_array() {
+                for action in actions {
+                    if let Some(action_str) = action.as_str() {
+                        all_actions.push(action_str.to_string());
+                    }
+                }
+            }
+
+            if let Some(resources) = statement["Resource"].as_array() {
+                for resource in resources {
+                    if let Some(resource_str) = resource.as_str() {
+                        all_resources.push(resource_str.to_string());
+                    }
+                }
+            } else if let Some(resource_str) = statement["Resource"].as_str() {
+                all_resources.push(resource_str.to_string());
+            }
+        }
+    }
+
+    // Library-derived calls should produce enriched IAM actions
+    // parameters.get_parameter -> ssm:GetParameter
+    // parameters.get_secret -> secretsmanager:GetSecretValue
+    assert!(
+        all_actions.iter().any(|a| a == "ssm:GetParameter"),
+        "Policy should include ssm:GetParameter action. Actions: {all_actions:?}"
+    );
+    assert!(
+        all_actions
+            .iter()
+            .any(|a| a == "secretsmanager:GetSecretValue"),
+        "Policy should include secretsmanager:GetSecretValue action. Actions: {all_actions:?}"
+    );
+
+    // Resource ARNs should contain the account ID and region passed via CLI
+    for resource in &all_resources {
+        if resource == "*" {
+            continue;
+        }
+        assert!(
+            resource.contains("123456789012"),
+            "Resource ARN should contain account ID '123456789012', got: {resource}"
+        );
+        assert!(
+            resource.contains("us-east-1"),
+            "Resource ARN should contain region 'us-east-1', got: {resource}"
+        );
     }
 }

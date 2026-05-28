@@ -4,6 +4,7 @@
 //! AWS SDK usage patterns in JavaScript and TypeScript code.
 
 use iam_policy_autopilot_policy_generation::{ExtractionEngine, Language, SourceFile};
+use rstest::rstest;
 use std::path::PathBuf;
 
 #[test]
@@ -30,10 +31,47 @@ fn test_javascript_language_support() {
     println!("✓ JavaScript/TypeScript language support working correctly");
 }
 
-#[tokio::test]
-async fn test_javascript_basic_import_es6_extraction() {
-    // Create a simple JavaScript file with AWS SDK imports and client instantiation
-    let javascript_source = r#"
+// ---------------------------------------------------------------------------
+// Expected operations per test case
+// ---------------------------------------------------------------------------
+
+struct ExpectedOp {
+    name: &'static str,
+    service: &'static str,
+}
+
+const S3_CRUD_OPS: &[ExpectedOp] = &[
+    ExpectedOp {
+        name: "CreateBucket",
+        service: "s3",
+    },
+    ExpectedOp {
+        name: "PutObject",
+        service: "s3",
+    },
+    ExpectedOp {
+        name: "ListObjectsV2",
+        service: "s3",
+    },
+    ExpectedOp {
+        name: "GetObject",
+        service: "s3",
+    },
+    ExpectedOp {
+        name: "DeleteObject",
+        service: "s3",
+    },
+    ExpectedOp {
+        name: "DeleteBucket",
+        service: "s3",
+    },
+];
+
+// ---------------------------------------------------------------------------
+// Test sources
+// ---------------------------------------------------------------------------
+
+const ES6_IMPORT_SOURCE: &str = r#"
 import {
   S3Client,
   CreateBucketCommand,
@@ -58,87 +96,9 @@ async function createMyBucket() {
   }
 }
 createMyBucket();
-    "#;
+"#;
 
-    // Create a source file
-    let source_file = SourceFile::with_language(
-        PathBuf::from("test.js"),
-        javascript_source.to_string(),
-        Language::JavaScript,
-    );
-
-    // Create extractor with basic path (no actual service definitions needed for this test)
-    let engine = ExtractionEngine::new();
-
-    // Extract operations from the source code
-    let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
-        .await;
-
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ JavaScript ES6 extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
-
-            // Should find operations from Command imports
-            assert!(
-                !extracted_methods.methods.is_empty(),
-                "Should find operations from Command imports"
-            );
-
-            // Expected operations from Command imports: CreateBucket, PutObject, ListObjectsV2, GetObject, DeleteObject, DeleteBucket
-            let expected_operations = [
-                "CreateBucket",
-                "PutObject",
-                "ListObjectsV2",
-                "GetObject",
-                "DeleteObject",
-                "DeleteBucket",
-            ];
-
-            for expected_op in &expected_operations {
-                let found_op = extracted_methods
-                    .methods
-                    .iter()
-                    .find(|call| call.name == *expected_op)
-                    .unwrap_or_else(|| {
-                        panic!("Should find {} operation from Command import", expected_op)
-                    });
-
-                assert_eq!(
-                    found_op.possible_services,
-                    vec!["s3"],
-                    "All operations should be associated with s3 service"
-                );
-            }
-
-            // Print detailed output
-            println!(
-                "✅ Found {} operations from ES6 imports and requires",
-                extracted_methods.methods.len()
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            println!("JavaScript extraction failed: {}", e);
-            // For testing, we'll allow this to pass if it's a service validation issue
-            let error_message = format!("{}", e);
-            assert!(
-                error_message.contains("Service root directory")
-                    || error_message.contains("Failed to load"),
-                "Should be a service validation error, got: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_javascript_low_level_client_method_extraction() {
-    // Create a simple JavaScript file with AWS SDK imports and client instantiation
-    let javascript_source = r#"
+const LOW_LEVEL_CLIENT_SOURCE: &str = r#"
 const { DynamoDB } = require("@aws-sdk/client-dynamodb");
 
 (async () => {
@@ -150,73 +110,9 @@ const { DynamoDB } = require("@aws-sdk/client-dynamodb");
     console.error(err);
   }
 })();
-    "#;
+"#;
 
-    // Create a source file
-    let source_file = SourceFile::with_language(
-        PathBuf::from("test.js"),
-        javascript_source.to_string(),
-        Language::JavaScript,
-    );
-
-    // Create extractor with basic path (no actual service definitions needed for this test)
-    let engine = ExtractionEngine::new();
-
-    // Extract operations from the source code
-    let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
-        .await;
-
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ JavaScript low-level client method extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
-
-            // Should find operations from client method calls
-            assert!(
-                !extracted_methods.methods.is_empty(),
-                "Should find operations from client method calls"
-            );
-
-            // Should find ListTables operation from client.listTables() call
-            let list_tables_op = extracted_methods
-                .methods
-                .iter()
-                .find(|call| call.name == "ListTables")
-                .expect("Should find ListTables operation from client.listTables() call");
-
-            // Should be associated with dynamodb service (from client-dynamodb sublibrary)
-            assert_eq!(
-                list_tables_op.possible_services,
-                vec!["dynamodb"],
-                "Should associate with dynamodb service"
-            );
-
-            println!(
-                "✅ Found {} operations from low-level client calls",
-                extracted_methods.methods.len()
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            println!("JavaScript extraction failed: {}", e);
-            let error_message = format!("{}", e);
-            assert!(
-                error_message.contains("Service root directory")
-                    || error_message.contains("Failed to load"),
-                "Should be a service validation error, got: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_javascript_client_send_extraction() {
-    // Create a simple JavaScript file with AWS SDK imports and client instantiation
-    let javascript_source = r#"
+const CLIENT_SEND_SOURCE: &str = r#"
 const { DynamoDBClient, ListTablesCommand } = require("@aws-sdk/client-dynamodb");
 
 (async () => {
@@ -229,73 +125,9 @@ const { DynamoDBClient, ListTablesCommand } = require("@aws-sdk/client-dynamodb"
     console.error(err);
   }
 })();
-    "#;
+"#;
 
-    // Create a source file
-    let source_file = SourceFile::with_language(
-        PathBuf::from("test.js"),
-        javascript_source.to_string(),
-        Language::JavaScript,
-    );
-
-    // Create extractor with basic path (no actual service definitions needed for this test)
-    let engine = ExtractionEngine::new();
-
-    // Extract operations from the source code
-    let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
-        .await;
-
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ JavaScript client send extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
-
-            // Should find operations from Command imports
-            assert!(
-                !extracted_methods.methods.is_empty(),
-                "Should find operations from Command imports"
-            );
-
-            // Should find ListTables operation inferred from ListTablesCommand
-            let list_tables_op = extracted_methods
-                .methods
-                .iter()
-                .find(|call| call.name == "ListTables")
-                .expect("Should find ListTables operation from ListTablesCommand import");
-
-            // Should be associated with dynamodb service (from client-dynamodb sublibrary)
-            assert_eq!(
-                list_tables_op.possible_services,
-                vec!["dynamodb"],
-                "Should associate with dynamodb service"
-            );
-
-            println!(
-                "✅ Found {} operations from client send pattern",
-                extracted_methods.methods.len()
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            println!("JavaScript extraction failed: {}", e);
-            let error_message = format!("{}", e);
-            assert!(
-                error_message.contains("Service root directory")
-                    || error_message.contains("Failed to load"),
-                "Should be a service validation error, got: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_javascript_multiple_s3_operations_extraction() {
-    // Create a simple JavaScript file with AWS SDK imports and client instantiation
-    let javascript_source = r#"
+const MULTIPLE_S3_OPS_SOURCE: &str = r#"
 import {
   CreateBucketCommand,
   PutObjectCommand as PutObject,
@@ -448,85 +280,9 @@ async function runS3Operations() {
 }
 
 runS3Operations();
-    "#;
+"#;
 
-    // Create a source file
-    let source_file = SourceFile::with_language(
-        PathBuf::from("test.js"),
-        javascript_source.to_string(),
-        Language::JavaScript,
-    );
-
-    // Create extractor with basic path (no actual service definitions needed for this test)
-    let engine = ExtractionEngine::new();
-
-    // Extract operations from the source code
-    let result = engine
-        .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
-        .await;
-
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ JavaScript multiple S3 operations extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
-
-            // Should find operations from Command imports
-            assert!(
-                !extracted_methods.methods.is_empty(),
-                "Should find operations from Command imports"
-            );
-
-            // Expected operations from Command imports: CreateBucket, PutObject, ListObjectsV2, GetObject, DeleteObject, DeleteBucket
-            let expected_operations = [
-                "CreateBucket",
-                "PutObject",
-                "ListObjectsV2",
-                "GetObject",
-                "DeleteObject",
-                "DeleteBucket",
-            ];
-
-            for expected_op in &expected_operations {
-                let found_op = extracted_methods
-                    .methods
-                    .iter()
-                    .find(|call| call.name == *expected_op)
-                    .unwrap_or_else(|| {
-                        panic!("Should find {} operation from Command import", expected_op)
-                    });
-
-                assert_eq!(
-                    found_op.possible_services,
-                    vec!["s3"],
-                    "All operations should be associated with s3 service"
-                );
-            }
-
-            println!(
-                "✅ Found {} S3 operations from Command imports",
-                extracted_methods.methods.len()
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            println!("JavaScript extraction failed: {}", e);
-            let error_message = format!("{}", e);
-            assert!(
-                error_message.contains("Service root directory")
-                    || error_message.contains("Failed to load"),
-                "Should be a service validation error, got: {}",
-                e
-            );
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_javascript_pagination_extraction() {
-    // Create a simple JavaScript file with AWS SDK imports and client instantiation
-    let javascript_source = r#"
+const PAGINATION_SOURCE: &str = r"
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import {
   DynamoDBDocument,
@@ -575,72 +331,50 @@ const items: any[] = [];
 for await (const page of paginator) {
   items.push(...page.Items);
 }
-    "#;
+";
 
-    // Create a source file
+// ---------------------------------------------------------------------------
+// Parameterized extraction test
+// ---------------------------------------------------------------------------
+
+#[rstest]
+#[case::es6_imports(ES6_IMPORT_SOURCE, S3_CRUD_OPS)]
+#[case::low_level_client(LOW_LEVEL_CLIENT_SOURCE, &[ExpectedOp { name: "ListTables", service: "dynamodb" }])]
+#[case::client_send(CLIENT_SEND_SOURCE, &[ExpectedOp { name: "ListTables", service: "dynamodb" }])]
+#[case::multiple_s3_operations(MULTIPLE_S3_OPS_SOURCE, S3_CRUD_OPS)]
+#[case::pagination(PAGINATION_SOURCE, &[ExpectedOp { name: "Query", service: "dynamodb" }])]
+#[tokio::test]
+async fn test_javascript_extraction(#[case] source: &str, #[case] expected_ops: &[ExpectedOp]) {
     let source_file = SourceFile::with_language(
         PathBuf::from("test.js"),
-        javascript_source.to_string(),
+        source.to_string(),
         Language::JavaScript,
     );
 
-    // Create extractor with basic path (no actual service definitions needed for this test)
     let engine = ExtractionEngine::new();
-
-    // Extract operations from the source code
-    let result = engine
+    let extracted_methods = engine
         .extract_sdk_method_calls(Language::JavaScript, vec![source_file])
-        .await;
+        .await
+        .expect("JavaScript extraction must succeed");
 
-    match result {
-        Ok(extracted_methods) => {
-            println!("✅ JavaScript pagination extraction succeeded");
-            println!("  Found {} method calls", extracted_methods.methods.len());
+    assert!(
+        !extracted_methods.methods.is_empty(),
+        "Should extract at least one SDK method call"
+    );
 
-            // Should find operations from paginate and CommandInput imports
-            assert!(
-                !extracted_methods.methods.is_empty(),
-                "Should find operations from paginate and CommandInput imports"
-            );
+    for expected in expected_ops {
+        let found = extracted_methods
+            .methods
+            .iter()
+            .find(|call| call.name == expected.name)
+            .unwrap_or_else(|| panic!("Expected operation '{}' not found", expected.name));
 
-            // Should find Query operations from both paginateQuery and QueryCommandInput (PascalCase)
-            let query_operations: Vec<_> = extracted_methods
-                .methods
-                .iter()
-                .filter(|call| call.name == "Query")
-                .collect();
-
-            assert!(
-                !query_operations.is_empty(),
-                "Should find Query operations from paginate and CommandInput imports"
-            );
-
-            // All query operations should be associated with dynamodb service
-            for query_op in &query_operations {
-                assert_eq!(
-                    query_op.possible_services,
-                    vec!["dynamodb"],
-                    "query operations should be associated with dynamodb service"
-                );
-            }
-
-            println!(
-                "✅ Found {} operations from pagination patterns",
-                extracted_methods.methods.len()
-            );
-            for call in &extracted_methods.methods {
-                println!("  - {} (service: {:?})", call.name, call.possible_services);
-            }
-        }
-        Err(e) => {
-            println!("JavaScript extraction failed: {}", e);
-            let error_message = format!("{}", e);
-            assert!(
-                error_message.contains("Service root directory")
-                    || error_message.contains("Failed to load"),
-                "Should be a service validation error, got: {}",
-                e
-            );
-        }
+        assert_eq!(
+            found.possible_services,
+            vec![expected.service],
+            "Operation '{}' should be associated with '{}' service",
+            expected.name,
+            expected.service
+        );
     }
 }

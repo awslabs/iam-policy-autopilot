@@ -1,0 +1,10 @@
+{
+  "ExpectedUtilityImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.sqs.batchmanager.SqsAsyncBatchManager",
+      "UtilityName": "sqs",
+      "ClassName": "SqsAsyncBatchManager",
+      "Location": "sqs_async_batch_manager.java:1.1-1.78"
+    }
+  ]
+}

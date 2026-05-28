@@ -19,9 +19,9 @@ serde_json.workspace = true
 regex.workspace = true
 
 # AWS SDK dependencies
-aws-config = "1.1.7"
-aws-sdk-iam = "1.17.0"
-aws-smithy-runtime-api = "1.9.0"
+aws-config = "1.8.16"
+aws-sdk-iam = "1.108.1"
+aws-smithy-runtime-api = "1.12.0"
 
 # Documentation configuration
 [package.metadata.docs.rs]

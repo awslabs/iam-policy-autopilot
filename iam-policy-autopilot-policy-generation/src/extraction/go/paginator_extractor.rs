@@ -10,8 +10,8 @@ use crate::extraction::shared::{
     ChainedPaginatorCallInfo, PaginatorCallPattern, PaginatorCreationInfo,
 };
 use crate::extraction::{AstWithSourceFile, SdkMethodCall};
+use crate::Location;
 use crate::ServiceModelIndex;
-use crate::{Language, Location};
 use ast_grep_language::Go;
 
 /// Extractor for Go AWS SDK paginator patterns
@@ -43,14 +43,14 @@ impl<'a> GoPaginatorExtractor<'a> {
         let paginators = self.find_paginator_creation_calls(ast);
         for paginator in &paginators {
             let pattern = PaginatorCallPattern::CreationOnly(paginator);
-            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index));
         }
 
         // Create synthetic calls from chained paginator calls
         let chained_calls = self.find_chained_paginator_calls(ast);
         for chained_call in &chained_calls {
             let pattern = PaginatorCallPattern::Chained(chained_call);
-            synthetic_calls.push(pattern.create_synthetic_call(self.service_index, Language::Go));
+            synthetic_calls.push(pattern.create_synthetic_call(self.service_index));
         }
 
         synthetic_calls
@@ -207,7 +207,7 @@ impl<'a> GoPaginatorExtractor<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::SourceFile;
+    use crate::{Language, SourceFile};
 
     use super::*;
     use crate::extraction::Parameter;

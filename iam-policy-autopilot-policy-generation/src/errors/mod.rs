@@ -35,7 +35,7 @@ pub enum ExtractorError {
     },
 
     /// Unsupported programming language errors
-    #[error("Unsupported language for file '{path}' with extension '{extension}'. Supported languages: Python, TypeScript, JavaScript, Go")]
+    #[error("Unsupported language for file '{path}' with extension '{extension}'. Supported languages: Python, TypeScript, JavaScript, Go, Java")]
     UnsupportedFileLanguage {
         /// Path to the file with unsupported language
         path: PathBuf,
@@ -44,7 +44,7 @@ pub enum ExtractorError {
     },
 
     /// Unsupported programming language errors
-    #[error("Unsupported language. Supported languages: Python, TypeScript, JavaScript, Go")]
+    #[error("Unsupported language. Supported languages: Python, TypeScript, JavaScript, Go, Java")]
     UnsupportedLanguage {
         /// Unsupported language
         language: String,
@@ -56,6 +56,16 @@ pub enum ExtractorError {
         /// Detailed error message about the configuration issue
         message: String,
         /// Optional underlying error that caused the configuration failure
+        #[source]
+        source: Option<Box<dyn std::error::Error + Send + Sync>>,
+    },
+
+    /// Network errors for HTTP requests to external endpoints
+    #[error("Network error: {message}")]
+    Network {
+        /// Detailed error message
+        message: String,
+        /// Underlying network error
         #[source]
         source: Option<Box<dyn std::error::Error + Send + Sync>>,
     },
@@ -171,10 +181,12 @@ pub enum ExtractorError {
     },
 
     /// General enrichment errors for method call enrichment
-    #[error("Enrichment error for service '{service_name}': {message}")]
+    #[error("Enrichment failed for method '{method_name}' ({services}): {message}")]
     EnrichmentError {
-        /// Service being enriched
-        service_name: String,
+        /// Method name that failed enrichment
+        method_name: String,
+        /// Pre-formatted service label (e.g. "service 's3'" or "services 's3', 'iam'")
+        services: String,
         /// Detailed error message
         message: String,
         /// Optional underlying error
@@ -274,11 +286,19 @@ impl ExtractorError {
 
     /// Create an enrichment error
     pub(crate) fn enrichment_error(
-        service_name: impl Into<String>,
+        method_name: impl Into<String>,
+        services: &[String],
         message: impl Into<String>,
     ) -> Self {
+        let services_label = if services.len() == 1 {
+            format!("service '{}'", services[0])
+        } else {
+            let names: Vec<_> = services.iter().map(|s| format!("'{s}'")).collect();
+            format!("services {}", names.join(", "))
+        };
         Self::EnrichmentError {
-            service_name: service_name.into(),
+            method_name: method_name.into(),
+            services: services_label,
             message: message.into(),
             source: None,
         }

@@ -5,8 +5,10 @@
 use crate::{output, types::ExitCode};
 use clap::crate_version;
 use iam_policy_autopilot_access_denied::{ApplyError, ApplyOptions, DenialType};
+use std::io::IsTerminal;
+
 fn is_tty() -> bool {
-    atty::is(atty::Stream::Stdin) && atty::is(atty::Stream::Stderr)
+    std::io::stdin().is_terminal() && std::io::stderr().is_terminal()
 }
 
 /// Returns Some(true) if user confirmed, Some(false) if declined, None if not in TTY.

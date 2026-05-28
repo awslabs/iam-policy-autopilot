@@ -278,6 +278,7 @@ impl<'a> Engine<'a> {
         Ok(GeneratePoliciesResult {
             policies,
             explanations: Some(explanations),
+            resource_binding_explanations: None,
         })
     }
 }
@@ -1029,6 +1030,80 @@ mod tests {
         } else {
             panic!("Must have an explanation for s3:GetObject");
         }
+    }
+
+    /// Companion to `test_explanation_deduplication` — pins the fix for
+    /// https://github.com/awslabs/iam-policy-autopilot/issues/183. The
+    /// existing test uses `OperationSource::Provided` (no metadata) on both
+    /// sides, so it cannot catch the source-elision bug. This one feeds two
+    /// `OperationSource::Extracted` reasons with distinct locations and
+    /// asserts they survive `Explanation::merge`'s HashSet dedup.
+    #[test]
+    fn test_explanation_preserves_distinct_call_sites() {
+        use crate::enrichment::{Explanation, Operation, OperationSource, Reason};
+        use crate::extraction::SdkMethodCallMetadata;
+        use crate::Location;
+        use std::path::PathBuf;
+        use std::sync::Arc;
+
+        let engine = create_test_engine();
+        let sdk_call1 = create_test_sdk_call();
+        let sdk_call2 = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["s3".to_string()],
+            metadata: None,
+        };
+
+        let metadata_a = SdkMethodCallMetadata::new(
+            "s3.get_object(Bucket=\"avatars-bucket\")".to_string(),
+            Location::new(PathBuf::from("test.py"), (5, 5), (5, 78)),
+        );
+        let metadata_b = SdkMethodCallMetadata::new(
+            "s3.get_object(Bucket=\"documents-bucket\")".to_string(),
+            Location::new(PathBuf::from("test.py"), (8, 5), (8, 82)),
+        );
+
+        let make_call = |sdk_call, metadata: SdkMethodCallMetadata| EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+                Explanation {
+                    reasons: vec![Reason::new(vec![Arc::new(Operation::new(
+                        "s3".to_string(),
+                        "get_object".to_string(),
+                        OperationSource::Extracted(metadata),
+                    ))])],
+                },
+            )],
+            sdk_method_call: sdk_call,
+        };
+
+        let enriched_call1 = make_call(&sdk_call1, metadata_a);
+        let enriched_call2 = make_call(&sdk_call2, metadata_b);
+
+        let result = engine
+            .generate_policies(&[enriched_call1, enriched_call2])
+            .unwrap();
+
+        let explanation = result
+            .explanations
+            .as_ref()
+            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
+            .expect("Must have an explanation for s3:GetObject");
+        assert_eq!(
+            explanation.reasons.len(),
+            2,
+            "Two call sites with distinct source locations must produce two \
+             distinct Reason rows — see issue #183"
+        );
     }
 
     #[test]

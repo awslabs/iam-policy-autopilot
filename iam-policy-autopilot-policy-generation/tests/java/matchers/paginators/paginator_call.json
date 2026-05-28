@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["paginator_call.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listObjectsV2",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.listObjectsV2Paginator(req)",
+        "Location": "paginator_call.java:4.39-4.69",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "CloudVaultClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:10.41-10.66",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.describeResource(request)",
+      "Method": "describeResource",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:11.9-11.41",
+      "ReceiverDeclaration": {
+        "Expr": "CloudVaultClient.create()",
+        "TypeName": "CloudVaultClient",
+        "Location": "local_var_modifiers.java:10.41-10.66"
+      }
+    },
+    {
+      "Expr": "DataLakeClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:16.61-16.84",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.listObjects(request)",
+      "Method": "listObjects",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:17.9-17.36",
+      "ReceiverDeclaration": {
+        "Expr": "DataLakeClient.create()",
+        "TypeName": "DataLakeClient",
+        "Location": "local_var_modifiers.java:16.61-16.84"
+      }
+    },
+    {
+      "Expr": "EventBridgeClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:22.70-22.96",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.putEvents(request)",
+      "Method": "putEvents",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:23.9-23.34",
+      "ReceiverDeclaration": {
+        "Expr": "EventBridgeClient.create()",
+        "TypeName": "EventBridgeClient",
+        "Location": "local_var_modifiers.java:22.70-22.96"
+      }
+    },
+    {
+      "Expr": "SecretManagerClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:28.72-28.100",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.getSecret(request)",
+      "Method": "getSecret",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:29.9-29.34",
+      "ReceiverDeclaration": {
+        "Expr": "SecretManagerClient.create()",
+        "TypeName": "SecretManagerClient",
+        "Location": "local_var_modifiers.java:28.72-28.100"
+      }
+    },
+    {
+      "Expr": "KeyVaultClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:34.28-34.51",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.getKey(request)",
+      "Method": "getKey",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:35.9-35.31",
+      "ReceiverDeclaration": {
+        "Expr": "KeyVaultClient.create()",
+        "TypeName": null,
+        "Location": "local_var_modifiers.java:34.28-34.51"
+      }
+    },
+    {
+      "Expr": "QueueServiceClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_var_modifiers.java:40.50-40.77",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.sendMessage(request)",
+      "Method": "sendMessage",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_var_modifiers.java:41.9-41.36",
+      "ReceiverDeclaration": {
+        "Expr": "QueueServiceClient.create()",
+        "TypeName": null,
+        "Location": "local_var_modifiers.java:40.50-40.77"
+      }
+    }
+  ]
+}

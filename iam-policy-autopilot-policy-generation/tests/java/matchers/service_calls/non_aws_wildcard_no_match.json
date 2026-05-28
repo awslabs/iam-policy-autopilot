@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["non_aws_wildcard_no_match.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": []
+}

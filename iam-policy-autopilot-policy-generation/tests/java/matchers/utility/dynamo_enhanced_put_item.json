@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["dynamo_enhanced_put_item.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "PutItem",
+      "PossibleServices": ["dynamodb"],
+      "Metadata": {
+        "Expr": "table.putItem(item)",
+        "Location": "dynamo_enhanced_put_item.java:5.9-5.28",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "item" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

@@ -36,6 +36,13 @@ impl Engine {
         })
     }
 
+    /// Returns a shared reference to the underlying service-reference loader,
+    /// so other subsystems (e.g. Terraform resource binding) can reuse the
+    /// same HTTP client and cache instead of creating their own.
+    pub(crate) fn service_reference_loader(&self) -> &ServiceReferenceLoader {
+        &self.service_reference_loader
+    }
+
     /// This is the main entry point for the enrichment process.
     /// 1. Maps operations to authorized actions
     /// 2. Expands actions using the FAS (Forward-Access Sessions) model
@@ -45,6 +52,14 @@ impl Engine {
         sdk: SdkType,
     ) -> Result<Vec<EnrichedSdkMethodCall<'a>>> {
         let unique_services = self.get_unique_services(extracted_methods);
+
+        // Record each detected service into the telemetry span (no-ops if no scope active)
+        for service in &unique_services {
+            iam_policy_autopilot_common::telemetry::span::record_result_set(
+                "services_used",
+                service,
+            );
+        }
 
         let service_cfg = service_configuration::load_service_configuration()?;
 
@@ -135,7 +150,8 @@ impl Engine {
                 Err(e) => {
                     return Err(ExtractorError::enrichment_error(
                         &method.name,
-                        format!("Failed to enrich method call: {e}"),
+                        &method.possible_services,
+                        format!("{e}"),
                     ));
                 }
             }

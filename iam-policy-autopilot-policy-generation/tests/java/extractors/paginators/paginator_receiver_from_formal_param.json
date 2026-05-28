@@ -1,0 +1,24 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "s3.listObjectsV2Paginator(request)",
+      "Operation": "listObjectsV2",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "paginator_receiver_from_formal_param.java:3.9-3.43",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client s3",
+        "TypeName": "S3Client",
+        "Location": "paginator_receiver_from_formal_param.java:2.14-2.25"
+      }
+    }
+  ]
+}

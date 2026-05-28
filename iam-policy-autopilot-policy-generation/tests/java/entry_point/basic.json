@@ -1,0 +1,26 @@
+{
+  "SourceFiles": ["basic.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listBuckets",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3Client.listBuckets()",
+        "Location": "basic.java:5.9-5.31",
+        "Parameters": []
+      }
+    },
+    {
+      "Name": "putObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3Client.putObject(request)",
+        "Location": "basic.java:6.9-6.36",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

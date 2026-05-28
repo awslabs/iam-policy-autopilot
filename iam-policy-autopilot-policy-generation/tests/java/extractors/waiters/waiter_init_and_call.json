@@ -1,0 +1,24 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "waiter.waitUntilBucketExists(request)",
+      "Name": "bucketExists",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "waiter_init_and_call.java:4.9-4.46",
+      "ReceiverDeclaration": {
+        "Expr": "s3Client.waiter()",
+        "TypeName": "S3Waiter",
+        "Location": "waiter_init_and_call.java:3.27-3.44"
+      }
+    }
+  ]
+}

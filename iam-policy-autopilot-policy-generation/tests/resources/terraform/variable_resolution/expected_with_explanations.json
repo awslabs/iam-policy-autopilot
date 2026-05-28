@@ -1,0 +1,127 @@
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:ReadDataForReplication"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:dynamodb:us-east-1:123456789012:table/users-prod"
+            ]
+          },
+          {
+            "Action": [
+              "kms:Decrypt"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "sqs.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3-object-lambda:PutObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3:PutObject",
+              "s3:PutObjectAcl",
+              "s3:PutObjectLegalHold",
+              "s3:PutObjectRetention",
+              "s3:PutObjectTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::myapp-prod-data/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "sqs:SendMessage"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:sqs:us-east-1:123456789012:myapp-tasks"
+            ]
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    }
+  ],
+  "ResourceBindingExplanations": [
+    {
+      "Arn": "arn:${Partition}:dynamodb:${Region}:${Account}:table/users-prod",
+      "Location": "main.tf:5.1-13.2",
+      "ResourceName": "users",
+      "ResourceType": "aws_dynamodb_table",
+      "Source": "Terraform"
+    },
+    {
+      "Arn": "arn:${Partition}:s3:::myapp-prod-data",
+      "Location": "main.tf:1.1-3.2",
+      "ResourceName": "data_bucket",
+      "ResourceType": "aws_s3_bucket",
+      "Source": "Terraform"
+    },
+    {
+      "Arn": "arn:${Partition}:sqs:${Region}:${Account}:myapp-tasks",
+      "Location": "main.tf:15.1-17.2",
+      "ResourceName": "tasks",
+      "ResourceType": "aws_sqs_queue",
+      "Source": "Terraform"
+    }
+  ]
+}

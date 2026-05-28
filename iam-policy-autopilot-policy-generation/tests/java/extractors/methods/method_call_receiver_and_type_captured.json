@@ -1,0 +1,30 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "CloudVaultClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "method_call_receiver_and_type_captured.java:5.35-5.60",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "client.describeResource(request)",
+      "Method": "describeResource",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "method_call_receiver_and_type_captured.java:6.9-6.41",
+      "ReceiverDeclaration": {
+        "Expr": "CloudVaultClient.create()",
+        "TypeName": "CloudVaultClient",
+        "Location": "method_call_receiver_and_type_captured.java:5.35-5.60"
+      }
+    }
+  ]
+}

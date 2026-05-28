@@ -1,0 +1,102 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "logs:CreateLogStream"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:*:log-stream:*"
+      ]
+    },
+    {
+      "Action": [
+        "dynamodb:GetItem"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "kms:Decrypt"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ]
+    },
+    {
+      "Action": [
+        "dynamodb:PutItem"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/*"
+      ]
+    },
+    {
+      "Action": [
+        "logs:PutLogEvents"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:*:log-stream:*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "kms:GenerateDataKey"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ]
+    },
+    {
+      "Action": [
+        "dynamodb:Scan"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:dynamodb:*:*:table/*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}

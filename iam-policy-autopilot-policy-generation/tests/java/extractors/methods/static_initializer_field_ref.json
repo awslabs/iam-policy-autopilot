@@ -1,0 +1,22 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "static_initializer_field_ref.java:4.26-4.43",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.listBuckets()",
+      "Method": "listBuckets",
+      "Parameters": [],
+      "Location": "static_initializer_field_ref.java:7.9-7.25",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "static_initializer_field_ref.java:4.26-4.43"
+      }
+    }
+  ]
+}

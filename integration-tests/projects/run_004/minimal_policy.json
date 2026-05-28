@@ -1,0 +1,15 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "xray:PutEncryptionConfig"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ],
+      "Sid": "AllowXRAYPutEncryptionConfig"
+    }
+  ],
+  "Version": "2012-10-17"
+}

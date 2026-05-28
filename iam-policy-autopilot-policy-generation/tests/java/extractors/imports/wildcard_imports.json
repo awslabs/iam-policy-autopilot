@@ -1,0 +1,16 @@
+{
+  "ExpectedImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.s3.*",
+      "Service": "s3",
+      "Location": "wildcard_imports.java:1.1-1.45",
+      "IsStatic": false
+    },
+    {
+      "Expr": "software.amazon.awssdk.services.dynamodb.*",
+      "Service": "dynamodb",
+      "Location": "wildcard_imports.java:2.1-2.51",
+      "IsStatic": false
+    }
+  ]
+}

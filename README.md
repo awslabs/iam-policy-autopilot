@@ -3,7 +3,7 @@
 
 # IAM Policy Autopilot
 
-An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports applications built in Python, Go, and TypeScript. 
+An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports policy generation for applications built in Python, Go, TypeScript, JavaScript, and Java — see [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation).
 
 We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls). 
 
@@ -14,7 +14,9 @@ We want to hear from you. Ask questions or share ideas in [Discussions](https://
 - [How is IAM Policy Autopilot helpful?](#how-is-iam-policy-autopilot-helpful)
 - [Best Practices and Considerations](#best-practices-and-considerations)
 - [Getting Started](#getting-started)
+- [Network Requirements](#network-requirements)
 - [CLI Usage](#cli-usage)
+- [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation)
 - [Build Instructions](#build-instructions)
 - [Workspace Structure](#workspace-structure)
 - [Development](#development)
@@ -72,6 +74,16 @@ iam-policy-autopilot generate-policies ./src/app.py --pretty
 This significantly reduces unnecessary permissions and generates more targeted policies. Note that the final policy may still include actions from services not in your hints if they're required for the operations you perform (e.g., KMS actions for S3 encryption).
 
 **Note**: When using the MCP server integration with AI coding assistants, the assistant is expected to automatically provide appropriate service hints based on your code context. The `--service-hints` option is primarily for CLI usage.
+
+### Supported Languages and SDKs for policy generation
+
+| Language | SDK |
+|---|---|
+| Go | [AWS SDK for Go v2](https://docs.aws.amazon.com/sdk-for-go/v2/developer-guide/welcome.html) |
+| Java | [AWS SDK for Java v2](https://docs.aws.amazon.com/sdk-for-java/v2/) |
+| JavaScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
+| TypeScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
+| Python | [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [Botocore](https://botocore.amazonaws.com/v1/documentation/api/latest/index.html) |
 
 ## Getting Started
 
@@ -253,6 +265,32 @@ IAM Policy Autopilot's Kiro power specifically enhances the traditional MCP expe
 2. This Kiro power prompts your LLM agent to give a **tutorial of the MCP tools** offered by IAM Policy Autopilot, allowing you to better understand how our MCP tooling assists your use case.
 3. This Kiro Power provides your LLM agent with **step-by-step onboarding validation**, allowing it to detect any problems with installations and provide remediation steps for those problems.
 
+## Network Requirements
+
+IAM Policy Autopilot makes HTTPS requests at runtime to the AWS service reference endpoint to fetch up-to-date AWS service metadata used for policy generation. This endpoint must be reachable from the machine running the tool.
+
+### Corporate networks and proxies
+
+If your network uses a web proxy, set the `HTTPS_PROXY` environment variable:
+
+```bash
+export HTTPS_PROXY=http://proxy.example.com:8080
+```
+
+See the [reqwest proxy documentation](https://docs.rs/reqwest/latest/reqwest/#proxies) for supported proxy URL formats.
+
+### SSL inspection
+
+IAM Policy Autopilot uses your operating system's native certificate store for TLS verification. If your network performs SSL/TLS inspection (traffic re-signing), the inspection CA certificate must be installed in your OS certificate store. Consult your IT team if you are unsure whether this is already configured.
+
+### Firewall allowlisting
+
+If outbound HTTPS traffic is restricted, allow access to:
+
+| Endpoint | Protocol | Purpose |
+|---|---|---|
+| `servicereference.us-east-1.amazonaws.com` | HTTPS | AWS service metadata for policy generation |
+
 ## CLI Usage
 
 The `iam-policy-autopilot` CLI tool provides three main commands:
@@ -336,6 +374,7 @@ iam-policy-autopilot mcp-server --transport http
 
 - [Rust](https://rustup.rs/) (latest stable version)
 - Git
+- Python 3
 - [CMake](https://cmake.org/) (Windows only)
 
 ### Setup

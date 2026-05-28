@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["unknown_paginator.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": []
+}
