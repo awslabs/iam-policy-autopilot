@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod engine;
+pub(crate) mod http_client;
 pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
 pub mod service_reference;

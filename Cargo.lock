@@ -2056,7 +2056,7 @@ dependencies = [
  "log",
  "quote",
  "regex",
- "reqwest 0.13.3",
+ "reqwest",
  "rstest",
  "serde",
  "serde_json",
@@ -2082,7 +2082,7 @@ dependencies = [
  "iam-policy-autopilot-common",
  "iam-policy-autopilot-policy-generation",
  "log",
- "reqwest 0.13.3",
+ "reqwest",
  "rmcp",
  "rstest",
  "schemars",
@@ -2125,8 +2125,7 @@ dependencies = [
  "rcgen",
  "regex",
  "relative-path 2.0.1",
- "reqwest 0.12.28",
- "reqwest 0.13.3",
+ "reqwest",
  "rstest",
  "rust-embed",
  "rustls 0.23.40",
@@ -2187,6 +2186,17 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "wasm-bindgen-test",
+]
+
+[[package]]
+name = "iam-policy-autopilot-wasm-emscripten"
+version = "0.2.1"
+dependencies = [
+ "anyhow",
+ "iam-policy-autopilot-policy-generation",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
@@ -3412,38 +3422,6 @@ dependencies = [
 
 [[package]]
 name = "reqwest"
-version = "0.12.28"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd3ca559203180a307f12d114c268abf583f59b03cb906fd0b3ff8646c1147"
-dependencies = [
- "base64",
- "bytes",
- "futures-core",
- "http 1.4.0",
- "http-body 1.0.1",
- "http-body-util",
- "hyper 1.9.0",
- "hyper-util",
- "js-sys",
- "log",
- "percent-encoding",
- "pin-project-lite",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "sync_wrapper",
- "tokio",
- "tower",
- "tower-http",
- "tower-service",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "reqwest"
 version = "0.13.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "62e0021ea2c22aed41653bc7e1419abb2c97e038ff2c33d0e1309e49a97deec0"
@@ -3532,7 +3510,7 @@ dependencies = [
  "pin-project-lite",
  "process-wrap",
  "rand 0.10.1",
- "reqwest 0.13.3",
+ "reqwest",
  "rmcp-macros",
  "schemars",
  "serde",

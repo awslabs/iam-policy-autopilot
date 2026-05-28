@@ -257,7 +257,7 @@ impl ExtractorError {
     }
 
     /// Create a method extraction error
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(feature = "tree-sitter")]
     pub(crate) fn method_extraction(
         language: impl Into<String>,
         path: impl Into<PathBuf>,

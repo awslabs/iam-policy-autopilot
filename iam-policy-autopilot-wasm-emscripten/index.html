@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>IAM Policy Autopilot — Emscripten (Full Extraction)</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 900px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+        color: #1a1a1a;
+      }
+      h1 {
+        margin-bottom: 1.5rem;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin-bottom: 0.3rem;
+      }
+      input,
+      textarea {
+        width: 100%;
+        padding: 0.5rem;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+        font-family: monospace;
+        font-size: 0.9rem;
+      }
+      textarea {
+        height: 260px;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1rem;
+      }
+      .row > div {
+        flex: 1;
+      }
+      button {
+        padding: 0.55rem 1.2rem;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        cursor: pointer;
+        color: #fff;
+        background: #1a7f37;
+        margin: 1rem 0;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: wait;
+      }
+      pre {
+        background: #f6f8fa;
+        border: 1px solid #d0d7de;
+        border-radius: 6px;
+        padding: 1rem;
+        overflow: auto;
+        max-height: 400px;
+        font-size: 0.85rem;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .status {
+        font-size: 0.85rem;
+        color: #666;
+        margin-bottom: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>IAM Policy Autopilot — Full Rust Extraction (Emscripten)</h1>
+
+    <label for="filename">Filename</label>
+    <div class="row">
+      <div><input id="filename" value="app.py" placeholder="e.g. app.py, handler.ts, main.go" /></div>
+      <div><input id="region" value="us-east-1" placeholder="AWS region" /></div>
+      <div><input id="account" value="123456789012" placeholder="AWS account ID" /></div>
+    </div>
+
+    <label for="source">Source code</label>
+    <textarea id="source" spellcheck="false">
+import boto3
+
+s3 = boto3.client('s3')
+s3.get_object(Bucket='my-bucket', Key='my-key')
+s3.put_object(Bucket='my-bucket', Key='new.txt', Body=b'hello')
+
+dynamodb = boto3.client('dynamodb')
+dynamodb.get_item(TableName='my-table', Key={'id': {'S': '123'}})
+</textarea
+    >
+
+    <button id="btnGenerate">Generate Policies</button>
+
+    <p class="status" id="status">Loading WASM module…</p>
+    <label>Output</label>
+    <pre id="output"></pre>
+
+    <script>
+      // Emscripten's MODULARIZE output assigns to `var createModule`
+      // Load it as a classic script, then call the factory.
+    </script>
+    <script src="./dist/iam_policy_autopilot.js"></script>
+    <script type="module">
+      const $ = (id) => document.getElementById(id);
+
+      $("status").textContent = "Initializing WASM module…";
+
+      const Module = await createModule();
+
+      // Wrap the export with WebAssembly.promising() so that when the WASM
+      // calls our suspending import (em_fetch_get_sync), the call can
+      // suspend and resume correctly via JSPI.
+      const generatePolicies = WebAssembly.promising(Module["_generate_policies_wasm"]);
+
+      $("status").textContent = "Ready.";
+
+      $("btnGenerate").addEventListener("click", async function () {
+        const btn = this;
+        btn.disabled = true;
+        $("status").textContent = "Running…";
+        const t0 = performance.now();
+
+        try {
+          const input = JSON.stringify({
+            files: [{ filename: $("filename").value, content: $("source").value }],
+            region: $("region").value,
+            account: $("account").value,
+          });
+
+          // Allocate input string in WASM memory
+          const inputLen = Module.lengthBytesUTF8(input) + 1;
+          const inputPtr = Module._malloc(inputLen);
+          Module.stringToUTF8(input, inputPtr, inputLen);
+
+          // Call via our manually-wrapped promising export
+          const resultPtr = await generatePolicies(inputPtr);
+          Module._free(inputPtr);
+
+          // Read the result string
+          const result = Module.UTF8ToString(resultPtr);
+          Module._free_string(resultPtr);
+
+          // Pretty-print if valid JSON
+          try {
+            const parsed = JSON.parse(result);
+            $("output").textContent = JSON.stringify(parsed, null, 2);
+          } catch {
+            $("output").textContent = result;
+          }
+
+          $("status").textContent = `Done in ${(performance.now() - t0).toFixed(0)} ms`;
+        } catch (e) {
+          $("output").textContent = `Error: ${e}\n\n${e.stack || ""}`;
+          $("status").textContent = "Failed";
+        } finally {
+          btn.disabled = false;
+        }
+      });
+    </script>
+  </body>
+</html>

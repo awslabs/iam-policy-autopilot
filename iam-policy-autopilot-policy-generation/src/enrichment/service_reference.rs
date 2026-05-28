@@ -12,7 +12,7 @@
 use crate::enrichment::Context;
 use crate::errors::ExtractorError;
 use crate::providers::JsonProvider;
-use reqwest::{Client, Url};
+use crate::enrichment::http_client::{self, HttpGet};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -25,6 +25,7 @@ use tokio::fs;
 use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
+#[cfg(not(feature = "wasm"))]
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
 #[cfg(not(feature = "wasm"))]
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
@@ -274,12 +275,12 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
-    pub(crate) service_reference_mapping: HashMap<String, Url>,
+    pub(crate) service_reference_mapping: HashMap<String, String>,
 }
 
 fn deserialize_service_reference_mapping(
     value: Value,
-) -> crate::errors::Result<HashMap<String, Url>> {
+) -> crate::errors::Result<HashMap<String, String>> {
     #[derive(Deserialize)]
     struct ServiceEntry {
         service: String,
@@ -289,17 +290,14 @@ fn deserialize_service_reference_mapping(
     let entries: Vec<ServiceEntry> = serde_json::from_value(value)?;
     let mut map = HashMap::new();
     for entry in entries {
-        let url = Url::parse(&entry.url).map_err(|e| {
-            ExtractorError::service_reference_parse_error_with_source(
+        if entry.url.is_empty() {
+            return Err(ExtractorError::service_reference_parse_error_with_source(
                 &entry.service,
-                format!(
-                    "Failed to parse URL '{}' in service reference mapping",
-                    entry.url
-                ),
-                e,
-            )
-        })?;
-        map.insert(entry.service, url);
+                format!("Empty URL in service reference mapping for '{}'", entry.service),
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "empty URL"),
+            ));
+        }
+        map.insert(entry.service, entry.url);
     }
     Ok(map)
 }
@@ -312,7 +310,7 @@ fn deserialize_service_reference_mapping(
 #[derive(Debug)]
 
 pub(crate) struct RemoteServiceReferenceLoader {
-    client: Client,
+    client: Box<dyn HttpGet>,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
     cache: ServiceCache,
     mapping_url: String,
@@ -393,7 +391,7 @@ impl RemoteServiceReferenceLoader {
         let mapping_url =
             std::env::var(MAPPING_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_MAPPING_URL.to_string());
         Ok(Self {
-            client: Self::create_client()?,
+            client: http_client::create_http_client()?,
             service_reference_mapping: OnceCell::new(),
             cache: ServiceCache::new(),
             mapping_url,
@@ -407,7 +405,7 @@ impl RemoteServiceReferenceLoader {
 
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
-            client: Self::create_client()?,
+            client: http_client::create_http_client()?,
             service_reference_mapping: OnceCell::new(),
             cache: ServiceCache::new(),
             mapping_url: String::new(),
@@ -435,40 +433,7 @@ impl RemoteServiceReferenceLoader {
     async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
         self.service_reference_mapping
             .get_or_try_init(|| async {
-                let json_text = self
-                    .client
-                    .get(&self.mapping_url)
-                    .send()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to connect to the service reference endpoint at '{}'. \
-                             Verify that this URL is reachable from your network \
-                             (e.g. not blocked by a firewall or VPN). \
-                             If you need to route through a proxy, \
-                             set the HTTPS_PROXY environment variable \
-                             (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .error_for_status()
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Service reference endpoint at '{}' returned an error status",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to read response body from service reference endpoint at '{}'",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?;
+                let json_text = self.client.get_text(&self.mapping_url).await?;
 
                 let json_value: serde_json::Value =
                     serde_json::from_str(&json_text).map_err(|e| {
@@ -492,29 +457,6 @@ impl RemoteServiceReferenceLoader {
                 })
             })
             .await
-    }
-
-    fn create_client() -> crate::errors::Result<Client> {
-        let user_agent_suffix = if cfg!(feature = "integ-test") {
-            "-integration-test"
-        } else {
-            ""
-        };
-
-        let user_agent = format!(
-            "{}{}/{}",
-            IAM_POLICY_AUTOPILOT,
-            user_agent_suffix,
-            env!("CARGO_PKG_VERSION")
-        );
-        Client::builder()
-            .user_agent(user_agent)
-            .build()
-            .map_err(|e| ExtractorError::Configuration {
-                message: "Failed to initialize the HTTP client for the service reference endpoint"
-                    .to_string(),
-                source: Some(Box::new(e)),
-            })
     }
 
     #[cfg(not(feature = "wasm"))]
@@ -590,22 +532,12 @@ impl RemoteServiceReferenceLoader {
             Some(service_url) => {
                 let service_reference_content = self
                     .client
-                    .get(service_url.as_ref())
-                    .send()
+                    .get_text(service_url)
                     .await
                     .map_err(|e| {
                         ExtractorError::service_reference_parse_error_with_source(
                             service_name,
                             "Failed to fetch service reference data".to_string(),
-                            e,
-                        )
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            service_name,
-                            "Failed to read service reference response".to_string(),
                             e,
                         )
                     })?;
