@@ -1,11 +1,11 @@
 //! Filesystem provider implementation using `tokio::fs`
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 use tokio::fs;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 use crate::errors::{ExtractorError, Result};
 
 /// Native filesystem provider using `tokio::fs` for async file operations.
@@ -25,7 +25,7 @@ use crate::errors::{ExtractorError, Result};
 #[derive(Debug, Clone)]
 pub struct FileSystemProvider;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 impl FileSystemProvider {
     /// Read the entire contents of a file as a UTF-8 string.
     ///

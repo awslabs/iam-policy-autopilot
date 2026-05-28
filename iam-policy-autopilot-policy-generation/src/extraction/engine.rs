@@ -115,7 +115,7 @@ impl Engine {
         // Extract SDK method calls from all source files
         let mut all_extraction_results = Vec::new();
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(feature = "wasm"))]
         {
             let mut join_set = JoinSet::new();
 
@@ -142,7 +142,7 @@ impl Engine {
             }
         }
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "wasm")]
         {
             for source_file in source_files {
                 let result = extractor.parse(&source_file).await;

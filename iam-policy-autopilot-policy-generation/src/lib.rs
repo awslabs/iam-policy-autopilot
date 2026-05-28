@@ -35,7 +35,7 @@ pub mod policy_generation;
 pub mod api;
 
 // LSP client for type information extraction
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 pub mod lsp;
 
 use std::fmt::Display;
@@ -57,7 +57,7 @@ pub use policy_generation::{
 #[cfg(feature = "tree-sitter")]
 pub(crate) use extraction::ServiceModelIndex;
 
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(feature = "wasm"))]
 pub use providers::FileSystemProvider;
 pub use providers::JsonProvider;
 use schemars::JsonSchema;

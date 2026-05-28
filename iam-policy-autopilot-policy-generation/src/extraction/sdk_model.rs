@@ -11,9 +11,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock};
 
 use tokio::sync::RwLock;
-#[cfg(feature = "tree-sitter")]
+#[cfg(not(feature = "wasm"))]
 use tokio::sync::Semaphore;
-#[cfg(feature = "tree-sitter")]
+#[cfg(not(feature = "wasm"))]
 use tokio::task::JoinSet;
 
 use convert_case::{Case, Casing};
@@ -188,7 +188,7 @@ impl ServiceDiscovery {
     /// Each service includes its name and API version. Since build.rs only processes
     /// the latest version for each service, there's exactly one version per service.
     fn discover_services() -> Result<Vec<SdkModel>> {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(feature = "wasm"))]
         let start_time = std::time::Instant::now();
         log::debug!("Starting optimized service discovery...");
 
@@ -206,13 +206,13 @@ impl ServiceDiscovery {
         // Sort services by name for consistent ordering
         services.sort_by(|a, b| a.name.cmp(&b.name).then(a.api_version.cmp(&b.api_version)));
 
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(feature = "wasm"))]
         log::debug!(
             "Optimized service discovery completed in {:?} - found {} services",
             start_time.elapsed(),
             services.len()
         );
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "wasm")]
         log::debug!(
             "Optimized service discovery completed - found {} services",
             services.len()
@@ -353,7 +353,7 @@ impl ServiceDiscovery {
         }
 
         // On WASM: load sequentially (no JoinSet/spawn available)
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(feature = "wasm")]
         {
             for service_info in services {
                 match BotocoreData::get_service_definition(
@@ -383,7 +383,7 @@ impl ServiceDiscovery {
         }
 
         // On native: load in parallel with JoinSet
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(feature = "wasm"))]
         {
             use std::sync::Arc;
 
