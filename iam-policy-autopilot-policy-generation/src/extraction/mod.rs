@@ -11,11 +11,13 @@ use std::path::{Path, PathBuf};
 pub(crate) mod engine;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod external_library_models;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod extractor;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod go;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod java;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod javascript;
 #[cfg(feature = "tree-sitter")]
 pub(crate) mod python;
@@ -28,6 +30,7 @@ pub(crate) mod shared;
 pub(crate) mod typescript;
 pub(crate) mod waiter_model;
 
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod terraform;
 
 // Re-export main types for convenience
@@ -37,6 +40,7 @@ pub use engine::Engine;
 #[doc(hidden)]
 #[cfg(feature = "tree-sitter")]
 pub use sdk_model::ServiceDiscovery;
+#[cfg(feature = "tree-sitter")]
 pub(crate) use sdk_model::ServiceModelIndex;
 #[cfg(feature = "tree-sitter")]
 pub(crate) use service_hints::ServiceHintsProcessor;
@@ -375,16 +379,21 @@ pub mod output {
 
         /// Get current timestamp as ISO 8601 string
         fn current_timestamp() -> String {
-            use std::time::{SystemTime, UNIX_EPOCH};
-
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map(|duration| {
-                    let secs = duration.as_secs();
-                    // Simple timestamp format - will be replaced with proper ISO 8601 when chrono is available
-                    format!("{secs}")
-                })
-                .unwrap_or_else(|_| "0".to_string())
+            #[cfg(not(target_arch = "wasm32"))]
+            {
+                use std::time::{SystemTime, UNIX_EPOCH};
+                SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .map(|duration| {
+                        let secs = duration.as_secs();
+                        format!("{secs}")
+                    })
+                    .unwrap_or_else(|_| "0".to_string())
+            }
+            #[cfg(target_arch = "wasm32")]
+            {
+                "0".to_string()
+            }
         }
     }
 }

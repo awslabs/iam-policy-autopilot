@@ -21,6 +21,5 @@ pub use generate_policies_from_sdk_calls::{
 };
 pub use get_submodule_version::{get_boto3_version_info, get_botocore_version_info};
 #[cfg(feature = "tree-sitter")]
-pub(crate) #[cfg(feature = "tree-sitter")]
-mod common;
+pub(crate) mod common;
 pub mod model;
