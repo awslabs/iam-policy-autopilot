@@ -693,14 +693,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_snake_case_conversion() {
-        assert_eq!("GetItem".to_case(Case::Snake), "get_item");
-        assert_eq!("PutItem".to_case(Case::Snake), "put_item");
-        assert_eq!("DeleteObject".to_case(Case::Snake), "delete_object");
-        assert_eq!("CreateBucket".to_case(Case::Snake), "create_bucket");
-    }
-
-    #[test]
     fn test_load_dynamodb_model_from_embedded() {
         let result = Boto3ResourcesModel::load_from_embedded("dynamodb");
 

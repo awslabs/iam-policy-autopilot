@@ -1,0 +1,96 @@
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "kms:Decrypt"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ],
+            "Sid": "AllowS3Decrypt"
+          },
+          {
+            "Action": [
+              "s3-object-lambda:GetObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObject"
+          },
+          {
+            "Action": [
+              "s3:GetObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObject"
+          },
+          {
+            "Action": [
+              "s3:GetObjectLegalHold"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObjectLegalHold"
+          },
+          {
+            "Action": [
+              "s3:GetObjectRetention"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObjectRetention"
+          },
+          {
+            "Action": [
+              "s3:GetObjectTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObjectTagging"
+          },
+          {
+            "Action": [
+              "s3:GetObjectVersion"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ],
+            "Sid": "AllowS3GetObjectVersion"
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    }
+  ]
+}

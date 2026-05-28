@@ -1,0 +1,63 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "anonymous_class_outer_scope.java:5.19-5.36",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "DynamoDbClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "anonymous_class_outer_scope.java:8.33-8.56",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "executor.submit(new Runnable() {\n            @Override\n            public void run() {\n                s3.putObject(null);\n                dynamo.listTables();\n            }\n        })",
+      "Method": "submit",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "new Runnable() {\n            @Override\n            public void run() {\n                s3.putObject(null);\n                dynamo.listTables();\n            }\n        }" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "anonymous_class_outer_scope.java:10.9-16.11",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.putObject(null)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "null" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "anonymous_class_outer_scope.java:13.17-13.35",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "anonymous_class_outer_scope.java:5.19-5.36"
+      }
+    },
+    {
+      "Expr": "dynamo.listTables()",
+      "Method": "listTables",
+      "Parameters": [],
+      "Location": "anonymous_class_outer_scope.java:14.17-14.36",
+      "ReceiverDeclaration": {
+        "Expr": "DynamoDbClient.create()",
+        "TypeName": "DynamoDbClient",
+        "Location": "anonymous_class_outer_scope.java:8.33-8.56"
+      }
+    }
+  ]
+}

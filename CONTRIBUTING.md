@@ -20,6 +20,21 @@ reported the issue. Please try to include as much information as you can. Detail
 * Anything unusual about your environment or deployment
 
 
+## Development Setup
+
+### Windows
+
+The following git setting is required when working on Windows:
+
+```powershell
+git config --global core.longpaths true
+git config --global core.autocrlf false
+```
+
+- **`core.longpaths`** — the repository contains file paths that exceed Windows' default 260-character limit (inside the `aws-sdk-java-v2` submodule).
+
+Run this command once before cloning (or before initializing submodules if you have already cloned).
+
 ## Contributing via Pull Requests
 Contributions via pull requests are much appreciated. Before sending us a pull request, please ensure that:
 
@@ -31,10 +46,57 @@ To send us a pull request, please:
 
 1. Fork the repository.
 2. Modify the source; please focus on the specific change you are contributing. If you also reformat all the code, it will be hard for us to focus on your change.
-3. Ensure local tests pass.
-4. Commit to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
+3. Ensure local tests pass (`cargo test --workspace`).
+4. Push signed commits (see [Signing Commits](https://docs.github.com/en/authentication/managing-commit-signature-verification/signing-commits)) to your fork using clear commit messages (see [Commit Message Guidelines](#commit-message-guidelines) below).
 5. Send us a pull request, answering any default questions in the pull request interface.
 6. Pay attention to any automated CI failures reported in the pull request, and stay involved in the conversation.
+
+### Code Style & Linting
+
+Ensure your changes pass all linters. The CI will enforce these checks automatically.
+
+### Pre-commit Hooks
+
+The repository includes a pre-commit configuration for local checks.
+
+```bash
+# Install pre-commit
+pip install pre-commit
+
+# Install hooks into .git/hooks/pre-commit
+pre-commit install
+```
+
+**Rust**
+
+```bash
+# Format all Rust code
+cargo fmt --all
+
+# Run Clippy (warnings are treated as errors in CI)
+cargo clippy --workspace
+```
+
+**Python** (scripts in `iam-policy-autopilot-policy-generation/scripts/`)
+
+```bash
+# Lint
+ruff check .
+
+# Format
+ruff format .
+
+# Check formatting without modifying files (as CI does)
+ruff format --check .
+```
+
+Ruff is configured in [`pyproject.toml`](pyproject.toml) at the repository root. Install it with `pip install ruff` or via your package manager.
+
+### Changelog
+
+If your change is user-facing (new feature, bug fix, breaking change), add an entry to [`CHANGELOG.md`](CHANGELOG.md) under the `[Unreleased]` section as part of your PR. This keeps the changelog accurate and ready for the next release.
+
+Use these subsection headings: **Added**, **Changed**, **Fixed**, **Removed**.
 
 ### Commit Message Guidelines
 

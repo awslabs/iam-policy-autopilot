@@ -2,7 +2,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    embedded_data::BotocoreData, enrichment::Explanations, policy_generation::PolicyWithMetadata,
+    embedded_data::BotocoreData, enrichment::terraform::ResourceBindingExplanation,
+    enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
@@ -25,6 +26,25 @@ pub struct GeneratePolicyConfig {
     /// - `Some(patterns)`: Generate explanations for actions matching the patterns
     ///   (supports wildcards like "s3:*", "ec2:Get*", "*" for all)
     pub explain_filters: Option<Vec<String>>,
+    /// Optional Terraform project directory for resource binding.
+    /// When provided, .tf files are parsed to discover AWS resources and trace source code.
+    /// Source files from the terraform directory supplement the explicit source_files list.
+    pub terraform_dir: Option<PathBuf>,
+    /// Optional individual Terraform `.tf` files for resource binding.
+    /// These are combined with any files discovered from `terraform_dir`.
+    pub terraform_files: Vec<PathBuf>,
+    /// Optional paths to `terraform.tfstate` files for enhanced ARN resolution.
+    /// State-derived ARNs take precedence over HCL-constructed ones.
+    pub tfstate_paths: Vec<PathBuf>,
+    /// Optional explicit `.tfvars` file paths for variable overrides.
+    /// When provided, these take precedence over auto-discovered `.tfvars` files
+    /// from the terraform directory. Applied in order (later files override earlier).
+    pub tfvars_files: Vec<PathBuf>,
+    /// Optional ARN patterns to filter resource binding explanations.
+    /// - `None`: No resource binding explanations generated
+    /// - `Some(patterns)`: Generate explanations for resources matching the patterns
+    ///   (supports wildcards like "arn:aws:s3:::*", "*" for all)
+    pub explain_resource_filters: Option<Vec<String>>,
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
@@ -36,6 +56,9 @@ pub struct GeneratePoliciesResult {
     /// Explanations for why actions were added (if requested)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanations: Option<Explanations>,
+    /// Explanations for where resource ARNs came from (Terraform bindings)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
 }
 
 /// Service hints for filtering SDK method calls

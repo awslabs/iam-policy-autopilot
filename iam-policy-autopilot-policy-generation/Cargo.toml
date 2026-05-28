@@ -6,11 +6,15 @@ license.workspace = true
 repository.workspace = true
 description = "Core library for IAM permission analysis and AWS SDK method extraction"
 
+[package.metadata.cargo-machete]
+ignored = ["hcl-rs"]
+
 [lib]
 crate-type = ["cdylib", "rlib"]
 
 # Universal dependencies (all compilation targets)
 [dependencies]
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true
@@ -22,7 +26,14 @@ serde_json.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
-
+async-lsp = { version = "0.2", features = ["tokio"] }
+lsp-types = "0.95"
+tower = "0.5"
+which = "6.0"
+tokio = { workspace = true, features = ["process", "io-util"] }
+tokio-util.workspace = true
+hcl-rs.workspace = true
+walkdir.workspace = true
 # Tree-sitter / ast-grep dependencies — gated behind default feature
 ast-grep-config = { workspace = true, optional = true }
 ast-grep-core = { workspace = true, optional = true }
@@ -44,18 +55,15 @@ getrandom = { version = "0.2", features = ["js"] }
 # Build dependencies
 [build-dependencies]
 serde.workspace = true
-
-# Async runtime
+regex.workspace = true
 tokio.workspace = true
 async-trait.workspace = true
 tokio-util.workspace = true
-
-# JSON processing
 serde_json.workspace = true
-
 aws-lc-rs.workspace = true
 git2.workspace = true
 relative-path.workspace = true
+convert_case.workspace = true
 
 [features]
 default = ["tree-sitter"]
@@ -70,9 +78,24 @@ tokio-test.workspace = true
 tempfile.workspace = true
 criterion.workspace = true
 proptest.workspace = true
+rstest.workspace = true
+paste.workspace = true
 test-log = "0.2"
 env_logger.workspace = true
 wiremock = "0.6"
+serial_test = "3.0"
+temp-env = { version = "0.3", features = ["async_closure"] }
+assert_cmd.workspace = true
+# TLS integration test: verifies the HTTP client respects the OS certificate store
+# (corporate CAs trusted via SSL_CERT_FILE) when connecting to the service reference endpoint
+rcgen = "0.14"
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-pki-types = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+pem = "3"
 iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]}
 
 # Documentation configuration

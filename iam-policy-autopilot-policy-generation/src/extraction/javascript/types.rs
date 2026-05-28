@@ -48,6 +48,8 @@ pub(crate) struct SublibraryInfo {
     pub(crate) imports: Vec<ImportInfo>,
     /// Mapping from local names to original names for quick lookup
     pub(crate) name_mappings: HashMap<String, String>,
+    /// Wildcard import namespace (e.g., "S3" from `import * as S3 from '@aws-sdk/client-s3'`)
+    pub(crate) wildcard_namespace: Option<String>,
 }
 
 impl SublibraryInfo {
@@ -57,6 +59,7 @@ impl SublibraryInfo {
             sublibrary,
             imports: Vec::new(),
             name_mappings: HashMap::new(),
+            wildcard_namespace: None,
         }
     }
 
@@ -67,6 +70,11 @@ impl SublibraryInfo {
             import_info.original_name.clone(),
         );
         self.imports.push(import_info);
+    }
+
+    /// Set the wildcard namespace for this sublibrary
+    pub(crate) fn set_wildcard_namespace(&mut self, namespace: String) {
+        self.wildcard_namespace = Some(namespace);
     }
 }
 

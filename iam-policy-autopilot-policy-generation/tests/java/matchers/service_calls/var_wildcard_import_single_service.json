@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["var_wildcard_import_single_service.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "getObject",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "client.getObject(request)",
+        "Location": "var_wildcard_import_single_service.java:13.9-13.34",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,214 @@
+{
+    "Services": {
+        "s3": {
+            "UploadFile": {
+                "MethodName": "uploadFile",
+                "ReceiverClass": "S3TransferManager",
+                "Import": "software.amazon.awssdk.transfer.s3",
+                "Operations": [
+                    { "Service": "s3", "Name": "PutObject" },
+                    { "Service": "s3", "Name": "CreateMultipartUpload" },
+                    { "Service": "s3", "Name": "UploadPart" },
+                    { "Service": "s3", "Name": "CompleteMultipartUpload" },
+                    { "Service": "s3", "Name": "AbortMultipartUpload" }
+                ]
+            },
+            "DownloadFile": {
+                "MethodName": "downloadFile",
+                "ReceiverClass": "S3TransferManager",
+                "Import": "software.amazon.awssdk.transfer.s3",
+                "Operations": [
+                    { "Service": "s3", "Name": "GetObject" }
+                ]
+            },
+            "Copy": {
+                "MethodName": "copy",
+                "ReceiverClass": "S3TransferManager",
+                "Import": "software.amazon.awssdk.transfer.s3",
+                "Operations": [
+                    { "Service": "s3", "Name": "GetObject" },
+                    { "Service": "s3", "Name": "PutObject" }
+                ]
+            },
+            "UploadDirectory": {
+                "MethodName": "uploadDirectory",
+                "ReceiverClass": "S3TransferManager",
+                "Import": "software.amazon.awssdk.transfer.s3",
+                "Operations": [
+                    { "Service": "s3", "Name": "PutObject" },
+                    { "Service": "s3", "Name": "CreateMultipartUpload" },
+                    { "Service": "s3", "Name": "UploadPart" },
+                    { "Service": "s3", "Name": "CompleteMultipartUpload" },
+                    { "Service": "s3", "Name": "AbortMultipartUpload" },
+                    { "Service": "s3", "Name": "ListObjectsV2" }
+                ]
+            },
+            "DownloadDirectory": {
+                "MethodName": "downloadDirectory",
+                "ReceiverClass": "S3TransferManager",
+                "Import": "software.amazon.awssdk.transfer.s3",
+                "Operations": [
+                    { "Service": "s3", "Name": "GetObject" },
+                    { "Service": "s3", "Name": "ListObjectsV2" }
+                ]
+            },
+            "PresignGetObject": {
+                "MethodName": "presignGetObject",
+                "ReceiverClass": "S3Presigner",
+                "Import": "software.amazon.awssdk.services.s3.presigner",
+                "Operations": [
+                    { "Service": "s3", "Name": "GetObject" }
+                ]
+            },
+            "PresignPutObject": {
+                "MethodName": "presignPutObject",
+                "ReceiverClass": "S3Presigner",
+                "Import": "software.amazon.awssdk.services.s3.presigner",
+                "Operations": [
+                    { "Service": "s3", "Name": "PutObject" }
+                ]
+            },
+            "PresignDeleteObject": {
+                "MethodName": "presignDeleteObject",
+                "ReceiverClass": "S3Presigner",
+                "Import": "software.amazon.awssdk.services.s3.presigner",
+                "Operations": [
+                    { "Service": "s3", "Name": "DeleteObject" }
+                ]
+            },
+            "PresignCreateMultipartUpload": {
+                "MethodName": "presignCreateMultipartUpload",
+                "ReceiverClass": "S3Presigner",
+                "Import": "software.amazon.awssdk.services.s3.presigner",
+                "Operations": [
+                    { "Service": "s3", "Name": "CreateMultipartUpload" }
+                ]
+            },
+            "PresignUploadPart": {
+                "MethodName": "presignUploadPart",
+                "ReceiverClass": "S3Presigner",
+                "Import": "software.amazon.awssdk.services.s3.presigner",
+                "Operations": [
+                    { "Service": "s3", "Name": "UploadPart" }
+                ]
+            }
+        },
+        "dynamodb": {
+            "EnhancedPutItem": {
+                "MethodName": "putItem",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "PutItem" }
+                ]
+            },
+            "EnhancedGetItem": {
+                "MethodName": "getItem",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "GetItem" }
+                ]
+            },
+            "EnhancedDeleteItem": {
+                "MethodName": "deleteItem",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "DeleteItem" }
+                ]
+            },
+            "EnhancedUpdateItem": {
+                "MethodName": "updateItem",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "UpdateItem" }
+                ]
+            },
+            "EnhancedQuery": {
+                "MethodName": "query",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "Query" }
+                ]
+            },
+            "EnhancedScan": {
+                "MethodName": "scan",
+                "ReceiverClass": "DynamoDbTable",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "Scan" }
+                ]
+            },
+            "EnhancedBatchWriteItem": {
+                "MethodName": "batchWriteItem",
+                "ReceiverClass": "DynamoDbEnhancedClient",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "BatchWriteItem" }
+                ]
+            },
+            "EnhancedBatchGetItem": {
+                "MethodName": "batchGetItem",
+                "ReceiverClass": "DynamoDbEnhancedClient",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "BatchGetItem" }
+                ]
+            },
+            "EnhancedTransactWriteItems": {
+                "MethodName": "transactWriteItems",
+                "ReceiverClass": "DynamoDbEnhancedClient",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "TransactWriteItems" }
+                ]
+            },
+            "EnhancedTransactGetItems": {
+                "MethodName": "transactGetItems",
+                "ReceiverClass": "DynamoDbEnhancedClient",
+                "Import": "software.amazon.awssdk.enhanced.dynamodb",
+                "Operations": [
+                    { "Service": "dynamodb", "Name": "TransactGetItems" }
+                ]
+            }
+        },
+        "sqs": {
+            "SqsBatchSendMessage": {
+                "MethodName": "sendMessage",
+                "ReceiverClass": "SqsAsyncBatchManager",
+                "Import": "software.amazon.awssdk.services.sqs.batchmanager",
+                "Operations": [
+                    { "Service": "sqs", "Name": "SendMessageBatch" }
+                ]
+            },
+            "SqsBatchDeleteMessage": {
+                "MethodName": "deleteMessage",
+                "ReceiverClass": "SqsAsyncBatchManager",
+                "Import": "software.amazon.awssdk.services.sqs.batchmanager",
+                "Operations": [
+                    { "Service": "sqs", "Name": "DeleteMessageBatch" }
+                ]
+            },
+            "SqsBatchChangeMessageVisibility": {
+                "MethodName": "changeMessageVisibility",
+                "ReceiverClass": "SqsAsyncBatchManager",
+                "Import": "software.amazon.awssdk.services.sqs.batchmanager",
+                "Operations": [
+                    { "Service": "sqs", "Name": "ChangeMessageVisibilityBatch" }
+                ]
+            },
+            "SqsBatchReceiveMessage": {
+                "MethodName": "receiveMessage",
+                "ReceiverClass": "SqsAsyncBatchManager",
+                "Import": "software.amazon.awssdk.services.sqs.batchmanager",
+                "Operations": [
+                    { "Service": "sqs", "Name": "ReceiveMessage" },
+                    { "Service": "sqs", "Name": "GetQueueAttributes" }
+                ]
+            }
+        }
+    }
+}

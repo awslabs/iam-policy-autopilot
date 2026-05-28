@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["waiter_fqn_type_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilResourceReady(request)",
+        "Location": "waiter_fqn_type_disambiguated.java:7.9-7.47",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

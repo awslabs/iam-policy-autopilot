@@ -1,0 +1,32 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3Client.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "record_method_local_var.java:7.23-7.40",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.putObject(req)",
+      "Method": "putObject",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": {
+              "Unresolved": "req"
+            },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "record_method_local_var.java:8.9-8.26",
+      "ReceiverDeclaration": {
+        "Expr": "S3Client.create()",
+        "TypeName": "S3Client",
+        "Location": "record_method_local_var.java:7.23-7.40"
+      }
+    }
+  ]
+}

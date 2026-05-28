@@ -195,14 +195,16 @@ impl<'a> PaginatorCallPattern<'a> {
     pub(crate) fn create_synthetic_call(
         &self,
         service_index: &crate::extraction::sdk_model::ServiceModelIndex,
-        language: crate::Language,
     ) -> crate::extraction::SdkMethodCall {
-        use crate::extraction::sdk_model::ServiceDiscovery;
         use crate::extraction::SdkMethodCallMetadata;
 
-        // Convert operation name to method name using ServiceDiscovery
-        let method_name =
-            ServiceDiscovery::operation_to_method_name(self.operation_name(), language);
+        // The operation_name stored in PaginatorCreationInfo / ChainedPaginatorCallInfo is
+        // already in the language's native method-name format:
+        //   - Python: snake_case as passed to get_paginator() (e.g. "list_objects_v2")
+        //   - Go:     PascalCase as extracted from the constructor name (e.g. "ListObjectsV2")
+        // Both of these are exactly the keys used in service_index.method_lookup, so no
+        // further conversion is needed here.
+        let method_name = self.operation_name().to_string();
 
         // Look up all services that provide this method
         let possible_services =

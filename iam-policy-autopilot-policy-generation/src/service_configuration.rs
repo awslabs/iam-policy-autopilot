@@ -3,6 +3,7 @@
 //! This module provides functionality to load service configuration files
 //! from embedded data with caching for performance optimization.
 
+use crate::embedded_data::BotocoreData;
 use crate::errors::Result;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
@@ -53,6 +54,52 @@ impl ServiceConfiguration {
             Some(renamed) => Cow::Owned(renamed.clone()),
             None => Cow::Borrowed(original),
         }
+    }
+
+    /// Build a lookup map for normalising Java SDK import segments to Botocore service names.
+    ///
+    /// The Java SDK derives its package segment from the Smithy service name by **removing
+    /// all dashes** (e.g. Smithy `"cloudwatch-logs"` → Java import segment `"cloudwatchlogs"`).
+    /// This method iterates over [`SmithyBotocoreServiceNameMapping`], strips dashes from each
+    /// Smithy key, and maps the result to the corresponding Botocore name.
+    ///
+    /// In addition, for every botocore service whose canonical name contains a dash (e.g.
+    /// `"bedrock-runtime"`, `"s3-outposts"`) and that is **not** already covered by the
+    /// Smithy mapping above, a self-mapping `dashfreevariant → dashed-name` is added so
+    /// that Java import segments like `bedrockruntime` are correctly resolved to the
+    /// botocore service name `bedrock-runtime`.
+    ///
+    /// The returned map is keyed by the dash-free Java import segment so that
+    /// `extract_service_from_import` can do a single O(1) lookup.
+    ///
+    /// # Collisions
+    ///
+    /// Explicit `SmithyBotocoreServiceNameMapping` entries take priority over the
+    /// auto-generated botocore self-mappings.  If two botocore names produce the same
+    /// dash-free key the last entry wins (non-deterministic, but no such collisions exist
+    /// in practice).
+    pub(crate) fn build_java_import_service_map(&self) -> HashMap<String, String> {
+        // Step 1: explicit Smithy → Botocore mappings (highest priority).
+        let mut map: HashMap<String, String> = self
+            .smithy_botocore_service_name_mapping
+            .iter()
+            .map(|(smithy_name, botocore_name)| {
+                let java_segment = smithy_name.replace('-', "");
+                (java_segment, botocore_name.clone())
+            })
+            .collect();
+
+        // Step 2: for every botocore service name that contains a dash and is not already
+        // covered by step 1, add a self-mapping dashfree → dashed so that Java import
+        // segments (which always have dashes stripped) resolve to the correct service name.
+        for botocore_name in BotocoreData::build_service_versions_map().into_keys() {
+            if botocore_name.contains('-') {
+                let dash_free = botocore_name.replace('-', "");
+                map.entry(dash_free).or_insert(botocore_name);
+            }
+        }
+
+        map
     }
 }
 

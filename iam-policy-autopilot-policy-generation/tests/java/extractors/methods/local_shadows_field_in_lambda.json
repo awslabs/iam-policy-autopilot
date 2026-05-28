@@ -1,0 +1,82 @@
+{
+  "ExpectedCalls": [
+    {
+      "Expr": "S3AsyncClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_shadows_field_in_lambda.java:5.38-5.60",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "DynamoDbAsyncClient.create()",
+      "Method": "create",
+      "Parameters": [],
+      "Location": "local_shadows_field_in_lambda.java:8.34-8.62",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.listTables()\n            .thenCompose(resp -> s3.describeTable(r -> r.tableName(\"my-table\")))",
+      "Method": "thenCompose",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "resp -> s3.describeTable(r -> r.tableName(\"my-table\"))" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_shadows_field_in_lambda.java:9.9-10.81",
+      "ReceiverDeclaration": null
+    },
+    {
+      "Expr": "s3.listTables()",
+      "Method": "listTables",
+      "Parameters": [],
+      "Location": "local_shadows_field_in_lambda.java:9.9-9.24",
+      "ReceiverDeclaration": {
+        "Expr": "DynamoDbAsyncClient.create()",
+        "TypeName": "DynamoDbAsyncClient",
+        "Location": "local_shadows_field_in_lambda.java:8.34-8.62"
+      }
+    },
+    {
+      "Expr": "s3.describeTable(r -> r.tableName(\"my-table\"))",
+      "Method": "describeTable",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "r -> r.tableName(\"my-table\")" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_shadows_field_in_lambda.java:10.34-10.80",
+      "ReceiverDeclaration": {
+        "Expr": "DynamoDbAsyncClient.create()",
+        "TypeName": "DynamoDbAsyncClient",
+        "Location": "local_shadows_field_in_lambda.java:8.34-8.62"
+      }
+    },
+    {
+      "Expr": "r.tableName(\"my-table\")",
+      "Method": "tableName",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Resolved": "my-table" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Location": "local_shadows_field_in_lambda.java:10.56-10.79",
+      "ReceiverDeclaration": {
+        "Expr": "r",
+        "TypeName": null,
+        "Location": "local_shadows_field_in_lambda.java:10.51-10.52"
+      }
+    }
+  ]
+}

@@ -47,6 +47,12 @@ pub(crate) async fn process_source_files(
 
     let language = Language::try_from_str(&language)?;
 
+    // Record detected language into telemetry span (no-ops if no scope active)
+    iam_policy_autopilot_common::telemetry::span::record_result_str(
+        "detected_language",
+        &language.to_string(),
+    );
+
     // Load all source files into SourceFile objects
     let mut loaded_source_files = Vec::new();
     for file_path in source_files {

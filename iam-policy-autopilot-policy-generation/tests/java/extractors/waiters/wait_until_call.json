@@ -1,0 +1,20 @@
+{
+  "ExpectedWaiters": [
+    {
+      "Expr": "waiter.waitUntilBucketExists(request)",
+      "Name": "bucketExists",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "request" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": null,
+      "Location": "wait_until_call.java:3.9-3.46",
+      "ReceiverDeclaration": null
+    }
+  ]
+}

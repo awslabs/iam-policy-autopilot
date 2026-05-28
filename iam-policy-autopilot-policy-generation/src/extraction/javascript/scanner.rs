@@ -304,6 +304,105 @@ where
         None
     }
 
+    /// Find namespace-prefixed function/constructor calls matching a pattern.
+    ///
+    /// Returns `(matched_name, CommandUsage)` pairs for each match where the name
+    /// passes the `name_filter`. Parameters are extracted from the argument at
+    /// `param_arg_index` (0-based), or from all arguments if `None`.
+    pub(crate) fn find_namespace_calls(
+        &self,
+        patterns: &[String],
+        name_var: &str,
+        name_filter: &dyn Fn(&str) -> bool,
+        param_arg_index: Option<usize>,
+    ) -> Vec<(String, CommandUsage<'_>)> {
+        use crate::extraction::javascript::argument_extractor::ArgumentExtractor;
+
+        let mut results = Vec::new();
+
+        for pattern in patterns {
+            if let Ok(matches) = self.find_all_matches(pattern) {
+                for node_match in matches {
+                    let location =
+                        Location::from_node(self.ast_grep.source_file.path.clone(), &node_match);
+                    let env = node_match.get_env();
+
+                    if let Some(name_node) = env.get_match(name_var) {
+                        let name = name_node.text().to_string();
+
+                        if name_filter(&name) {
+                            let parameters = match param_arg_index {
+                                Some(idx) => {
+                                    let child = env
+                                        .get_match("ARGS")
+                                        .and_then(|args| args.children().nth(idx));
+                                    ArgumentExtractor::extract_object_parameters(child.as_ref())
+                                }
+                                None => ArgumentExtractor::extract_object_parameters(
+                                    env.get_match("ARGS"),
+                                ),
+                            };
+
+                            results.push((
+                                name,
+                                CommandUsage::new(node_match.text(), location, parameters),
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        results
+    }
+
+    /// Find namespace-prefixed Command instantiation (e.g., `new S3.CreateBucketCommand(...)`)
+    pub(crate) fn find_namespace_command_with_args(
+        &self,
+        namespace: &str,
+        command_suffix: &str,
+    ) -> Vec<(String, CommandUsage<'_>)> {
+        let pattern = format!("new {namespace}.$NAME($$$ARGS)");
+        let suffix = command_suffix.to_string();
+        self.find_namespace_calls(
+            &[pattern],
+            "NAME",
+            &|name: &str| name.ends_with(&suffix),
+            None,
+        )
+    }
+
+    /// Find namespace-prefixed paginate function calls (e.g., `S3.paginateListObjectsV2(...)`)
+    pub(crate) fn find_namespace_paginate_with_args(
+        &self,
+        namespace: &str,
+    ) -> Vec<(String, CommandUsage<'_>)> {
+        let pattern = format!("{namespace}.$NAME($$$ARGS)");
+        self.find_namespace_calls(
+            &[pattern],
+            "NAME",
+            &|name: &str| name.starts_with("paginate"),
+            Some(1),
+        )
+    }
+
+    /// Find namespace-prefixed waiter function calls (e.g., `S3.waitUntilBucketExists(...)`)
+    pub(crate) fn find_namespace_waiter_with_args(
+        &self,
+        namespace: &str,
+    ) -> Vec<(String, CommandUsage<'_>)> {
+        let patterns = [
+            format!("await {namespace}.$NAME($$$ARGS)"),
+            format!("{namespace}.$NAME($$$ARGS)"),
+        ];
+        self.find_namespace_calls(
+            &patterns,
+            "NAME",
+            &|name: &str| name.starts_with("waitUntil"),
+            Some(1),
+        )
+    }
+
     /// Scan AWS import/require statements generically
     fn scan_aws_statements(&self, pattern: &str) -> Result<Vec<SublibraryInfo>, String> {
         let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
@@ -354,7 +453,48 @@ where
 
     /// Scan for AWS SDK ES6 imports
     pub(crate) fn scan_aws_imports(&mut self) -> Result<Vec<SublibraryInfo>, String> {
-        self.scan_aws_statements("import $IMPORTS from $MODULE")
+        let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
+
+        // Named imports: import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+        let named_matches = self.find_all_matches("import $IMPORTS from $MODULE")?;
+        self.process_import_matches(named_matches, &mut sublibrary_data)?;
+
+        // Wildcard imports: import * as S3 from '@aws-sdk/client-s3'
+        let wildcard_matches = self.find_all_matches("import * as $NAMESPACE from $MODULE")?;
+        self.process_wildcard_import_matches(wildcard_matches, &mut sublibrary_data);
+
+        Ok(sublibrary_data.into_values().collect())
+    }
+
+    /// Process wildcard import matches and set the namespace on the corresponding SublibraryInfo
+    fn process_wildcard_import_matches(
+        &self,
+        matches: Vec<ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<T>>>,
+        sublibrary_data: &mut HashMap<String, SublibraryInfo>,
+    ) {
+        for node_match in matches {
+            let env = node_match.get_env();
+
+            let module_node = env.get_match("MODULE");
+            let namespace_node = env.get_match("NAMESPACE");
+
+            if let (Some(module_node), Some(namespace_node)) = (module_node, namespace_node) {
+                let module_text_cow = module_node.text();
+                let module_text = module_text_cow.trim_matches('"').trim_matches('\'');
+
+                // Check if it's an AWS SDK statement
+                if let Some(sublibrary) = module_text.strip_prefix("@aws-sdk/") {
+                    let sublibrary = sublibrary.to_string();
+                    let namespace = namespace_node.text().to_string();
+
+                    let sublibrary_info = sublibrary_data
+                        .entry(sublibrary.clone())
+                        .or_insert_with(|| SublibraryInfo::new(sublibrary));
+
+                    sublibrary_info.set_wildcard_namespace(namespace);
+                }
+            }
+        }
     }
 
     /// Scan for AWS SDK CommonJS requires

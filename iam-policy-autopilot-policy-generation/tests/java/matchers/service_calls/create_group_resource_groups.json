@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["create_group_resource_groups.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "createGroup",
+      "PossibleServices": ["resource-groups"],
+      "Metadata": {
+        "Expr": "resourceGroupsClient.createGroup(CreateGroupRequest.builder().name(\"my-group\").build())",
+        "Location": "create_group_resource_groups.java:24.9-24.96",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "CreateGroupRequest.builder().name(\"my-group\").build()" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

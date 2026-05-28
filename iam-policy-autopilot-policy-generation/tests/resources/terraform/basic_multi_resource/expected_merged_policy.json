@@ -1,0 +1,131 @@
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Statement": [
+          {
+            "Action": [
+              "kms:Decrypt",
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3:GetObject",
+              "s3:GetObjectLegalHold",
+              "s3:GetObjectRetention",
+              "s3:GetObjectTagging",
+              "s3:GetObjectVersion",
+              "s3:PutObject",
+              "s3:PutObjectAcl",
+              "s3:PutObjectLegalHold",
+              "s3:PutObjectRetention",
+              "s3:PutObjectTagging"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::my-app-data-bucket/*",
+              "arn:aws:s3:::my-app-logs-bucket/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "s3-object-lambda:GetObject",
+              "s3-object-lambda:PutObject"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:s3:::*/*",
+              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+            ]
+          },
+          {
+            "Action": [
+              "kms:Decrypt"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "dynamodb:GetItem",
+              "dynamodb:ReadDataForReplication"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:dynamodb:us-east-1:123456789012:table/users-table"
+            ]
+          },
+          {
+            "Action": [
+              "kms:GenerateDataKey"
+            ],
+            "Condition": {
+              "StringEquals": {
+                "kms:ViaService": [
+                  "sqs.us-east-1.amazonaws.com"
+                ]
+              }
+            },
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:kms:us-east-1:123456789012:key/*"
+            ]
+          },
+          {
+            "Action": [
+              "sqs:SendMessage"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:sqs:us-east-1:123456789012:task-processing-queue"
+            ]
+          },
+          {
+            "Action": [
+              "lambda:InvokeFunction"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:lambda:us-east-1:123456789012:function:data-processor"
+            ]
+          },
+          {
+            "Action": [
+              "iam:DeleteServiceLinkedRole",
+              "iam:GetRole"
+            ],
+            "Effect": "Allow",
+            "Resource": [
+              "arn:aws:iam::123456789012:role/data-processor-role"
+            ]
+          }
+        ],
+        "Version": "2012-10-17"
+      },
+      "PolicyType": "Identity"
+    }
+  ]
+}

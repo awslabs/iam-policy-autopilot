@@ -4,3 +4,9 @@
 [submodule "botocore"]
 	path = iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data
 	url = https://github.com/boto/botocore.git
+[submodule "iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2"]
+	path = iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2
+	url = git@github.com:aws/aws-sdk-java-v2.git
+[submodule "iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws"]
+	path = iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws
+	url = git@github.com:hashicorp/terraform-provider-aws.git
