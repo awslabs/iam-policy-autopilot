@@ -3,7 +3,11 @@
 ### Added
 
 - Support for namespace imports in TypeScript/JavaScript (#190)
-- Added a configurable resource cutoff for policy generation resource lists (#217)
+- `--resource-cutoff` CLI flag and `resource_cutoff` MCP input to configure when resource lists collapse to `*` (#217)
+
+### Changed
+
+- `EnrichmentEngine::new` now requires a `resource_cutoff` parameter; use `DEFAULT_RESOURCE_CUTOFF` to preserve existing behavior (#217)
 
 ### Fixed
 
