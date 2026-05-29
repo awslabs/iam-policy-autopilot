@@ -9,7 +9,6 @@ members = [
     "iam-policy-autopilot-cli",
     "integration-tests/runner",
     "xtask",
-    "iam-policy-autopilot-wasm",
     "iam-policy-autopilot-wasm-emscripten"
 ]
 exclude = ["iam-policy-autopilot-lints"]
