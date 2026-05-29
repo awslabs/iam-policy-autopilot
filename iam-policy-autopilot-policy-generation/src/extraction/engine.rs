@@ -6,9 +6,12 @@
 //! source code analysis.
 
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
@@ -115,7 +118,7 @@ impl Engine {
         // Extract SDK method calls from all source files
         let mut all_extraction_results = Vec::new();
 
-        #[cfg(not(feature = "wasm"))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let mut join_set = JoinSet::new();
 
@@ -142,7 +145,7 @@ impl Engine {
             }
         }
 
-        #[cfg(feature = "wasm")]
+        #[cfg(target_arch = "wasm32")]
         {
             for source_file in source_files {
                 let result = extractor.parse(&source_file).await;
