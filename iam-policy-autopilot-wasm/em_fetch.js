@@ -17,13 +17,14 @@ addToLibrary({
         return 0; // null pointer signals error
       }
       const text = await response.text();
+      // lengthBytesUTF8 returns byte length *excluding* the null terminator,
+      // so +1 gives us space for the null byte that stringToUTF8 appends.
       const len = lengthBytesUTF8(text) + 1;
       const ptr = _malloc(len);
       stringToUTF8(text, ptr, len);
       return ptr;
     } catch (e) {
-      console.error("em_fetch_get_sync failed:", e);
-      return 0; // null pointer signals error
+      return 0; // null pointer signals error to Rust
     }
   },
 
