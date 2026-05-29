@@ -139,8 +139,10 @@ Or manually create the PR through the GitHub web interface.
 
 It's recommended to create the new release and tag directly via the GitHub web interface, where you can automatically generate release notes, create a tag, and draft a release before publishing it.
 
+If you are releasing a release candidate, mark the release as Pre-release.
+
 Notes:
-- The new tag should be the same as the version to be released
+- The new tag must match the version string in Cargo.toml
 - Make sure to select the correct release branch as the target when creating the tag
   - The main branch can be used if it's identical to the release branch (i.e., no cherry-picked commits in the release branch)
 - Be sure to `Save draft` and review it once before publishing the release.
