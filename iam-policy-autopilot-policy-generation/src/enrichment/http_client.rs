@@ -138,7 +138,10 @@ mod emscripten {
             }
 
             let c_str = unsafe { std::ffi::CStr::from_ptr(result_ptr as *const i8) };
-            let text = c_str.to_string_lossy().into_owned();
+            let text = c_str.to_str().map_err(|e| ExtractorError::Network {
+                message: format!("Invalid UTF-8 in response from '{url}': {e}"),
+                source: None,
+            })?.to_owned();
             unsafe { em_fetch_free(result_ptr) };
 
             Ok(text)

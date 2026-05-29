@@ -70,6 +70,35 @@ let modulePromise: Promise<EmscriptenModule> | null = null;
 let generateFn: ((ptr: number) => Promise<number>) | null = null;
 
 /**
+ * Check if the current browser supports the required WebAssembly features.
+ * Returns an object indicating support status and any missing features.
+ *
+ * @example
+ * ```ts
+ * const support = checkBrowserSupport();
+ * if (!support.supported) {
+ *   console.error('Missing:', support.missing.join(', '));
+ * }
+ * ```
+ */
+export function checkBrowserSupport(): { supported: boolean; missing: string[] } {
+  const missing: string[] = [];
+
+  if (typeof WebAssembly === 'undefined') {
+    missing.push('WebAssembly');
+  } else {
+    if (typeof (WebAssembly as any).promising !== 'function') {
+      missing.push('WebAssembly.promising (JSPI) — requires Chrome 131+ or a Chromium-based browser');
+    }
+    if (typeof (WebAssembly as any).Suspending !== 'function') {
+      missing.push('WebAssembly.Suspending (JSPI)');
+    }
+  }
+
+  return { supported: missing.length === 0, missing };
+}
+
+/**
  * Options for configuring how the WASM module is loaded.
  */
 export interface InitOptions {
@@ -92,6 +121,15 @@ export async function init(options?: InitOptions): Promise<void> {
 }
 
 async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
+  // Check JSPI support before attempting to load
+  const support = checkBrowserSupport();
+  if (!support.supported) {
+    throw new Error(
+      `Browser does not support required WebAssembly features: ${support.missing.join('; ')}. ` +
+      `IAM Policy Autopilot requires JSPI (JavaScript Promise Integration), available in Chrome 131+ and Chromium-based browsers.`
+    );
+  }
+
   // Load the Emscripten glue JS. It uses a UMD pattern (var createModule = ...),
   // so we fetch it as text and evaluate it to get the factory function.
   // The consumer must ensure the glue JS is accessible at the locateFile path.
@@ -110,6 +148,8 @@ async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
 
   // Evaluate the glue to get createModule. The glue assigns to `var createModule`
   // and also does `module.exports = createModule` for CJS. We extract it via Function().
+  // NOTE: This requires the CSP to allow 'unsafe-eval'. If your environment restricts
+  // eval/Function, you must load the glue JS via a <script> tag instead.
   const createModule = new Function(`${glueText}; return createModule;`)();
 
   const Module = await createModule({ locateFile }) as EmscriptenModule;

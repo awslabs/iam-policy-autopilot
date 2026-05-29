@@ -10,6 +10,12 @@
 //! - `generate_policies_wasm(json_input)` — accepts a JSON string describing source
 //!   files and options, runs the full pipeline, returns JSON policies.
 //! - `free_string(ptr)` — frees a string returned by `generate_policies_wasm`.
+//!
+//! # Safety
+//!
+//! This crate uses `unsafe` for C FFI interop with Emscripten (pointer passing for
+//! string input/output). The unsafe blocks are limited to the two exported functions.
+#![allow(unsafe_code)]
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
@@ -95,7 +101,7 @@ fn run_generate(input_json: &str) -> String {
     let input: GenerateInput = match serde_json::from_str(input_json) {
         Ok(v) => v,
         Err(e) => {
-            return format!(r#"{{"error":"Invalid input JSON: {e}"}}"#);
+            return serde_json::json!({"error": format!("Invalid input JSON: {e}")}).to_string();
         }
     };
 
@@ -108,7 +114,7 @@ fn run_generate(input_json: &str) -> String {
         match Language::try_from_str(lang_str) {
             Ok(l) => l,
             Err(e) => {
-                return format!(r#"{{"error":"Unsupported language '{lang_str}': {e}"}}"#);
+                return serde_json::json!({"error": format!("Unsupported language '{lang_str}': {e}")}).to_string();
             }
         }
     } else {
@@ -116,10 +122,7 @@ fn run_generate(input_json: &str) -> String {
         match SourceFile::detect_language(std::path::Path::new(&input.files[0].filename)) {
             Some(l) => l,
             None => {
-                return format!(
-                    r#"{{"error":"Cannot detect language for '{}'. Specify 'language' in options."}}"#,
-                    input.files[0].filename
-                );
+                return serde_json::json!({"error": format!("Cannot detect language for '{}'. Specify 'language' in options.", input.files[0].filename)}).to_string();
             }
         }
     };
@@ -138,7 +141,7 @@ fn run_generate(input_json: &str) -> String {
     {
         Ok(rt) => rt,
         Err(e) => {
-            return format!(r#"{{"error":"Failed to create async runtime: {e}"}}"#);
+            return serde_json::json!({"error": format!("Failed to create async runtime: {e}")}).to_string();
         }
     };
 
@@ -158,11 +161,11 @@ fn run_generate(input_json: &str) -> String {
     match result {
         Ok(gen_result) => {
             serde_json::to_string(&gen_result).unwrap_or_else(|e| {
-                format!(r#"{{"error":"Serialization failed: {e}"}}"#)
+                serde_json::json!({"error": format!("Serialization failed: {e}")}).to_string()
             })
         }
         Err(e) => {
-            format!(r#"{{"error":"{e:#}"}}"#)
+            serde_json::json!({"error": format!("{e:#}")}).to_string()
         }
     }
 }
