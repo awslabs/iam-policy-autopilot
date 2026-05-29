@@ -114,7 +114,6 @@
           },
           {
             "Action": [
-              "iam:DeleteServiceLinkedRole",
               "iam:GetRole"
             ],
             "Effect": "Allow",

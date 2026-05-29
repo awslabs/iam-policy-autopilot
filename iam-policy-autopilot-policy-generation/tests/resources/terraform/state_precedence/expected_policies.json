@@ -52,16 +52,6 @@
         "Statement": [
           {
             "Action": [
-              "iam:DeleteServiceLinkedRole"
-            ],
-            "Effect": "Allow",
-            "Resource": [
-              "arn:aws:iam::123456789012:role/data-processor-role"
-            ],
-            "Sid": "AllowIAMDeleteServiceLinkedRole"
-          },
-          {
-            "Action": [
               "iam:GetRole"
             ],
             "Effect": "Allow",
