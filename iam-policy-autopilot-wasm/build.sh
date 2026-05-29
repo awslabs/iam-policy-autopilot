@@ -6,13 +6,15 @@ set -euo pipefail
 # Prerequisites:
 #   - emsdk installed and activated (source ~/emsdk/emsdk_env.sh)
 #   - rustup target add wasm32-unknown-emscripten
+#   - Node.js 18+ (for tsc)
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-DIST_DIR="$SCRIPT_DIR/dist"
+NPM_DIR="$SCRIPT_DIR/npm"
+OUT_DIR="$NPM_DIR/dist"
 BUILD_START=$SECONDS
 
-mkdir -p "$DIST_DIR"
+mkdir -p "$OUT_DIR"
 
 echo ""
 echo "=== Step 1: Compile Rust to static library ==="
@@ -40,7 +42,7 @@ STEP_START=$SECONDS
 # ERROR_ON_UNDEFINED_SYMBOLS=0 is also needed at link time because the em_fetch FFI
 # functions are provided via --js-library and aren't visible to emcc's symbol checker.
 emcc "$STATIC_LIB" \
-  -o "$DIST_DIR/iam_policy_autopilot.js" \
+  -o "$OUT_DIR/iam_policy_autopilot.js" \
   -s EXPORTED_FUNCTIONS='["_generate_policies_wasm","_free_string","_malloc","_free"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","stringToUTF8","lengthBytesUTF8"]' \
   -s MODULARIZE=1 \
@@ -54,31 +56,20 @@ emcc "$STATIC_LIB" \
   --js-library "$SCRIPT_DIR/em_fetch.js" \
   -O3 \
   --no-entry
+echo "  Step 2 completed in $((SECONDS - STEP_START))s"
 
 echo ""
-echo "=== Step 2 completed in $((SECONDS - STEP_START))s ==="
-echo "Output:"
-ls -lh "$DIST_DIR/iam_policy_autopilot.js" "$DIST_DIR/iam_policy_autopilot.wasm"
-echo ""
-
-echo "=== Step 3: Build npm package ==="
-NPM_DIR="$SCRIPT_DIR/npm"
-NPM_DIST="$NPM_DIR/dist"
-mkdir -p "$NPM_DIST"
-
-# Copy WASM artifacts into npm dist
-cp "$DIST_DIR/iam_policy_autopilot.js" "$NPM_DIST/"
-cp "$DIST_DIR/iam_policy_autopilot.wasm" "$NPM_DIST/"
-
-# Compile TypeScript wrapper
+echo "=== Step 3: Compile TypeScript wrapper ==="
+STEP_START=$SECONDS
 if [ ! -d "$NPM_DIR/node_modules" ]; then
   echo "  Installing npm dependencies..."
   npm install --prefix "$NPM_DIR" --silent
 fi
 npx --prefix "$NPM_DIR" tsc --project "$NPM_DIR/tsconfig.json"
+echo "  Step 3 completed in $((SECONDS - STEP_START))s"
 
 echo ""
-echo "=== npm package ready at $NPM_DIST ==="
-ls -lh "$NPM_DIST"
+echo "=== Build complete ==="
+ls -lh "$OUT_DIR"
 echo ""
-echo "=== Total build time: $((SECONDS - BUILD_START))s ==="
+echo "Total build time: $((SECONDS - BUILD_START))s"
