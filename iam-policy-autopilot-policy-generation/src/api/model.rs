@@ -5,7 +5,6 @@ use crate::{
     embedded_data::BotocoreData,
     enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
-#[cfg(feature = "tree-sitter")]
 use crate::enrichment::terraform::ResourceBindingExplanation;
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
@@ -59,7 +58,6 @@ pub struct GeneratePoliciesResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub explanations: Option<Explanations>,
     /// Explanations for where resource ARNs came from (Terraform bindings)
-    #[cfg(feature = "tree-sitter")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
 }
@@ -70,7 +68,6 @@ impl GeneratePoliciesResult {
         Self {
             policies,
             explanations,
-            #[cfg(feature = "tree-sitter")]
             resource_binding_explanations: None,
         }
     }

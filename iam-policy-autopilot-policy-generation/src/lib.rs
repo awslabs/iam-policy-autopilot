@@ -7,11 +7,6 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
-// When tree-sitter is disabled (e.g. WASM builds), many internal helpers become
-// unreachable because the extraction engine is gated out. Allow dead code rather
-// than sprinkling cfg attributes on every helper.
-#![cfg_attr(not(feature = "tree-sitter"), allow(dead_code))]
-
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
@@ -42,19 +37,16 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
-#[cfg(feature = "tree-sitter")]
 pub use extraction::{Engine as ExtractionEngine, ExtractedMethods};
 pub use extraction::{SdkMethodCall, SourceFile};
 // Not part of the stable public API — exposed only for integration tests in tests/.
 #[doc(hidden)]
-#[cfg(feature = "tree-sitter")]
 pub use extraction::ServiceDiscovery;
 pub use policy_generation::{
     Effect, Engine as PolicyGenerationEngine, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
 };
 
 // Re-export commonly used types for convenience
-#[cfg(feature = "tree-sitter")]
 pub(crate) use extraction::ServiceModelIndex;
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -212,7 +204,6 @@ impl Location {
     }
 
     /// Create a new Location from an AST node
-    #[cfg(feature = "tree-sitter")]
     #[must_use]
     pub fn from_node<T>(
         file_path: PathBuf,

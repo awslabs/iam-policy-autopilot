@@ -30,7 +30,6 @@ pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
 pub mod service_reference;
 
-#[cfg(feature = "tree-sitter")]
 pub(crate) mod terraform;
 
 pub use engine::Engine;
