@@ -325,17 +325,14 @@ pub(crate) struct RemoteServiceReferenceLoader {
 /// Abstraction over the in-memory service reference cache.
 ///
 /// Native builds store entries with a timestamp for TTL expiry.
-/// WASM builds store entries without expiry (session-scoped).
+/// WASM builds store entries without expiry (session-scoped, no persistence).
 #[derive(Debug)]
 struct ServiceCache {
-    inner: RwLock<HashMap<String, CacheEntry>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    inner: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
+    #[cfg(target_arch = "wasm32")]
+    inner: RwLock<HashMap<String, ServiceReference>>,
 }
-
-#[cfg(not(target_arch = "wasm32"))]
-type CacheEntry = (ServiceReference, SystemTime);
-
-#[cfg(target_arch = "wasm32")]
-type CacheEntry = ServiceReference;
 
 impl ServiceCache {
     fn new() -> Self {
@@ -347,11 +344,10 @@ impl ServiceCache {
     /// Returns a cached entry if it exists and has not expired.
     async fn get(&self, service_name: &str) -> Option<ServiceReference> {
         let guard = self.inner.read().await;
-        let entry = guard.get(service_name)?;
 
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let (cached, timestamp) = entry;
+            let (cached, timestamp) = guard.get(service_name)?;
             if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
                 if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
                     return Some(cached.clone());
@@ -362,7 +358,7 @@ impl ServiceCache {
 
         #[cfg(target_arch = "wasm32")]
         {
-            Some(entry.clone())
+            guard.get(service_name).cloned()
         }
     }
 
