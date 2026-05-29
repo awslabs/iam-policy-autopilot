@@ -89,7 +89,6 @@ impl ServiceMetadata {
     /// - `"EC2"` → `"Ec2"` (→ `Ec2Client`)
     /// - `"DynamoDB"` → `"DynamoDb"` (→ `DynamoDbClient`)
     /// - `"IAM"` → `"Iam"` (→ `IamClient`)
-    #[cfg(feature = "tree-sitter")]
     pub(crate) fn java_service_name(&self) -> String {
         crate::extraction::java::matchers::naming::java_service_name(&self.service_id)
     }

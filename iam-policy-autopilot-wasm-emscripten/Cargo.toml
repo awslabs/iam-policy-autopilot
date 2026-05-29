@@ -10,7 +10,7 @@ description = "Emscripten-based WebAssembly build of IAM Policy Autopilot with f
 crate-type = ["staticlib"]
 
 [dependencies]
-iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false, features = ["tree-sitter"] }
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

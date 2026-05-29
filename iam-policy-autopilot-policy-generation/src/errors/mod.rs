@@ -228,7 +228,6 @@ impl ExtractorError {
     }
 
     /// Create an unsupported language error
-    #[cfg(feature = "tree-sitter")]
     pub(crate) fn unsupported_language_override(language: impl Into<String>) -> Self {
         Self::UnsupportedLanguage {
             language: language.into(),
@@ -257,7 +256,6 @@ impl ExtractorError {
     }
 
     /// Create a method extraction error
-    #[cfg(feature = "tree-sitter")]
     pub(crate) fn method_extraction(
         language: impl Into<String>,
         path: impl Into<PathBuf>,
@@ -313,7 +311,6 @@ impl ExtractorError {
     }
 
     /// Create an invalid service hints error
-    #[cfg(feature = "tree-sitter")]
     pub(crate) fn invalid_service_hints(suggestions: impl Into<String>) -> Self {
         Self::InvalidServiceHints {
             suggestions: suggestions.into(),
