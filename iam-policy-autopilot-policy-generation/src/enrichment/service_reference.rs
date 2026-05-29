@@ -585,7 +585,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_client() {
-        let client = RemoteServiceReferenceLoader::create_client();
+        let client = crate::enrichment::http_client::create_http_client();
         assert!(client.is_ok());
     }
 
