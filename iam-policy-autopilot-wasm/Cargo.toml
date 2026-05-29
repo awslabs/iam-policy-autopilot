@@ -1,10 +1,10 @@
 [package]
-name = "iam-policy-autopilot-wasm-emscripten"
+name = "iam-policy-autopilot-wasm"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Emscripten-based WebAssembly build of IAM Policy Autopilot with full extraction support."
+description = "WebAssembly build of IAM Policy Autopilot with full extraction support."
 
 [lib]
 crate-type = ["staticlib"]

@@ -2165,7 +2165,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "iam-policy-autopilot-wasm-emscripten"
+name = "iam-policy-autopilot-wasm"
 version = "0.2.1"
 dependencies = [
  "anyhow",

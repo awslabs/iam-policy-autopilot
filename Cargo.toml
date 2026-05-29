@@ -9,7 +9,7 @@ members = [
     "iam-policy-autopilot-cli",
     "integration-tests/runner",
     "xtask",
-    "iam-policy-autopilot-wasm-emscripten"
+    "iam-policy-autopilot-wasm"
 ]
 exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
