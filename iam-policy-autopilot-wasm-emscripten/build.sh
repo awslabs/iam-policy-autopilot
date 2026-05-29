@@ -51,4 +51,26 @@ echo "=== Build complete ==="
 echo "Output:"
 ls -lh "$DIST_DIR/iam_policy_autopilot.js" "$DIST_DIR/iam_policy_autopilot.wasm"
 echo ""
-echo "Serve with: $SCRIPT_DIR/serve.sh"
+
+echo "=== Step 3: Build npm package ==="
+NPM_DIR="$SCRIPT_DIR/npm"
+NPM_DIST="$NPM_DIR/dist"
+mkdir -p "$NPM_DIST"
+
+# Copy WASM artifacts into npm dist
+cp "$DIST_DIR/iam_policy_autopilot.js" "$NPM_DIST/"
+cp "$DIST_DIR/iam_policy_autopilot.wasm" "$NPM_DIST/"
+
+# Compile TypeScript wrapper
+if [ ! -d "$NPM_DIR/node_modules" ]; then
+  echo "  Installing npm dependencies..."
+  npm install --prefix "$NPM_DIR" --silent
+fi
+npx --prefix "$NPM_DIR" tsc --project "$NPM_DIR/tsconfig.json"
+
+echo ""
+echo "=== npm package ready at $NPM_DIST ==="
+ls -lh "$NPM_DIST"
+echo ""
+echo "To test with the React app:"
+echo "  cd $SCRIPT_DIR/test-app && npm install && npm run dev"
