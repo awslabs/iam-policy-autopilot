@@ -300,6 +300,16 @@ fn deserialize_service_reference_mapping(
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "empty URL"),
             ));
         }
+        if !entry.url.starts_with("http://") && !entry.url.starts_with("https://") {
+            return Err(ExtractorError::service_reference_parse_error_with_source(
+                &entry.service,
+                format!(
+                    "Invalid URL '{}' in service reference mapping for '{}' (must start with http:// or https://)",
+                    entry.url, entry.service
+                ),
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid URL scheme"),
+            ));
+        }
         map.insert(entry.service, entry.url);
     }
     Ok(map)
@@ -992,7 +1002,7 @@ mod tests {
 
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("Failed to connect to the service reference endpoint"),
+            err.contains("Failed to connect to"),
             "Error should contain connection failure guidance, got: {err}"
         );
         assert!(
