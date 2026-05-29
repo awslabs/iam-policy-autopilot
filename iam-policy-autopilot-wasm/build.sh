@@ -16,12 +16,12 @@ mkdir -p "$DIST_DIR"
 echo "=== Step 1: Compile Rust to static library ==="
 EMCC_CFLAGS="-s ERROR_ON_UNDEFINED_SYMBOLS=0 --no-entry" \
   cargo build \
-    --package iam-policy-autopilot-wasm-emscripten \
+    --package iam-policy-autopilot-wasm \
     --target wasm32-unknown-emscripten \
     --release \
     --manifest-path "$PROJECT_ROOT/Cargo.toml"
 
-STATIC_LIB="$PROJECT_ROOT/target/wasm32-unknown-emscripten/release/libiam_policy_autopilot_wasm_emscripten.a"
+STATIC_LIB="$PROJECT_ROOT/target/wasm32-unknown-emscripten/release/libiam_policy_autopilot_wasm.a"
 
 if [ ! -f "$STATIC_LIB" ]; then
   echo "ERROR: Static library not found at $STATIC_LIB"
