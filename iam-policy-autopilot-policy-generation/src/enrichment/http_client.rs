@@ -16,7 +16,7 @@ pub(crate) trait HttpGet: Send + Sync + std::fmt::Debug {
 // Native implementation (reqwest)
 // ---------------------------------------------------------------------------
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 mod native {
     use super::*;
     use reqwest::Client;
@@ -92,14 +92,14 @@ mod native {
     }
 }
 
-#[cfg(not(feature = "wasm"))]
+#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use native::ReqwestHttpClient;
 
 // ---------------------------------------------------------------------------
 // Emscripten/WASM implementation (browser fetch via JS FFI)
 // ---------------------------------------------------------------------------
 
-#[cfg(feature = "wasm")]
+#[cfg(target_arch = "wasm32")]
 #[allow(unsafe_code)]
 mod emscripten {
     use super::*;
@@ -146,7 +146,7 @@ mod emscripten {
     }
 }
 
-#[cfg(feature = "wasm")]
+#[cfg(target_arch = "wasm32")]
 pub(crate) use emscripten::EmscriptenHttpClient;
 
 // ---------------------------------------------------------------------------
@@ -155,11 +155,11 @@ pub(crate) use emscripten::EmscriptenHttpClient;
 
 /// Create the platform-appropriate HTTP client.
 pub(crate) fn create_http_client() -> crate::errors::Result<Box<dyn HttpGet>> {
-    #[cfg(not(feature = "wasm"))]
+    #[cfg(not(target_arch = "wasm32"))]
     {
         Ok(Box::new(ReqwestHttpClient::new()?))
     }
-    #[cfg(feature = "wasm")]
+    #[cfg(target_arch = "wasm32")]
     {
         Ok(Box::new(EmscriptenHttpClient::new()?))
     }

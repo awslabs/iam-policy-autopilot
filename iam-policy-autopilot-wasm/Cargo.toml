@@ -13,7 +13,7 @@ wasm-opt = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false, features = ["wasm"] }
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false }
 
 serde = { workspace = true }
 serde_json = { workspace = true }

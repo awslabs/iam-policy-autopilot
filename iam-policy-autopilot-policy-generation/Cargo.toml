@@ -72,7 +72,7 @@ integ-test = []
 dev = ["tokio/test-util"]
 # WASM target — disables filesystem caching, TTL expiry, and native-only subsystems.
 # Uses emscripten fetch instead of reqwest for HTTP.
-wasm = []
+# Gating is now automatic via cfg(target_arch = "wasm32") — no feature flag needed.
 
 # Development dependencies
 [dev-dependencies]

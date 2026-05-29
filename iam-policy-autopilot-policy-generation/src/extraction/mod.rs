@@ -379,21 +379,14 @@ pub mod output {
 
         /// Get current timestamp as ISO 8601 string
         fn current_timestamp() -> String {
-            #[cfg(not(feature = "wasm"))]
-            {
-                use std::time::{SystemTime, UNIX_EPOCH};
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|duration| {
-                        let secs = duration.as_secs();
-                        format!("{secs}")
-                    })
-                    .unwrap_or_else(|_| "0".to_string())
-            }
-            #[cfg(feature = "wasm")]
-            {
-                "0".to_string()
-            }
+            use std::time::{SystemTime, UNIX_EPOCH};
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|duration| {
+                    let secs = duration.as_secs();
+                    format!("{secs}")
+                })
+                .unwrap_or_else(|_| "0".to_string())
         }
     }
 }
