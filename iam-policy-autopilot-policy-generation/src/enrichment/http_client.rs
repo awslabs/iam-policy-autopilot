@@ -18,7 +18,7 @@ pub(crate) trait HttpGet: Send + Sync + std::fmt::Debug {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
-    use super::*;
+    use super::{ExtractorError, HttpGet};
     use reqwest::Client;
 
     const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
@@ -47,7 +47,9 @@ mod native {
                 .user_agent(user_agent)
                 .build()
                 .map_err(|e| ExtractorError::Configuration {
-                    message: "Failed to initialize the HTTP client for the service reference endpoint".to_string(),
+                    message:
+                        "Failed to initialize the HTTP client for the service reference endpoint"
+                            .to_string(),
                     source: Some(Box::new(e)),
                 })?;
 
@@ -65,13 +67,12 @@ mod native {
                 .await
                 .map_err(|e| ExtractorError::Network {
                     message: format!(
-                        "Failed to connect to '{}'. \
+                        "Failed to connect to '{url}'. \
                          Verify that this URL is reachable from your network \
                          (e.g. not blocked by a firewall or VPN). \
                          If you need to route through a proxy, \
                          set the HTTPS_PROXY environment variable \
-                         (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
-                        url
+                         (see https://docs.rs/reqwest/latest/reqwest/#proxies)"
                     ),
                     source: Some(Box::new(e)),
                 })?
@@ -126,9 +127,8 @@ mod emscripten {
     impl HttpGet for EmscriptenHttpClient {
         async fn get_text(&self, url: &str) -> crate::errors::Result<String> {
             let url_bytes = url.as_bytes();
-            let result_ptr = unsafe {
-                em_fetch_get_sync(url_bytes.as_ptr(), url_bytes.len() as u32)
-            };
+            let result_ptr =
+                unsafe { em_fetch_get_sync(url_bytes.as_ptr(), url_bytes.len() as u32) };
 
             if result_ptr.is_null() {
                 return Err(ExtractorError::Network {

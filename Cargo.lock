@@ -2168,7 +2168,6 @@ dependencies = [
 name = "iam-policy-autopilot-wasm"
 version = "0.2.1"
 dependencies = [
- "anyhow",
  "iam-policy-autopilot-policy-generation",
  "serde",
  "serde_json",

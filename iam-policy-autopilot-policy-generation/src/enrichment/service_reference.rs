@@ -9,10 +9,10 @@
 //! - **Native** (`NativeServiceCache`): In-memory TTL + optional filesystem persistence.
 //! - **WASM** (`WasmServiceCache`): In-memory only, no expiry (session-scoped).
 
+use crate::enrichment::http_client::{self, HttpGet};
 use crate::enrichment::Context;
 use crate::errors::ExtractorError;
 use crate::providers::JsonProvider;
-use crate::enrichment::http_client::{self, HttpGet};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 use std::collections::HashMap;
@@ -293,7 +293,10 @@ fn deserialize_service_reference_mapping(
         if entry.url.is_empty() {
             return Err(ExtractorError::service_reference_parse_error_with_source(
                 &entry.service,
-                format!("Empty URL in service reference mapping for '{}'", entry.service),
+                format!(
+                    "Empty URL in service reference mapping for '{}'",
+                    entry.service
+                ),
                 std::io::Error::new(std::io::ErrorKind::InvalidData, "empty URL"),
             ));
         }
@@ -343,22 +346,27 @@ impl ServiceCache {
 
     /// Returns a cached entry if it exists and has not expired.
     async fn get(&self, service_name: &str) -> Option<ServiceReference> {
-        let guard = self.inner.read().await;
-
         #[cfg(not(target_arch = "wasm32"))]
         {
-            let (cached, timestamp) = guard.get(service_name)?;
-            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
+            let guard = self.inner.read().await;
+            let result = guard.get(service_name).and_then(|(cached, timestamp)| {
+                let elapsed = SystemTime::now().duration_since(*timestamp).ok()?;
                 if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                    return Some(cached.clone());
+                    Some(cached.clone())
+                } else {
+                    None
                 }
-            }
-            None
+            });
+            drop(guard);
+            result
         }
 
         #[cfg(target_arch = "wasm32")]
         {
-            guard.get(service_name).cloned()
+            let guard = self.inner.read().await;
+            let result = guard.get(service_name).cloned();
+            drop(guard);
+            result
         }
     }
 
@@ -509,8 +517,7 @@ impl RemoteServiceReferenceLoader {
             let cache_path = Self::get_cache_path(service_name);
             if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
                 if let Ok(content) = fs::read_to_string(&cache_path).await {
-                    if let Ok(service_ref) =
-                        JsonProvider::parse::<ServiceReference>(&content).await
+                    if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await
                     {
                         self.cache
                             .insert(service_name.to_string(), service_ref.clone())
@@ -526,11 +533,8 @@ impl RemoteServiceReferenceLoader {
 
         match service_url {
             Some(service_url) => {
-                let service_reference_content = self
-                    .client
-                    .get_text(service_url)
-                    .await
-                    .map_err(|e| {
+                let service_reference_content =
+                    self.client.get_text(service_url).await.map_err(|e| {
                         ExtractorError::service_reference_parse_error_with_source(
                             service_name,
                             "Failed to fetch service reference data".to_string(),

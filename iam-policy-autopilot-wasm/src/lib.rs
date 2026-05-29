@@ -21,8 +21,8 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 use std::path::PathBuf;
 
-use iam_policy_autopilot_policy_generation::api::model::AwsContext;
 use iam_policy_autopilot_policy_generation::api::generate_policies_from_source;
+use iam_policy_autopilot_policy_generation::api::model::AwsContext;
 use iam_policy_autopilot_policy_generation::api::GenerateFromSourceConfig;
 use iam_policy_autopilot_policy_generation::extraction::SourceFile;
 use iam_policy_autopilot_policy_generation::Language;
@@ -69,6 +69,7 @@ fn default_wildcard() -> String {
 /// - `input_ptr` must be a valid, non-null, null-terminated C string.
 /// - The caller must free the returned pointer with `free_string`.
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_char {
     // Null guard — CStr::from_ptr(null) is instant UB.
     if input_ptr.is_null() {
@@ -80,7 +81,8 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
         let input_str = match unsafe { CStr::from_ptr(input_ptr) }.to_str() {
             Ok(s) => s,
             Err(e) => {
-                let err = serde_json::json!({"error": format!("Input is not valid UTF-8: {e}")}).to_string();
+                let err = serde_json::json!({"error": format!("Input is not valid UTF-8: {e}")})
+                    .to_string();
                 return CString::new(err).unwrap_or_default().into_raw();
             }
         };
@@ -103,6 +105,7 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
 /// # Safety
 /// `ptr` must have been returned by `generate_policies_wasm` and must not be freed twice.
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
         unsafe {
@@ -155,7 +158,8 @@ fn run_generate(input_json: &str) -> String {
     {
         Ok(rt) => rt,
         Err(e) => {
-            return serde_json::json!({"error": format!("Failed to create async runtime: {e}")}).to_string();
+            return serde_json::json!({"error": format!("Failed to create async runtime: {e}")})
+                .to_string();
         }
     };
 
@@ -173,13 +177,9 @@ fn run_generate(input_json: &str) -> String {
     });
 
     match result {
-        Ok(gen_result) => {
-            serde_json::to_string(&gen_result).unwrap_or_else(|e| {
-                serde_json::json!({"error": format!("Serialization failed: {e}")}).to_string()
-            })
-        }
-        Err(e) => {
-            serde_json::json!({"error": format!("{e:#}")}).to_string()
-        }
+        Ok(gen_result) => serde_json::to_string(&gen_result).unwrap_or_else(|e| {
+            serde_json::json!({"error": format!("Serialization failed: {e}")}).to_string()
+        }),
+        Err(e) => serde_json::json!({"error": format!("{e:#}")}).to_string(),
     }
 }

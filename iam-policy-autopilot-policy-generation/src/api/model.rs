@@ -1,11 +1,10 @@
 //! Defined model for API
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    embedded_data::BotocoreData,
-    enrichment::Explanations, policy_generation::PolicyWithMetadata,
-};
 use crate::enrichment::terraform::ResourceBindingExplanation;
+use crate::{
+    embedded_data::BotocoreData, enrichment::Explanations, policy_generation::PolicyWithMetadata,
+};
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
@@ -64,6 +63,7 @@ pub struct GeneratePoliciesResult {
 
 impl GeneratePoliciesResult {
     /// Create a new result with policies and optional explanations.
+    #[must_use]
     pub fn new(policies: Vec<PolicyWithMetadata>, explanations: Option<Explanations>) -> Self {
         Self {
             policies,
