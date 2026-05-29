@@ -1,0 +1,26 @@
+{
+  "name": "iam-policy-autopilot-wasm",
+  "version": "0.1.0",
+  "description": "Browser-ready WebAssembly build of IAM Policy Autopilot — generates least-privilege IAM policies from source code.",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "iam",
+    "aws",
+    "policy",
+    "wasm",
+    "webassembly"
+  ],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
