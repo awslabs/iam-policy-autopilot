@@ -1,9 +1,9 @@
-//! Emscripten-based WASM entry point for IAM Policy Autopilot.
+//! WebAssembly entry point for IAM Policy Autopilot.
 //!
 //! This crate compiles the full extraction + enrichment + policy generation pipeline
-//! to WebAssembly via `wasm32-unknown-emscripten`. Unlike the `wasm-bindgen` build,
-//! this includes the Rust extraction engine (ast-grep + tree-sitter) so there is a
-//! single source of truth for SDK call extraction — no JS/TS extractor fork needed.
+//! to WebAssembly via `wasm32-unknown-emscripten`. It includes the Rust extraction
+//! engine (ast-grep + tree-sitter) so there is a single source of truth for SDK call
+//! extraction — no JS/TS extractor fork needed.
 //!
 //! # Exported functions
 //!
@@ -42,6 +42,9 @@ struct GenerateInput {
     account: String,
     /// Optional language override (auto-detected from filename if omitted).
     language: Option<String>,
+    /// Enable minimal policy size by allowing cross-service merging. Defaults to false.
+    #[serde(default)]
+    minimize_policy_size: bool,
 }
 
 #[derive(Deserialize)]
@@ -63,13 +66,24 @@ fn default_wildcard() -> String {
 /// pointer with `free_string`.
 ///
 /// # Safety
-/// `input_ptr` must be a valid null-terminated C string.
+/// - `input_ptr` must be a valid, non-null, null-terminated C string.
+/// - The caller must free the returned pointer with `free_string`.
 #[no_mangle]
 pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_char {
+    // Null guard — CStr::from_ptr(null) is instant UB.
+    if input_ptr.is_null() {
+        let err = serde_json::json!({"error": "input_ptr is null"}).to_string();
+        return CString::new(err).unwrap_or_default().into_raw();
+    }
+
     let result = std::panic::catch_unwind(|| {
-        let input_str = unsafe { CStr::from_ptr(input_ptr) }
-            .to_str()
-            .unwrap_or("{}");
+        let input_str = match unsafe { CStr::from_ptr(input_ptr) }.to_str() {
+            Ok(s) => s,
+            Err(e) => {
+                let err = serde_json::json!({"error": format!("Input is not valid UTF-8: {e}")}).to_string();
+                return CString::new(err).unwrap_or_default().into_raw();
+            }
+        };
 
         let output = run_generate(input_str);
         CString::new(output).unwrap_or_default().into_raw()
@@ -78,7 +92,7 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
     match result {
         Ok(ptr) => ptr,
         Err(_) => {
-            let err = r#"{"error":"panic in generate_policies_wasm"}"#;
+            let err = serde_json::json!({"error": "panic in generate_policies_wasm"}).to_string();
             CString::new(err).unwrap_or_default().into_raw()
         }
     }
@@ -87,7 +101,7 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
 /// Free a string previously returned by `generate_policies_wasm`.
 ///
 /// # Safety
-/// `ptr` must have been returned by `generate_policies_wasm`.
+/// `ptr` must have been returned by `generate_policies_wasm` and must not be freed twice.
 #[no_mangle]
 pub extern "C" fn free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
@@ -106,7 +120,7 @@ fn run_generate(input_json: &str) -> String {
     };
 
     if input.files.is_empty() {
-        return r#"{"Policies":[]}"#.to_string();
+        return serde_json::json!({"Policies": []}).to_string();
     }
 
     // Detect or validate language
@@ -152,7 +166,7 @@ fn run_generate(input_json: &str) -> String {
             source_files,
             language,
             aws_context,
-            minimize_policy_size: false,
+            minimize_policy_size: input.minimize_policy_size,
         };
 
         generate_policies_from_source(&config).await

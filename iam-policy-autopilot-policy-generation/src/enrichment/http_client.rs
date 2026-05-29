@@ -137,12 +137,15 @@ mod emscripten {
                 });
             }
 
+            // Read the C string, then free immediately to avoid leaks on error paths.
             let c_str = unsafe { std::ffi::CStr::from_ptr(result_ptr as *const i8) };
-            let text = c_str.to_str().map_err(|e| ExtractorError::Network {
+            let result = c_str.to_str().map(|s| s.to_owned());
+            unsafe { em_fetch_free(result_ptr) };
+
+            let text = result.map_err(|e| ExtractorError::Network {
                 message: format!("Invalid UTF-8 in response from '{url}': {e}"),
                 source: None,
-            })?.to_owned();
-            unsafe { em_fetch_free(result_ptr) };
+            })?;
 
             Ok(text)
         }
