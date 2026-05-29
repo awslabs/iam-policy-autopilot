@@ -72,6 +72,7 @@ pub enum Language {
 
 impl Language {
     /// Returns the SDK type for this language.
+    #[must_use]
     pub fn sdk_type(&self) -> SdkType {
         match self {
             Self::Python => SdkType::Boto3,

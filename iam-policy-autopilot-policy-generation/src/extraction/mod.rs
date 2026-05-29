@@ -102,6 +102,7 @@ pub mod core {
         }
 
         /// Detect programming language from file extension.
+        #[must_use]
         pub fn detect_language(path: &Path) -> Option<Language> {
             let ext = path.extension()?.to_str()?.to_lowercase();
             Language::try_from_str(&ext).ok()

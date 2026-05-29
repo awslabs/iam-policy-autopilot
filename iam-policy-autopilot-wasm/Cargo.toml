@@ -14,7 +14,6 @@ iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-polic
 
 serde = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
 # Workspace tokio includes fs/rt-multi-thread/signal which pull in mio's net features,
 # incompatible with wasm32. We only need the single-threaded runtime here.
 tokio = { version = "1.0", features = ["rt", "macros"] }
