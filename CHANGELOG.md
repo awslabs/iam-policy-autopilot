@@ -9,7 +9,7 @@
 
 ### Fixed
 
-- IAM Policy Autopilot now uses the system's native certificate store (#209)
+- We now respect the system's native certificate store instead of using bundled certificates (#209)
 - `fix_access_denied` MCP tool now applies the user-confirmed policy instead of regenerating one (#202)
 - `--explain` now shows every call site when the same operation appears multiple times (#188)
 - Condition values for the same key are now merged instead of overwritten when serializing policies (#199)
