@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Build IAM Policy Autopilot WASM via Emscripten with Asyncify
+# Build IAM Policy Autopilot WASM via Emscripten with JSPI
 #
 # Prerequisites:
 #   - emsdk installed and activated (source ~/emsdk/emsdk_env.sh)
