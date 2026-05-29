@@ -1,11 +1,15 @@
 ## [Unreleased]
 
+## [0.2.2rc1] - 2026-05-29
+
 ### Added
 
 - Support for namespace imports in TypeScript/JavaScript (#190)
+- Added partial support for permissions needed by [aws-lambda-powertools](https://pypi.org/project/aws-lambda-powertools/) (#186)
 
 ### Fixed
 
+- IAM Policy Autopilot now uses the system's native certificate store (#209)
 - `fix_access_denied` MCP tool now applies the user-confirmed policy instead of regenerating one (#202)
 - `--explain` now shows every call site when the same operation appears multiple times (#188)
 - Condition values for the same key are now merged instead of overwritten when serializing policies (#199)

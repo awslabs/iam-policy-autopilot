@@ -82,6 +82,8 @@ Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in b
 # To:     version = "X.Y.Z"
 ```
 
+For pre-release versions, use SemVer format in Cargo.toml (e.g., `X.Y.Z-rc.1`) and PEP 440 format in pyproject.toml (e.g., `X.Y.Zrc1`). Maturin normalizes the Cargo version to PEP 440 automatically. PyPI will not serve pre-releases to users running `pip install iam-policy-autopilot` unless they explicitly opt in with `--pre` or pin the exact version.
+
 Verify the version is correct:
 
 ```bash
