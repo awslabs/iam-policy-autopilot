@@ -167,6 +167,8 @@ impl Extractor for PythonExtractor {
         // Find all method calls with attribute access: obj.method(args)
         for node_match in root.find_all(pattern) {
             // Determine which function this method call is in (if any)
+            // Linear scan is fine for typical Python files. If this becomes a bottleneck,
+            // sort function_ranges by start line and use binary search (partition_point).
             let call_line = node_match.get_node().start_pos().line();
             let current_function = function_ranges
                 .iter()

@@ -11,8 +11,9 @@ impl VariableTypeTracker {
     /// 2. Module scope (global variables)
     ///
     /// # Note on Parameter Types
-    /// When checking parameter types, this returns the first service found in the set.
-    /// For parameters with multiple possible types, use `get_services_for_parameter()`.
+    /// When a parameter has multiple inferred types (e.g., both `s3` and `ec2`),
+    /// this returns `None` to avoid guessing. Use `get_services_for_parameter()` to
+    /// get all possible types and handle ambiguity explicitly.
     pub(crate) fn get_service_for_variable_in_context(
         &self,
         var_name: &str,
@@ -29,7 +30,11 @@ impl VariableTypeTracker {
                 .parameter_types
                 .get(&(func_name.to_string(), var_name.to_string()))
             {
-                return type_infos.iter().next().map(|info| &info.service_name);
+                // Only return a single type if unambiguous
+                if type_infos.len() == 1 {
+                    return type_infos.iter().next().map(|info| &info.service_name);
+                }
+                return None;
             }
         }
 
@@ -43,6 +48,7 @@ impl VariableTypeTracker {
     /// Get the full type information for a variable (not just service name)
     ///
     /// This is useful when you need access to the kind or qualified_type fields.
+    /// Returns `None` for parameters with multiple inferred types.
     ///
     /// Checks in Python scoping order (LEGB - Local, Enclosing, Global, Built-in):
     /// 1. Function scope (local variables and parameters)
@@ -63,9 +69,11 @@ impl VariableTypeTracker {
                 .parameter_types
                 .get(&(func_name.to_string(), var_name.to_string()))
             {
-                if let Some(type_info) = type_infos.iter().next() {
-                    return Some(type_info);
+                // Only return a single type if unambiguous
+                if type_infos.len() == 1 {
+                    return type_infos.iter().next();
                 }
+                return None;
             }
         }
 

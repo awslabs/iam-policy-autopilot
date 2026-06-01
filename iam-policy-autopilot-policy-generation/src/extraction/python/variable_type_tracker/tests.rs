@@ -217,6 +217,46 @@ process_data(ec2_client)
 }
 
 #[test]
+fn test_ambiguous_parameter_returns_none() {
+    // When a parameter has multiple inferred types, get_service_for_variable_in_context
+    // should return None (conservative fallback) rather than picking arbitrarily.
+    let source_code = r#"
+import boto3
+
+def process_data(client):
+    pass
+
+s3_client = boto3.client('s3')
+ec2_client = boto3.client('ec2')
+
+process_data(s3_client)
+process_data(ec2_client)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Single-type API should return None for ambiguous parameters
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("client", Some("process_data")),
+        None
+    );
+
+    // Full type info API should also return None
+    assert!(tracker
+        .get_type_info_for_variable_in_context("client", Some("process_data"))
+        .is_none());
+
+    // But get_services_for_parameter still returns all possibilities
+    let services = tracker.get_services_for_parameter("process_data", "client");
+    assert!(services.is_some());
+    let services = services.unwrap();
+    assert_eq!(services.len(), 2);
+    assert!(services.contains("s3"));
+    assert!(services.contains("ec2"));
+}
+
+#[test]
 fn test_multiple_function_calls() {
     let source_code = r#"
 import boto3
@@ -361,6 +401,121 @@ upload(s3, 'my-bucket', 'my-key')
     assert!(tracker
         .get_services_for_parameter("upload", "key")
         .is_none());
+}
+
+// ========== Keyword Argument Tests ==========
+
+#[test]
+fn test_keyword_arguments_matched_by_name() {
+    let source_code = r#"
+import boto3
+
+def sync_data(s3_client, dynamodb_client):
+    s3_client.get_object(Bucket='bucket', Key='key')
+    dynamodb_client.put_item(TableName='table', Item={})
+
+s3 = boto3.client('s3')
+ddb = boto3.client('dynamodb')
+sync_data(dynamodb_client=ddb, s3_client=s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Keyword args should match by name, not position
+    let s3_services = tracker.get_services_for_parameter("sync_data", "s3_client");
+    assert!(s3_services.is_some());
+    assert!(s3_services.unwrap().contains("s3"));
+
+    let dynamodb_services = tracker.get_services_for_parameter("sync_data", "dynamodb_client");
+    assert!(dynamodb_services.is_some());
+    assert!(dynamodb_services.unwrap().contains("dynamodb"));
+}
+
+#[test]
+fn test_mixed_positional_and_keyword_arguments() {
+    let source_code = r#"
+import boto3
+
+def process(client, table_name, region):
+    pass
+
+s3 = boto3.client('s3')
+process(s3, region='us-east-1', table_name='my-table')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Positional arg should still work
+    let client_services = tracker.get_services_for_parameter("process", "client");
+    assert!(client_services.is_some());
+    assert!(client_services.unwrap().contains("s3"));
+
+    // Non-tracked keyword args should not create entries
+    assert!(tracker
+        .get_services_for_parameter("process", "table_name")
+        .is_none());
+    assert!(tracker
+        .get_services_for_parameter("process", "region")
+        .is_none());
+}
+
+// ========== self/cls Filtering Tests ==========
+
+#[test]
+fn test_self_filtered_from_parameter_mapping() {
+    // When a method is called as a bare function (e.g., Uploader.upload(uploader, s3)),
+    // 'self' must not appear in the parameter list — otherwise s3 maps to 'self'
+    // instead of 'client'.
+    let source_code = r#"
+import boto3
+
+class Uploader:
+    def upload(self, client):
+        client.put_object(Bucket='b', Key='k', Body=b'data')
+
+s3 = boto3.client('s3')
+upload(s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // 'self' should NOT appear as a parameter — s3 maps to 'client', not 'self'
+    assert!(
+        tracker.get_services_for_parameter("upload", "self").is_none(),
+        "self should be filtered from parameter list"
+    );
+    let client_services = tracker.get_services_for_parameter("upload", "client");
+    assert!(client_services.is_some());
+    assert!(client_services.unwrap().contains("s3"));
+}
+
+#[test]
+fn test_cls_filtered_from_parameter_mapping() {
+    let source_code = r#"
+import boto3
+
+class Factory:
+    @classmethod
+    def create(cls, client):
+        pass
+
+s3 = boto3.client('s3')
+create(s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert!(
+        tracker.get_services_for_parameter("create", "cls").is_none(),
+        "cls should be filtered from parameter list"
+    );
+    let client_services = tracker.get_services_for_parameter("create", "client");
+    assert!(client_services.is_some());
+    assert!(client_services.unwrap().contains("s3"));
 }
 
 // ========== Helper Function Tests ==========

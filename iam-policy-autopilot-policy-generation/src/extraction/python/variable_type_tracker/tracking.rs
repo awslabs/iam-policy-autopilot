@@ -17,22 +17,25 @@ impl VariableTypeTracker {
     pub(crate) fn track_boto3_assignments(&mut self, ast: &AstWithSourceFile<Python>) {
         let root = ast.ast.root();
 
-        self.track_client_assignments(&root);
-        self.track_resource_assignments(&root);
+        self.track_boto3_factory_assignments(&root, "client", SdkObjectKind::Client);
+        self.track_boto3_factory_assignments(&root, "resource", SdkObjectKind::Resource);
         self.track_aliases(&root);
         self.track_function_calls(&root);
         self.track_resource_derived_variables(&root);
     }
 
-    /// Track boto3.client() assignments
-    fn track_client_assignments(
+    /// Track boto3 factory assignments (client or resource) at both function and module level
+    fn track_boto3_factory_assignments(
         &mut self,
         root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        factory_method: &str,
+        kind: SdkObjectKind,
     ) {
+        let assign_pattern = format!("$VAR = boto3.{factory_method}($SERVICE)");
+
         // First, track function-level assignments
         let func_def_pattern = "def $FUNC($$$): $$$BODY";
         for func_match in root.find_all(func_def_pattern) {
-            log::debug!("FUNC_MATCH: {}", func_match.text());
             let env = func_match.get_env();
 
             let func_name = if let Some(node) = env.get_match("FUNC") {
@@ -41,9 +44,7 @@ impl VariableTypeTracker {
                 continue;
             };
 
-            let pattern = "$VAR = boto3.client($SERVICE)";
-            for node_match in func_match.get_node().find_all(pattern) {
-                log::debug!("NODE_MATCH: {}", node_match.text());
+            for node_match in func_match.get_node().find_all(assign_pattern.as_str()) {
                 let assign_env = node_match.get_env();
 
                 let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
@@ -60,7 +61,7 @@ impl VariableTypeTracker {
                 };
 
                 log::debug!(
-                    "Tracked boto3.client assignment in function '{func_name}': {var_name} -> {service_name}"
+                    "Tracked boto3.{factory_method} assignment in function '{func_name}': {var_name} -> {service_name}"
                 );
 
                 self.function_scopes
@@ -68,18 +69,13 @@ impl VariableTypeTracker {
                     .or_default()
                     .insert(
                         var_name,
-                        VariableTypeInfo::from_service_with_kind(
-                            service_name,
-                            SdkObjectKind::Client,
-                        ),
+                        VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
                     );
             }
         }
 
         // Then track module-level assignments
-        let pattern = "$VAR = boto3.client($SERVICE)";
-        for node_match in root.find_all(pattern) {
-            log::debug!("NODE_MATCH (MODULE): {}", node_match.text());
+        for node_match in root.find_all(assign_pattern.as_str()) {
             let env = node_match.get_env();
 
             if is_inside_function(&node_match) {
@@ -100,93 +96,11 @@ impl VariableTypeTracker {
             };
 
             log::debug!(
-                "Tracked boto3.client assignment at module level: {var_name} -> {service_name}"
+                "Tracked boto3.{factory_method} assignment at module level: {var_name} -> {service_name}"
             );
             self.module_scope.insert(
                 var_name,
-                VariableTypeInfo::from_service_with_kind(service_name, SdkObjectKind::Client),
-            );
-        }
-    }
-
-    /// Track boto3.resource() assignments
-    fn track_resource_assignments(
-        &mut self,
-        root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
-    ) {
-        // First, track function-level assignments
-        let func_def_pattern = "def $FUNC($$$PARAMS):$$$BODY";
-        for func_match in root.find_all(func_def_pattern) {
-            let env = func_match.get_env();
-
-            let func_name = if let Some(node) = env.get_match("FUNC") {
-                node.text().to_string()
-            } else {
-                continue;
-            };
-
-            let pattern = "$VAR = boto3.resource($SERVICE)";
-            for node_match in func_match.get_node().find_all(pattern) {
-                let assign_env = node_match.get_env();
-
-                let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
-                    var_node.text().to_string()
-                } else {
-                    continue;
-                };
-
-                let service_name = if let Some(service_node) = assign_env.get_match("SERVICE") {
-                    let raw_text = service_node.text().to_string();
-                    self.extract_string_literal(&raw_text)
-                } else {
-                    continue;
-                };
-
-                log::debug!(
-                    "Tracked boto3.resource assignment in function '{func_name}': {var_name} -> {service_name}"
-                );
-
-                self.function_scopes
-                    .entry(func_name.clone())
-                    .or_default()
-                    .insert(
-                        var_name,
-                        VariableTypeInfo::from_service_with_kind(
-                            service_name,
-                            SdkObjectKind::Resource,
-                        ),
-                    );
-            }
-        }
-
-        // Then track module-level assignments
-        let pattern = "$VAR = boto3.resource($SERVICE)";
-        for node_match in root.find_all(pattern) {
-            let env = node_match.get_env();
-
-            if is_inside_function(&node_match) {
-                continue;
-            }
-
-            let var_name = if let Some(var_node) = env.get_match("VAR") {
-                var_node.text().to_string()
-            } else {
-                continue;
-            };
-
-            let service_name = if let Some(service_node) = env.get_match("SERVICE") {
-                let raw_text = service_node.text().to_string();
-                self.extract_string_literal(&raw_text)
-            } else {
-                continue;
-            };
-
-            log::debug!(
-                "Tracked boto3.resource assignment at module level: {var_name} -> {service_name}"
-            );
-            self.module_scope.insert(
-                var_name,
-                VariableTypeInfo::from_service_with_kind(service_name, SdkObjectKind::Resource),
+                VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
             );
         }
     }
@@ -218,17 +132,23 @@ impl VariableTypeTracker {
             for node_match in body_node.find_all(pattern) {
                 let assign_env = node_match.get_env();
 
+                let old_node = if let Some(node) = assign_env.get_match("OLD") {
+                    node
+                } else {
+                    continue;
+                };
+
+                if old_node.kind() != "identifier" {
+                    continue;
+                }
+
                 let new_var = if let Some(node) = assign_env.get_match("NEW") {
                     node.text().to_string()
                 } else {
                     continue;
                 };
 
-                let old_var = if let Some(node) = assign_env.get_match("OLD") {
-                    node.text().to_string()
-                } else {
-                    continue;
-                };
+                let old_var = old_node.text().to_string();
 
                 let type_info = self
                     .get_type_info_for_variable_in_context(&old_var, Some(&func_name))
@@ -260,17 +180,23 @@ impl VariableTypeTracker {
                 continue;
             }
 
+            let old_node = if let Some(node) = env.get_match("OLD") {
+                node
+            } else {
+                continue;
+            };
+
+            if old_node.kind() != "identifier" {
+                continue;
+            }
+
             let new_var = if let Some(node) = env.get_match("NEW") {
                 node.text().to_string()
             } else {
                 continue;
             };
 
-            let old_var = if let Some(node) = env.get_match("OLD") {
-                node.text().to_string()
-            } else {
-                continue;
-            };
+            let old_var = old_node.text().to_string();
 
             if let Some(type_info) = self.module_scope.get(&old_var) {
                 log::debug!(
@@ -312,7 +238,9 @@ impl VariableTypeTracker {
                     continue;
                 }
                 if let Some(param_name) = Self::extract_all_params(&param_text).into_iter().next() {
-                    params.push(param_name);
+                    if param_name != "self" && param_name != "cls" {
+                        params.push(param_name);
+                    }
                 }
             }
 
@@ -350,26 +278,55 @@ impl VariableTypeTracker {
             log::debug!("Found function call: {func_name}({args:?})");
 
             if let Some(param_names) = func_params.get(&func_name) {
-                for (i, arg) in args.iter().enumerate() {
-                    if let Some(param_name) = param_names.get(i) {
-                        let type_info = self
-                            .get_type_info_for_variable_in_context(arg, None)
-                            .cloned();
+                let mut positional_index = 0;
+                for arg in &args {
+                    if let Some((key, value)) = arg.split_once('=') {
+                        // Keyword argument: match by name
+                        let key = key.trim();
+                        let value = value.trim();
+                        if param_names.contains(&key.to_string()) {
+                            let type_info = self
+                                .get_type_info_for_variable_in_context(value, None)
+                                .cloned();
 
-                        if let Some(type_info) = type_info {
-                            log::debug!(
-                                "Tracked function call: {}({}) - param '{}' (position {}) -> service '{}'",
-                                func_name,
-                                arg,
-                                param_name,
-                                i,
-                                type_info.service_name
-                            );
-                            self.parameter_types
-                                .entry((func_name.clone(), param_name.clone()))
-                                .or_default()
-                                .insert(type_info);
+                            if let Some(type_info) = type_info {
+                                log::debug!(
+                                    "Tracked function call: {}({}={}) - keyword param '{}' -> service '{}'",
+                                    func_name,
+                                    key,
+                                    value,
+                                    key,
+                                    type_info.service_name
+                                );
+                                self.parameter_types
+                                    .entry((func_name.clone(), key.to_string()))
+                                    .or_default()
+                                    .insert(type_info);
+                            }
                         }
+                    } else {
+                        // Positional argument: match by index
+                        if let Some(param_name) = param_names.get(positional_index) {
+                            let type_info = self
+                                .get_type_info_for_variable_in_context(arg, None)
+                                .cloned();
+
+                            if let Some(type_info) = type_info {
+                                log::debug!(
+                                    "Tracked function call: {}({}) - param '{}' (position {}) -> service '{}'",
+                                    func_name,
+                                    arg,
+                                    param_name,
+                                    positional_index,
+                                    type_info.service_name
+                                );
+                                self.parameter_types
+                                    .entry((func_name.clone(), param_name.clone()))
+                                    .or_default()
+                                    .insert(type_info);
+                            }
+                        }
+                        positional_index += 1;
                     }
                 }
             } else {
