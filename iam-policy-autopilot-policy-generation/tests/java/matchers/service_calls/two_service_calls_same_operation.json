@@ -1,0 +1,28 @@
+{
+  "SourceFiles": ["two_service_calls_same_operation.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["cloudvault"],
+      "Metadata": {
+        "Expr": "cloudVaultClient.describeResource(request)",
+        "Location": "two_service_calls_same_operation.java:6.9-6.51",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    },
+    {
+      "Name": "describeResource",
+      "PossibleServices": ["datastore"],
+      "Metadata": {
+        "Expr": "dataStoreClient.describeResource(request)",
+        "Location": "two_service_calls_same_operation.java:7.9-7.50",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

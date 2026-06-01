@@ -13,6 +13,7 @@ use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
+use crate::extraction::java::extract_java_sdk_calls;
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{self, ExtractedMethods, ExtractionMetadata, SourceFile};
 use crate::Language;
@@ -73,6 +74,27 @@ impl Engine {
             service_index.services.len(),
             service_index.method_lookup.len()
         );
+
+        // Java uses a separate entry point that does not go through the legacy Extractor trait.
+        if language == Language::Java {
+            let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
+
+            let method_calls = extract_java_sdk_calls(source_files, &service_index).await?;
+
+            metadata.update_method_count(method_calls.len());
+
+            let total_duration = start_time.elapsed();
+            log::debug!(
+                "Java SDK method call extraction completed in {:.2}ms: {} validated SDK methods found",
+                total_duration.as_secs_f64() * 1000.0,
+                method_calls.len()
+            );
+
+            return Ok(ExtractedMethods {
+                methods: method_calls,
+                metadata,
+            });
+        }
 
         #[allow(unreachable_patterns)]
         let extractor: Arc<dyn Extractor + Send + Sync> = match language {
@@ -202,6 +224,7 @@ mod tests {
             ("test.ts", "typescript"),
             ("test.js", "javascript"),
             ("test.go", "go"),
+            ("test.java", "java"),
             ("test.unsupported", "unsupported"),
             ("no_extension", "unsupported"),
         ];

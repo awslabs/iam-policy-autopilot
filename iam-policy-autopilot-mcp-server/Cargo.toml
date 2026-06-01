@@ -22,29 +22,31 @@ env_logger.workspace = true
 tokio.workspace = true
 
 axum = "^0.8"
-rmcp = { version = "^0.8" , features = [
+rmcp = { version = "^1.6" , features = [
     "server",
     "macros",
     "client",
-    "transport-sse-server",
     "transport-io",
     "transport-streamable-http-server",
     "auth",
     "elicitation",
     "schemars",
-]}  # Replace with the actual version used
+]}
 
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" }
 iam-policy-autopilot-access-denied = { path = "../iam-policy-autopilot-access-denied" }
 
 [dev-dependencies]
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation" , features=["integ-test"] }
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 serial_test.workspace = true
 reqwest.workspace = true
-rmcp = { version = "^0.8" , features = [
+rstest.workspace = true
+rmcp = { version = "^1.6" , features = [
     "transport-child-process",
     "transport-streamable-http-client-reqwest",
-]}  # Replace with the actual version used
+]}
 tokio = {version = "^1", features = ["full"]}
 
 [lints]

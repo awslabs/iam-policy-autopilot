@@ -7,7 +7,6 @@ This document outlines the steps to create a new release.
 - Write access to the repository
 - Git configured with your credentials
 - Review our [contributing guideline](https://github.com/awslabs/iam-policy-autopilot/blob/main/CONTRIBUTING.md)
-- [git-cliff](https://github.com/orhun/git-cliff) installed for changelog generation
 
 ## Quick Reference
 
@@ -83,6 +82,8 @@ Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in b
 # To:     version = "X.Y.Z"
 ```
 
+For pre-release versions, use SemVer format in Cargo.toml (e.g., `X.Y.Z-rc.1`) and PEP 440 format in pyproject.toml (e.g., `X.Y.Zrc1`). Maturin normalizes the Cargo version to PEP 440 automatically. PyPI will not serve pre-releases to users running `pip install iam-policy-autopilot` unless they explicitly opt in with `--pre` or pin the exact version.
+
 Verify the version is correct:
 
 ```bash
@@ -90,28 +91,9 @@ cargo build
 ./target/debug/iam-policy-autopilot --version
 ```
 
-### 3. Generate/Update Changelog
+### 3. Finalize Changelog
 
-#### Using git-cliff
-
-If you have [git-cliff](https://github.com/orhun/git-cliff) installed:
-
-```bash
-# For first release (no previous tags)
-git cliff --tag X.Y.Z --unreleased -o CHANGELOG.md
-
-# For subsequent releases (prepend to existing CHANGELOG.md)
-# Replace PREV_TAG with the previous release tag (e.g., 0.1.0)
-git cliff PREV_TAG..HEAD --tag X.Y.Z --prepend CHANGELOG.md
-
-# Preview without writing to file
-git cliff PREV_TAG..HEAD --tag X.Y.Z
-```
-
-**Important:** 
-- Use `-o` for first release (creates/overwrites file)
-- Use `--prepend` for subsequent releases (adds new release at top, keeps old releases)
-- git-cliff requires conventional commit messages (feat:, fix:, etc.) to generate meaningful changelogs
+Rename the `[Unreleased]` section to the new version and date, then add a fresh empty `[Unreleased]` heading at the top.
 
 ### 4. Commit and Push Changes
 
@@ -157,8 +139,10 @@ Or manually create the PR through the GitHub web interface.
 
 It's recommended to create the new release and tag directly via the GitHub web interface, where you can automatically generate release notes, create a tag, and draft a release before publishing it.
 
+If you are releasing a release candidate, mark the release as Pre-release.
+
 Notes:
-- The new tag should be the same as the version to be released
+- The new tag must match the version string in Cargo.toml
 - Make sure to select the correct release branch as the target when creating the tag
   - The main branch can be used if it's identical to the release branch (i.e., no cherry-picked commits in the release branch)
 - Be sure to `Save draft` and review it once before publishing the release.
@@ -200,14 +184,6 @@ If PyPI publishing fails:
 If version verification fails:
 - Ensure both `Cargo.toml` and `pyproject.toml` versions match the git tag exactly
 - Rebuild and verify: `cargo build && ./target/debug/iam-policy-autopilot --version`
-
-### Empty Changelog from git-cliff
-
-If git-cliff generates an empty changelog:
-- **First release**: Use `--unreleased` flag: `git cliff --tag X.Y.Z --unreleased -o CHANGELOG.md`
-- **No conventional commits**: Ensure commits follow the format `type: description` (feat:, fix:, etc.)
-- **Check commits**: Run `git log --oneline` to verify commit messages
-- **Preview output**: Run `git cliff --tag X.Y.Z --unreleased` without `-o` to see what would be generated
 
 ### Checking Existing Tags
 

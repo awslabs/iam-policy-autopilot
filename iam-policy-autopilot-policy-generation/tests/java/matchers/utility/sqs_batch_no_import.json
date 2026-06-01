@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["sqs_batch_no_import.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": []
+}

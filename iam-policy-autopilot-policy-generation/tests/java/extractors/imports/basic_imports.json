@@ -1,0 +1,16 @@
+{
+  "ExpectedImports": [
+    {
+      "Expr": "software.amazon.awssdk.services.s3.S3Client",
+      "Service": "s3",
+      "Location": "basic_imports.java:1.1-1.52",
+      "IsStatic": false
+    },
+    {
+      "Expr": "software.amazon.awssdk.services.dynamodb.DynamoDbClient",
+      "Service": "dynamodb",
+      "Location": "basic_imports.java:2.1-2.64",
+      "IsStatic": false
+    }
+  ]
+}

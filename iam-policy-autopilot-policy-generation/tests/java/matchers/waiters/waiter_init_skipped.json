@@ -1,0 +1,5 @@
+{
+  "SourceFiles": ["waiter_init_skipped.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": []
+}

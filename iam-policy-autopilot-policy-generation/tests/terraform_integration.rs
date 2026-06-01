@@ -50,6 +50,20 @@ struct TestInputs {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Strip the Windows extended-length path prefix (`\\?\`) if present.
+///
+/// On Windows, `rstest`'s `#[files]` glob calls `std::fs::canonicalize()`, which
+/// produces paths like `\\?\D:\a\repo\...`. This prefix is a Windows API detail
+/// that breaks downstream path comparisons and Location formatting. Stripping it
+/// here at the test entry point keeps all downstream code clean.
+fn strip_windows_extended_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    match s.strip_prefix(r"\\?\") {
+        Some(stripped) => PathBuf::from(stripped),
+        None => path.to_path_buf(),
+    }
+}
+
 fn load_fixture(fixture_dir: &Path) -> Vec<TestCase> {
     let path = fixture_dir.join("fixture.json");
     let raw =
@@ -90,11 +104,13 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
 /// - Sorts arrays by serialized form (non-deterministic HashMap iteration)
 /// - Strips absolute fixture directory prefix from all string values
 fn normalize(v: &serde_json::Value, fixture_dir: &Path) -> serde_json::Value {
-    let prefix = fixture_dir.to_str().unwrap_or("");
+    // Normalize the prefix to forward slashes so it matches the forward-slash
+    // paths produced by Location::to_gnu_format() on all platforms.
+    let prefix = fixture_dir.to_string_lossy().replace('\\', "/");
 
     match v {
         serde_json::Value::String(s) => {
-            let stripped = s.strip_prefix(prefix).unwrap_or(s);
+            let stripped = s.strip_prefix(&*prefix).unwrap_or(s);
             let stripped = stripped.strip_prefix('/').unwrap_or(stripped);
             serde_json::Value::String(stripped.to_string())
         }
@@ -185,6 +201,11 @@ async fn run_test_case(fixture_name: &str, fixture_dir: &Path, test_case: &TestC
 #[rstest]
 #[tokio::test]
 async fn test_fixture(#[files("tests/resources/terraform/*/fixture.json")] fixture_json: PathBuf) {
+    // On Windows, rstest's #[files] glob calls canonicalize() which produces
+    // extended-length paths like `\\?\D:\a\...`. Strip the prefix so all
+    // downstream paths (Location::file_path, normalize() comparisons) use
+    // plain paths without the Windows-internal `\\?\` prefix.
+    let fixture_json = strip_windows_extended_prefix(&fixture_json);
     let fixture_dir = fixture_json.parent().unwrap();
     let fixture_name = fixture_dir.file_name().unwrap().to_str().unwrap();
 

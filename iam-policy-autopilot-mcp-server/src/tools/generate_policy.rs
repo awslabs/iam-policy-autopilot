@@ -13,42 +13,57 @@ mod api {
 }
 
 // Input struct matching the updated schema
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    iam_policy_autopilot_common::telemetry::TelemetryEventDerive,
+)]
 #[serde(rename_all = "PascalCase")]
 #[schemars(description = "Input for generating IAM policies from source code.")]
+#[telemetry(command = "mcp-tool-generate-policies")]
 pub struct GeneratePoliciesInput {
     #[schemars(description = "Absolute paths to source files to generate IAM Policies for")]
+    #[telemetry(count)]
     pub source_files: Vec<String>,
 
     #[schemars(description = "AWS Region")]
+    #[telemetry(presence)]
     pub region: Option<String>,
 
     #[schemars(description = "AWS Account Id")]
+    #[telemetry(presence)]
     pub account: Option<String>,
 
     #[schemars(
         description = "List of AWS service names to filter SDK calls by (e.g., ['s3', 'dynamodb']). When provided, the result of source code analysis will be restricted to the provided services. The generated policy may still contain actions from a service not provided as a hint, if IAM Policy Autopilot determines that the action may be needed for the SDK call."
     )]
+    #[telemetry(list)]
     pub service_hints: Option<Vec<String>>,
 
     #[schemars(
         description = "Absolute path to a Terraform project directory containing .tf files. When provided, the tool parses Terraform resources to discover AWS infrastructure and generates more precise IAM policies by using concrete resource names in ARNs."
     )]
+    #[telemetry(presence)]
     pub tf_dir: Option<String>,
 
     #[schemars(
         description = "Absolute paths to individual Terraform .tf files. When provided, the tool parses Terraform resources and generates more precise IAM policies. These files are combined with any directory specified via tf_dir."
     )]
+    #[telemetry(presence)]
     pub tf_files: Option<Vec<String>>,
 
     #[schemars(
         description = "Absolute paths to terraform.tfstate files containing deployed resource state. When provided, the tool uses actual deployed resource ARNs for more precise IAM policies. State-derived ARNs take precedence over those derived from .tf files."
     )]
+    #[telemetry(presence)]
     pub tfstate: Option<Vec<String>>,
 
     #[schemars(
         description = "Absolute paths to .tfvars files for overriding Terraform variable values. These take precedence over auto-discovered .tfvars files from the terraform directory. Applied in order (later files override earlier). Equivalent to Terraform's -var-file= flag."
     )]
+    #[telemetry(presence)]
     pub tfvars: Option<Vec<String>>,
 }
 

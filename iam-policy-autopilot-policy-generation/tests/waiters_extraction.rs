@@ -1,14 +1,17 @@
 use convert_case::{Case, Casing};
-use iam_policy_autopilot_policy_generation::api::{
-    extract_sdk_calls, model::ExtractSdkCallsConfig,
+use iam_policy_autopilot_policy_generation::{
+    api::{extract_sdk_calls, model::ExtractSdkCallsConfig},
+    Language, ServiceDiscovery,
 };
-use iam_policy_autopilot_policy_generation::{Language, ServiceDiscovery};
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Test that generates programs with waiters for all services with waiters-2.json files
 /// and verifies that iam-policy-autopilot can extract the expected SDK calls.
+///
+/// This test iterates over [`Language::supported()`] so that adding a new language to the crate
+/// automatically causes this test to fail until the new language is wired up here.
 #[tokio::test]
 async fn test_waiters_extraction() {
     let botocore_data_path = "resources/config/sdks/botocore-data/botocore/data";
@@ -21,27 +24,29 @@ async fn test_waiters_extraction() {
         service_waiters.len()
     );
 
-    let test_services: Vec<_> = service_waiters.into_iter().collect();
-
-    for service_info in test_services {
-        println!(
-            "Testing service: {} ({})",
-            service_info.service_name, service_info.version
-        );
-
+    for service_info in service_waiters {
         for waiter in service_info.waiters.iter() {
-            println!(
-                "  Testing waiter: {} -> operation: {}",
-                waiter.waiter_name, waiter.operation
-            );
-
             let runner = TestRunner::new(service_info.clone(), waiter.clone());
 
-            // Test all supported languages
-            runner.test_python().await;
-            runner.test_go().await;
-            runner.test_javascript().await;
-            runner.test_typescript().await;
+            // If a language is added to Language::supported() but not handled below, the spawned
+            // task panics with a clear message — which is caught by JoinSet and reported.
+            for language in Language::supported() {
+                match language {
+                    Language::Python => runner.test_python().await,
+                    Language::Go => runner.test_go().await,
+                    Language::JavaScript => runner.test_javascript().await,
+                    Language::TypeScript => runner.test_typescript().await,
+                    Language::Java => runner.test_java().await,
+                    #[allow(unreachable_patterns)]
+                    other => panic!(
+                        "Language {:?} is listed in Language::all() but has no test \
+                         implementation in tests/waiters_extraction.rs. \
+                         Please add a test_<language>() method to TestRunner and handle \
+                         it in the match arm above.",
+                        other
+                    ),
+                }
+            }
         }
     }
 }
@@ -49,7 +54,6 @@ async fn test_waiters_extraction() {
 #[derive(Debug, Clone)]
 struct ServiceWaiterInfo {
     service_name: String,
-    version: String,
     waiters: Vec<WaiterOperation>,
     botocore_data_path: PathBuf,
 }
@@ -135,9 +139,8 @@ impl TestRunner {
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python using the same logic as the implementation
-        let waiter_snake =
-            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
+        // Convert operation to snake_case for Python
+        let waiter_snake = aws_python_case_conversion(waiter_name);
 
         format!(
             r#"import boto3
@@ -162,9 +165,8 @@ def test_waiter_operation():
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python using the same logic as the implementation
-        let waiter_snake =
-            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
+        // Convert operation to snake_case for Python
+        let waiter_snake = aws_python_case_conversion(waiter_name);
 
         // Generate parameter assignments for the wait call using stored parameters
         let mut param_assignments = Vec::new();
@@ -205,9 +207,8 @@ def test_waiter_operation():
         let operation = &self.waiter.operation;
         let waiter_name = &self.waiter.waiter_name;
 
-        // Convert operation to snake_case for Python using the same logic as the implementation
-        let waiter_snake =
-            ServiceDiscovery::operation_to_method_name(waiter_name, Language::Python);
+        // Convert operation to snake_case for Python
+        let waiter_snake = aws_python_case_conversion(waiter_name);
 
         // Generate parameter assignments for the wait call using stored parameters
         let mut param_assignments = Vec::new();
@@ -489,8 +490,75 @@ testWaiterOperation();
         )
     }
 
-    /// Test the program for a specific language
-    async fn test_language(&self, language: &str, file_extension: &str, code: String) {
+    /// Generate Java code for the waiter test.
+    ///
+    /// Java SDK v2 waiters are called via `client.waiter().waitUntil<WaiterName>(req -> ...)`.
+    /// The extractor strips the `waitUntil` prefix and converts the remainder to camelCase to
+    /// produce the waiter type (e.g. `waitUntilTableExists` → `tableExists`).  Our fix then
+    /// maps that waiter type to the underlying polling operation in camelCase (e.g.
+    /// `describeTable`), which is what the enrichment layer needs to resolve `dynamodb:DescribeTable`.
+    fn generate_java_code(&self) -> String {
+        let service_name = &self.service_info.service_name;
+        let operation = &self.waiter.operation;
+        let waiter_name = &self.waiter.waiter_name;
+
+        // Derive the Java SDK v2 client/waiter class names from the service name.
+        let client_class = format!(
+            "{}Client",
+            service_name.replace("-", " ").to_case(Case::Pascal)
+        );
+        let waiter_class = format!(
+            "{}Waiter",
+            service_name.replace("-", " ").to_case(Case::Pascal)
+        );
+
+        // The Java SDK v2 waiter method is `waitUntil<WaiterName>` (PascalCase waiter name).
+        let wait_until_method = format!("waitUntil{}", waiter_name);
+
+        // Derive the package name: replace hyphens with nothing.
+        let package_name = service_name.replace("-", "");
+
+        format!(
+            r#"import software.amazon.awssdk.services.{package_name}.{client_class};
+import software.amazon.awssdk.services.{package_name}.waiters.{waiter_class};
+
+/**
+ * Test for service: {service_name}
+ * Waiter: {waiter_name}
+ * Operation: {operation}
+ */
+class WaiterTest {{
+    void run({client_class} client) {{
+        {waiter_class} waiter = client.waiter();
+        waiter.{wait_until_method}(r -> r.build());
+    }}
+}}
+"#,
+            package_name = package_name,
+            client_class = client_class,
+            waiter_class = waiter_class,
+            service_name = service_name,
+            waiter_name = waiter_name,
+            operation = operation,
+            wait_until_method = wait_until_method,
+        )
+    }
+
+    /// Test the program for a specific language.
+    ///
+    /// `expected_operation_name` is the name we expect to see in the extracted `SdkMethodCall`.
+    /// It differs by language:
+    /// - Python: snake_case of the underlying operation (e.g. `"describe_table"`)
+    /// - Go / JS / TS: PascalCase operation name (e.g. `"DescribeTable"`)
+    /// - Java: camelCase of the underlying operation (e.g. `"describeTable"`) — this is what
+    ///   the waiter matcher emits after our fix
+    async fn test_language(
+        &self,
+        language: &str,
+        file_extension: &str,
+        code: String,
+        expected_operation_name: &str,
+    ) {
         let temp_dir = TempDir::new().expect("Failed to create temp directory");
         let file_path = temp_dir
             .path()
@@ -507,17 +575,8 @@ testWaiterOperation();
 
         match extract_sdk_calls(&config).await {
             Ok(response) => {
-                // Handle Python's special case with snake_case conversion
-                let expected_operation = if language.to_lowercase() == "python" {
-                    &ServiceDiscovery::operation_to_method_name(
-                        &self.waiter.operation,
-                        Language::Python,
-                    )
-                } else {
-                    &self.waiter.operation
-                };
                 let found_operation = response.methods.iter().any(|call| {
-                    call.name == *expected_operation
+                    call.name == expected_operation_name
                         && call
                             .possible_services
                             .contains(&self.service_info.service_name)
@@ -526,7 +585,7 @@ testWaiterOperation();
                 assert!(
                     found_operation,
                     "Expected to find operation '{}' for service '{}' in {} program, but got: {:?}",
-                    self.waiter.operation,
+                    expected_operation_name,
                     self.service_info.service_name,
                     language,
                     response.methods
@@ -547,42 +606,75 @@ testWaiterOperation();
         }
     }
 
-    /// Test Python program with all three waiter patterns
+    /// Test Python program with all three waiter patterns.
+    ///
+    /// Python extracts the underlying operation in snake_case (e.g. `"describe_table"`).
     async fn test_python(&self) {
+        let expected =
+            ServiceDiscovery::operation_to_method_name(&self.waiter.operation, Language::Python);
+
         // Test pattern 0: $CLIENT.get_waiter($NAME) (no wait call)
         let code_pattern0 = self.generate_python_code_pattern0();
-        self.test_language("Python", "py", code_pattern0).await;
+        self.test_language("Python", "py", code_pattern0, &expected)
+            .await;
 
         // Test pattern 1: $WAITER.wait($$$ARGS)
         let code_pattern1 = self.generate_python_code_pattern1();
-        self.test_language("Python", "py", code_pattern1).await;
+        self.test_language("Python", "py", code_pattern1, &expected)
+            .await;
 
         // Test pattern 2: $CLIENT.get_waiter($NAME $$$WAITER_ARGS).wait($$$WAIT_ARGS)
         let code_pattern2 = self.generate_python_code_pattern2();
-        self.test_language("Python", "py", code_pattern2).await;
+        self.test_language("Python", "py", code_pattern2, &expected)
+            .await;
     }
 
-    /// Test Go program with both patterns
+    /// Test Go program with both patterns.
+    ///
+    /// Go extracts the underlying operation in PascalCase (e.g. `"DescribeTable"`).
     async fn test_go(&self) {
+        let expected = &self.waiter.operation;
+
         // Test pattern with wait call
         let code_with_wait = self.generate_go_code_with_wait();
-        self.test_language("Go", "go", code_with_wait).await;
+        self.test_language("Go", "go", code_with_wait, expected)
+            .await;
 
         // Test pattern without wait call (just waiter creation)
         let code_without_wait = self.generate_go_code_without_wait();
-        self.test_language("Go", "go", code_without_wait).await;
+        self.test_language("Go", "go", code_without_wait, expected)
+            .await;
     }
 
-    /// Test JavaScript program
+    /// Test JavaScript program.
+    ///
+    /// JavaScript extracts the underlying operation in PascalCase (e.g. `"DescribeTable"`).
     async fn test_javascript(&self) {
         let code = self.generate_javascript_code();
-        self.test_language("JavaScript", "js", code).await;
+        self.test_language("JavaScript", "js", code, &self.waiter.operation)
+            .await;
     }
 
-    /// Test TypeScript program
+    /// Test TypeScript program.
+    ///
+    /// TypeScript extracts the underlying operation in PascalCase (e.g. `"DescribeTable"`).
     async fn test_typescript(&self) {
         let code = self.generate_typescript_code();
-        self.test_language("TypeScript", "ts", code).await;
+        self.test_language("TypeScript", "ts", code, &self.waiter.operation)
+            .await;
+    }
+
+    /// Test Java program.
+    ///
+    /// Java SDK v2 waiters are extracted as the underlying polling operation in camelCase
+    /// (e.g. `"describeTable"` for `waitUntilTableExists`).  This is the result of our fix
+    /// in `src/extraction/java/matchers/waiter.rs` which maps the waiter type to the
+    /// underlying operation name via `ServiceModelIndex::waiter_lookup`.
+    async fn test_java(&self) {
+        let code = self.generate_java_code();
+        // Java emits the underlying operation in camelCase (e.g. "describeTable")
+        let expected = self.waiter.operation.to_case(Case::Camel);
+        self.test_language("Java", "java", code, &expected).await;
     }
 }
 
@@ -611,14 +703,13 @@ fn discover_service_waiters(botocore_data_path: &str) -> Vec<ServiceWaiterInfo> 
                     versions.sort_by(|a, b| b.0.cmp(&a.0));
 
                     // Only check the latest version
-                    if let Some((latest_version, latest_path)) = versions.first() {
+                    if let Some((_latest_version, latest_path)) = versions.first() {
                         let waiters_file = latest_path.join("waiters-2.json");
 
                         if waiters_file.exists() {
                             if let Ok(waiters) = parse_waiters_file(&waiters_file) {
                                 service_waiters.push(ServiceWaiterInfo {
                                     service_name: service_name.clone(),
-                                    version: latest_version.clone(),
                                     waiters,
                                     botocore_data_path: latest_path.clone(),
                                 });
@@ -776,22 +867,48 @@ fn generate_python_mock_value_for_shape(shape: &str) -> String {
     }
 }
 
+/// Convert AWS operation names to Python method names with special handling for version suffixes
+///
+/// This function uses convert_case for the base conversion but fixes AWS-specific patterns
+/// like "V2", "V3" suffixes that should not have underscores inserted.
+///
+/// Examples:
+/// - "ListObjectsV2" → "list_objects_v2" (not "list_objects_v_2")
+/// - "GetObjectV1" → "get_object_v1" (not "get_object_v_1")
+/// - "CreateBucket" → "create_bucket" (normal cases unchanged)
+fn aws_python_case_conversion(operation_name: &str) -> String {
+    // First, apply normal snake_case conversion
+    let snake_case = operation_name.to_case(Case::Snake);
+
+    // Fix AWS version suffixes at the end: "_v_N" → "_vN" where N is digits
+    // Only replace if "_v_" is followed by digits and is at the end of string
+    if snake_case.len() >= 4 && snake_case.ends_with(|c: char| c.is_ascii_digit()) {
+        if let Some(v_pos) = snake_case.rfind("_v_") {
+            let after_v = &snake_case[v_pos + 3..];
+            // Check if everything after "_v_" is digits (ensuring it's a version suffix)
+            if after_v.chars().all(|c| c.is_ascii_digit()) {
+                let prefix = &snake_case[..v_pos];
+                return format!("{prefix}_v{after_v}");
+            }
+        }
+    }
+
+    snake_case
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_operation_to_method_name() {
+    fn test_snake_case_conversion() {
+        assert_eq!(aws_python_case_conversion("HeadBucket"), "head_bucket");
         assert_eq!(
-            ServiceDiscovery::operation_to_method_name("HeadBucket", Language::Python),
-            "head_bucket"
-        );
-        assert_eq!(
-            ServiceDiscovery::operation_to_method_name("DescribeInstances", Language::Python),
+            aws_python_case_conversion("DescribeInstances"),
             "describe_instances"
         );
         assert_eq!(
-            ServiceDiscovery::operation_to_method_name("DescribeDBInstances", Language::Python),
+            aws_python_case_conversion("DescribeDBInstances"),
             "describe_db_instances"
         );
     }

@@ -1,0 +1,15 @@
+{
+  "SourceFiles": ["no_arg_simple_method.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "listBuckets",
+      "PossibleServices": ["s3"],
+      "Metadata": {
+        "Expr": "s3.listBuckets()",
+        "Location": "no_arg_simple_method.java:5.9-5.25",
+        "Parameters": []
+      }
+    }
+  ]
+}

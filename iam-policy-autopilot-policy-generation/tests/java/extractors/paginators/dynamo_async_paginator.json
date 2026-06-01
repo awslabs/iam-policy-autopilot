@@ -1,0 +1,29 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "asyncClient.listTablesPaginator(listTablesRequest)",
+      "Operation": "listTables",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "listTablesRequest" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "publisher",
+          "type_name": "ListTablesPublisher"
+        }
+      },
+      "Location": "dynamo_async_paginator.java:11.41-11.91",
+      "ReceiverDeclaration": {
+        "Expr": "DynamoDbAsyncClient.create()",
+        "TypeName": "DynamoDbAsyncClient",
+        "Location": "dynamo_async_paginator.java:9.43-9.71"
+      }
+    }
+  ]
+}

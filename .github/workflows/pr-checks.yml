@@ -13,9 +13,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       rust: ${{ steps.filter.outputs.rust }}
-      submodules: ${{ steps.filter.outputs.submodules }}
+      config: ${{ steps.filter.outputs.config }}
       python: ${{ steps.filter.outputs.python }}
-      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.submodules == 'true' }}
+      should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.config == 'true' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -30,10 +30,8 @@ jobs:
               - '**/Cargo.lock'
               - '**/rust-toolchain'
               - '**/.cargo/**'
-            submodules:
-              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/**'
-              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/**'
-              - 'iam-policy-autopilot-policy-generation/resources/config/terraform/**'
+            config:
+              - 'iam-policy-autopilot-policy-generation/resources/config/**'
             python:
               - 'iam-policy-autopilot-policy-generation/scripts/**/*.py'
               - 'pyproject.toml'
@@ -67,12 +65,11 @@ jobs:
           echo '[target.aarch64-unknown-linux-gnu]' >> ~/.cargo/config.toml
           echo 'linker = "aarch64-linux-gnu-gcc"' >> ~/.cargo/config.toml
 
+      - name: Run tests
+        run: cargo test --workspace --verbose
+
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
-
-      - name: Run tests
-        if: matrix.target == 'x86_64-unknown-linux-gnu'
-        run: cargo test --workspace --verbose
 
   test-windows:
     name: Test Windows
@@ -85,8 +82,10 @@ jobs:
       matrix:
         target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
     steps:
-      - name: Enable long paths for Git
-        run: git config --system core.longpaths true
+      - name: Configure Git for Windows
+        run: |
+          git config --system core.longpaths true
+          git config --system core.autocrlf false
 
       - uses: actions/checkout@v4
         with:
@@ -97,6 +96,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
 
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
@@ -121,6 +123,9 @@ jobs:
           targets: ${{ matrix.target }}
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Run tests
+        run: cargo test --workspace --verbose
 
       - name: Build
         run: cargo build --workspace --target ${{ matrix.target }} --verbose --release
@@ -180,6 +185,55 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           args: "format --check ."
+
+  lsp-integration:
+    name: LSP Integration Tests
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install LSP test dependencies
+        run: |
+          python3 -m venv .lsp-venv
+          .lsp-venv/bin/pip install 'ty>=0.0.39,<0.1' boto3 'boto3-stubs[essential]'
+          echo "${{ github.workspace }}/.lsp-venv/bin" >> $GITHUB_PATH
+
+      - name: Run LSP integration tests
+        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test --test lsp_integration_tests -- --ignored
+
+  unused-deps:
+    name: Unused Dependencies (cargo-machete)
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-machete
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-machete
+
+      - name: Check for unused dependencies
+        run: cargo machete
 
   custom-lints:
     name: Custom Lints (dylint)

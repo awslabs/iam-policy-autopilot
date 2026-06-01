@@ -1,0 +1,216 @@
+{
+  "Statement": [
+    {
+      "Action": [
+        "glue:BatchCreatePartition"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:CreateDatabase"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog"
+      ]
+    },
+    {
+      "Action": [
+        "glue:CreateTable"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:DeletePartition"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:GetBucketLocation"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*",
+        "arn:aws:s3:::*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:GetDatabase"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog"
+      ]
+    },
+    {
+      "Action": [
+        "s3:GetObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "kms:Decrypt"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:GetPartitions"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    },
+    {
+      "Action": [
+        "athena:GetQueryExecution"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:athena:*:*:workgroup/*"
+      ]
+    },
+    {
+      "Action": [
+        "athena:GetQueryResults"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:athena:*:*:workgroup/*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:GetTable"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    },
+    {
+      "Action": [
+        "organizations:ListAccounts"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:ListBucket"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*",
+        "arn:aws:s3:::*"
+      ]
+    },
+    {
+      "Action": [
+        "cloudwatch:PutMetricData"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "*"
+      ]
+    },
+    {
+      "Action": [
+        "kms:GenerateDataKey"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "s3.*.amazonaws.com"
+          ]
+        }
+      },
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:kms:*:*:key/*"
+      ]
+    },
+    {
+      "Action": [
+        "s3:PutObject"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:s3:*:*:accesspoint/*/object/*",
+        "arn:aws:s3:::*/*"
+      ]
+    },
+    {
+      "Action": [
+        "athena:StartQueryExecution"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:athena:*:*:workgroup/*"
+      ]
+    },
+    {
+      "Action": [
+        "glue:UpdateTable"
+      ],
+      "Effect": "Allow",
+      "Resource": [
+        "arn:aws:glue:*:*:catalog/*",
+        "arn:aws:glue:*:*:database/*",
+        "arn:aws:glue:*:*:catalog",
+        "arn:aws:glue:*:*:table/*/*"
+      ]
+    }
+  ],
+  "Version": "2012-10-17"
+}

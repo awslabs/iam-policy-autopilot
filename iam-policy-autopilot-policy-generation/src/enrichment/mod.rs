@@ -44,7 +44,7 @@ pub struct Reason {
     pub operations: Vec<Arc<Operation>>,
 }
 
-#[derive(Debug, Clone, Serialize, Eq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Hash, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct Operation {
     /// Name of the service
@@ -95,8 +95,25 @@ impl Operation {
             PythonNameMap::reverse_lookup(&call.name)
                 .map(std::string::ToString::to_string)
                 .unwrap_or_else(|| call.name.to_case(Case::Pascal))
+        } else if sdk == SdkType::JavaV2 {
+            // Java SDK v2 extracts method names in camelCase (e.g. `listObjectsV2`, `putObject`).
+            // The service reference operation map uses PascalCase keys (e.g. `ListObjectsV2`).
+            // A simple first-letter capitalisation (`to_case(Case::Pascal)`) is sufficient and
+            // correct even for names that look tricky:
+            //
+            // * Version suffixes (V2, V3, …): In Java camelCase the digit is glued to the `V`
+            //   with no word boundary, so `listObjectsV2` → `ListObjectsV2` (not `ListObjectsV 2`).
+            //   This is the *opposite* of the Python problem, where snake_case splits `V2` into
+            //   `_v_2` and requires a post-processing fix.
+            //
+            // * Mixed-case brand names (WhatsApp, DynamoDB, …): Java SDK v2 preserves the
+            //   internal capitalisation in its camelCase names (e.g. `sendWhatsAppMessage`).
+            //   `convert_case` treats every uppercase letter as a word boundary, so
+            //   `sendWhatsAppMessage` → `SendWhatsAppMessage` — exactly the PascalCase key used
+            //   in the service reference.
+            call.name.to_case(Case::Pascal)
         } else {
-            // For non-Boto3 SDKs we use the extracted name as-is
+            // For non-Boto3, non-Java SDKs (Go, JS, TS) the extracted name is already PascalCase.
             call.name.clone()
         };
 
@@ -128,23 +145,29 @@ impl From<FasOperation> for Operation {
     }
 }
 
-// Custom PartialEq and Hash implementations for Operation:
+/// Key that identifies an IAM operation for FAS expansion cycle-detection purposes.
+/// Ignores `source` because the same IAM operation can appear from different call sites
+/// but should still be treated as a single node in the FAS dependency graph.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct OperationKey {
+    pub service: String,
+    pub name: String,
+    pub context: Vec<FasContext>,
+}
 
-// We consider operations to be equal when they would produce the same action in a policy.
-// I.e., same operation and same context used for the condition. Directly relevant to FAS expansion.
-impl PartialEq for Operation {
-    fn eq(&self, other: &Self) -> bool {
-        self.service == other.service
-            && self.name == other.name
-            && self.context() == other.context()
+impl OperationKey {
+    pub(crate) fn service_operation_name(&self) -> String {
+        format!("{}:{}", self.service, self.name)
     }
 }
 
-impl std::hash::Hash for Operation {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.service.hash(state);
-        self.name.hash(state);
-        self.context().hash(state);
+impl From<&Operation> for OperationKey {
+    fn from(op: &Operation) -> Self {
+        Self {
+            service: op.service.clone(),
+            name: op.name.clone(),
+            context: op.context().to_vec(),
+        }
     }
 }
 
@@ -374,8 +397,10 @@ mod tests {
     }
 
     #[test]
-    fn test_operation_custom_equality_same_operation_different_sources() {
-        // Test that operations with same service, name, and context are equal regardless of source
+    fn test_operation_equality_different_sources_are_not_equal() {
+        // Operations with same service and name but different source variants are NOT equal.
+        // This is the correct structural equality — source is part of the identity.
+        // FAS expansion uses OperationKey (which ignores source) for cycle detection.
         let op1 = Operation::new(
             "s3".to_string(),
             "GetObject".to_string(),
@@ -388,9 +413,31 @@ mod tests {
             OperationSource::Fas(Vec::new()), // Empty context
         );
 
-        // Should be equal because they have same service, name, and context (both empty)
-        assert_eq!(op1, op2);
-        assert_eq!(op2, op1); // Symmetric
+        // Different source variants → not equal
+        assert_ne!(op1, op2);
+        assert_ne!(op2, op1); // Symmetric
+    }
+
+    #[test]
+    fn test_operation_key_same_for_provided_and_empty_fas() {
+        // OperationKey ignores source, so Provided and Fas([]) with same service/name
+        // produce the same key — this is what FAS expansion uses for cycle detection.
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(Vec::new()),
+        );
+
+        let key1 = OperationKey::from(&op1);
+        let key2 = OperationKey::from(&op2);
+
+        assert_eq!(key1, key2);
     }
 
     #[test]
@@ -487,8 +534,8 @@ mod tests {
     }
 
     #[test]
-    fn test_operation_custom_hash_consistency() {
-        // Test that equal operations have the same hash
+    fn test_operation_hash_consistency_same_source() {
+        // Test that truly equal operations (same source) have the same hash
         let op1 = Operation::new(
             "s3".to_string(),
             "GetObject".to_string(),
@@ -498,10 +545,9 @@ mod tests {
         let op2 = Operation::new(
             "s3".to_string(),
             "GetObject".to_string(),
-            OperationSource::Fas(Vec::new()), // Empty context
+            OperationSource::Provided,
         );
 
-        // Equal operations should have the same hash
         assert_eq!(op1, op2);
 
         use std::collections::hash_map::DefaultHasher;
@@ -516,6 +562,43 @@ mod tests {
         let hash2 = hasher2.finish();
 
         assert_eq!(hash1, hash2, "Equal operations should have the same hash");
+    }
+
+    #[test]
+    fn test_operation_key_hash_consistency() {
+        // OperationKey should have consistent hash for Provided and Fas([])
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let op1 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Provided,
+        );
+
+        let op2 = Operation::new(
+            "s3".to_string(),
+            "GetObject".to_string(),
+            OperationSource::Fas(Vec::new()),
+        );
+
+        let key1 = OperationKey::from(&op1);
+        let key2 = OperationKey::from(&op2);
+
+        assert_eq!(key1, key2);
+
+        let mut hasher1 = DefaultHasher::new();
+        key1.hash(&mut hasher1);
+        let hash1 = hasher1.finish();
+
+        let mut hasher2 = DefaultHasher::new();
+        key2.hash(&mut hasher2);
+        let hash2 = hasher2.finish();
+
+        assert_eq!(
+            hash1, hash2,
+            "Equal OperationKeys should have the same hash"
+        );
     }
 
     #[test]
@@ -555,6 +638,108 @@ mod tests {
         assert_ne!(
             hash1, hash2,
             "Unequal operations should typically have different hashes"
+        );
+    }
+
+    #[test]
+    fn test_explanation_merge_preserves_different_source_locations() {
+        // This is the bug scenario: two s3:PutObject calls at different lines
+        // should both be preserved after merge.
+        use crate::extraction::SdkMethodCallMetadata;
+        use crate::Location;
+        use std::path::PathBuf;
+
+        let metadata1 = SdkMethodCallMetadata::new(
+            "s3.put_object(Bucket=\"avatars-bucket\", ...)".to_string(),
+            Location {
+                file_path: PathBuf::from("test.py"),
+                start_position: (5, 5),
+                end_position: (5, 78),
+            },
+        );
+
+        let metadata2 = SdkMethodCallMetadata::new(
+            "s3.put_object(Bucket=\"documents-bucket\", ...)".to_string(),
+            Location {
+                file_path: PathBuf::from("test.py"),
+                start_position: (8, 5),
+                end_position: (8, 82),
+            },
+        );
+
+        let op1 = Arc::new(Operation::new(
+            "s3".to_string(),
+            "PutObject".to_string(),
+            OperationSource::Extracted(metadata1),
+        ));
+
+        let op2 = Arc::new(Operation::new(
+            "s3".to_string(),
+            "PutObject".to_string(),
+            OperationSource::Extracted(metadata2),
+        ));
+
+        let mut explanation1 = Explanation {
+            reasons: vec![Reason::new(vec![op1])],
+        };
+
+        let explanation2 = Explanation {
+            reasons: vec![Reason::new(vec![op2])],
+        };
+
+        explanation1.merge(explanation2);
+
+        // Both reasons should be preserved — they have different source locations
+        assert_eq!(
+            explanation1.reasons.len(),
+            2,
+            "Explanation::merge should preserve reasons with different source locations"
+        );
+    }
+
+    #[test]
+    fn test_explanation_merge_deduplicates_identical_reasons() {
+        // Two truly identical reasons (same source) should be deduplicated
+        use crate::extraction::SdkMethodCallMetadata;
+        use crate::Location;
+        use std::path::PathBuf;
+
+        let metadata = SdkMethodCallMetadata::new(
+            "s3.put_object(Bucket=\"avatars-bucket\", ...)".to_string(),
+            Location {
+                file_path: PathBuf::from("test.py"),
+                start_position: (5, 5),
+                end_position: (5, 78),
+            },
+        );
+
+        let op1 = Arc::new(Operation::new(
+            "s3".to_string(),
+            "PutObject".to_string(),
+            OperationSource::Extracted(metadata.clone()),
+        ));
+
+        let op2 = Arc::new(Operation::new(
+            "s3".to_string(),
+            "PutObject".to_string(),
+            OperationSource::Extracted(metadata),
+        ));
+
+        let mut explanation1 = Explanation {
+            reasons: vec![Reason::new(vec![op1])],
+        };
+
+        let explanation2 = Explanation {
+            reasons: vec![Reason::new(vec![op2])],
+        };
+
+        explanation1.merge(explanation2);
+
+        // Should be deduplicated — same source location
+        assert_eq!(
+            explanation1.reasons.len(),
+            1,
+            "Explanation::merge should deduplicate identical reasons"
         );
     }
 }
@@ -659,8 +844,6 @@ pub(crate) mod mock_remote_service_reference {
 
     pub(crate) async fn setup_mock_server_with_loader() -> (MockServer, RemoteServiceReferenceLoader)
     {
-        // Add small delay to avoid port conflicts in parallel tests
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
         let mock_server = MockServer::start().await;
         let mock_server_url = mock_server.uri();
 

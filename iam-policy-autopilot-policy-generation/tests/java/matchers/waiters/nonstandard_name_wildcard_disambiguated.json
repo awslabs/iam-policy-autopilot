@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["nonstandard_name_wildcard_disambiguated.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "describeTable",
+      "PossibleServices": ["dynamodb"],
+      "Metadata": {
+        "Expr": "waiter.waitUntilTableExists(request)",
+        "Location": "nonstandard_name_wildcard_disambiguated.java:12.9-12.45",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "request" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}

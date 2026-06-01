@@ -1,0 +1,21 @@
+{
+  "name": "run-001-3478634b-cdk",
+  "version": "0.1.0",
+  "description": "CDK stack for run_002: File Processing Monitoring System",
+  "main": "bin/app.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.100.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.100.0",
+    "constructs": "^10.0.0"
+  }
+}

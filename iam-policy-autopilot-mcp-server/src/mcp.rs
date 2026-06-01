@@ -1,9 +1,14 @@
 use anyhow;
+use iam_policy_autopilot_common::telemetry::{
+    self, span::run_with_telemetry_emit, ToTelemetryEvent,
+};
 use log::{error, info, trace};
 use rmcp::{
-    handler::server::{tool::ToolRouter, wrapper::Parameters},
-    model::{ErrorCode, ServerCapabilities, ServerInfo},
-    service::RequestContext,
+    handler::server::wrapper::Parameters,
+    model::{
+        ErrorCode, LoggingLevel, LoggingMessageNotificationParam, ServerCapabilities, ServerInfo,
+    },
+    service::{NotificationContext, RequestContext},
     tool, tool_handler, tool_router,
     transport::{
         self, streamable_http_server::session::local::LocalSessionManager, StreamableHttpService,
@@ -17,20 +22,15 @@ use crate::tools::{
     GeneratePolicyForAccessDeniedInput, GeneratePolicyForAccessDeniedOutput,
 };
 
-// Define the server struct
 #[derive(Clone)]
 struct IamAutoPilotMcpServer {
-    tool_router: ToolRouter<Self>,
     log_file: Option<String>,
 }
 
 #[tool_router]
 impl IamAutoPilotMcpServer {
     pub fn new(log_file: Option<String>) -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-            log_file,
-        }
+        Self { log_file }
     }
 
     fn format_mcp_error(&self, msg: &str, e: anyhow::Error) -> McpError {
@@ -51,7 +51,7 @@ impl IamAutoPilotMcpServer {
         Use this tool whenever the user mentions: writing policies, creating policies, generating policies, IAM permissions, \
         AWS permissions, access controls, policy creation, policy generation, or needs IAM policies for any purpose. \
         \
-        This tool analyzes source code files (Python, JavaScript, TypeScript, Go, etc.) to automatically generate \
+        This tool analyzes source code files (Python, JavaScript, TypeScript, Go, Java, etc.) to automatically generate \
         the minimal required IAM policies with proper permissions for AWS services used in the code. \
         \
         **WHEN TO USE THIS TOOL:** \
@@ -77,15 +77,19 @@ impl IamAutoPilotMcpServer {
         params: Parameters<GeneratePoliciesInput>,
     ) -> Result<Json<GeneratePoliciesOutput>, McpError> {
         trace!("generate_application_policies input: {:#?}", params.0);
+        let telemetry_event = params.0.to_telemetry_event();
 
-        let output = generate_application_policies(params.0).await.map_err(|e| {
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            generate_application_policies(params.0),
+        ))
+        .await
+        .inspect(|output| trace!("generate_application_policies output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
             error!("{e:#?}");
             self.format_mcp_error("Failed to generate policies", e)
-        })?;
-
-        trace!("generate_application_policies output: {output:#?}");
-
-        Ok(Json(output))
+        })
     }
 
     #[tool(
@@ -99,14 +103,19 @@ impl IamAutoPilotMcpServer {
         params: Parameters<GeneratePolicyForAccessDeniedInput>,
     ) -> Result<Json<GeneratePolicyForAccessDeniedOutput>, McpError> {
         trace!("generate_policy_for_access_denied input: {:#?}", params.0);
-        let output = generate_policy_for_access_denied(params.0)
-            .await
-            .map_err(|e| {
-                error!("{e:#?}");
-                self.format_mcp_error("Failed to to generate policy for access denial fix", e)
-            })?;
-        trace!("generate_policy_for_access_denied  output: {output:#?}");
-        Ok(Json(output))
+        let telemetry_event = params.0.to_telemetry_event();
+
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            generate_policy_for_access_denied(params.0),
+        ))
+        .await
+        .inspect(|output| trace!("generate_policy_for_access_denied output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
+            error!("{e:#?}");
+            self.format_mcp_error("Failed to generate policy for access denial fix", e)
+        })
     }
 
     #[tool(
@@ -128,23 +137,31 @@ impl IamAutoPilotMcpServer {
         params: Parameters<FixAccessDeniedInput>,
     ) -> Result<Json<FixAccessDeniedOutput>, McpError> {
         trace!("fix_access_denied input: {:#?}", params.0);
-        let output = fix_access_denied(context, params.0).await.map_err(|e| {
+        let telemetry_event = params.0.to_telemetry_event();
+
+        Box::pin(run_with_telemetry_emit(
+            telemetry_event,
+            fix_access_denied(context, params.0),
+        ))
+        .await
+        .inspect(|output| trace!("fix_access_denied output: {output:#?}"))
+        .map(Json)
+        .map_err(|e| {
             error!("{e:#?}");
             self.format_mcp_error("Failed to apply access denial fix", e)
-        })?;
-        trace!("fix_access_denied output: {output:#?}");
-        Ok(Json(output))
+        })
     }
 }
 
 #[tool_handler]
 impl ServerHandler for IamAutoPilotMcpServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            capabilities: ServerCapabilities::builder()
-            .enable_tools()
-            .build(),
-            instructions: Some("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
+        ServerInfo::new(
+            ServerCapabilities::builder()
+                .enable_tools()
+                .build(),
+        )
+        .with_instructions("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
             \
             **ALWAYS use the generate_application_policies tool when users mention:** \
             - Writing policies, creating policies, generating policies \
@@ -154,7 +171,7 @@ impl ServerHandler for IamAutoPilotMcpServer {
             - Any discussion about AWS IAM policies \
             \
             **Key capabilities:** \
-            1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go) \
+            1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go, Java) \
             2. Create minimal required permissions for AWS services used in code \
             3. Debug and fix AccessDenied issues with targeted policy generation \
             4. Apply policy fixes directly to AWS accounts \
@@ -162,8 +179,33 @@ impl ServerHandler for IamAutoPilotMcpServer {
             **CRITICAL: When generating policies, you MUST include ALL relevant source files that interact with AWS services.** \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
-            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.".to_string()),
-                ..Default::default()
+            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.")
+    }
+
+    /// Called after the MCP handshake completes. Sends the telemetry notice
+    /// via `notifications/message` (MCP logging) if the user hasn't made
+    /// an explicit telemetry choice.
+    async fn on_initialized(&self, context: NotificationContext<RoleServer>) {
+        info!("MCP client initialized");
+
+        // Send telemetry notice via MCP notifications/message protocol.
+        // Use a timeout to avoid blocking if the client disconnects before reading.
+        if let Some(notice) = telemetry::telemetry_notice() {
+            info!("Sending telemetry notice via MCP notifications/message");
+            let send_future =
+                context
+                    .peer
+                    .notify_logging_message(LoggingMessageNotificationParam {
+                        level: LoggingLevel::Notice,
+                        logger: Some("iam-policy-autopilot".to_string()),
+                        data: serde_json::Value::String(notice.to_string()),
+                    });
+
+            match tokio::time::timeout(std::time::Duration::from_secs(2), send_future).await {
+                Ok(Ok(())) => info!("Telemetry notice sent via MCP notifications/message"),
+                Ok(Err(e)) => info!("Failed to send telemetry notice (non-fatal): {e}"),
+                Err(_) => info!("Telemetry notice send timed out (client may have disconnected)"),
+            }
         }
     }
 }

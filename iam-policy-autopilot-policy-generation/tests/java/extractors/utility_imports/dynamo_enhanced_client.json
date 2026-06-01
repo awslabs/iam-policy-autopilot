@@ -1,0 +1,16 @@
+{
+  "ExpectedUtilityImports": [
+    {
+      "Expr": "software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient",
+      "UtilityName": "dynamodb",
+      "ClassName": "DynamoDbEnhancedClient",
+      "Location": "dynamo_enhanced_client.java:1.1-1.72"
+    },
+    {
+      "Expr": "software.amazon.awssdk.enhanced.dynamodb.DynamoDbTable",
+      "UtilityName": "dynamodb",
+      "ClassName": "DynamoDbTable",
+      "Location": "dynamo_enhanced_client.java:2.1-2.63"
+    }
+  ]
+}

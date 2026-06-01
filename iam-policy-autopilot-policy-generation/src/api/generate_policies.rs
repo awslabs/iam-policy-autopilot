@@ -343,6 +343,11 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .context("Failed to merge IAM policies")?;
     }
 
+    iam_policy_autopilot_common::telemetry::span::record_result_number(
+        "num_policies_generated",
+        final_policies.len(),
+    );
+
     Ok(GeneratePoliciesResult {
         policies: final_policies,
         explanations,

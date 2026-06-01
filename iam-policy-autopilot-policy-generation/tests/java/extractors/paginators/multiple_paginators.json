@@ -1,0 +1,44 @@
+{
+  "ExpectedPaginators": [
+    {
+      "Expr": "s3Client.listObjectsV2Paginator(req1)",
+      "Operation": "listObjectsV2",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "req1" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "pages",
+          "type_name": "ListObjectsV2Iterable"
+        }
+      },
+      "Location": "multiple_paginators.java:3.39-3.76"
+    },
+    {
+      "Expr": "dynamoClient.scanPaginator(req2)",
+      "Operation": "scan",
+      "Parameters": [
+        {
+          "Positional": {
+            "value": { "Unresolved": "req2" },
+            "position": 0,
+            "type_annotation": null
+          }
+        }
+      ],
+      "Usage": {
+        "Assigned": {
+          "variable_name": "scans",
+          "type_name": "ScanIterable"
+        }
+      },
+      "Location": "multiple_paginators.java:4.30-4.62"
+    }
+  ]
+}

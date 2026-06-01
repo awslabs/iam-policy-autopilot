@@ -1,0 +1,17 @@
+{
+  "SourceFiles": ["sqs_batch_delete_message.java"],
+  "ServiceIndexFile": "tests/java/service_indices/combined_service_index.json",
+  "ExpectedSdkCalls": [
+    {
+      "Name": "DeleteMessageBatch",
+      "PossibleServices": ["sqs"],
+      "Metadata": {
+        "Expr": "batchManager.deleteMessage(req)",
+        "Location": "sqs_batch_delete_message.java:5.9-5.40",
+        "Parameters": [
+          { "Positional": { "value": { "Unresolved": "req" }, "position": 0, "type_annotation": null } }
+        ]
+      }
+    }
+  ]
+}
