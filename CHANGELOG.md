@@ -5,11 +5,6 @@
 - Support for namespace imports in TypeScript/JavaScript (#190)
 - `--resource-cutoff` CLI flag and `resource_cutoff` MCP input to configure when resource lists collapse to `*` (#217)
 
-### Changed
-
-- `EnrichmentEngine::new` now requires a `resource_cutoff` parameter; use `DEFAULT_RESOURCE_CUTOFF` to preserve existing behavior (#217)
-- `resource_cutoff` now keeps exactly `resource_cutoff` resources, collapses larger non-empty resource lists to `*`, and accepts `0` to always wildcard non-empty resource lists (#217)
-
 ### Fixed
 
 - `fix_access_denied` MCP tool now applies the user-confirmed policy instead of regenerating one (#202)

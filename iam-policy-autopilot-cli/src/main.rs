@@ -117,12 +117,6 @@ impl GeneratePolicyCliConfig {
     }
 }
 
-fn parse_resource_cutoff(value: &str) -> std::result::Result<usize, String> {
-    value
-        .parse::<usize>()
-        .map_err(|e| format!("invalid non-negative integer: {e}"))
-}
-
 const SERVICE_HINTS_LONG_HELP: &str = "Space-separated list of AWS service names to filter \
 which SDK calls are analyzed. This helps reduce unnecessary permissions by limiting analysis to \
 only the services your application actually uses. For example, if your code only uses S3 and IAM \
@@ -375,7 +369,6 @@ Use this flag to force fresh data retrieval on every run."
         /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
         #[arg(
             long = "resource-cutoff",
-            value_parser = parse_resource_cutoff,
             long_help = "Resource lists with more than this many entries are collapsed to '*' \
 instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. \
 Default: 4."
