@@ -1,4 +1,6 @@
+use std::path::PathBuf;
 use std::time::Duration;
+
 use thiserror::Error;
 
 /// Errors that can occur during LSP operations.
@@ -27,6 +29,10 @@ pub enum LspError {
     /// Failed to parse an LSP response.
     #[error("Failed to parse LSP response: {0}")]
     ParseFailed(String),
+
+    /// Failed to convert a file path to a URI.
+    #[error("Failed to convert a file path to a URI: {0}")]
+    InvalidPath(PathBuf),
 
     /// The language server returned an error.
     #[error("Language server error: {0}")]
