@@ -198,6 +198,27 @@ upload_file(s3_client)
 }
 
 #[test]
+fn test_function_local_variable_passed_as_argument() {
+    let source_code = r#"
+import boto3
+
+def helper(client):
+    client.list_buckets()
+
+def caller():
+    local_client = boto3.client('s3')
+    helper(local_client)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    let services = tracker.get_services_for_parameter("helper", "client");
+    assert!(services.is_some(), "should resolve function-local variable at call site");
+    assert!(services.unwrap().contains("s3"));
+}
+
+#[test]
 fn test_function_parameter_multiple_types() {
     let source_code = r#"
 import boto3
@@ -505,6 +526,10 @@ create(s3)
 #[case("client: str, count: int", &["client", "count"])]
 #[case(" client , bucket ", &["client", "bucket"])]
 #[case("client, bucket='default', key: str", &["client", "bucket", "key"])]
+#[case("*args, **kwargs", &["args", "kwargs"])]
+#[case("client, *args, **kwargs", &["client", "args", "kwargs"])]
+#[case("*, client", &["client"])]
+#[case("client, *, region", &["client", "region"])]
 fn test_extract_all_params(#[case] input: &str, #[case] expected: &[&str]) {
     let result = VariableTypeTracker::extract_all_params(input);
     let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();

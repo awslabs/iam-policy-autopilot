@@ -172,7 +172,8 @@ impl Extractor for PythonExtractor {
             let call_line = node_match.get_node().start_pos().line();
             let current_function = function_ranges
                 .iter()
-                .find(|(_, range)| range.contains(&call_line))
+                .filter(|(_, range)| range.contains(&call_line))
+                .min_by_key(|(_, range)| range.end - range.start)
                 .map(|(name, _)| name.as_str());
 
             if let Some(func) = current_function {

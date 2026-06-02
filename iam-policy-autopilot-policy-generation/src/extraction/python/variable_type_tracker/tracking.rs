@@ -252,10 +252,43 @@ impl VariableTypeTracker {
 
         log::debug!("Function parameters map: {func_params:?}");
 
-        // Find function calls and match arguments to parameters
+        // Find function calls within function bodies (with calling context)
         let call_pattern = "$FUNC($$$ARGS)";
+        let func_def_pattern2 = "def $FUNC($$$PARAMS):$$$BODY";
 
+        for func_match in root.find_all(func_def_pattern2) {
+            let caller_env = func_match.get_env();
+            let caller_name = if let Some(node) = caller_env.get_match("FUNC") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            for node_match in func_match.get_node().find_all(call_pattern) {
+                let env = node_match.get_env();
+
+                let func_name = if let Some(node) = env.get_match("FUNC") {
+                    node.text().to_string()
+                } else {
+                    continue;
+                };
+
+                let arg_nodes = env.get_multiple_matches("ARGS");
+                self.match_call_args_to_params(
+                    &func_name,
+                    &arg_nodes,
+                    &func_params,
+                    Some(&caller_name),
+                );
+            }
+        }
+
+        // Find module-level function calls (no calling context)
         for node_match in root.find_all(call_pattern) {
+            if is_inside_function(&node_match) {
+                continue;
+            }
+
             let env = node_match.get_env();
 
             let func_name = if let Some(node) = env.get_match("FUNC") {
@@ -265,72 +298,78 @@ impl VariableTypeTracker {
             };
 
             let arg_nodes = env.get_multiple_matches("ARGS");
-            let args: Vec<String> = arg_nodes
-                .iter()
-                .map(|node| node.text().to_string().trim().to_string())
-                .filter(|arg| arg != "," && !arg.is_empty())
-                .collect();
+            self.match_call_args_to_params(&func_name, &arg_nodes, &func_params, None);
+        }
+    }
 
-            if args.is_empty() {
+    /// Match call-site arguments to function parameter names and record type info
+    fn match_call_args_to_params(
+        &mut self,
+        func_name: &str,
+        arg_nodes: &[ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>],
+        func_params: &HashMap<String, Vec<String>>,
+        caller_context: Option<&str>,
+    ) {
+        let Some(param_names) = func_params.get(func_name) else {
+            log::debug!("No parameter mapping found for function {func_name}");
+            return;
+        };
+
+        let mut positional_index = 0;
+        for arg_node in arg_nodes {
+            let arg_text = arg_node.text().to_string();
+            let trimmed = arg_text.trim();
+            if trimmed == "," || trimmed.is_empty() {
                 continue;
             }
 
-            log::debug!("Found function call: {func_name}({args:?})");
+            if arg_node.kind() == node_kinds::KEYWORD_ARGUMENT {
+                if let Some(eq_pos) = arg_text.find('=') {
+                    let key = arg_text[..eq_pos].trim();
+                    let value = arg_text[eq_pos + 1..].trim();
+                    if param_names.contains(&key.to_string()) {
+                        let type_info = self
+                            .get_type_info_for_variable_in_context(value, caller_context)
+                            .cloned();
 
-            if let Some(param_names) = func_params.get(&func_name) {
-                let mut positional_index = 0;
-                for arg in &args {
-                    if let Some((key, value)) = arg.split_once('=') {
-                        // Keyword argument: match by name
-                        let key = key.trim();
-                        let value = value.trim();
-                        if param_names.contains(&key.to_string()) {
-                            let type_info = self
-                                .get_type_info_for_variable_in_context(value, None)
-                                .cloned();
-
-                            if let Some(type_info) = type_info {
-                                log::debug!(
-                                    "Tracked function call: {}({}={}) - keyword param '{}' -> service '{}'",
-                                    func_name,
-                                    key,
-                                    value,
-                                    key,
-                                    type_info.service_name
-                                );
-                                self.parameter_types
-                                    .entry((func_name.clone(), key.to_string()))
-                                    .or_default()
-                                    .insert(type_info);
-                            }
+                        if let Some(type_info) = type_info {
+                            log::debug!(
+                                "Tracked function call: {}({}={}) - keyword param '{}' -> service '{}'",
+                                func_name,
+                                key,
+                                value,
+                                key,
+                                type_info.service_name
+                            );
+                            self.parameter_types
+                                .entry((func_name.to_string(), key.to_string()))
+                                .or_default()
+                                .insert(type_info);
                         }
-                    } else {
-                        // Positional argument: match by index
-                        if let Some(param_name) = param_names.get(positional_index) {
-                            let type_info = self
-                                .get_type_info_for_variable_in_context(arg, None)
-                                .cloned();
-
-                            if let Some(type_info) = type_info {
-                                log::debug!(
-                                    "Tracked function call: {}({}) - param '{}' (position {}) -> service '{}'",
-                                    func_name,
-                                    arg,
-                                    param_name,
-                                    positional_index,
-                                    type_info.service_name
-                                );
-                                self.parameter_types
-                                    .entry((func_name.clone(), param_name.clone()))
-                                    .or_default()
-                                    .insert(type_info);
-                            }
-                        }
-                        positional_index += 1;
                     }
                 }
             } else {
-                log::debug!("No parameter mapping found for function {func_name}");
+                if let Some(param_name) = param_names.get(positional_index) {
+                    let type_info = self
+                        .get_type_info_for_variable_in_context(trimmed, caller_context)
+                        .cloned();
+
+                    if let Some(type_info) = type_info {
+                        log::debug!(
+                            "Tracked function call: {}({}) - param '{}' (position {}) -> service '{}'",
+                            func_name,
+                            trimmed,
+                            param_name,
+                            positional_index,
+                            type_info.service_name
+                        );
+                        self.parameter_types
+                            .entry((func_name.to_string(), param_name.clone()))
+                            .or_default()
+                            .insert(type_info);
+                    }
+                }
+                positional_index += 1;
             }
         }
     }
@@ -360,6 +399,10 @@ impl VariableTypeTracker {
 
                 // Remove type annotation (e.g., "client: str" -> "client")
                 let param = param.split(':').next()?.trim();
+
+                // Strip leading * or ** (e.g., "*args" -> "args", "**kwargs" -> "kwargs")
+                // A bare "*" (keyword-only separator) becomes empty and is filtered out
+                let param = param.trim_start_matches('*');
 
                 if param.is_empty() {
                     None
