@@ -275,11 +275,7 @@ impl ResourceMatcher {
                                         &service_reference,
                                     )?;
                                 let enriched_resources =
-                                    if self.resource_cutoff < enriched_resources.len() {
-                                        vec![Resource::new("*".to_string(), None)]
-                                    } else {
-                                        enriched_resources
-                                    };
+                                    self.apply_resource_cutoff(enriched_resources);
 
                                 // Combine conditions from FAS operation context and AuthorizedAction context
                                 let mut conditions = Self::make_condition(op.context());
@@ -364,6 +360,7 @@ impl ResourceMatcher {
         // Look up the action in the Service Reference to find associated resources
         let resources =
             self.find_resources_for_action_in_service_reference(&action_name, service_reference)?;
+        let resources = self.apply_resource_cutoff(resources);
 
         // Create explanation for fallback action
         let explanation = Explanation {
@@ -378,6 +375,14 @@ impl ResourceMatcher {
             vec![],
             explanation,
         )))
+    }
+
+    fn apply_resource_cutoff(&self, resources: Vec<Resource>) -> Vec<Resource> {
+        if self.resource_cutoff < resources.len() {
+            vec![Resource::new("*".to_string(), None)]
+        } else {
+            resources
+        }
     }
 
     /// Find resources for an action by looking it up in the SDF
@@ -453,6 +458,27 @@ mod tests {
         })
     }
 
+    fn create_mediastore_service_config() -> Arc<ServiceConfiguration> {
+        Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: [(
+                "mediastore-data".to_string(),
+                "mediastore".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
+            rename_services_service_reference: [(
+                "mediastore-data".to_string(),
+                "mediastore".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        })
+    }
+
     async fn mock_s3_service_reference_with_resources(
         mock_server: &wiremock::MockServer,
         resource_count: usize,
@@ -498,6 +524,40 @@ mod tests {
                                 "Method": "get_object",
                                 "Package": "Boto3"
                             }
+                        ]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
+    async fn mock_mediastore_service_reference(mock_server: &wiremock::MockServer) {
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "mediastore",
+            serde_json::json!({
+                "Name": "mediastore",
+                "Actions": [
+                    {
+                        "Name": "GetObject",
+                        "Resources": [
+                            { "Name": "container" },
+                            { "Name": "object" }
+                        ]
+                    }
+                ],
+                "Resources": [
+                    {
+                        "Name": "container",
+                        "ARNFormats": [
+                            "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}"
+                        ]
+                    },
+                    {
+                        "Name": "object",
+                        "ARNFormats": [
+                            "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}/${ObjectPath}"
                         ]
                     }
                 ]
@@ -671,36 +731,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_fallback_for_service_without_operation_action_map() {
-        use std::collections::HashMap;
-
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["mediastore-data".to_string()],
             metadata: None,
         };
 
-        // Create service configuration with mediastore-data in no_operation_action_map
-        let service_cfg = ServiceConfiguration {
-            rename_services_operation_action_map: [(
-                "mediastore-data".to_string(),
-                "mediastore".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
-            rename_services_service_reference: [(
-                "mediastore-data".to_string(),
-                "mediastore".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        };
-
         let matcher = ResourceMatcher::new(
-            Arc::new(service_cfg),
+            create_mediastore_service_config(),
             HashMap::new(),
             SdkType::Boto3,
             crate::DEFAULT_RESOURCE_CUTOFF,
@@ -709,38 +747,7 @@ mod tests {
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        mock_remote_service_reference::mock_server_service_reference_response(&mock_server, "mediastore", serde_json::json!(
-             {
-                                 "Name": "mediastore",
-                                 "Actions": [
-                                     {
-                                         "Name": "GetObject",
-                                         "Resources": [
-                                             {
-                                             "Name": "container"
-                                             },
-                                             {
-                                             "Name": "object"
-                                             }
-                                         ]
-                                     }
-                                 ],
-                                 "Resources": [
-                                     {
-                                         "Name": "container",
-                                         "ARNFormats": [
-                                             "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}"
-                                         ]
-                                         },
-                                     {
-                                     "Name": "object",
-                                     "ARNFormats": [
-                                         "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}/${ObjectPath}"
-                                     ]
-                                     }
-                                 ]
-                             }
-         )).await;
+        mock_mediastore_service_reference(&mock_server).await;
 
         let result = matcher.enrich_method_call(&parsed_call, &loader).await;
         if let Err(ref e) = result {
@@ -761,6 +768,34 @@ mod tests {
         let action = &enriched_calls[0].actions[0];
         assert_eq!(action.name, "mediastore:GetObject");
         assert_eq!(action.resources.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_resource_cutoff_applies_to_fallback_action() {
+        let parsed_call = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["mediastore-data".to_string()],
+            metadata: None,
+        };
+
+        let matcher = ResourceMatcher::new(
+            create_mediastore_service_config(),
+            HashMap::new(),
+            SdkType::Boto3,
+            0,
+        );
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+        mock_mediastore_service_reference(&mock_server).await;
+
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
     }
 
     #[tokio::test]
