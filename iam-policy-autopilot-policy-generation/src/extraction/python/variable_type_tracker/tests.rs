@@ -3,6 +3,7 @@ use crate::extraction::AstWithSourceFile;
 use crate::SourceFile;
 use ast_grep_core::tree_sitter::LanguageExt;
 use ast_grep_language::Python;
+use rstest::rstest;
 
 fn create_ast(source_code: &str) -> AstWithSourceFile<Python> {
     let source_file = SourceFile::with_language(
@@ -21,38 +22,34 @@ impl VariableTypeTracker {
     }
 }
 
-// ========== Basic Assignment Tracking Tests ==========
+// ========== Direct Assignment Tracking Tests (parameterized) ==========
 
-#[test]
-fn test_track_simple_client_assignment() {
-    let source_code = r#"
-import boto3
-s3_client = boto3.client('s3')
-"#;
-    let ast = create_ast(source_code);
+#[rstest]
+#[case("boto3.client('s3')", "s3_client", "s3", SdkObjectKind::Client)]
+#[case("boto3.client(\"ec2\")", "ec2_client", "ec2", SdkObjectKind::Client)]
+#[case(
+    "boto3.resource('dynamodb')",
+    "dynamodb",
+    "dynamodb",
+    SdkObjectKind::Resource
+)]
+#[case("boto3.resource('s3')", "s3_res", "s3", SdkObjectKind::Resource)]
+fn test_direct_assignment_tracking(
+    #[case] rhs: &str,
+    #[case] var_name: &str,
+    #[case] expected_service: &str,
+    #[case] expected_kind: SdkObjectKind,
+) {
+    let source_code = format!("import boto3\n{var_name} = {rhs}\n");
+    let ast = create_ast(&source_code);
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    assert_eq!(
-        tracker.get_service_for_variable("s3_client"),
-        Some(&"s3".to_string())
-    );
-}
-
-#[test]
-fn test_track_simple_resource_assignment() {
-    let source_code = r#"
-import boto3
-dynamodb = boto3.resource('dynamodb')
-"#;
-    let ast = create_ast(source_code);
-    let mut tracker = VariableTypeTracker::new();
-    tracker.track_boto3_assignments(&ast);
-
-    assert_eq!(
-        tracker.get_service_for_variable("dynamodb"),
-        Some(&"dynamodb".to_string())
-    );
+    let info = tracker
+        .get_type_info_for_variable_in_context(var_name, None)
+        .unwrap();
+    assert_eq!(info.service_name, expected_service);
+    assert_eq!(info.kind, Some(expected_kind));
 }
 
 #[test]
@@ -78,22 +75,6 @@ dynamodb = boto3.resource('dynamodb')
     assert_eq!(
         tracker.get_service_for_variable("dynamodb"),
         Some(&"dynamodb".to_string())
-    );
-}
-
-#[test]
-fn test_double_quotes() {
-    let source_code = r#"
-import boto3
-s3_client = boto3.client("s3")
-"#;
-    let ast = create_ast(source_code);
-    let mut tracker = VariableTypeTracker::new();
-    tracker.track_boto3_assignments(&ast);
-
-    assert_eq!(
-        tracker.get_service_for_variable("s3_client"),
-        Some(&"s3".to_string())
     );
 }
 
@@ -168,6 +149,32 @@ my_client = s3_client
     );
 }
 
+#[test]
+fn test_chained_aliases() {
+    let source_code = r#"
+import boto3
+s3_client = boto3.client('s3')
+client_a = s3_client
+client_b = client_a
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert_eq!(
+        tracker.get_service_for_variable("s3_client"),
+        Some(&"s3".to_string())
+    );
+    assert_eq!(
+        tracker.get_service_for_variable("client_a"),
+        Some(&"s3".to_string())
+    );
+    assert_eq!(
+        tracker.get_service_for_variable("client_b"),
+        Some(&"s3".to_string())
+    );
+}
+
 // ========== Function Parameter Inference Tests ==========
 
 #[test]
@@ -218,8 +225,6 @@ process_data(ec2_client)
 
 #[test]
 fn test_ambiguous_parameter_returns_none() {
-    // When a parameter has multiple inferred types, get_service_for_variable_in_context
-    // should return None (conservative fallback) rather than picking arbitrarily.
     let source_code = r#"
 import boto3
 
@@ -284,32 +289,6 @@ process_dynamodb(dynamodb)
     let dynamodb_services = tracker.get_services_for_parameter("process_dynamodb", "table");
     assert!(dynamodb_services.is_some());
     assert!(dynamodb_services.unwrap().contains("dynamodb"));
-}
-
-#[test]
-fn test_chained_aliases() {
-    let source_code = r#"
-import boto3
-s3_client = boto3.client('s3')
-client_a = s3_client
-client_b = client_a
-"#;
-    let ast = create_ast(source_code);
-    let mut tracker = VariableTypeTracker::new();
-    tracker.track_boto3_assignments(&ast);
-
-    assert_eq!(
-        tracker.get_service_for_variable("s3_client"),
-        Some(&"s3".to_string())
-    );
-    assert_eq!(
-        tracker.get_service_for_variable("client_a"),
-        Some(&"s3".to_string())
-    );
-    assert_eq!(
-        tracker.get_service_for_variable("client_b"),
-        Some(&"s3".to_string())
-    );
 }
 
 #[test]
@@ -422,7 +401,6 @@ sync_data(dynamodb_client=ddb, s3_client=s3)
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    // Keyword args should match by name, not position
     let s3_services = tracker.get_services_for_parameter("sync_data", "s3_client");
     assert!(s3_services.is_some());
     assert!(s3_services.unwrap().contains("s3"));
@@ -447,12 +425,10 @@ process(s3, region='us-east-1', table_name='my-table')
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    // Positional arg should still work
     let client_services = tracker.get_services_for_parameter("process", "client");
     assert!(client_services.is_some());
     assert!(client_services.unwrap().contains("s3"));
 
-    // Non-tracked keyword args should not create entries
     assert!(tracker
         .get_services_for_parameter("process", "table_name")
         .is_none());
@@ -465,9 +441,6 @@ process(s3, region='us-east-1', table_name='my-table')
 
 #[test]
 fn test_self_filtered_from_parameter_mapping() {
-    // When a method is called as a bare function (e.g., Uploader.upload(uploader, s3)),
-    // 'self' must not appear in the parameter list — otherwise s3 maps to 'self'
-    // instead of 'client'.
     let source_code = r#"
 import boto3
 
@@ -482,9 +455,10 @@ upload(s3)
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    // 'self' should NOT appear as a parameter — s3 maps to 'client', not 'self'
     assert!(
-        tracker.get_services_for_parameter("upload", "self").is_none(),
+        tracker
+            .get_services_for_parameter("upload", "self")
+            .is_none(),
         "self should be filtered from parameter list"
     );
     let client_services = tracker.get_services_for_parameter("upload", "client");
@@ -510,7 +484,9 @@ create(s3)
     tracker.track_boto3_assignments(&ast);
 
     assert!(
-        tracker.get_services_for_parameter("create", "cls").is_none(),
+        tracker
+            .get_services_for_parameter("create", "cls")
+            .is_none(),
         "cls should be filtered from parameter list"
     );
     let client_services = tracker.get_services_for_parameter("create", "client");
@@ -518,94 +494,51 @@ create(s3)
     assert!(client_services.unwrap().contains("s3"));
 }
 
-// ========== Helper Function Tests ==========
+// ========== Helper Function Tests (parameterized) ==========
 
-#[test]
-fn test_extract_all_params() {
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("client"),
-        vec!["client"]
-    );
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("client, bucket, key"),
-        vec!["client", "bucket", "key"]
-    );
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("self, client, table"),
-        vec!["self", "client", "table"]
-    );
-    assert_eq!(
-        VariableTypeTracker::extract_all_params(""),
-        Vec::<String>::new()
-    );
-
-    // Test with default values
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("client=None, bucket='default'"),
-        vec!["client", "bucket"]
-    );
-
-    // Test with type annotations
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("client: str, count: int"),
-        vec!["client", "count"]
-    );
-
-    // Test with whitespace
-    assert_eq!(
-        VariableTypeTracker::extract_all_params(" client , bucket "),
-        vec!["client", "bucket"]
-    );
-
-    // Test mixed
-    assert_eq!(
-        VariableTypeTracker::extract_all_params("client, bucket='default', key: str"),
-        vec!["client", "bucket", "key"]
-    );
+#[rstest]
+#[case("client", &["client"])]
+#[case("client, bucket, key", &["client", "bucket", "key"])]
+#[case("self, client, table", &["self", "client", "table"])]
+#[case("", &[])]
+#[case("client=None, bucket='default'", &["client", "bucket"])]
+#[case("client: str, count: int", &["client", "count"])]
+#[case(" client , bucket ", &["client", "bucket"])]
+#[case("client, bucket='default', key: str", &["client", "bucket", "key"])]
+fn test_extract_all_params(#[case] input: &str, #[case] expected: &[&str]) {
+    let result = VariableTypeTracker::extract_all_params(input);
+    let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+    assert_eq!(result, expected);
 }
 
-// ========== SDK Object Kind Inference Tests ==========
+// ========== SDK Object Kind Inference Tests (parameterized) ==========
 
-#[test]
-fn test_client_kind_inference() {
-    let source_code = r#"
-import boto3
-s3_client = boto3.client('s3')
-"#;
-    let ast = create_ast(source_code);
+#[rstest]
+#[case("boto3.client('s3')", "s3_client", "s3", SdkObjectKind::Client)]
+#[case("boto3.resource('s3')", "s3_resource", "s3", SdkObjectKind::Resource)]
+#[case(
+    "boto3.resource('dynamodb')",
+    "dynamodb",
+    "dynamodb",
+    SdkObjectKind::Resource
+)]
+fn test_kind_inference(
+    #[case] rhs: &str,
+    #[case] var_name: &str,
+    #[case] expected_service: &str,
+    #[case] expected_kind: SdkObjectKind,
+) {
+    let source_code = format!("import boto3\n{var_name} = {rhs}\n");
+    let ast = create_ast(&source_code);
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    let info = tracker.get_type_info_for_variable_in_context("s3_client", None);
-    assert!(info.is_some());
-    let info = info.unwrap();
-    assert_eq!(info.service_name, "s3");
-    assert_eq!(info.kind, Some(SdkObjectKind::Client));
+    let info = tracker
+        .get_type_info_for_variable_in_context(var_name, None)
+        .unwrap();
+    assert_eq!(info.service_name, expected_service);
+    assert_eq!(info.kind, Some(expected_kind));
     assert_eq!(info.qualified_type, None);
-}
-
-#[test]
-fn test_resource_kind_inference() {
-    let source_code = r#"
-import boto3
-s3 = boto3.resource('s3')
-dynamodb = boto3.resource('dynamodb')
-"#;
-    let ast = create_ast(source_code);
-    let mut tracker = VariableTypeTracker::new();
-    tracker.track_boto3_assignments(&ast);
-
-    let s3_info = tracker.get_type_info_for_variable_in_context("s3", None);
-    assert!(s3_info.is_some());
-    let s3_info = s3_info.unwrap();
-    assert_eq!(s3_info.service_name, "s3");
-    assert_eq!(s3_info.kind, Some(SdkObjectKind::Resource));
-
-    let dynamodb_info = tracker.get_type_info_for_variable_in_context("dynamodb", None);
-    assert!(dynamodb_info.is_some());
-    let dynamodb_info = dynamodb_info.unwrap();
-    assert_eq!(dynamodb_info.service_name, "dynamodb");
-    assert_eq!(dynamodb_info.kind, Some(SdkObjectKind::Resource));
 }
 
 #[test]
@@ -665,35 +598,6 @@ another_client = my_client
     let another_info = tracker.get_type_info_for_variable_in_context("another_client", None);
     assert!(another_info.is_some());
     assert_eq!(another_info.unwrap().kind, Some(SdkObjectKind::Client));
-}
-
-#[test]
-fn test_service_name_and_kind_apis() {
-    let source_code = r#"
-import boto3
-s3_client = boto3.client('s3')
-s3_resource = boto3.resource('s3')
-"#;
-    let ast = create_ast(source_code);
-    let mut tracker = VariableTypeTracker::new();
-    tracker.track_boto3_assignments(&ast);
-
-    assert_eq!(
-        tracker.get_service_for_variable("s3_client"),
-        Some(&"s3".to_string())
-    );
-    assert_eq!(
-        tracker.get_service_for_variable("s3_resource"),
-        Some(&"s3".to_string())
-    );
-
-    let client_info = tracker.get_type_info_for_variable_in_context("s3_client", None);
-    assert!(client_info.is_some());
-    assert_eq!(client_info.unwrap().kind, Some(SdkObjectKind::Client));
-
-    let resource_info = tracker.get_type_info_for_variable_in_context("s3_resource", None);
-    assert!(resource_info.is_some());
-    assert_eq!(resource_info.unwrap().kind, Some(SdkObjectKind::Resource));
 }
 
 #[test]
