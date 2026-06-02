@@ -86,6 +86,83 @@ def broken_function(
     }
 }
 
+/// Language-specific readiness checks for Go/gopls integration tests.
+pub mod go {
+    /// Check if gopls is available in PATH.
+    #[must_use]
+    pub fn is_gopls_available() -> bool {
+        which::which("gopls").is_ok()
+    }
+
+    /// Check if the Go toolchain is available.
+    #[must_use]
+    pub fn is_go_available() -> bool {
+        which::which("go").is_ok()
+    }
+
+    /// Check if both Go and gopls are available.
+    #[must_use]
+    pub fn is_ready() -> bool {
+        is_go_available() && is_gopls_available()
+    }
+
+    /// Sample Go code fixtures for testing.
+    pub mod fixtures {
+        /// Go module file for test workspace.
+        pub const GO_MOD: &str = "module example.com/testmod\n\ngo 1.21\n";
+
+        /// Simple Go file with functions calling each other.
+        pub const SIMPLE_CALL_CHAIN: &str = r#"package main
+
+import "fmt"
+
+func main() {
+	result := helper()
+	fmt.Println(result)
+}
+
+func helper() string {
+	return deepHelper()
+}
+
+func deepHelper() string {
+	return "hello"
+}
+
+func unrelated() string {
+	return "not called from main"
+}
+"#;
+
+        /// Go file with a struct method that calls other functions.
+        pub const STRUCT_METHODS: &str = r#"package main
+
+import "fmt"
+
+type Server struct {
+	name string
+}
+
+func NewServer(name string) *Server {
+	return &Server{name: name}
+}
+
+func (s *Server) HandleRequest() string {
+	data := s.fetchData()
+	return s.format(data)
+}
+
+func (s *Server) fetchData() string {
+	return "raw data"
+}
+
+func (s *Server) format(data string) string {
+	return fmt.Sprintf("[%s] %s", s.name, data)
+}
+"#;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
