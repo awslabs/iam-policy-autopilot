@@ -175,11 +175,6 @@ fn filter_explanations(
 pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
     let pipeline_start = Instant::now();
 
-    anyhow::ensure!(
-        config.resource_cutoff > 0,
-        "resource_cutoff must be greater than zero"
-    );
-
     debug!(
         "Using AWS context: partition={:?}, region={:?}, account={:?}",
         config.aws_context.partition, config.aws_context.region, config.aws_context.account

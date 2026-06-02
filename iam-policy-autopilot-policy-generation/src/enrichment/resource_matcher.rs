@@ -164,11 +164,6 @@ impl ResourceMatcher {
         sdk: SdkType,
         resource_cutoff: usize,
     ) -> Self {
-        assert!(
-            resource_cutoff > 0,
-            "resource_cutoff must be greater than zero"
-        );
-
         Self {
             service_cfg,
             fas_maps,
@@ -280,7 +275,7 @@ impl ResourceMatcher {
                                         &service_reference,
                                     )?;
                                 let enriched_resources =
-                                    if self.resource_cutoff <= enriched_resources.len() {
+                                    if self.resource_cutoff < enriched_resources.len() {
                                         vec![Resource::new("*".to_string(), None)]
                                     } else {
                                         enriched_resources
@@ -578,7 +573,49 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_default_resource_cutoff_collapses_resource_list() {
+    async fn test_resource_cutoff_zero_preserves_empty_resource_list_for_downstream_fallback() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3, 0);
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, 0).await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert!(action.resources.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resource_cutoff_zero_collapses_non_empty_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3, 0);
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, 1).await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
+    }
+
+    #[tokio::test]
+    async fn test_default_resource_cutoff_collapses_larger_resource_list() {
         let config = create_empty_service_config();
         let matcher = ResourceMatcher::new(
             config,
@@ -591,7 +628,7 @@ mod tests {
         let loader = ServiceReferenceLoader::new(true)
             .unwrap()
             .with_mapping_url(mock_server.uri());
-        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF)
+        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF + 1)
             .await;
 
         let parsed_call = create_test_parsed_method_call();
@@ -605,13 +642,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_custom_resource_cutoff_preserves_smaller_resource_list() {
+    async fn test_resource_cutoff_keeps_equal_sized_resource_list() {
         let config = create_empty_service_config();
         let matcher = ResourceMatcher::new(
             config,
             HashMap::new(),
             SdkType::Boto3,
-            crate::DEFAULT_RESOURCE_CUTOFF + 1,
+            crate::DEFAULT_RESOURCE_CUTOFF,
         );
 
         let mock_server = wiremock::MockServer::start().await;

@@ -33,13 +33,6 @@ impl Engine {
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
     pub fn new(disable_file_system_cache: bool, resource_cutoff: usize) -> Result<Self> {
-        if resource_cutoff == 0 {
-            return Err(ExtractorError::Validation {
-                message: "resource_cutoff must be greater than zero".to_string(),
-                field: Some("resource_cutoff".to_string()),
-            });
-        }
-
         Ok(Self {
             service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
             resource_cutoff,

@@ -53,8 +53,8 @@ use serde::Serialize;
 
 use crate::errors::ExtractorError;
 
-/// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
-pub const DEFAULT_RESOURCE_CUTOFF: usize = 5;
+/// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+pub const DEFAULT_RESOURCE_CUTOFF: usize = 4;
 
 /// Language that is analyzed
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq, Hash)]

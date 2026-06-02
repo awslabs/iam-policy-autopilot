@@ -68,8 +68,8 @@ pub struct GeneratePoliciesInput {
     pub tfvars: Option<Vec<String>>,
 
     #[schemars(
-        description = "Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.",
-        range(min = 1)
+        description = "Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.",
+        range(min = 0)
     )]
     #[telemetry(value, if_present)]
     pub resource_cutoff: Option<usize>,
@@ -90,10 +90,6 @@ pub async fn generate_application_policies(
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
     let resource_cutoff = input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF);
-    anyhow::ensure!(
-        resource_cutoff > 0,
-        "resource_cutoff must be greater than zero"
-    );
 
     // Convert service_hints from Vec<String> to ServiceHints if provided
     let service_hints = input.service_hints.map(|hints| ServiceHints {
@@ -264,7 +260,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_generate_application_policies_rejects_zero_resource_cutoff() {
+    async fn test_generate_application_policies_allows_zero_resource_cutoff() {
         let input = GeneratePoliciesInput {
             source_files: vec!["path/to/source/file".to_string()],
             region: Some("us-east-1".to_string()),
@@ -277,13 +273,14 @@ mod tests {
             resource_cutoff: Some(0),
         };
 
+        api::set_mock_return(Ok(GeneratePoliciesResult {
+            policies: vec![],
+            explanations: None,
+            resource_binding_explanations: None,
+        }));
         let result = generate_application_policies(input).await;
 
-        assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("resource_cutoff must be greater than zero"));
+        assert!(result.is_ok());
     }
 
     #[test]

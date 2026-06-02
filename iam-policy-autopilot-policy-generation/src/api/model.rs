@@ -21,9 +21,7 @@ pub struct GeneratePolicyConfig {
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
-    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
-    ///
-    /// The value must be greater than zero.
+    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
     pub resource_cutoff: usize,
     /// Generate explanations for why actions were added, filtered by patterns.
     /// - `None`: No explanations generated

@@ -8,6 +8,7 @@
 ### Changed
 
 - `EnrichmentEngine::new` now requires a `resource_cutoff` parameter; use `DEFAULT_RESOURCE_CUTOFF` to preserve existing behavior (#217)
+- `resource_cutoff` now keeps exactly `resource_cutoff` resources, collapses larger non-empty resource lists to `*`, and accepts `0` to always wildcard non-empty resource lists (#217)
 
 ### Fixed
 

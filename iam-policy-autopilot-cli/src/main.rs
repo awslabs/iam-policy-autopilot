@@ -94,7 +94,7 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
-    /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
+    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
     resource_cutoff: Option<usize>,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
@@ -117,14 +117,10 @@ impl GeneratePolicyCliConfig {
     }
 }
 
-fn parse_positive_usize(value: &str) -> std::result::Result<usize, String> {
-    let parsed = value
+fn parse_resource_cutoff(value: &str) -> std::result::Result<usize, String> {
+    value
         .parse::<usize>()
-        .map_err(|e| format!("invalid positive integer: {e}"))?;
-    if parsed == 0 {
-        return Err("value must be greater than zero".to_string());
-    }
-    Ok(parsed)
+        .map_err(|e| format!("invalid non-negative integer: {e}"))
 }
 
 const SERVICE_HINTS_LONG_HELP: &str = "Space-separated list of AWS service names to filter \
@@ -376,12 +372,13 @@ Use this flag to force fresh data retrieval on every run."
         #[telemetry(value)]
         disable_cache: bool,
 
-        /// Resource lists with at least this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Default: 5.
+        /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
         #[arg(
             long = "resource-cutoff",
-            value_parser = parse_positive_usize,
-            long_help = "Resource lists with at least this many entries are collapsed to '*' \
-instead of emitting every resource-specific ARN. Default: 5."
+            value_parser = parse_resource_cutoff,
+            long_help = "Resource lists with more than this many entries are collapsed to '*' \
+instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. \
+Default: 4."
         )]
         #[telemetry(value, if_present)]
         resource_cutoff: Option<usize>,
