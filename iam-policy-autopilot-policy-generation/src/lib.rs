@@ -33,6 +33,9 @@ pub mod api;
 // LSP client for type information extraction
 pub mod lsp;
 
+#[cfg(feature = "model-generation")]
+pub(crate) mod model_generation;
+
 use std::fmt::Display;
 use std::path::PathBuf;
 
