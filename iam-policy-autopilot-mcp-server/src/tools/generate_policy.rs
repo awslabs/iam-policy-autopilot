@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, GeneratePolicyOptions, ServiceHints,
 };
 use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use schemars::JsonSchema;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(not(test))]
 mod api {
-    pub use iam_policy_autopilot_policy_generation::api::generate_policies;
+    pub use iam_policy_autopilot_policy_generation::api::generate_policies_with_options;
 }
 
 // Input struct matching the updated schema
@@ -96,48 +96,50 @@ pub async fn generate_application_policies(
         service_names: hints,
     });
 
-    let result = api::generate_policies(&GeneratePolicyConfig {
-        individual_policies: false,
-        extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: input
-                .source_files
-                .into_iter()
-                .map(std::convert::Into::into)
-                .collect(),
-            // Maybe we should let the llm figure out the language
-            language: None,
-            service_hints,
-        },
-        aws_context: AwsContext::new(region, account)?,
-        minimize_policy_size: false,
-        resource_cutoff,
+    let result = api::generate_policies_with_options(
+        &GeneratePolicyConfig {
+            individual_policies: false,
+            extract_sdk_calls_config: ExtractSdkCallsConfig {
+                source_files: input
+                    .source_files
+                    .into_iter()
+                    .map(std::convert::Into::into)
+                    .collect(),
+                // Maybe we should let the llm figure out the language
+                language: None,
+                service_hints,
+            },
+            aws_context: AwsContext::new(region, account)?,
+            minimize_policy_size: false,
 
-        // true by default, if we want to allow the user to change it we should
-        // accept it as part of the cli input when starting the mcp server
-        disable_file_system_cache: true,
-        // No explanations for MCP server by default
-        explain_filters: None,
-        terraform_dir: input.tf_dir.map(std::path::PathBuf::from),
-        terraform_files: input
-            .tf_files
-            .unwrap_or_default()
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .collect(),
-        tfstate_paths: input
-            .tfstate
-            .unwrap_or_default()
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .collect(),
-        tfvars_files: input
-            .tfvars
-            .unwrap_or_default()
-            .into_iter()
-            .map(std::path::PathBuf::from)
-            .collect(),
-        explain_resource_filters: None,
-    })
+            // true by default, if we want to allow the user to change it we should
+            // accept it as part of the cli input when starting the mcp server
+            disable_file_system_cache: true,
+            // No explanations for MCP server by default
+            explain_filters: None,
+            terraform_dir: input.tf_dir.map(std::path::PathBuf::from),
+            terraform_files: input
+                .tf_files
+                .unwrap_or_default()
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+            tfstate_paths: input
+                .tfstate
+                .unwrap_or_default()
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+            tfvars_files: input
+                .tfvars
+                .unwrap_or_default()
+                .into_iter()
+                .map(std::path::PathBuf::from)
+                .collect(),
+            explain_resource_filters: None,
+        },
+        GeneratePolicyOptions { resource_cutoff },
+    )
     .await?;
 
     let policies = result
@@ -154,7 +156,7 @@ pub async fn generate_application_policies(
 mod api {
     use anyhow::Result;
     use iam_policy_autopilot_policy_generation::api::model::{
-        GeneratePoliciesResult, GeneratePolicyConfig,
+        GeneratePoliciesResult, GeneratePolicyConfig, GeneratePolicyOptions,
     };
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -163,8 +165,9 @@ mod api {
     static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
         OnceLock::new();
 
-    pub async fn generate_policies(
+    pub async fn generate_policies_with_options(
         _config: &GeneratePolicyConfig,
+        _options: GeneratePolicyOptions,
     ) -> Result<GeneratePoliciesResult> {
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();

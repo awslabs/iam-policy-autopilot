@@ -21,8 +21,6 @@ pub struct GeneratePolicyConfig {
     pub minimize_policy_size: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
-    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
-    pub resource_cutoff: usize,
     /// Generate explanations for why actions were added, filtered by patterns.
     /// - `None`: No explanations generated
     /// - `Some(patterns)`: Generate explanations for actions matching the patterns
@@ -47,6 +45,21 @@ pub struct GeneratePolicyConfig {
     /// - `Some(patterns)`: Generate explanations for resources matching the patterns
     ///   (supports wildcards like "arn:aws:s3:::*", "*" for all)
     pub explain_resource_filters: Option<Vec<String>>,
+}
+
+/// Optional settings for policy generation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GeneratePolicyOptions {
+    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+    pub resource_cutoff: usize,
+}
+
+impl Default for GeneratePolicyOptions {
+    fn default() -> Self {
+        Self {
+            resource_cutoff: crate::DEFAULT_RESOURCE_CUTOFF,
+        }
+    }
 }
 
 /// Result of policy generation including policies, action mappings, and explanations

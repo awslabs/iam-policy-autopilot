@@ -25,9 +25,11 @@ use iam_policy_autopilot_common::telemetry::{
     self, TelemetryChoice, TelemetryEventDerive, ToTelemetryEvent,
 };
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, GeneratePolicyOptions,
 };
-use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
+use iam_policy_autopilot_policy_generation::api::{
+    extract_sdk_calls, generate_policies_with_options,
+};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
 use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use iam_policy_autopilot_tools::PolicyUploader;
@@ -611,24 +613,28 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
             service_names: names.clone(),
         });
 
-    let result = generate_policies(&GeneratePolicyConfig {
-        extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: config.shared.source_files.clone(),
-            language: config.shared.language.clone(),
-            service_hints,
+    let result = generate_policies_with_options(
+        &GeneratePolicyConfig {
+            extract_sdk_calls_config: ExtractSdkCallsConfig {
+                source_files: config.shared.source_files.clone(),
+                language: config.shared.language.clone(),
+                service_hints,
+            },
+            aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
+            individual_policies: config.individual_policies,
+            minimize_policy_size: config.minimal_policy_size,
+            disable_file_system_cache: config.disable_cache,
+            explain_filters: config.explain.clone(),
+            terraform_dir: config.tf_dir.clone(),
+            terraform_files: config.tf_files.clone(),
+            tfstate_paths: config.tfstate.clone(),
+            tfvars_files: config.tfvars.clone(),
+            explain_resource_filters: config.explain_resources.clone(),
         },
-        aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
-        individual_policies: config.individual_policies,
-        minimize_policy_size: config.minimal_policy_size,
-        disable_file_system_cache: config.disable_cache,
-        resource_cutoff: config.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
-        explain_filters: config.explain.clone(),
-        terraform_dir: config.tf_dir.clone(),
-        terraform_files: config.tf_files.clone(),
-        tfstate_paths: config.tfstate.clone(),
-        tfvars_files: config.tfvars.clone(),
-        explain_resource_filters: config.explain_resources.clone(),
-    })
+        GeneratePolicyOptions {
+            resource_cutoff: config.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
+        },
+    )
     .await?;
 
     if config.individual_policies {
