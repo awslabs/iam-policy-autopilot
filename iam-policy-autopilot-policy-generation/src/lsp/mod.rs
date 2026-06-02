@@ -6,6 +6,8 @@
 //! extended to other servers (e.g., gopls for Go) via the [`LspServerConfig`] trait.
 
 mod error;
+#[doc(hidden)]
+pub mod gopls;
 
 #[cfg(any(test, feature = "integ-test"))]
 pub mod test_utils;
@@ -295,17 +297,13 @@ impl<C: LspServerConfig> LspClient<C> {
     /// Returns the extracted type information string if available.
     pub async fn hover(
         &mut self,
-        file_uri: &str,
+        uri: &Url,
         line: u32,
         character: u32,
     ) -> Result<Option<String>, LspError> {
-        let uri = file_uri
-            .parse::<Url>()
-            .map_err(|e| LspError::ParseFailed(format!("Invalid URI: {e}")))?;
-
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
                 position: Position::new(line, character),
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
@@ -317,6 +315,81 @@ impl<C: LspServerConfig> LspClient<C> {
             .map_err(|e| LspError::ServerError(format!("{e}")))?;
 
         Ok(response.and_then(|hover| extract_type_from_hover(&hover)))
+    }
+
+    /// Get document symbols (functions, methods, classes) for a file.
+    pub async fn document_symbols(
+        &mut self,
+        uri: &Url,
+    ) -> Result<Option<lsp_types::DocumentSymbolResponse>, LspError> {
+        let params = lsp_types::DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: lsp_types::PartialResultParams::default(),
+        };
+
+        let response = timeout(
+            self.options.hover_timeout,
+            self.server.document_symbol(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.hover_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
+    }
+
+    /// Prepare call hierarchy at a given position.
+    ///
+    /// Returns the call hierarchy items at the position, typically one item
+    /// representing the function/method at that location.
+    pub async fn prepare_call_hierarchy(
+        &mut self,
+        uri: &Url,
+        line: u32,
+        character: u32,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyItem>>, LspError> {
+        let params = lsp_types::CallHierarchyPrepareParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(line, character),
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+
+        let response = timeout(
+            self.options.hover_timeout,
+            self.server.prepare_call_hierarchy(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.hover_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
+    }
+
+    /// Get outgoing calls from a call hierarchy item.
+    ///
+    /// Returns all functions/methods called from the given item.
+    pub async fn outgoing_calls(
+        &mut self,
+        item: lsp_types::CallHierarchyItem,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyOutgoingCall>>, LspError> {
+        let params = lsp_types::CallHierarchyOutgoingCallsParams {
+            item,
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: lsp_types::PartialResultParams::default(),
+        };
+
+        let response = timeout(
+            self.options.hover_timeout,
+            self.server.outgoing_calls(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.hover_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
     }
 
     /// Shutdown the LSP server gracefully.

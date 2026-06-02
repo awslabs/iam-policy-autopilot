@@ -202,14 +202,24 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install LSP test dependencies
+      - name: Install Python LSP test dependencies
         run: |
           python3 -m venv .lsp-venv
           .lsp-venv/bin/pip install 'ty>=0.0.39,<0.1' boto3 'boto3-stubs[essential]'
           echo "${{ github.workspace }}/.lsp-venv/bin" >> $GITHUB_PATH
 
-      - name: Run LSP integration tests
+      - uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+
+      - name: Install gopls
+        run: go install golang.org/x/tools/gopls@latest
+
+      - name: Run Python LSP integration tests
         run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test --test lsp_integration_tests -- --ignored
+
+      - name: Run Go LSP integration tests
+        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test --test gopls_integration_tests -- --ignored
 
   unused-deps:
     name: Unused Dependencies (cargo-machete)
