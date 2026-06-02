@@ -1,6 +1,3 @@
-// TODO: remove once generate-model CLI subcommand is added
-#![allow(dead_code)]
-
 use std::collections::HashSet;
 
 use crate::extraction::call_graph::{CallGraph, FunctionNode};

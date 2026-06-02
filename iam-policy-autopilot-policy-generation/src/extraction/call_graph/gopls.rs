@@ -143,12 +143,11 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
                     if !source_file_set.contains(&callee_path) {
                         return None;
                     }
-                    let location = Location::from_lsp(&call.to.uri, &call.to.range)?;
-                    Some(FunctionNode {
-                        name: call.to.name,
-                        qualified_name: call.to.detail,
-                        location,
-                    })
+                    // Match against existing nodes to ensure consistent Location values
+                    nodes
+                        .iter()
+                        .find(|n| n.name == call.to.name && n.location.file_path == callee_path)
+                        .cloned()
                 })
                 .collect();
 

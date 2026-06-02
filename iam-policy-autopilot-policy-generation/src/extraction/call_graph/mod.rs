@@ -1,6 +1,3 @@
-// TODO: remove once model_generation or CLI consumes this module
-#![allow(dead_code)]
-
 pub(crate) mod gopls;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
