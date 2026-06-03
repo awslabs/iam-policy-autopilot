@@ -8,7 +8,7 @@ use log::{debug, info, trace};
 use crate::{
     api::{
         common::process_source_files,
-        model::{GeneratePoliciesResult, GeneratePolicyConfig, GeneratePolicyOptions},
+        model::{GeneratePoliciesResult, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
@@ -173,14 +173,6 @@ fn filter_explanations(
 /// 2. Resolves Terraform resource types to IAM service/resource mappings
 /// 3. Substitutes ARN placeholders with concrete Terraform resource names
 pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
-    generate_policies_with_options(config, GeneratePolicyOptions::default()).await
-}
-
-/// Generate policies with optional policy-generation settings.
-pub async fn generate_policies_with_options(
-    config: &GeneratePolicyConfig,
-    options: GeneratePolicyOptions,
-) -> Result<GeneratePoliciesResult> {
     let pipeline_start = Instant::now();
 
     debug!(
@@ -189,7 +181,7 @@ pub async fn generate_policies_with_options(
     );
 
     let mut enrichment_engine =
-        EnrichmentEngine::new(config.disable_file_system_cache, options.resource_cutoff)?;
+        EnrichmentEngine::new(config.disable_file_system_cache, config.resource_cutoff)?;
 
     // --- Optional Terraform resolution ---
     let has_terraform_inputs = config.terraform_dir.is_some()

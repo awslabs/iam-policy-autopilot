@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, GeneratePolicyOptions, ServiceHints,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
 };
 use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use schemars::JsonSchema;
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(not(test))]
 mod api {
-    pub use iam_policy_autopilot_policy_generation::api::generate_policies_with_options as generate_policies;
+    pub use iam_policy_autopilot_policy_generation::api::generate_policies;
 }
 
 // Input struct matching the updated schema
@@ -136,9 +136,10 @@ pub async fn generate_application_policies(
             .map(std::path::PathBuf::from)
             .collect(),
         explain_resource_filters: None,
+        resource_cutoff,
     };
 
-    let result = api::generate_policies(&config, GeneratePolicyOptions { resource_cutoff }).await?;
+    let result = api::generate_policies(&config).await?;
 
     let policies = result
         .policies
@@ -154,7 +155,7 @@ pub async fn generate_application_policies(
 mod api {
     use anyhow::Result;
     use iam_policy_autopilot_policy_generation::api::model::{
-        GeneratePoliciesResult, GeneratePolicyConfig, GeneratePolicyOptions,
+        GeneratePoliciesResult, GeneratePolicyConfig,
     };
     use std::sync::Mutex;
     use std::sync::OnceLock;
@@ -163,15 +164,14 @@ mod api {
     static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
         OnceLock::new();
 
-    static MOCK_OPTIONS: OnceLock<Mutex<Option<GeneratePolicyOptions>>> = OnceLock::new();
+    static MOCK_RESOURCE_CUTOFF: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
 
     pub async fn generate_policies(
-        _config: &GeneratePolicyConfig,
-        options: GeneratePolicyOptions,
+        config: &GeneratePolicyConfig,
     ) -> Result<GeneratePoliciesResult> {
-        let options_mutex = MOCK_OPTIONS.get_or_init(|| Mutex::new(None));
-        let mut options_guard = options_mutex.lock().unwrap();
-        *options_guard = Some(options);
+        let cutoff_mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
+        let mut cutoff_guard = cutoff_mutex.lock().unwrap();
+        *cutoff_guard = Some(config.resource_cutoff);
 
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
@@ -186,8 +186,8 @@ mod api {
         *guard = Some(value);
     }
 
-    pub fn take_options() -> Option<GeneratePolicyOptions> {
-        let mutex = MOCK_OPTIONS.get_or_init(|| Mutex::new(None));
+    pub fn take_resource_cutoff() -> Option<usize> {
+        let mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         guard.take()
     }
@@ -294,7 +294,7 @@ mod tests {
         let result = generate_application_policies(input).await;
 
         assert!(result.is_ok());
-        assert_eq!(api::take_options().unwrap().resource_cutoff, 0);
+        assert_eq!(api::take_resource_cutoff(), Some(0));
     }
 
     #[test]
