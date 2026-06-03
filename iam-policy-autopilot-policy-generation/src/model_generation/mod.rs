@@ -88,6 +88,14 @@ fn deduplicate_operations(calls: &[SdkMethodCall]) -> Vec<SdkOperationMapping> {
     let mut ops = Vec::new();
 
     for call in calls {
+        if call.possible_services.len() > 1 {
+            log::warn!(
+                "Ambiguous SDK call '{}' could belong to multiple services: {:?}. \
+                 Use --service-hints to specify which services your code uses.",
+                call.name,
+                call.possible_services
+            );
+        }
         for service in &call.possible_services {
             let key = (service.as_str(), call.name.as_str());
             if seen.insert(key) {

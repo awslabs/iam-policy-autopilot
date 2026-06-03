@@ -20,6 +20,8 @@ pub struct GenerateModelConfig {
     pub library_name: String,
     /// Entry points in `file:line:column` format (1-based).
     pub entry_points: Vec<String>,
+    /// Optional service hints to filter SDK calls to specific AWS services.
+    pub service_hints: Option<Vec<String>>,
 }
 
 /// Generate an external library model from source files and entry points.
@@ -51,10 +53,19 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
     let entry_nodes = resolve_entry_points(&config.entry_points, graph.nodes())?;
 
     let extracted = {
+        use crate::api::model::ServiceHints;
+        let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
+            service_names: names.clone(),
+        });
         let extractor = crate::ExtractionEngine::new();
-        process_source_files(&extractor, &source_files, config.language.as_deref(), None)
-            .await
-            .context("Failed to extract SDK calls")?
+        process_source_files(
+            &extractor,
+            &source_files,
+            config.language.as_deref(),
+            service_hints,
+        )
+        .await
+        .context("Failed to extract SDK calls")?
     };
 
     let language = extracted

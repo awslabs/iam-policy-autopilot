@@ -506,6 +506,10 @@ declaration. Example: --entry-point handler.go:14:1"
         /// Override programming language detection
         #[arg(short = 'l', long = "language")]
         language: Option<String>,
+
+        /// Filter extracted SDK calls to specific AWS services
+        #[arg(long = "service-hints", num_args = 1..)]
+        service_hints: Option<Vec<String>>,
     },
 
     /// Start MCP server
@@ -723,6 +727,7 @@ async fn handle_generate_model(
     entry_points: Vec<String>,
     library_name: String,
     language: Option<String>,
+    service_hints: Option<Vec<String>>,
     pretty: bool,
 ) -> Result<()> {
     use iam_policy_autopilot_policy_generation::api::{generate_model, GenerateModelConfig};
@@ -740,6 +745,7 @@ async fn handle_generate_model(
         language,
         library_name,
         entry_points,
+        service_hints,
     };
 
     let model = generate_model(&config).await?;
@@ -908,14 +914,22 @@ async fn main() {
             debug: debug_flag,
             pretty,
             language,
+            service_hints,
         } => {
             if let Err(e) = init_logging(debug_flag) {
                 eprintln!("iam-policy-autopilot: Failed to initialize logging: {e}");
                 process::exit(1);
             }
 
-            match handle_generate_model(source_files, entry_points, library_name, language, pretty)
-                .await
+            match handle_generate_model(
+                source_files,
+                entry_points,
+                library_name,
+                language,
+                service_hints,
+                pretty,
+            )
+            .await
             {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
