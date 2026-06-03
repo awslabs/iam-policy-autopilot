@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 #[cfg(not(test))]
 mod api {
-    pub use iam_policy_autopilot_policy_generation::api::generate_policies_with_options;
+    pub use iam_policy_autopilot_policy_generation::api::generate_policies_with_options as generate_policies;
 }
 
 // Input struct matching the updated schema
@@ -96,51 +96,49 @@ pub async fn generate_application_policies(
         service_names: hints,
     });
 
-    let result = api::generate_policies_with_options(
-        &GeneratePolicyConfig {
-            individual_policies: false,
-            extract_sdk_calls_config: ExtractSdkCallsConfig {
-                source_files: input
-                    .source_files
-                    .into_iter()
-                    .map(std::convert::Into::into)
-                    .collect(),
-                // Maybe we should let the llm figure out the language
-                language: None,
-                service_hints,
-            },
-            aws_context: AwsContext::new(region, account)?,
-            minimize_policy_size: false,
-
-            // true by default, if we want to allow the user to change it we should
-            // accept it as part of the cli input when starting the mcp server
-            disable_file_system_cache: true,
-            // No explanations for MCP server by default
-            explain_filters: None,
-            terraform_dir: input.tf_dir.map(std::path::PathBuf::from),
-            terraform_files: input
-                .tf_files
-                .unwrap_or_default()
+    let config = GeneratePolicyConfig {
+        individual_policies: false,
+        extract_sdk_calls_config: ExtractSdkCallsConfig {
+            source_files: input
+                .source_files
                 .into_iter()
-                .map(std::path::PathBuf::from)
+                .map(std::convert::Into::into)
                 .collect(),
-            tfstate_paths: input
-                .tfstate
-                .unwrap_or_default()
-                .into_iter()
-                .map(std::path::PathBuf::from)
-                .collect(),
-            tfvars_files: input
-                .tfvars
-                .unwrap_or_default()
-                .into_iter()
-                .map(std::path::PathBuf::from)
-                .collect(),
-            explain_resource_filters: None,
+            // Maybe we should let the llm figure out the language
+            language: None,
+            service_hints,
         },
-        GeneratePolicyOptions { resource_cutoff },
-    )
-    .await?;
+        aws_context: AwsContext::new(region, account)?,
+        minimize_policy_size: false,
+
+        // true by default, if we want to allow the user to change it we should
+        // accept it as part of the cli input when starting the mcp server
+        disable_file_system_cache: true,
+        // No explanations for MCP server by default
+        explain_filters: None,
+        terraform_dir: input.tf_dir.map(std::path::PathBuf::from),
+        terraform_files: input
+            .tf_files
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        tfstate_paths: input
+            .tfstate
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        tfvars_files: input
+            .tfvars
+            .unwrap_or_default()
+            .into_iter()
+            .map(std::path::PathBuf::from)
+            .collect(),
+        explain_resource_filters: None,
+    };
+
+    let result = api::generate_policies(&config, GeneratePolicyOptions { resource_cutoff }).await?;
 
     let policies = result
         .policies
@@ -165,10 +163,16 @@ mod api {
     static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
         OnceLock::new();
 
-    pub async fn generate_policies_with_options(
+    static MOCK_OPTIONS: OnceLock<Mutex<Option<GeneratePolicyOptions>>> = OnceLock::new();
+
+    pub async fn generate_policies(
         _config: &GeneratePolicyConfig,
-        _options: GeneratePolicyOptions,
+        options: GeneratePolicyOptions,
     ) -> Result<GeneratePoliciesResult> {
+        let options_mutex = MOCK_OPTIONS.get_or_init(|| Mutex::new(None));
+        let mut options_guard = options_mutex.lock().unwrap();
+        *options_guard = Some(options);
+
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         guard
@@ -180,6 +184,12 @@ mod api {
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         *guard = Some(value);
+    }
+
+    pub fn take_options() -> Option<GeneratePolicyOptions> {
+        let mutex = MOCK_OPTIONS.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard.take()
     }
 }
 
@@ -284,6 +294,7 @@ mod tests {
         let result = generate_application_policies(input).await;
 
         assert!(result.is_ok());
+        assert_eq!(api::take_options().unwrap().resource_cutoff, 0);
     }
 
     #[test]

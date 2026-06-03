@@ -149,7 +149,7 @@ impl FasExpansion {
 /// This struct provides the core functionality for the 3-stage enrichment pipeline,
 /// combining parsed method calls with operation action maps and Service
 /// Definition Files to produce complete IAM metadata.
-#[derive(Debug, Clone)]
+#[derive(derive_new::new, Debug, Clone)]
 pub(crate) struct ResourceMatcher {
     service_cfg: Arc<ServiceConfiguration>,
     fas_maps: OperationFasMaps,
@@ -158,20 +158,6 @@ pub(crate) struct ResourceMatcher {
 }
 
 impl ResourceMatcher {
-    pub(crate) fn new(
-        service_cfg: Arc<ServiceConfiguration>,
-        fas_maps: OperationFasMaps,
-        sdk: SdkType,
-        resource_cutoff: usize,
-    ) -> Self {
-        Self {
-            service_cfg,
-            fas_maps,
-            sdk,
-            resource_cutoff,
-        }
-    }
-
     /// Enrich a parsed method call with OperationAction maps, FAS maps, and Service
     /// Reference data
     pub(crate) async fn enrich_method_call<'b>(
