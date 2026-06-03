@@ -69,7 +69,16 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         .await
         .context("Failed to build call graph")?;
 
-    let entry_nodes = resolve_entry_points(&config.entry_points, graph.nodes())?;
+    let entry_nodes = if config.entry_points.is_empty() {
+        graph
+            .nodes()
+            .iter()
+            .filter(|n| conventions.is_exported(n))
+            .cloned()
+            .collect()
+    } else {
+        resolve_entry_points(&config.entry_points, graph.nodes())?
+    };
 
     let extracted = {
         use crate::api::model::ServiceHints;

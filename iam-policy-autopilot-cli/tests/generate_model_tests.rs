@@ -16,22 +16,17 @@ const SOURCE: &str = concat!(
 );
 const ENTRY_POINT: &str = "script.go:125:1";
 
-fn generate_model_cmd(extra_args: &[&str]) -> Command {
+fn base_cmd() -> Command {
     let mut cmd = Command::cargo_bin("iam-policy-autopilot").unwrap();
-    cmd.args([
-        "generate-model",
-        SOURCE,
-        "--entry-point",
-        ENTRY_POINT,
-        "--library-name",
-        "test-lib",
-    ]);
-    cmd.args(extra_args);
+    cmd.args(["generate-model", SOURCE, "--library-name", "test-lib"]);
     cmd
 }
 
 fn run_and_parse(extra_args: &[&str]) -> Value {
-    let output = generate_model_cmd(extra_args).output().unwrap();
+    let mut cmd = base_cmd();
+    cmd.args(["--entry-point", ENTRY_POINT]);
+    cmd.args(extra_args);
+    let output = cmd.output().unwrap();
     assert!(
         output.status.success(),
         "stderr: {}",
@@ -74,10 +69,24 @@ fn test_service_hints_filters_results() {
 #[test]
 #[ignore]
 fn test_invalid_entry_point_shows_available_functions() {
-    generate_model_cmd(&[])
+    base_cmd()
         .args(["--entry-point", "script.go:999:1"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("No function declaration"))
         .stderr(predicate::str::contains("Available functions"));
+}
+
+#[test]
+#[ignore]
+fn test_no_entry_point_defaults_to_exported_functions() {
+    // script.go has only unexported functions (lowercase), so no entry points are selected
+    let output = base_cmd().output().unwrap();
+    assert!(
+        output.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(json["call_patterns"].as_array().unwrap().len(), 0);
 }

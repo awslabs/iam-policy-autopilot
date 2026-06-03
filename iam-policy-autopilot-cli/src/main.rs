@@ -487,8 +487,9 @@ declaration. Example: --entry-point handler.go:14:1"
         #[arg(required = true, num_args = 1..)]
         source_files: Vec<PathBuf>,
 
-        /// Entry points as file:line:column (1-based, pointing to function declaration)
-        #[arg(long = "entry-point", required = true, num_args = 1..)]
+        /// Entry points as file:line:column (1-based, pointing to function declaration).
+        /// If omitted, all exported functions are used as entry points.
+        #[arg(long = "entry-point", num_args = 1..)]
         entry_points: Vec<String>,
 
         /// Name for the generated library model

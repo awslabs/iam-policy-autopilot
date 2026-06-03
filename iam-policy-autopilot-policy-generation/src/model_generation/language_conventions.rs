@@ -14,7 +14,6 @@ pub(crate) struct ParsedFunctionName {
 /// Language-specific conventions for interpreting function nodes.
 pub(crate) trait LanguageConventions {
     /// Whether a function is visible outside its package/module.
-    #[allow(dead_code)] // Used when --entry-point is omitted (defaults to all exported)
     fn is_exported(&self, node: &FunctionNode) -> bool;
 
     /// Parse the node's name into structured components.
