@@ -12,7 +12,7 @@ use crate::enrichment::operation_fas_map::OperationFasMaps;
 use crate::enrichment::{load_operation_fas_map, ResourceMatcher, ServiceReferenceLoader};
 use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::{self, ServiceConfiguration};
-use crate::{SdkMethodCall, SdkType, DEFAULT_RESOURCE_CUTOFF};
+use crate::{SdkMethodCall, SdkType};
 
 /// Core enrichment engine that orchestrates the 3-stage enrichment pipeline
 ///
@@ -28,19 +28,11 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// Create a new MethodEnrichmentEngine with custom base paths.
+    /// Create a new MethodEnrichmentEngine with custom base paths and a resource-list cutoff.
     ///
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
-    pub fn new(disable_file_system_cache: bool) -> Result<Self> {
-        Self::with_resource_cutoff(disable_file_system_cache, DEFAULT_RESOURCE_CUTOFF)
-    }
-
-    /// Create a new MethodEnrichmentEngine with a custom resource-list cutoff.
-    pub fn with_resource_cutoff(
-        disable_file_system_cache: bool,
-        resource_cutoff: usize,
-    ) -> Result<Self> {
+    pub fn new(disable_file_system_cache: bool, resource_cutoff: usize) -> Result<Self> {
         Ok(Self {
             service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
             resource_cutoff,
@@ -191,7 +183,7 @@ mod tests {
 
     #[test]
     fn test_get_unique_services() {
-        let engine = Engine::new(false).unwrap();
+        let engine = Engine::new(false, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
 
         let extracted_methods = create_test_extracted_methods();
         let services = engine.get_unique_services(&extracted_methods);
@@ -225,7 +217,7 @@ mod tests {
         }
 
         println!("\nSetting up enrichment engine...");
-        let mut enrichment_engine = Engine::new(true).unwrap();
+        let mut enrichment_engine = Engine::new(true, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
         println!("Enrichment engine initialized");
 
         println!("\nRunning enrichment on all operations...");
