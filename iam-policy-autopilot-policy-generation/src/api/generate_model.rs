@@ -8,7 +8,9 @@ use crate::api::common::process_source_files;
 use crate::extraction::call_graph::gopls::GoplsCallGraphBuilder;
 use crate::extraction::call_graph::{CallGraphBuilder, FunctionNode};
 use crate::extraction::external_library_models::ExternalLibraryModel;
+use crate::model_generation::language_conventions::{GoConventions, LanguageConventions};
 use crate::model_generation::Engine as ModelGenerationEngine;
+use crate::Language;
 
 /// Configuration for model generation.
 pub struct GenerateModelConfig {
@@ -31,7 +33,7 @@ pub struct GenerateModelConfig {
 pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibraryModel> {
     info!("Generating model for library '{}'", config.library_name);
 
-    // Canonicalize paths so that gopls URI resolution (which resolves symlinks)
+    // Canonicalize paths so that LSP URI resolution (which resolves symlinks)
     // produces paths matching those stored in SDK call locations by the extractor.
     let source_files: Vec<PathBuf> = config
         .source_files
@@ -39,11 +41,28 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         .map(|f| f.canonicalize().unwrap_or_else(|_| f.clone()))
         .collect();
 
-    let workspace_root = detect_workspace_root(&source_files)?;
+    // Detect language and resolve conventions
+    let language = {
+        let extractor = crate::ExtractionEngine::new();
+        let paths: Vec<&Path> = source_files.iter().map(|p| p.as_path()).collect();
+        extractor.detect_and_validate_language(&paths)?
+    };
 
-    let mut builder = GoplsCallGraphBuilder::new(&workspace_root)
-        .await
-        .context("Failed to start gopls")?;
+    let conventions: Box<dyn LanguageConventions> = match language {
+        Language::Go => Box::new(GoConventions),
+        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
+    };
+
+    let workspace_root = conventions.detect_workspace_root(&source_files)?;
+
+    let mut builder: Box<dyn CallGraphBuilder> = match language {
+        Language::Go => Box::new(
+            GoplsCallGraphBuilder::new(&workspace_root)
+                .await
+                .context("Failed to start language server")?,
+        ),
+        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
+    };
 
     let graph = builder
         .build(&workspace_root, &source_files)
@@ -68,25 +87,19 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         .context("Failed to extract SDK calls")?
     };
 
-    let language = extracted
-        .metadata
-        .source_files
-        .first()
-        .map(|sf| sf.language)
-        .context("No source files processed")?;
-
     let model = ModelGenerationEngine::new().generate(
         &graph,
         &entry_nodes,
         &extracted.methods,
         &config.library_name,
         language,
+        conventions.as_ref(),
     );
 
     builder
         .shutdown()
         .await
-        .context("Failed to shut down gopls")?;
+        .context("Failed to shut down language server")?;
 
     Ok(model)
 }
@@ -154,30 +167,4 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
     }
 
     Ok(resolved)
-}
-
-/// Detect workspace root from source files (directory containing go.mod, or common parent).
-fn detect_workspace_root(source_files: &[PathBuf]) -> Result<PathBuf> {
-    if source_files.is_empty() {
-        anyhow::bail!("No source files provided");
-    }
-
-    // Start from the first file's parent and walk up looking for go.mod
-    let start = source_files[0]
-        .parent()
-        .context("Source file has no parent directory")?;
-
-    let mut dir = start;
-    loop {
-        if dir.join("go.mod").exists() {
-            return Ok(dir.to_path_buf());
-        }
-        match dir.parent() {
-            Some(parent) => dir = parent,
-            None => break,
-        }
-    }
-
-    // Fallback: common parent of all source files
-    Ok(start.to_path_buf())
 }

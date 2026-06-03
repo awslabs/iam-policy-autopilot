@@ -127,8 +127,7 @@ pub(crate) trait CallGraphBuilder: Send + Sync {
     ) -> Result<CallGraph, CallGraphError>;
 
     /// Shut down any underlying server/process.
-    /// If dynamic dispatch (`dyn CallGraphBuilder`) is needed, change to `self: Box<Self>`.
-    async fn shutdown(self) -> Result<(), CallGraphError>;
+    async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError>;
 }
 
 #[cfg(test)]

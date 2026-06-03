@@ -1,3 +1,5 @@
+pub(crate) mod language_conventions;
+
 use std::collections::HashSet;
 
 use crate::extraction::call_graph::{CallGraph, FunctionNode};
@@ -6,6 +8,8 @@ use crate::extraction::external_library_models::{
 };
 use crate::extraction::SdkMethodCall;
 use crate::Language;
+
+use language_conventions::LanguageConventions;
 
 pub(crate) struct Engine;
 
@@ -25,6 +29,7 @@ impl Engine {
         sdk_calls: &[SdkMethodCall],
         library_name: &str,
         language: Language,
+        conventions: &dyn LanguageConventions,
     ) -> ExternalLibraryModel {
         let partitioned = call_graph.partition_calls(entry_points, sdk_calls);
 
@@ -35,19 +40,24 @@ impl Engine {
             call_patterns: partitioned
                 .into_iter()
                 .filter(|(_, calls)| !calls.is_empty())
-                .map(|(func, calls)| self.build_call_pattern(&func, &calls))
+                .map(|(func, calls)| self.build_call_pattern(&func, &calls, conventions))
                 .collect(),
         }
     }
 
-    fn build_call_pattern(&self, func: &FunctionNode, calls: &[SdkMethodCall]) -> CallPattern {
-        let (module_path, class_name, function_name) = parse_function_name(&func.name);
+    fn build_call_pattern(
+        &self,
+        func: &FunctionNode,
+        calls: &[SdkMethodCall],
+        conventions: &dyn LanguageConventions,
+    ) -> CallPattern {
+        let parsed = conventions.parse_function_name(func);
 
         CallPattern {
-            module_path,
-            class_name: class_name.clone(),
-            function_name,
-            call_type: if class_name.is_some() {
+            module_path: parsed.module_path,
+            class_name: parsed.class_name.clone(),
+            function_name: parsed.function_name,
+            call_type: if parsed.class_name.is_some() {
                 CallType::InstanceMethod
             } else {
                 CallType::Function
@@ -55,32 +65,6 @@ impl Engine {
             sdk_operations: deduplicate_operations(calls),
         }
     }
-}
-
-/// Parse a gopls function name into (module_path, class_name, function_name).
-///
-/// gopls uses these formats for `FunctionNode.name`:
-///   - Functions: `"main"`, `"helper"`, `"fetchData"`
-///   - Methods:   `"(*Server).HandleRequest"`, `"(*Server).fetchData"`
-fn parse_function_name(name: &str) -> (String, Option<String>, String) {
-    // Method pattern: "(*Type).Method" or "(Type).Method"
-    if let Some(dot_pos) = name.find(").") {
-        let receiver_part = &name[..=dot_pos];
-        let method_name = &name[dot_pos + 2..];
-
-        let type_name = receiver_part
-            .trim_start_matches('(')
-            .trim_start_matches('*')
-            .trim_end_matches(')');
-
-        return (
-            String::new(),
-            Some(type_name.to_string()),
-            method_name.to_string(),
-        );
-    }
-
-    (String::new(), None, name.to_string())
 }
 
 fn deduplicate_operations(calls: &[SdkMethodCall]) -> Vec<SdkOperationMapping> {
@@ -116,7 +100,7 @@ mod tests {
     use crate::extraction::call_graph::CallGraph;
     use crate::extraction::SdkMethodCallMetadata;
     use crate::Location;
-    use rstest::rstest;
+    use language_conventions::GoConventions;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -200,28 +184,6 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // parse_function_name
-    // -----------------------------------------------------------------------
-
-    #[rstest]
-    #[case("main", "", None, "main")]
-    #[case("helper", "", None, "helper")]
-    #[case("(*Server).HandleRequest", "", Some("Server"), "HandleRequest")]
-    #[case("(*Server).fetchData", "", Some("Server"), "fetchData")]
-    #[case("(Server).Method", "", Some("Server"), "Method")]
-    fn test_parse_function_name(
-        #[case] input: &str,
-        #[case] expected_module: &str,
-        #[case] expected_class: Option<&str>,
-        #[case] expected_func: &str,
-    ) {
-        let (module_path, class_name, function_name) = parse_function_name(input);
-        assert_eq!(module_path, expected_module);
-        assert_eq!(class_name.as_deref(), expected_class);
-        assert_eq!(function_name, expected_func);
-    }
-
-    // -----------------------------------------------------------------------
     // generate
     // -----------------------------------------------------------------------
 
@@ -242,6 +204,7 @@ mod tests {
             &[call],
             "my-lib",
             Language::Go,
+            &GoConventions,
         );
 
         assert_eq!(model.library_name, "my-lib");
@@ -274,6 +237,7 @@ mod tests {
             &[call],
             "lib",
             Language::Go,
+            &GoConventions,
         );
 
         assert!(model.call_patterns.is_empty());
@@ -297,7 +261,14 @@ mod tests {
             .collect();
 
         let engine = Engine::new();
-        let model = engine.generate(&graph, &entries, &[call], "lib", Language::Go);
+        let model = engine.generate(
+            &graph,
+            &entries,
+            &[call],
+            "lib",
+            Language::Go,
+            &GoConventions,
+        );
 
         assert_eq!(model.call_patterns.len(), 2);
         assert_eq!(
@@ -328,6 +299,7 @@ mod tests {
             &[call_a, call_b],
             "lib",
             Language::Go,
+            &GoConventions,
         );
 
         assert_eq!(model.call_patterns.len(), 1);
@@ -346,7 +318,14 @@ mod tests {
         let call = sdk_call_in(&graph, "GetObject", "s3", "fetch");
 
         let engine = Engine::new();
-        let model = engine.generate(&graph, &[handler.clone()], &[call], "lib", Language::Go);
+        let model = engine.generate(
+            &graph,
+            &[handler.clone()],
+            &[call],
+            "lib",
+            Language::Go,
+            &GoConventions,
+        );
 
         assert_eq!(model.call_patterns.len(), 1);
         let pattern = &model.call_patterns[0];
