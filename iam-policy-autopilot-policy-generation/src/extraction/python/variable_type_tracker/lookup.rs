@@ -20,6 +20,10 @@ impl VariableTypeTracker {
         function_name: Option<&str>,
     ) -> Option<&String> {
         if let Some(func_name) = function_name {
+            if self.conflicted_functions.contains(func_name) {
+                return None;
+            }
+
             if let Some(func_scope) = self.function_scopes.get(func_name) {
                 if let Some(type_info) = func_scope.get(var_name) {
                     return Some(&type_info.service_name);
@@ -59,6 +63,10 @@ impl VariableTypeTracker {
         function_name: Option<&str>,
     ) -> Option<&VariableTypeInfo> {
         if let Some(func_name) = function_name {
+            if self.conflicted_functions.contains(func_name) {
+                return None;
+            }
+
             if let Some(func_scope) = self.function_scopes.get(func_name) {
                 if let Some(type_info) = func_scope.get(var_name) {
                     return Some(type_info);
@@ -94,6 +102,10 @@ impl VariableTypeTracker {
         func_name: &str,
         param_name: &str,
     ) -> Option<HashSet<String>> {
+        if self.conflicted_functions.contains(func_name) {
+            return None;
+        }
+
         self.parameter_types
             .get(&(func_name.to_string(), param_name.to_string()))
             .map(|type_infos| {

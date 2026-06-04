@@ -2,7 +2,7 @@ use super::types::{SdkObjectKind, VariableTypeInfo, VariableTypeTracker};
 use crate::extraction::python::node_kinds;
 use crate::extraction::AstWithSourceFile;
 use ast_grep_language::Python;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 impl VariableTypeTracker {
     /// Track boto3.client() and boto3.resource() assignments in the AST
@@ -17,11 +17,40 @@ impl VariableTypeTracker {
     pub(crate) fn track_boto3_assignments(&mut self, ast: &AstWithSourceFile<Python>) {
         let root = ast.ast.root();
 
+        self.detect_conflicted_function_names(&root);
         self.track_boto3_factory_assignments(&root, "client", SdkObjectKind::Client);
         self.track_boto3_factory_assignments(&root, "resource", SdkObjectKind::Resource);
         self.track_aliases(&root);
         self.track_function_calls(&root);
         self.track_resource_derived_variables(&root);
+    }
+
+    /// Detect function names that appear multiple times in the file.
+    /// These are marked as conflicted so lookups return None rather than
+    /// picking an arbitrary scope (which could cause false narrowing).
+    fn detect_conflicted_function_names(
+        &mut self,
+        root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ) {
+        let mut seen: HashSet<String> = HashSet::new();
+        let func_def_pattern = "def $FUNC($$$): $$$BODY";
+
+        for func_match in root.find_all(func_def_pattern) {
+            let env = func_match.get_env();
+            if let Some(node) = env.get_match("FUNC") {
+                let name = node.text().to_string();
+                if !seen.insert(name.clone()) {
+                    self.conflicted_functions.insert(name);
+                }
+            }
+        }
+
+        if !self.conflicted_functions.is_empty() {
+            log::debug!(
+                "Detected conflicted function names: {:?}",
+                self.conflicted_functions
+            );
+        }
     }
 
     /// Track boto3 factory assignments (client or resource) at both function and module level
@@ -31,7 +60,7 @@ impl VariableTypeTracker {
         factory_method: &str,
         kind: SdkObjectKind,
     ) {
-        let assign_pattern = format!("$VAR = boto3.{factory_method}($SERVICE)");
+        let assign_pattern = format!("$VAR = boto3.{factory_method}($$$ARGS)");
 
         // First, track function-level assignments
         let func_def_pattern = "def $FUNC($$$): $$$BODY";
@@ -53,10 +82,8 @@ impl VariableTypeTracker {
                     continue;
                 };
 
-                let service_name = if let Some(service_node) = assign_env.get_match("SERVICE") {
-                    let raw_text = service_node.text().to_string();
-                    self.extract_string_literal(&raw_text)
-                } else {
+                let Some(service_name) = Self::extract_first_positional_string_arg(assign_env)
+                else {
                     continue;
                 };
 
@@ -88,10 +115,7 @@ impl VariableTypeTracker {
                 continue;
             };
 
-            let service_name = if let Some(service_node) = env.get_match("SERVICE") {
-                let raw_text = service_node.text().to_string();
-                self.extract_string_literal(&raw_text)
-            } else {
+            let Some(service_name) = Self::extract_first_positional_string_arg(env) else {
                 continue;
             };
 
@@ -103,6 +127,26 @@ impl VariableTypeTracker {
                 VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
             );
         }
+    }
+
+    /// Extract the first positional string argument from a matched `$$$ARGS` list.
+    /// Skips keyword arguments and commas; returns the unquoted string content.
+    fn extract_first_positional_string_arg(
+        env: &ast_grep_core::meta_var::MetaVarEnv<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ) -> Option<String> {
+        let arg_nodes = env.get_multiple_matches("ARGS");
+        for arg_node in &arg_nodes {
+            let text = arg_node.text().to_string();
+            let trimmed = text.trim();
+            if trimmed == "," || trimmed.is_empty() {
+                continue;
+            }
+            if arg_node.kind() == node_kinds::KEYWORD_ARGUMENT {
+                continue;
+            }
+            return Some(Self::extract_string_literal(trimmed));
+        }
+        None
     }
 
     /// Track simple variable aliases within functions
@@ -237,6 +281,11 @@ impl VariableTypeTracker {
                 if param_text == "," || param_text.is_empty() {
                     continue;
                 }
+                // Skip variadic params (*args, **kwargs) — they shouldn't participate
+                // in positional matching since they collect remaining arguments.
+                if param_text.starts_with('*') {
+                    continue;
+                }
                 if let Some(param_name) = Self::extract_all_params(&param_text).into_iter().next() {
                     if param_name != "self" && param_name != "cls" {
                         params.push(param_name);
@@ -252,11 +301,12 @@ impl VariableTypeTracker {
 
         log::debug!("Function parameters map: {func_params:?}");
 
-        // Find function calls within function bodies (with calling context)
+        // Find function calls within function bodies (with calling context).
+        // Skip calls inside nested function definitions to avoid wrong-context attribution.
         let call_pattern = "$FUNC($$$ARGS)";
-        let func_def_pattern2 = "def $FUNC($$$PARAMS):$$$BODY";
+        let caller_func_pattern = "def $FUNC($$$PARAMS):$$$BODY";
 
-        for func_match in root.find_all(func_def_pattern2) {
+        for func_match in root.find_all(caller_func_pattern) {
             let caller_env = func_match.get_env();
             let caller_name = if let Some(node) = caller_env.get_match("FUNC") {
                 node.text().to_string()
@@ -264,7 +314,15 @@ impl VariableTypeTracker {
                 continue;
             };
 
+            let caller_node_id = func_match.get_node().node_id();
+
             for node_match in func_match.get_node().find_all(call_pattern) {
+                // Skip calls that are inside a nested function (they'll be handled
+                // when we iterate that inner function as its own caller).
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
                 let env = node_match.get_env();
 
                 let func_name = if let Some(node) = env.get_match("FUNC") {
@@ -555,7 +613,7 @@ impl VariableTypeTracker {
     /// Handles both single and double quotes:
     /// - `'s3'` -> `s3`
     /// - `"dynamodb"` -> `dynamodb`
-    pub(super) fn extract_string_literal(&self, raw: &str) -> String {
+    pub(super) fn extract_string_literal(raw: &str) -> String {
         raw.trim()
             .trim_start_matches('\'')
             .trim_start_matches('"')
@@ -571,6 +629,26 @@ fn is_inside_function(
 ) -> bool {
     let mut current = node_match.get_node().parent();
     while let Some(node) = current {
+        if node.kind() == node_kinds::FUNCTION_DEFINITION {
+            return true;
+        }
+        current = node.parent();
+    }
+    false
+}
+
+/// Check if there is a function_definition node between the matched node and
+/// the specified ancestor (identified by node_id). This detects calls inside
+/// nested functions when iterating from an outer function's subtree.
+fn has_intervening_function(
+    node_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ancestor_node_id: usize,
+) -> bool {
+    let mut current = node_match.get_node().parent();
+    while let Some(node) = current {
+        if node.node_id() == ancestor_node_id {
+            return false;
+        }
         if node.kind() == node_kinds::FUNCTION_DEFINITION {
             return true;
         }

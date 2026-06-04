@@ -84,6 +84,11 @@ pub(crate) struct VariableTypeTracker {
 
     /// Parameter mappings: (function_name, param_name) -> set of possible type_info
     pub(super) parameter_types: HashMap<(String, String), HashSet<VariableTypeInfo>>,
+
+    /// Function names that appear multiple times (e.g., methods in different classes).
+    /// Lookups against these names return None to avoid false narrowing.
+    /// TODO: Resolve properly by qualifying with class name (e.g., "ClassName.method").
+    pub(super) conflicted_functions: HashSet<String>,
 }
 
 impl VariableTypeTracker {
@@ -92,6 +97,7 @@ impl VariableTypeTracker {
             module_scope: HashMap::new(),
             function_scopes: HashMap::new(),
             parameter_types: HashMap::new(),
+            conflicted_functions: HashSet::new(),
         }
     }
 }

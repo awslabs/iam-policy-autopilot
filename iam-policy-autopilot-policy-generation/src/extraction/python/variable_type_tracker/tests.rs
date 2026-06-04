@@ -92,6 +92,85 @@ s3_client = boto3.client('s3')
 }
 
 #[test]
+fn test_multi_arg_boto3_client_call() {
+    let source_code = r#"
+import boto3
+s3_client = boto3.client('s3', region_name='us-east-1')
+ec2_client = boto3.client('ec2', endpoint_url='http://localhost:4566')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert_eq!(
+        tracker.get_service_for_variable("s3_client"),
+        Some(&"s3".to_string())
+    );
+    assert_eq!(
+        tracker.get_service_for_variable("ec2_client"),
+        Some(&"ec2".to_string())
+    );
+}
+
+#[test]
+fn test_nested_function_does_not_pollute_outer_context() {
+    let source_code = r#"
+import boto3
+
+def helper(client):
+    client.list_buckets()
+
+def outer():
+    client = boto3.client('s3')
+
+    def inner(client):
+        helper(client)
+
+    ec2 = boto3.client('ec2')
+    inner(ec2)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // helper's 'client' parameter should only have ec2 (from inner's call),
+    // not s3 (from outer's scope being wrongly attributed)
+    let services = tracker.get_services_for_parameter("helper", "client");
+    assert!(services.is_some());
+    let services = services.unwrap();
+    assert!(services.contains("ec2"));
+    assert!(!services.contains("s3"));
+}
+
+#[test]
+fn test_variadic_params_excluded_from_positional_matching() {
+    let source_code = r#"
+import boto3
+
+def func(client, *args, **kwargs):
+    pass
+
+s3 = boto3.client('s3')
+ec2 = boto3.client('ec2')
+func(s3, ec2)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // s3 should map to 'client' (position 0)
+    let client_services = tracker.get_services_for_parameter("func", "client");
+    assert!(client_services.is_some());
+    assert!(client_services.unwrap().contains("s3"));
+
+    // ec2 should NOT map to 'args' — variadic params are excluded
+    assert!(tracker.get_services_for_parameter("func", "args").is_none());
+    assert!(tracker
+        .get_services_for_parameter("func", "kwargs")
+        .is_none());
+}
+
+#[test]
 fn test_real_world_scenario() {
     let source_code = r#"
 import boto3
@@ -214,7 +293,10 @@ def caller():
     tracker.track_boto3_assignments(&ast);
 
     let services = tracker.get_services_for_parameter("helper", "client");
-    assert!(services.is_some(), "should resolve function-local variable at call site");
+    assert!(
+        services.is_some(),
+        "should resolve function-local variable at call site"
+    );
     assert!(services.unwrap().contains("s3"));
 }
 
@@ -476,12 +558,9 @@ upload(s3)
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    assert!(
-        tracker
-            .get_services_for_parameter("upload", "self")
-            .is_none(),
-        "self should be filtered from parameter list"
-    );
+    assert!(tracker
+        .get_services_for_parameter("upload", "self")
+        .is_none());
     let client_services = tracker.get_services_for_parameter("upload", "client");
     assert!(client_services.is_some());
     assert!(client_services.unwrap().contains("s3"));
@@ -504,12 +583,9 @@ create(s3)
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    assert!(
-        tracker
-            .get_services_for_parameter("create", "cls")
-            .is_none(),
-        "cls should be filtered from parameter list"
-    );
+    assert!(tracker
+        .get_services_for_parameter("create", "cls")
+        .is_none());
     let client_services = tracker.get_services_for_parameter("create", "client");
     assert!(client_services.is_some());
     assert!(client_services.unwrap().contains("s3"));
@@ -649,6 +725,69 @@ s3_resource = boto3.resource('s3')
     assert_eq!(client_info.kind, Some(SdkObjectKind::Client));
     assert_eq!(resource_info.kind, Some(SdkObjectKind::Resource));
     assert_ne!(client_info.kind, resource_info.kind);
+}
+
+// ========== Conflicted Function Name Tests ==========
+
+#[test]
+fn test_duplicate_function_names_return_none() {
+    // Two classes with same method name — tracker should return None
+    // to avoid false narrowing from picking the wrong scope.
+    let source_code = r#"
+import boto3
+
+class S3Handler:
+    def process(self, client):
+        client.list_buckets()
+
+class EC2Handler:
+    def process(self, client):
+        client.describe_instances()
+
+s3 = boto3.client('s3')
+ec2 = boto3.client('ec2')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // 'process' is conflicted — lookups should return None
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("client", Some("process")),
+        None
+    );
+    assert!(tracker
+        .get_type_info_for_variable_in_context("client", Some("process"))
+        .is_none());
+    assert!(tracker
+        .get_services_for_parameter("process", "client")
+        .is_none());
+}
+
+#[test]
+fn test_unique_function_names_still_resolve() {
+    // Unique function names should continue to work normally
+    let source_code = r#"
+import boto3
+
+class S3Handler:
+    def process(self, client):
+        client.list_buckets()
+
+def upload(client):
+    client.put_object(Bucket='b', Key='k', Body=b'data')
+
+s3 = boto3.client('s3')
+upload(s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // 'upload' is unique — should still resolve
+    let services = tracker.get_services_for_parameter("upload", "client");
+    assert!(services.is_some());
+    assert!(services.unwrap().contains("s3"));
 }
 
 // ========== Python Scoping (LEGB) Tests ==========
