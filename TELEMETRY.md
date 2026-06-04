@@ -69,8 +69,8 @@ Telemetry records which commands and parameters are used, and whether the comman
 
 | Parameter | What We Record |
 |-----------|---------------|
-| `access_denied_fix_policy` | presence (boolean) |
 | `error_message` | presence (boolean) |
+| `resource_override` | presence (boolean) |
 
 <!-- END TELEMETRY TABLE -->
 
