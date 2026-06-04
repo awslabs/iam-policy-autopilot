@@ -182,7 +182,7 @@ impl VariableTypeTracker {
                     continue;
                 };
 
-                if old_node.kind() != "identifier" {
+                if old_node.kind() != node_kinds::IDENTIFIER {
                     continue;
                 }
 
@@ -230,7 +230,7 @@ impl VariableTypeTracker {
                 continue;
             };
 
-            if old_node.kind() != "identifier" {
+            if old_node.kind() != node_kinds::IDENTIFIER {
                 continue;
             }
 

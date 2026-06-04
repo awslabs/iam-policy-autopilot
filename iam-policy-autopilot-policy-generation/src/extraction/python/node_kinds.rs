@@ -21,3 +21,6 @@ pub(crate) const DICTIONARY_SPLAT: &str = "dictionary_splat";
 
 /// A function definition node (e.g., `def func_name(args): body`)
 pub(crate) const FUNCTION_DEFINITION: &str = "function_definition";
+
+/// An identifier node (e.g., variable names, function names)
+pub(crate) const IDENTIFIER: &str = "identifier";
