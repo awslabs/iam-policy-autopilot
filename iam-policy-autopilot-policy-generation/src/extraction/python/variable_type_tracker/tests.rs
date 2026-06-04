@@ -53,6 +53,92 @@ fn test_direct_assignment_tracking(
 }
 
 #[test]
+fn test_reassignment_in_same_scope() {
+    let source_code = r#"
+import boto3
+s3 = boto3.client('s3')
+s3 = boto3.client('ec2')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Second assignment should win (last-write-wins, matching Python semantics)
+    assert_eq!(
+        tracker.get_service_for_variable("s3"),
+        Some(&"ec2".to_string())
+    );
+}
+
+#[test]
+fn test_async_def_function() {
+    let source_code = r#"
+import boto3
+
+async def upload(client):
+    await client.put_object(Bucket='b', Key='k', Body=b'data')
+
+s3 = boto3.client('s3')
+upload(s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    let services = tracker.get_services_for_parameter("upload", "client");
+    assert!(services.is_some());
+    assert!(services.unwrap().contains("s3"));
+}
+
+#[test]
+fn test_decorated_function() {
+    let source_code = r#"
+import boto3
+
+@retry(max_attempts=3)
+def upload(client):
+    client.put_object(Bucket='b', Key='k', Body=b'data')
+
+s3 = boto3.client('s3')
+upload(s3)
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    let services = tracker.get_services_for_parameter("upload", "client");
+    assert!(services.is_some());
+    assert!(services.unwrap().contains("s3"));
+}
+
+#[test]
+fn test_paginator_waiter_not_tracked() {
+    let source_code = r#"
+import boto3
+s3 = boto3.client('s3')
+paginator = s3.get_paginator('list_objects_v2')
+waiter = s3.get_waiter('object_exists')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // s3 should be tracked
+    assert_eq!(
+        tracker.get_service_for_variable("s3"),
+        Some(&"s3".to_string())
+    );
+
+    // Paginator and waiter should NOT be tracked (handled by separate extractors)
+    assert!(tracker
+        .get_type_info_for_variable_in_context("paginator", None)
+        .is_none());
+    assert!(tracker
+        .get_type_info_for_variable_in_context("waiter", None)
+        .is_none());
+}
+
+#[test]
 fn test_track_multiple_assignments() {
     let source_code = r#"
 import boto3
