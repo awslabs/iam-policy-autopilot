@@ -37,7 +37,7 @@ pub async fn fix_access_denied(error_text: &str, yes: bool) -> ExitCode {
         }
     };
 
-    match service.plan(error_text).await {
+    match service.plan(error_text, None).await {
         Ok(plan) => fix_access_denied_with_service(plan, yes, service).await,
         Err(e) => {
             if matches!(
@@ -58,7 +58,7 @@ async fn fix_access_denied_with_service(
     yes: bool,
     service: iam_policy_autopilot_access_denied::IamPolicyAutopilotService,
 ) -> ExitCode {
-    match plan.diagnosis.denial_type {
+    match plan.denial_type() {
         DenialType::ImplicitIdentity => {
             output::print_plan(&plan);
 
@@ -114,8 +114,8 @@ async fn fix_access_denied_with_service(
         DenialType::ResourcePolicy => {
             use iam_policy_autopilot_access_denied::build_single_statement;
 
-            let action = plan.diagnosis.action.clone();
-            let resource = plan.diagnosis.resource.clone();
+            let action = plan.action().to_string();
+            let resource = plan.resource().to_string();
 
             let statement =
                 build_single_statement(action.clone(), resource.clone(), "AllowAccess".to_string());
@@ -137,7 +137,7 @@ async fn fix_access_denied_with_service(
         }
         DenialType::Other => {
             output::print_unsupported_denial(
-                &plan.diagnosis.denial_type,
+                plan.denial_type(),
                 "This denial type cannot be automatically analyzed or fixed",
             );
             ExitCode::Error
@@ -198,15 +198,6 @@ fn handle_apply_error(apply_error: ApplyError) -> ExitCode {
         ApplyError::DuplicateStatement { action, resource } => {
             output::print_duplicate_statement(&action, &resource);
             ExitCode::Duplicate
-        }
-        ApplyError::MultiActionError(count) => {
-            output::print_apply_refused(
-                "multi_action_error",
-                &format!(
-                    "Expected exactly 1 action for canonical policy, got {count}. This is a bug."
-                ),
-            );
-            ExitCode::Error
         }
         ApplyError::Aws(e) => {
             let msg = e.to_string();
