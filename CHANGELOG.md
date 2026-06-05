@@ -1,5 +1,18 @@
 ## [Unreleased]
 
+### Added
+
+- Support for namespace imports in TypeScript/JavaScript (#190)
+- Added partial support for permissions needed by [aws-lambda-powertools](https://pypi.org/project/aws-lambda-powertools/) (#186)
+
+### Fixed
+
+- We now respect the system's native certificate store instead of using bundled certificates (#209)
+- `--explain` now shows every call site when the same operation appears multiple times (#188)
+- Condition values for the same key are now merged instead of overwritten when serializing policies (#199)
+
+## [0.2.2] - 2026-06-05
+
 ### Fixed
 
 - `fix_access_denied` MCP tool now correctly generates the policy from the error message and applies it after confirmation
@@ -10,20 +23,6 @@
 ### Changed
 
 - The `fix_access_denied` MCP tool no longer accepts an input policy, but a resource override instead. The tool derives the policy from the error message, and if a resource override is provided, uses it. It then surfaces the policy to the user and after confirmation applies it.
-
-## [0.2.2rc1] - 2026-05-29
-
-### Added
-
-- Support for namespace imports in TypeScript/JavaScript (#190)
-- Added partial support for permissions needed by [aws-lambda-powertools](https://pypi.org/project/aws-lambda-powertools/) (#186)
-
-### Fixed
-
-- We now respect the system's native certificate store instead of using bundled certificates (#209)
-- `fix_access_denied` MCP tool now applies the user-confirmed policy instead of regenerating one (#202)
-- `--explain` now shows every call site when the same operation appears multiple times (#188)
-- Condition values for the same key are now merged instead of overwritten when serializing policies (#199)
 
 ## [0.2.1] - 2026-05-08
 
