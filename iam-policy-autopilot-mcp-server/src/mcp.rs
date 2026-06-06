@@ -136,6 +136,8 @@ impl IamAutoPilotMcpServer {
     #[tool(
         description = "Tool that applies IAM Policy fix generated for IAM AccessDenied exceptions to the user's AWS account\
         \
+        READ-ONLY MODE: If the MCP server was started with --read-only, this tool refuses to apply policy changes. Use generate_policy_for_access_denied to generate a policy for manual review instead. \
+        \
         INSTRUCTIONS: \
         1. Ensure the user has aws profile setup and has active AWS credentials
         2. Only use the tool if the original policy was first generated using generate_policy_for_access_denied tool and surfaced to the user
@@ -277,11 +279,7 @@ pub async fn begin_http_transport(
     Ok(())
 }
 
-pub async fn begin_stdio_transport(log_file: Option<String>) -> anyhow::Result<()> {
-    begin_stdio_transport_with_read_only(log_file, false).await
-}
-
-pub async fn begin_stdio_transport_with_read_only(
+pub async fn begin_stdio_transport(
     log_file: Option<String>,
     read_only: bool,
 ) -> anyhow::Result<()> {
@@ -322,6 +320,15 @@ mod tests {
 
     fn fix_tool_params() -> CallToolRequestParams {
         CallToolRequestParams::new("fix_access_denied").with_arguments(
+            json!({ "ErrorMessage": ERROR_MSG })
+                .as_object()
+                .cloned()
+                .unwrap(),
+        )
+    }
+
+    fn generate_policy_for_access_denied_tool_params() -> CallToolRequestParams {
+        CallToolRequestParams::new("generate_policy_for_access_denied").with_arguments(
             json!({ "ErrorMessage": ERROR_MSG })
                 .as_object()
                 .cloned()
@@ -499,6 +506,25 @@ mod tests {
             "unexpected error message: {}",
             mcp_error.message
         );
+
+        let _ = client.cancel().await;
+        let _ = server_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_read_only_allows_policy_generation() {
+        policy_autopilot::set_mock_plan_return(Ok(test_plan()));
+
+        let (client, server_handle) = setup_read_only(TestClient::accepting()).await;
+        let result = client
+            .call_tool(generate_policy_for_access_denied_tool_params())
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let text = &result.content.first().unwrap().raw.as_text().unwrap().text;
+        let output: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert!(output["Policy"].is_string());
 
         let _ = client.cancel().await;
         let _ = server_handle.await;

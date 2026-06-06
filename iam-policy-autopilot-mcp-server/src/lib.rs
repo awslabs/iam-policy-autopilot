@@ -80,7 +80,7 @@ pub async fn start_mcp_server(
         McpTransport::Stdio => {
             info!("Starting STDIO MCP server");
 
-            crate::mcp::begin_stdio_transport_with_read_only(path_str, read_only)
+            crate::mcp::begin_stdio_transport(path_str, read_only)
                 .await
                 .with_context(|| "Failed to start STDIO Server".to_string())?;
         }
