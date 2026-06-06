@@ -25,12 +25,16 @@ use crate::tools::{
 #[derive(Clone)]
 struct IamAutoPilotMcpServer {
     log_file: Option<String>,
+    read_only: bool,
 }
 
 #[tool_router]
 impl IamAutoPilotMcpServer {
-    pub fn new(log_file: Option<String>) -> Self {
-        Self { log_file }
+    pub fn new(log_file: Option<String>, read_only: bool) -> Self {
+        Self {
+            log_file,
+            read_only,
+        }
     }
 
     fn format_mcp_error(&self, msg: &str, e: anyhow::Error) -> McpError {
@@ -44,6 +48,17 @@ impl IamAutoPilotMcpServer {
             message: format!("{msg}: {e:#}.{log_file_suffix}").into(),
             data: None,
         }
+    }
+
+    fn ensure_write_allowed(&self) -> Result<(), McpError> {
+        if self.read_only {
+            return Err(McpError::invalid_request(
+                "MCP server is running in read-only mode; refusing to apply IAM policy changes. Use generate_policy_for_access_denied to generate a policy for manual review.",
+                None,
+            ));
+        }
+
+        Ok(())
     }
 
     #[tool(
@@ -138,6 +153,8 @@ impl IamAutoPilotMcpServer {
         context: RequestContext<RoleServer>,
         params: Parameters<FixAccessDeniedInput>,
     ) -> Result<Json<FixAccessDeniedOutput>, McpError> {
+        self.ensure_write_allowed()?;
+
         trace!("fix_access_denied input: {:#?}", params.0);
         let telemetry_event = params.0.to_telemetry_event();
 
@@ -158,12 +175,18 @@ impl IamAutoPilotMcpServer {
 #[tool_handler]
 impl ServerHandler for IamAutoPilotMcpServer {
     fn get_info(&self) -> ServerInfo {
+        let write_capability = if self.read_only {
+            "4. Run in read-only mode: direct policy application is disabled; use generated policies for manual review"
+        } else {
+            "4. Apply policy fixes directly to AWS accounts"
+        };
+
         ServerInfo::new(
             ServerCapabilities::builder()
                 .enable_tools()
                 .build(),
         )
-        .with_instructions("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
+        .with_instructions(format!("IAM Policy Autopilot specializes in AWS IAM policy generation and access management. \
             \
             **ALWAYS use the generate_application_policies tool when users mention:** \
             - Writing policies, creating policies, generating policies \
@@ -176,12 +199,12 @@ impl ServerHandler for IamAutoPilotMcpServer {
             1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go, Java) \
             2. Create minimal required permissions for AWS services used in code \
             3. Debug and fix AccessDenied issues with targeted policy generation \
-            4. Apply policy fixes directly to AWS accounts \
+            {write_capability} \
             \
             **CRITICAL: When generating policies, you MUST include ALL relevant source files that interact with AWS services.** \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
-            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.")
+            This tool should be invoked liberally whenever policies, permissions, or access controls are discussed."))
     }
 
     /// Called after the MCP handshake completes. Sends the telemetry notice
@@ -215,9 +238,10 @@ impl ServerHandler for IamAutoPilotMcpServer {
 pub async fn begin_http_transport(
     bind_address: &str,
     log_file: Option<String>,
+    read_only: bool,
 ) -> anyhow::Result<()> {
     let service = StreamableHttpService::new(
-        move || Ok(IamAutoPilotMcpServer::new(log_file.clone())),
+        move || Ok(IamAutoPilotMcpServer::new(log_file.clone(), read_only)),
         LocalSessionManager::default().into(),
         Default::default(),
     );
@@ -254,7 +278,14 @@ pub async fn begin_http_transport(
 }
 
 pub async fn begin_stdio_transport(log_file: Option<String>) -> anyhow::Result<()> {
-    let server = IamAutoPilotMcpServer::new(log_file);
+    begin_stdio_transport_with_read_only(log_file, false).await
+}
+
+pub async fn begin_stdio_transport_with_read_only(
+    log_file: Option<String>,
+    read_only: bool,
+) -> anyhow::Result<()> {
+    let server = IamAutoPilotMcpServer::new(log_file, read_only);
     let service = server.serve(transport::stdio()).await?;
     service.waiting().await?;
     Ok(())
@@ -366,7 +397,25 @@ mod tests {
         >,
     ) {
         let (server_io, client_io) = tokio::io::duplex(4096);
-        let server = IamAutoPilotMcpServer::new(None);
+        let server = IamAutoPilotMcpServer::new(None, false);
+        let server_handle = tokio::spawn(async move { server.serve(server_io).await });
+        let client = test_client.serve(client_io).await.unwrap();
+        (client, server_handle)
+    }
+
+    async fn setup_read_only(
+        test_client: TestClient,
+    ) -> (
+        rmcp::service::RunningService<RoleClient, TestClient>,
+        tokio::task::JoinHandle<
+            Result<
+                rmcp::service::RunningService<rmcp::RoleServer, IamAutoPilotMcpServer>,
+                rmcp::service::ServerInitializeError,
+            >,
+        >,
+    ) {
+        let (server_io, client_io) = tokio::io::duplex(4096);
+        let server = IamAutoPilotMcpServer::new(None, true);
         let server_handle = tokio::spawn(async move { server.serve(server_io).await });
         let client = test_client.serve(client_io).await.unwrap();
         (client, server_handle)
@@ -429,6 +478,26 @@ mod tests {
         assert!(
             result.is_err(),
             "Should fail when client lacks elicitation capability"
+        );
+
+        let _ = client.cancel().await;
+        let _ = server_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_read_only_rejects_fix_access_denied() {
+        let (client, server_handle) = setup_read_only(TestClient::accepting()).await;
+        let result = client.call_tool(fix_tool_params()).await;
+
+        let err = result.expect_err("read-only mode should reject mutating MCP tools");
+        let rmcp::service::ServiceError::McpError(mcp_error) = err else {
+            panic!("expected MCP error, got {err:?}");
+        };
+        assert_eq!(mcp_error.code, ErrorCode::INVALID_REQUEST);
+        assert!(
+            mcp_error.message.contains("read-only mode"),
+            "unexpected error message: {}",
+            mcp_error.message
         );
 
         let _ = client.cancel().await;

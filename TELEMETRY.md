@@ -43,6 +43,7 @@ Telemetry records which commands and parameters are used, and whether the comman
 |-----------|---------------|
 | `transport` | actual value (McpTransport) |
 | `port` | not collected |
+| `read_only` | actual value (boolean) |
 
 ### MCP: `mcp-tool-generate-policies`
 

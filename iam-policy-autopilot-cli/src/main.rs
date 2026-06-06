@@ -140,7 +140,9 @@ Examples:
 
   iam-policy-autopilot mcp-server
 
-  iam-policy-autopilot mcp-server --transport http --port 8001";
+  iam-policy-autopilot mcp-server --read-only
+
+  iam-policy-autopilot mcp-server --transport http --port 8001 --read-only";
 
 #[derive(Parser, Debug)]
 #[command(
@@ -488,6 +490,16 @@ Only used when --transport=http. The server will bind to the specified address o
 Only used when --transport=http. Defaults to 127.0.0.1 (localhost). \
 Use 0.0.0.0 to listen on all interfaces.")]
         bind_address: String,
+
+        /// Disable MCP tools that apply IAM policy changes
+        #[arg(
+            long = "read-only",
+            default_value_t = false,
+            long_help = "Run the MCP server in read-only mode. Policy generation tools remain available, \
+but MCP tools that apply IAM policy changes to AWS accounts are rejected."
+        )]
+        #[telemetry(value)]
+        read_only: bool,
     },
 
     #[command(
@@ -810,8 +822,9 @@ async fn main() {
             transport,
             port,
             bind_address,
+            read_only,
         } => {
-            match start_mcp_server(transport, port, &bind_address).await {
+            match start_mcp_server(transport, port, &bind_address, read_only).await {
                 Ok(()) => ExitCode::Success,
                 Err(e) => {
                     print_cli_command_error(e);

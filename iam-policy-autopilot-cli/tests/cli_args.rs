@@ -179,6 +179,11 @@ fn test_mcp_server_help_shows_bind_address() {
         "mcp-server help should mention --bind-address: {}",
         stdout
     );
+    assert!(
+        stdout.contains("--read-only"),
+        "mcp-server help should mention --read-only: {}",
+        stdout
+    );
 }
 
 #[test]
