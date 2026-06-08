@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 pub(crate) mod engine;
+pub(crate) mod external_library_models;
 pub(crate) mod extractor;
 pub(crate) mod framework;
 pub(crate) mod go;
