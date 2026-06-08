@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+
+- Generated policy statements are now sorted globally by service before being assigned to policies, so statements for the same service stay together (within size limits), producing deterministic, review-friendly output and stable diffs. Note: when `--minimize-policy-size` (cross-service action merging) is enabled, statements are grouped by shared resource rather than by service, so a single service's actions may span multiple statements and the "same service stays together" grouping does not hold. (#153)
+
 ## [0.2.3] - 2026-06-17
 
 ### Added
