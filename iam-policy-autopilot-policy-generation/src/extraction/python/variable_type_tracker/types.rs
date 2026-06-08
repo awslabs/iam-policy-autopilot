@@ -56,16 +56,11 @@ impl VariableTypeInfo {
 /// Distinguishes between different boto3 object types to enable
 /// more precise operation validation in the future.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-#[allow(dead_code)]
 pub(crate) enum SdkObjectKind {
     /// boto3.client('service') - Low-level client
     Client,
     /// boto3.resource('service') - High-level resource
     Resource,
-    /// client.get_paginator('operation') - Paginator
-    Paginator,
-    /// client.get_waiter('waiter') - Waiter
-    Waiter,
     /// resource.Table('name'), s3.Bucket('name'), etc.
     ResourceCollection,
 }

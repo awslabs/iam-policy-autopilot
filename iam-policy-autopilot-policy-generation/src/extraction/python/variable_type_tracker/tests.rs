@@ -139,6 +139,59 @@ waiter = s3.get_waiter('object_exists')
 }
 
 #[test]
+fn test_nested_function_assignment_does_not_leak_to_outer() {
+    let source_code = r#"
+import boto3
+
+def outer():
+    def inner():
+        client = boto3.client('s3')
+    client.something()
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // 'client' assigned inside inner() should NOT appear in outer()'s scope
+    assert!(tracker
+        .get_service_for_variable_in_context("client", Some("outer"))
+        .is_none());
+
+    // It should appear in inner()'s scope
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("client", Some("inner")),
+        Some(&"s3".to_string())
+    );
+}
+
+#[test]
+fn test_module_alias_available_in_function() {
+    let source_code = r#"
+import boto3
+s3 = boto3.client('s3')
+my_s3 = s3
+
+def func(x):
+    local = my_s3
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Module-level alias should be resolved
+    assert_eq!(
+        tracker.get_service_for_variable("my_s3"),
+        Some(&"s3".to_string())
+    );
+
+    // Function-level alias referencing module alias should also resolve
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("local", Some("func")),
+        Some(&"s3".to_string())
+    );
+}
+
+#[test]
 fn test_track_multiple_assignments() {
     let source_code = r#"
 import boto3
@@ -816,22 +869,19 @@ s3_resource = boto3.resource('s3')
 // ========== Conflicted Function Name Tests ==========
 
 #[test]
-fn test_duplicate_function_names_return_none() {
-    // Two classes with same method name — tracker should return None
-    // to avoid false narrowing from picking the wrong scope.
+fn test_duplicate_top_level_functions_return_none() {
+    // Two top-level functions with the same name — tracker should return None
     let source_code = r#"
 import boto3
 
-class S3Handler:
-    def process(self, client):
-        client.list_buckets()
+def process(client):
+    client.list_buckets()
 
-class EC2Handler:
-    def process(self, client):
-        client.describe_instances()
+def process(client):
+    client.describe_instances()
 
 s3 = boto3.client('s3')
-ec2 = boto3.client('ec2')
+process(s3)
 "#;
     let ast = create_ast(source_code);
     let mut tracker = VariableTypeTracker::new();
@@ -851,8 +901,9 @@ ec2 = boto3.client('ec2')
 }
 
 #[test]
-fn test_unique_function_names_still_resolve() {
-    // Unique function names should continue to work normally
+fn test_same_named_methods_in_different_classes_not_conflicted() {
+    // Methods with same name in different classes should NOT be conflicted —
+    // class methods don't poison the tracker for top-level functions.
     let source_code = r#"
 import boto3
 
@@ -860,20 +911,34 @@ class S3Handler:
     def process(self, client):
         client.list_buckets()
 
+class EC2Handler:
+    def process(self, client):
+        client.describe_instances()
+
 def upload(client):
     client.put_object(Bucket='b', Key='k', Body=b'data')
 
 s3 = boto3.client('s3')
 upload(s3)
+process(s3)
 "#;
     let ast = create_ast(source_code);
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    // 'upload' is unique — should still resolve
+    // 'process' is NOT conflicted (they're methods, not top-level functions)
+    assert!(!tracker.conflicted_functions.contains("process"));
+
+    // 'upload' is unique and should resolve
     let services = tracker.get_services_for_parameter("upload", "client");
     assert!(services.is_some());
     assert!(services.unwrap().contains("s3"));
+
+    // Calling process(s3) still maps correctly via parameter_types
+    // (self is filtered, so 'client' is position 0)
+    let process_services = tracker.get_services_for_parameter("process", "client");
+    assert!(process_services.is_some());
+    assert!(process_services.unwrap().contains("s3"));
 }
 
 // ========== Python Scoping (LEGB) Tests ==========

@@ -25,9 +25,14 @@ impl VariableTypeTracker {
         self.track_resource_derived_variables(&root);
     }
 
-    /// Detect function names that appear multiple times in the file.
+    /// Detect top-level function names that appear multiple times in the file.
     /// These are marked as conflicted so lookups return None rather than
     /// picking an arbitrary scope (which could cause false narrowing).
+    ///
+    /// Methods inside class definitions are excluded — same-named methods in
+    /// different classes (e.g., `S3Handler.process` and `EC2Handler.process`)
+    /// don't conflict because `self.method()` calls won't match bare function
+    /// names in `func_params`.
     fn detect_conflicted_function_names(
         &mut self,
         root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
@@ -36,6 +41,11 @@ impl VariableTypeTracker {
         let func_def_pattern = "def $FUNC($$$): $$$BODY";
 
         for func_match in root.find_all(func_def_pattern) {
+            // Skip methods — their immediate parent is a class body
+            if is_method(&func_match) {
+                continue;
+            }
+
             let env = func_match.get_env();
             if let Some(node) = env.get_match("FUNC") {
                 let name = node.text().to_string();
@@ -53,7 +63,9 @@ impl VariableTypeTracker {
         }
     }
 
-    /// Track boto3 factory assignments (client or resource) at both function and module level
+    /// Track boto3 factory assignments (client or resource) at both function and module level.
+    /// Note: session-based creation (`session.client('s3')`) is not yet supported.
+    /// See https://github.com/awslabs/iam-policy-autopilot/issues/226
     fn track_boto3_factory_assignments(
         &mut self,
         root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
@@ -73,7 +85,12 @@ impl VariableTypeTracker {
                 continue;
             };
 
+            let caller_node_id = func_match.get_node().node_id();
             for node_match in func_match.get_node().find_all(assign_pattern.as_str()) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
                 let assign_env = node_match.get_env();
 
                 let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
@@ -149,12 +166,52 @@ impl VariableTypeTracker {
         None
     }
 
-    /// Track simple variable aliases within functions
+    /// Track simple variable aliases at module and function level
     /// Pattern: `my_client = s3_client` where s3_client is already tracked
     fn track_aliases(
         &mut self,
         root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
     ) {
+        // Module-level aliases first, so they're available when function-level aliases
+        // reference them via get_type_info_for_variable_in_context fallback to module scope.
+        let pattern = "$NEW = $OLD";
+        for node_match in root.find_all(pattern) {
+            let env = node_match.get_env();
+
+            if is_inside_function(&node_match) {
+                continue;
+            }
+
+            let old_node = if let Some(node) = env.get_match("OLD") {
+                node
+            } else {
+                continue;
+            };
+
+            if old_node.kind() != node_kinds::IDENTIFIER {
+                continue;
+            }
+
+            let new_var = if let Some(node) = env.get_match("NEW") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            let old_var = old_node.text().to_string();
+
+            if let Some(type_info) = self.module_scope.get(&old_var) {
+                log::debug!(
+                    "Tracked module-level alias: {} -> {} (service: {})",
+                    new_var,
+                    old_var,
+                    type_info.service_name
+                );
+                self.module_scope.insert(new_var, type_info.clone());
+            }
+        }
+
+        // Then function-level aliases (can now reference module-level aliases)
         let func_def_pattern = "def $FUNC($$$PARAMS):$$$BODY";
 
         for func_match in root.find_all(func_def_pattern) {
@@ -166,14 +223,11 @@ impl VariableTypeTracker {
                 continue;
             };
 
-            let body_node = if let Some(node) = env.get_match("BODY") {
-                node
-            } else {
-                continue;
-            };
-
-            let pattern = "$NEW = $OLD";
-            for node_match in body_node.find_all(pattern) {
+            let caller_node_id = func_match.get_node().node_id();
+            for node_match in func_match.get_node().find_all(pattern) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
                 let assign_env = node_match.get_env();
 
                 let old_node = if let Some(node) = assign_env.get_match("OLD") {
@@ -212,44 +266,6 @@ impl VariableTypeTracker {
                         .or_default()
                         .insert(new_var, type_info);
                 }
-            }
-        }
-
-        // Also track module-level aliases
-        let pattern = "$NEW = $OLD";
-        for node_match in root.find_all(pattern) {
-            let env = node_match.get_env();
-
-            if is_inside_function(&node_match) {
-                continue;
-            }
-
-            let old_node = if let Some(node) = env.get_match("OLD") {
-                node
-            } else {
-                continue;
-            };
-
-            if old_node.kind() != node_kinds::IDENTIFIER {
-                continue;
-            }
-
-            let new_var = if let Some(node) = env.get_match("NEW") {
-                node.text().to_string()
-            } else {
-                continue;
-            };
-
-            let old_var = old_node.text().to_string();
-
-            if let Some(type_info) = self.module_scope.get(&old_var) {
-                log::debug!(
-                    "Tracked module-level alias: {} -> {} (service: {})",
-                    new_var,
-                    old_var,
-                    type_info.service_name
-                );
-                self.module_scope.insert(new_var, type_info.clone());
             }
         }
     }
@@ -492,8 +508,13 @@ impl VariableTypeTracker {
                 continue;
             };
 
+            let caller_node_id = func_match.get_node().node_id();
             let pattern = "$VAR = $RESOURCE.$METHOD($$$ARGS)";
             for node_match in func_match.get_node().find_all(pattern) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
                 let assign_env = node_match.get_env();
 
                 let var_name = if let Some(node) = assign_env.get_match("VAR") {
@@ -653,6 +674,26 @@ fn has_intervening_function(
             return true;
         }
         current = node.parent();
+    }
+    false
+}
+
+/// Check if a function definition is a method (immediate child of a class body)
+fn is_method(
+    func_match: &ast_grep_core::NodeMatch<ast_grep_core::tree_sitter::StrDoc<Python>>,
+) -> bool {
+    let mut current = func_match.get_node().parent();
+    while let Some(node) = current {
+        let kind = node.kind();
+        if kind == node_kinds::CLASS_DEFINITION {
+            return true;
+        }
+        // Walk through intermediate nodes (block, decorated_definition)
+        if kind == node_kinds::BLOCK || kind == node_kinds::DECORATED_DEFINITION {
+            current = node.parent();
+            continue;
+        }
+        return false;
     }
     false
 }
