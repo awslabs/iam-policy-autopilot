@@ -119,11 +119,13 @@ impl IamAutoPilotMcpServer {
     }
 
     #[tool(
-        description = "Tool that applies IAM Policy fix generated for IAM AccessDenied exceptions using the generate_policy_for_access_denied tool to the user's aws account\
+        description = "Tool that applies IAM Policy fix generated for IAM AccessDenied exceptions to the user's AWS account\
         \
         INSTRUCTIONS: \
-        1. Ensure the user has aws profile setup and has active aws credentials
-        2. Only use the tool if the original policy was generated using generate_policy_for_access_denied tool
+        1. Ensure the user has aws profile setup and has active AWS credentials
+        2. Only use the tool if the original policy was first generated using generate_policy_for_access_denied tool and surfaced to the user
+           - If the resource block of the original policy could be improved, suggest the improved policy to the user
+           - If desired by the user, use the resource_override parameter to broaden or narrow the resource scope of the generated policy
         3. After successfully applying the policy, you MUST provide a clear summary that includes:
            - What access was fixed (the specific action/resource that was denied)
            - Where the policy was applied (the principal ARN - user/role that received the fix)
@@ -256,4 +258,180 @@ pub async fn begin_stdio_transport(log_file: Option<String>) -> anyhow::Result<(
     let service = server.serve(transport::stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+#[serial_test::serial]
+mod tests {
+    use super::*;
+    use crate::tools::policy_autopilot;
+    use iam_policy_autopilot_access_denied::{ApplyResult, DenialType, ParsedDenial, PlanResult};
+    use rmcp::model::{
+        CallToolRequestParams, ClientCapabilities, CreateElicitationRequestParams,
+        CreateElicitationResult, ElicitationAction, Implementation,
+    };
+    use rmcp::service::{MaybeSendFuture, RequestContext};
+    use rmcp::{ClientHandler, RoleClient, ServiceExt};
+    use serde_json::json;
+    use std::future::Future;
+
+    fn test_plan() -> PlanResult {
+        PlanResult::new(
+            ParsedDenial::new(
+                "arn:aws:iam::123456789012:user/testuser".to_string(),
+                "s3:GetObject".to_string(),
+                "arn:aws:s3:::my-bucket/my-key".to_string(),
+                DenialType::ImplicitIdentity,
+            ),
+            None,
+        )
+    }
+
+    const ERROR_MSG: &str = "User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key";
+
+    fn fix_tool_params() -> CallToolRequestParams {
+        CallToolRequestParams::new("fix_access_denied").with_arguments(
+            json!({ "ErrorMessage": ERROR_MSG })
+                .as_object()
+                .cloned()
+                .unwrap(),
+        )
+    }
+
+    /// A test MCP client parameterized by elicitation behavior.
+    #[derive(Clone)]
+    struct TestClient {
+        capabilities: ClientCapabilities,
+        elicitation_action: ElicitationAction,
+    }
+
+    impl TestClient {
+        fn accepting() -> Self {
+            Self {
+                capabilities: ClientCapabilities::builder().enable_elicitation().build(),
+                elicitation_action: ElicitationAction::Accept,
+            }
+        }
+
+        fn declining() -> Self {
+            Self {
+                capabilities: ClientCapabilities::builder().enable_elicitation().build(),
+                elicitation_action: ElicitationAction::Decline,
+            }
+        }
+
+        fn no_elicitation() -> Self {
+            Self {
+                capabilities: ClientCapabilities::default(),
+                elicitation_action: ElicitationAction::Decline,
+            }
+        }
+    }
+
+    impl ClientHandler for TestClient {
+        fn get_info(&self) -> rmcp::model::ClientInfo {
+            rmcp::model::ClientInfo::new(
+                self.capabilities.clone(),
+                Implementation::new("test-client", "0.1.0"),
+            )
+        }
+
+        fn create_elicitation(
+            &self,
+            _request: CreateElicitationRequestParams,
+            _context: RequestContext<RoleClient>,
+        ) -> impl Future<Output = Result<CreateElicitationResult, rmcp::ErrorData>> + MaybeSendFuture + '_
+        {
+            let content = match self.elicitation_action {
+                ElicitationAction::Accept => Some(json!({"confirmed": true})),
+                _ => None,
+            };
+            std::future::ready(Ok(CreateElicitationResult {
+                action: self.elicitation_action.clone(),
+                content,
+                meta: None,
+            }))
+        }
+    }
+
+    async fn setup(
+        test_client: TestClient,
+    ) -> (
+        rmcp::service::RunningService<RoleClient, TestClient>,
+        tokio::task::JoinHandle<
+            Result<
+                rmcp::service::RunningService<rmcp::RoleServer, IamAutoPilotMcpServer>,
+                rmcp::service::ServerInitializeError,
+            >,
+        >,
+    ) {
+        let (server_io, client_io) = tokio::io::duplex(4096);
+        let server = IamAutoPilotMcpServer::new(None);
+        let server_handle = tokio::spawn(async move { server.serve(server_io).await });
+        let client = test_client.serve(client_io).await.unwrap();
+        (client, server_handle)
+    }
+
+    #[tokio::test]
+    async fn test_fix_access_denied_user_accepts() {
+        policy_autopilot::set_mock_plan_return(Ok(test_plan()));
+        policy_autopilot::set_mock_apply_return(Ok(ApplyResult {
+            success: true,
+            policy_name: "IamPolicyAutopilot-User-testuser".to_string(),
+            principal_kind: "User".to_string(),
+            principal_name: "testuser".to_string(),
+            is_new_policy: true,
+            statement_count: 1,
+            error: None,
+        }));
+
+        let (client, server_handle) = setup(TestClient::accepting()).await;
+        let result = client.call_tool(fix_tool_params()).await.unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let text = &result.content.first().unwrap().raw.as_text().unwrap().text;
+        let output: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(output["FixResult"]["Success"], true);
+        assert_eq!(
+            output["FixResult"]["PolicyName"],
+            "IamPolicyAutopilot-User-testuser"
+        );
+
+        let _ = client.cancel().await;
+        let _ = server_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_fix_access_denied_user_declines() {
+        policy_autopilot::set_mock_plan_return(Ok(test_plan()));
+        // No mock_apply_return needed — apply should not be called
+
+        let (client, server_handle) = setup(TestClient::declining()).await;
+        let result = client.call_tool(fix_tool_params()).await.unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let text = &result.content.first().unwrap().raw.as_text().unwrap().text;
+        let output: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert!(output["FixResult"].is_null());
+        assert!(output["Policy"].is_string());
+
+        let _ = client.cancel().await;
+        let _ = server_handle.await;
+    }
+
+    #[tokio::test]
+    async fn test_fix_access_denied_no_elicitation_capability() {
+        policy_autopilot::set_mock_plan_return(Ok(test_plan()));
+
+        let (client, server_handle) = setup(TestClient::no_elicitation()).await;
+        let result = client.call_tool(fix_tool_params()).await;
+
+        assert!(
+            result.is_err(),
+            "Should fail when client lacks elicitation capability"
+        );
+
+        let _ = client.cancel().await;
+        let _ = server_handle.await;
+    }
 }
