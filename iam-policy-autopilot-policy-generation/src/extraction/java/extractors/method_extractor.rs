@@ -6,8 +6,11 @@
 //!
 //! Plain function calls without a receiver are excluded by requiring the `object` field.
 
-use crate::extraction::java::extractor::{JavaNodeMatch, SdkExtractor};
+use ast_grep_language::Java;
+
+use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utils;
+use crate::extraction::java::extractors::utils::JavaNodeMatch;
 use crate::extraction::java::types::{Call, ExtractionResult};
 use crate::Location;
 use crate::SourceFile;
@@ -34,7 +37,9 @@ use crate::SourceFile;
 /// ```
 pub(crate) struct JavaMethodCallExtractor;
 
-impl SdkExtractor for JavaMethodCallExtractor {
+impl SdkExtractor<Java> for JavaMethodCallExtractor {
+    type ExtractionResult = ExtractionResult;
+
     fn rule_yaml(&self) -> &'static str {
         r"kind: method_invocation
 all:
