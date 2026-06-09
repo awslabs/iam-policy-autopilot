@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- `--resource-cutoff` CLI flag and `resource_cutoff` MCP input to configure when resource lists collapse to `*` (#217)
+
 ### Fixed
 
 - `fix_access_denied` MCP tool now correctly generates the policy from the error message and applies it after confirmation
@@ -10,6 +14,7 @@
 ### Changed
 
 - The `fix_access_denied` MCP tool no longer accepts an input policy, but a resource override instead. The tool derives the policy from the error message, and if a resource override is provided, uses it. It then surfaces the policy to the user and after confirmation applies it.
+- `EnrichmentEngine::new` now requires a `resource_cutoff` parameter; use `DEFAULT_RESOURCE_CUTOFF` to preserve existing behavior (#217)
 
 ## [0.2.2rc1] - 2026-05-29
 
