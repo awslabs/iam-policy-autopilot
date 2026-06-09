@@ -2,16 +2,28 @@
 
 use crate::error::{IamPolicyAutopilotError, IamPolicyAutopilotResult};
 use crate::parsing::parse;
-use crate::synthesis::build_inline_allow;
 use crate::types::PlanResult;
 use std::collections::HashSet;
 
 impl super::service::IamPolicyAutopilotService {
-    /// Create an execution plan from error text
+    /// Create an execution plan from error text.
     ///
     /// Analyzes AccessDenied error messages and creates a plan containing the parsed
-    /// denial information, actions to be allowed, and synthesized IAM policy document.
-    pub async fn plan(&self, error_text: &str) -> IamPolicyAutopilotResult<PlanResult> {
+    /// denial information. Optionally accepts a `resource_override` to use a different
+    /// resource ARN than the one derived from the error message.
+    pub async fn plan(
+        &self,
+        error_text: &str,
+        resource_override: Option<String>,
+    ) -> IamPolicyAutopilotResult<PlanResult> {
+        // Design: Single-action-per-statement granularity
+        //
+        // We process exactly ONE action per invocation to ensure:
+        // - Fine-grained audit trail: Each Statement ID = one permission grant
+        // - Iterative debugging workflow: Fix one error, run tool again for next
+        //
+        // If error text contains multiple denials (e.g., s3:GetObject and s3:PutObject),
+        // the user runs the tool multiple times. Each run adds one statement to the policy.
         let lines = extract_access_denied_lines(error_text);
         if lines.is_empty() {
             return Err(IamPolicyAutopilotError::parsing(
@@ -37,23 +49,7 @@ impl super::service::IamPolicyAutopilotService {
         // Normalize S3 resources for object operations
         parsed.resource = crate::parsing::normalize_s3_resource(&parsed.action, &parsed.resource);
 
-        // Design: Single-action-per-statement granularity
-        //
-        // We process exactly ONE action per invocation to ensure:
-        // - Fine-grained audit trail: Each Statement ID = one permission grant
-        // - Iterative debugging workflow: Fix one error, run tool again for next
-        //
-        // If error text contains multiple denials (e.g., s3:GetObject and s3:PutObject),
-        // the user runs the tool multiple times. Each run adds one statement to the policy.
-        let actions = vec![parsed.action.clone()];
-
-        let policy = build_inline_allow(actions.clone(), parsed.resource.clone());
-
-        Ok(PlanResult {
-            diagnosis: parsed,
-            actions,
-            policy,
-        })
+        Ok(PlanResult::new(parsed, resource_override))
     }
 }
 
@@ -146,26 +142,28 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: dyna
         let error_text = "User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/path/to/file.txt";
 
         // Call plan
-        let result = service.plan(error_text).await;
+        let result = service.plan(error_text, None).await;
         assert!(result.is_ok(), "plan() should succeed");
 
         let plan = result.unwrap();
 
-        // Verify the diagnosis.resource is normalized to bucket wildcard
+        // Verify the resource is normalized to bucket wildcard
         assert_eq!(
-            plan.diagnosis.resource, "arn:aws:s3:::my-bucket/*",
-            "S3 object ARN should be normalized to bucket wildcard in diagnosis"
+            plan.resource(),
+            "arn:aws:s3:::my-bucket/*",
+            "S3 object ARN should be normalized to bucket wildcard"
         );
 
-        // Verify the policy statement uses bucket wildcard
-        assert_eq!(plan.policy.statement.len(), 1, "Should have one statement");
+        // Verify the derived policy statement uses bucket wildcard
+        let policy = plan.to_policy_document();
+        assert_eq!(policy.statement.len(), 1, "Should have one statement");
         assert_eq!(
-            plan.policy.statement[0].resource, "arn:aws:s3:::my-bucket/*",
+            policy.statement[0].resource, "arn:aws:s3:::my-bucket/*",
             "Policy statement should use bucket wildcard resource"
         );
 
         // Verify action is correct
-        assert_eq!(plan.actions, vec!["s3:GetObject"]);
+        assert_eq!(plan.action(), "s3:GetObject");
     }
 
     #[tokio::test]
@@ -179,7 +177,7 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: dyna
         let error_text = "Random error message without AccessDenied pattern";
 
         // Call plan - should return error
-        let result = service.plan(error_text).await;
+        let result = service.plan(error_text, None).await;
         assert!(
             result.is_err(),
             "plan() should return error for non-AccessDenied text"
@@ -207,7 +205,7 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:G
 User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key"#;
 
         // Call plan
-        let result = service.plan(error_text).await;
+        let result = service.plan(error_text, None).await;
         assert!(
             result.is_ok(),
             "plan() should succeed with duplicate messages"
@@ -216,12 +214,11 @@ User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:G
         let plan = result.unwrap();
 
         // Should only have one action despite three identical messages
-        assert_eq!(plan.actions.len(), 1, "Should deduplicate to single action");
-        assert_eq!(plan.actions[0], "s3:GetObject");
+        assert_eq!(plan.action(), "s3:GetObject");
 
         // Policy should have one statement
         assert_eq!(
-            plan.policy.statement.len(),
+            plan.to_policy_document().statement.len(),
             1,
             "Should have one policy statement"
         );
