@@ -1,9 +1,9 @@
 //! Individual extractor implementations for AWS SDK for Java v2.
 //!
 //! Each module handles one syntactic pattern. All are registered in
-//! [`JavaLanguageExtractorSet::default_aws_v2`].
+//! [`JavaLanguageExtractor::extractor_set`].
 //!
-//! [`JavaLanguageExtractorSet::default_aws_v2`]: crate::extraction::java::extractor::JavaLanguageExtractorSet::default_aws_v2
+//! [`JavaLanguageExtractor::extractor_set`]: crate::extraction::java::JavaLanguageExtractor::extractor_set
 
 pub(crate) mod import_extractor;
 pub(crate) mod method_extractor;
