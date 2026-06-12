@@ -11,15 +11,20 @@ impl VariableTypeTracker {
     ///
     /// 1. **Client assignments**: `boto3.client('service')` at module and function level
     /// 2. **Resource assignments**: `boto3.resource('service')` at module and function level
-    /// 3. **Aliases**: `my_client = s3_client` at module and function level
-    /// 4. **Function calls**: Infer parameter types from arguments at call sites
-    /// 5. **Resource-derived variables**: `table = dynamodb.Table('name')`, `bucket = s3.Bucket('name')`
+    /// 3. **Session-based assignments**: `session = boto3.Session(...)` then `session.client('service')`
+    /// 4. **Aliases**: `my_client = s3_client` at module and function level
+    /// 5. **Function calls**: Infer parameter types from arguments at call sites
+    /// 6. **Resource-derived variables**: `table = dynamodb.Table('name')`, `bucket = s3.Bucket('name')`
     pub(crate) fn track_boto3_assignments(&mut self, ast: &AstWithSourceFile<Python>) {
         let root = ast.ast.root();
 
         self.detect_conflicted_function_names(&root);
+        self.collect_local_assignment_targets(&root);
         self.track_boto3_factory_assignments(&root, "client", SdkObjectKind::Client);
         self.track_boto3_factory_assignments(&root, "resource", SdkObjectKind::Resource);
+        self.track_session_variables(&root);
+        self.track_session_factory_assignments(&root, "client", SdkObjectKind::Client);
+        self.track_session_factory_assignments(&root, "resource", SdkObjectKind::Resource);
         self.track_aliases(&root);
         self.track_function_calls(&root);
         self.track_resource_derived_variables(&root);
@@ -63,9 +68,43 @@ impl VariableTypeTracker {
         }
     }
 
+    /// Collect all assignment target variable names per function.
+    /// Used to detect when a function locally shadows a module-level variable name.
+    fn collect_local_assignment_targets(
+        &mut self,
+        root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ) {
+        let func_def_pattern = "def $FUNC($$$): $$$BODY";
+        let assign_pattern = "$VAR = $$$RHS";
+
+        for func_match in root.find_all(func_def_pattern) {
+            let env = func_match.get_env();
+            let func_name = if let Some(node) = env.get_match("FUNC") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            let caller_node_id = func_match.get_node().node_id();
+            for node_match in func_match.get_node().find_all(assign_pattern) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
+                let assign_env = node_match.get_env();
+                if let Some(var_node) = assign_env.get_match("VAR") {
+                    if var_node.kind() == node_kinds::IDENTIFIER {
+                        self.local_assignments
+                            .entry(func_name.clone())
+                            .or_default()
+                            .insert(var_node.text().to_string());
+                    }
+                }
+            }
+        }
+    }
+
     /// Track boto3 factory assignments (client or resource) at both function and module level.
-    /// Note: session-based creation (`session.client('s3')`) is not yet supported.
-    /// See https://github.com/awslabs/iam-policy-autopilot/issues/226
     fn track_boto3_factory_assignments(
         &mut self,
         root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
@@ -164,6 +203,194 @@ impl VariableTypeTracker {
             return Some(Self::extract_string_literal(trimmed));
         }
         None
+    }
+
+    /// Track `boto3.Session(...)` assignments to identify session variables
+    fn track_session_variables(
+        &mut self,
+        root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ) {
+        let pattern = "$VAR = boto3.Session($$$ARGS)";
+
+        // Track function-level session variables
+        let func_def_pattern = "def $FUNC($$$): $$$BODY";
+        for func_match in root.find_all(func_def_pattern) {
+            let env = func_match.get_env();
+            let func_name = if let Some(node) = env.get_match("FUNC") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            let caller_node_id = func_match.get_node().node_id();
+            for node_match in func_match.get_node().find_all(pattern) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
+                let assign_env = node_match.get_env();
+                let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
+                    var_node.text().to_string()
+                } else {
+                    continue;
+                };
+
+                log::debug!(
+                    "Tracked boto3.Session assignment in function '{func_name}': {var_name}"
+                );
+                self.session_variables
+                    .entry(Some(func_name.clone()))
+                    .or_default()
+                    .insert(var_name);
+            }
+        }
+
+        // Track module-level session variables
+        for node_match in root.find_all(pattern) {
+            if is_inside_function(&node_match) {
+                continue;
+            }
+
+            let env = node_match.get_env();
+            let var_name = if let Some(var_node) = env.get_match("VAR") {
+                var_node.text().to_string()
+            } else {
+                continue;
+            };
+
+            log::debug!("Tracked boto3.Session assignment at module level: {var_name}");
+            self.session_variables
+                .entry(None)
+                .or_default()
+                .insert(var_name);
+        }
+    }
+
+    /// Track `session.client('service')` / `session.resource('service')` assignments
+    /// where `session` is a known boto3.Session() variable in the same scope.
+    fn track_session_factory_assignments(
+        &mut self,
+        root: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        factory_method: &str,
+        kind: SdkObjectKind,
+    ) {
+        let assign_pattern = format!("$VAR = $SESSION.{factory_method}($$$ARGS)");
+
+        // Track function-level assignments
+        let func_def_pattern = "def $FUNC($$$): $$$BODY";
+        for func_match in root.find_all(func_def_pattern) {
+            let env = func_match.get_env();
+
+            let func_name = if let Some(node) = env.get_match("FUNC") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            let caller_node_id = func_match.get_node().node_id();
+            for node_match in func_match.get_node().find_all(assign_pattern.as_str()) {
+                if has_intervening_function(&node_match, caller_node_id) {
+                    continue;
+                }
+
+                let assign_env = node_match.get_env();
+
+                let session_name = if let Some(node) = assign_env.get_match("SESSION") {
+                    node.text().to_string()
+                } else {
+                    continue;
+                };
+
+                // Check function scope first, then fall back to module scope.
+                // Skip module fallback if the name is locally assigned within this
+                // function (shadowed), even if it's not a boto3 assignment we track.
+                let in_func_sessions = self
+                    .session_variables
+                    .get(&Some(func_name.clone()))
+                    .is_some_and(|vars| vars.contains(&session_name));
+
+                if !in_func_sessions {
+                    let locally_shadowed = self
+                        .local_assignments
+                        .get(&func_name)
+                        .is_some_and(|vars| vars.contains(&session_name));
+                    let in_module_sessions = !locally_shadowed
+                        && self
+                            .session_variables
+                            .get(&None)
+                            .is_some_and(|vars| vars.contains(&session_name));
+                    if !in_module_sessions {
+                        continue;
+                    }
+                }
+
+                let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
+                    var_node.text().to_string()
+                } else {
+                    continue;
+                };
+
+                let Some(service_name) = Self::extract_first_positional_string_arg(assign_env)
+                else {
+                    continue;
+                };
+
+                log::debug!(
+                    "Tracked {session_name}.{factory_method} assignment in function '{func_name}': {var_name} -> {service_name}"
+                );
+
+                self.function_scopes
+                    .entry(func_name.clone())
+                    .or_default()
+                    .insert(
+                        var_name,
+                        VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
+                    );
+            }
+        }
+
+        // Track module-level assignments
+        for node_match in root.find_all(assign_pattern.as_str()) {
+            let env = node_match.get_env();
+
+            if is_inside_function(&node_match) {
+                continue;
+            }
+
+            let session_name = if let Some(node) = env.get_match("SESSION") {
+                node.text().to_string()
+            } else {
+                continue;
+            };
+
+            // Module-level: only check module-scope sessions
+            let is_known_session = self
+                .session_variables
+                .get(&None)
+                .is_some_and(|vars| vars.contains(&session_name));
+
+            if !is_known_session {
+                continue;
+            }
+
+            let var_name = if let Some(var_node) = env.get_match("VAR") {
+                var_node.text().to_string()
+            } else {
+                continue;
+            };
+
+            let Some(service_name) = Self::extract_first_positional_string_arg(env) else {
+                continue;
+            };
+
+            log::debug!(
+                "Tracked {session_name}.{factory_method} assignment at module level: {var_name} -> {service_name}"
+            );
+            self.module_scope.insert(
+                var_name,
+                VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
+            );
+        }
     }
 
     /// Track simple variable aliases at module and function level

@@ -84,6 +84,14 @@ pub(crate) struct VariableTypeTracker {
     /// Lookups against these names return None to avoid false narrowing.
     /// TODO: Resolve properly by qualifying with class name (e.g., "ClassName.method").
     pub(super) conflicted_functions: HashSet<String>,
+
+    /// Known boto3.Session() variables, scoped by function name (None = module scope).
+    /// Used to match session.client()/session.resource() only in the correct scope.
+    pub(super) session_variables: HashMap<Option<String>, HashSet<String>>,
+
+    /// All assignment target names per function, used to detect local shadowing
+    /// of module-level session variables.
+    pub(super) local_assignments: HashMap<String, HashSet<String>>,
 }
 
 impl VariableTypeTracker {
@@ -93,6 +101,8 @@ impl VariableTypeTracker {
             function_scopes: HashMap::new(),
             parameter_types: HashMap::new(),
             conflicted_functions: HashSet::new(),
+            session_variables: HashMap::new(),
+            local_assignments: HashMap::new(),
         }
     }
 }

@@ -111,6 +111,162 @@ upload(s3)
     assert!(services.unwrap().contains("s3"));
 }
 
+// ========== Session-Based Creation Tests (parameterized) ==========
+
+#[rstest]
+#[case(
+    "session.client('s3')",
+    "boto3.Session(region_name='us-east-1')",
+    "s3_client",
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case(
+    "session.client('ec2')",
+    "boto3.Session()",
+    "ec2_client",
+    "ec2",
+    SdkObjectKind::Client
+)]
+#[case(
+    "session.resource('dynamodb')",
+    "boto3.Session()",
+    "dynamodb",
+    "dynamodb",
+    SdkObjectKind::Resource
+)]
+#[case(
+    "session.client('s3', endpoint_url='http://localhost:4566')",
+    "boto3.Session(region_name='us-west-2', profile_name='dev')",
+    "s3",
+    "s3",
+    SdkObjectKind::Client
+)]
+fn test_session_factory_tracking(
+    #[case] factory_call: &str,
+    #[case] session_init: &str,
+    #[case] var_name: &str,
+    #[case] expected_service: &str,
+    #[case] expected_kind: SdkObjectKind,
+) {
+    let source_code =
+        format!("import boto3\nsession = {session_init}\n{var_name} = {factory_call}\n");
+    let ast = create_ast(&source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    let info = tracker
+        .get_type_info_for_variable_in_context(var_name, None)
+        .unwrap();
+    assert_eq!(info.service_name, expected_service);
+    assert_eq!(info.kind, Some(expected_kind));
+}
+
+#[test]
+fn test_session_in_function_scope() {
+    let source_code = r#"
+import boto3
+
+def create_clients():
+    session = boto3.Session()
+    s3 = session.client('s3')
+    s3.list_buckets()
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("s3", Some("create_clients")),
+        Some(&"s3".to_string())
+    );
+}
+
+#[test]
+fn test_non_session_variable_not_matched() {
+    let source_code = r#"
+import boto3
+other = SomeOtherClass()
+client = other.client('s3')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // 'other' is not a boto3.Session() — should not be tracked
+    assert!(tracker.get_service_for_variable("client").is_none());
+}
+
+#[test]
+fn test_session_scope_isolation() {
+    let source_code = r#"
+import boto3
+
+def setup_s3():
+    session = boto3.Session(region_name='us-east-1')
+    s3 = session.client('s3')
+
+def unrelated():
+    session = SomeOtherClass()
+    client = session.client('s3')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // setup_s3's session.client('s3') should be tracked
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("s3", Some("setup_s3")),
+        Some(&"s3".to_string())
+    );
+
+    // unrelated's session is NOT a boto3.Session() — should not be tracked
+    assert!(tracker
+        .get_service_for_variable_in_context("client", Some("unrelated"))
+        .is_none());
+}
+
+#[test]
+fn test_local_reassignment_shadows_module_session() {
+    let source_code = r#"
+import boto3
+session = boto3.Session()
+
+def handler():
+    session = SomeOtherClass()
+    client = session.client('s3')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Local `session` shadows the module-level boto3.Session —
+    // should NOT be tracked as an s3 client
+    assert!(tracker
+        .get_service_for_variable_in_context("client", Some("handler"))
+        .is_none());
+}
+
+#[test]
+fn test_module_session_accessible_from_function() {
+    let source_code = r#"
+import boto3
+session = boto3.Session()
+
+def create_client():
+    s3 = session.client('s3')
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // Module-level session should be accessible from within functions
+    assert_eq!(
+        tracker.get_service_for_variable_in_context("s3", Some("create_client")),
+        Some(&"s3".to_string())
+    );
+}
+
 #[test]
 fn test_paginator_waiter_not_tracked() {
     let source_code = r#"
