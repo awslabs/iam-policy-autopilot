@@ -56,6 +56,9 @@ use serde::Serialize;
 
 use crate::errors::ExtractorError;
 
+/// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+pub const DEFAULT_RESOURCE_CUTOFF: usize = 4;
+
 /// Language that is analyzed
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]
@@ -74,6 +77,34 @@ impl Language {
             Self::Python => SdkType::Boto3,
             Self::Java => SdkType::JavaV2,
             _ => SdkType::Other,
+        }
+    }
+
+    /// Returns `true` if this [`Language`] corresponds to the given ast-grep language type `L`.
+    ///
+    /// Uses [`TypeId`] comparison so the check is zero-cost at runtime and does not rely on
+    /// string matching.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use iam_policy_autopilot_policy_generation::Language;
+    /// use ast_grep_language::Java;
+    ///
+    /// assert!(Language::Java.matches(Java));
+    /// assert!(!Language::Python.matches(Java));
+    /// ```
+    ///
+    /// [`TypeId`]: std::any::TypeId
+    pub fn matches<L: ast_grep_language::LanguageExt + 'static>(&self, _lang: L) -> bool {
+        use ast_grep_language::{Go, Java, JavaScript, Python, TypeScript};
+        use std::any::TypeId;
+        match self {
+            Self::Python => TypeId::of::<L>() == TypeId::of::<Python>(),
+            Self::Go => TypeId::of::<L>() == TypeId::of::<Go>(),
+            Self::JavaScript => TypeId::of::<L>() == TypeId::of::<JavaScript>(),
+            Self::TypeScript => TypeId::of::<L>() == TypeId::of::<TypeScript>(),
+            Self::Java => TypeId::of::<L>() == TypeId::of::<Java>(),
         }
     }
 
@@ -371,6 +402,33 @@ mod tests {
         // Test invalid language string returns error
         assert!(Language::try_from_str("unsupported").is_err());
         assert!(Language::try_from_str("").is_err());
+    }
+
+    #[test]
+    fn test_language_matches() {
+        use ast_grep_language::{Go, Java, JavaScript, Python, TypeScript};
+
+        // Each Language variant matches exactly its corresponding ast-grep type.
+        assert!(Language::Python.matches(Python));
+        assert!(Language::Go.matches(Go));
+        assert!(Language::JavaScript.matches(JavaScript));
+        assert!(Language::TypeScript.matches(TypeScript));
+        assert!(Language::Java.matches(Java));
+
+        // No cross-language matches.
+        assert!(!Language::Python.matches(Java));
+        assert!(!Language::Python.matches(Go));
+        assert!(!Language::Python.matches(JavaScript));
+        assert!(!Language::Python.matches(TypeScript));
+
+        assert!(!Language::Java.matches(Python));
+        assert!(!Language::Java.matches(Go));
+        assert!(!Language::Java.matches(JavaScript));
+        assert!(!Language::Java.matches(TypeScript));
+
+        assert!(!Language::Go.matches(Java));
+        assert!(!Language::JavaScript.matches(Java));
+        assert!(!Language::TypeScript.matches(Java));
     }
 
     #[test]

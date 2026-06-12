@@ -9,6 +9,7 @@
 
 use iam_policy_autopilot_policy_generation::{
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SdkType, SourceFile,
+    DEFAULT_RESOURCE_CUTOFF,
 };
 use std::path::PathBuf;
 
@@ -72,7 +73,7 @@ func main() {
         "Should extract Uploader.Upload method call"
     );
 
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Other)
         .await
@@ -152,7 +153,7 @@ func main() {
         .await
         .expect("Extraction should succeed");
 
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Other)
         .await

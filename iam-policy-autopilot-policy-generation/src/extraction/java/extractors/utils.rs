@@ -17,11 +17,15 @@
 //! [`JavaPaginatorExtractor`]: super::paginator_extractor::JavaPaginatorExtractor
 //! [`JavaMethodCallExtractor`]: super::method_extractor::JavaMethodCallExtractor
 
-use crate::extraction::java::extractor::JavaNodeMatch;
+use ast_grep_language::Java;
+
 use crate::extraction::java::types::ReceiverDeclaration;
 use crate::extraction::{Parameter, ParameterValue};
 use crate::Location;
 use crate::SourceFile;
+
+pub(super) type JavaNodeMatch<'a> =
+    ast_grep_core::NodeMatch<'a, ast_grep_core::tree_sitter::StrDoc<Java>>;
 
 // ================================================================================================
 // Node kind constants

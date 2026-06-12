@@ -154,10 +154,8 @@ pub(crate) struct ResourceMatcher {
     service_cfg: Arc<ServiceConfiguration>,
     fas_maps: OperationFasMaps,
     sdk: SdkType,
+    resource_cutoff: usize,
 }
-
-// TODO: Make this configurable: https://github.com/awslabs/iam-policy-autopilot/issues/19
-const RESOURCE_CUTOFF: usize = 5;
 
 impl ResourceMatcher {
     /// Enrich a parsed method call with OperationAction maps, FAS maps, and Service
@@ -263,11 +261,7 @@ impl ResourceMatcher {
                                         &service_reference,
                                     )?;
                                 let enriched_resources =
-                                    if RESOURCE_CUTOFF <= enriched_resources.len() {
-                                        vec![Resource::new("*".to_string(), None)]
-                                    } else {
-                                        enriched_resources
-                                    };
+                                    self.apply_resource_cutoff(enriched_resources);
 
                                 // Combine conditions from FAS operation context and AuthorizedAction context
                                 let mut conditions = Self::make_condition(op.context());
@@ -352,6 +346,7 @@ impl ResourceMatcher {
         // Look up the action in the Service Reference to find associated resources
         let resources =
             self.find_resources_for_action_in_service_reference(&action_name, service_reference)?;
+        let resources = self.apply_resource_cutoff(resources);
 
         // Create explanation for fallback action
         let explanation = Explanation {
@@ -366,6 +361,14 @@ impl ResourceMatcher {
             vec![],
             explanation,
         )))
+    }
+
+    fn apply_resource_cutoff(&self, resources: Vec<Resource>) -> Vec<Resource> {
+        if self.resource_cutoff < resources.len() {
+            vec![Resource::new("*".to_string(), None)]
+        } else {
+            resources
+        }
     }
 
     /// Find resources for an action by looking it up in the SDF
@@ -441,6 +444,114 @@ mod tests {
         })
     }
 
+    fn create_mediastore_service_config() -> Arc<ServiceConfiguration> {
+        Arc::new(ServiceConfiguration {
+            rename_services_operation_action_map: [(
+                "mediastore-data".to_string(),
+                "mediastore".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
+            rename_services_service_reference: [(
+                "mediastore-data".to_string(),
+                "mediastore".to_string(),
+            )]
+            .iter()
+            .cloned()
+            .collect(),
+            smithy_botocore_service_name_mapping: HashMap::new(),
+            resource_overrides: HashMap::new(),
+        })
+    }
+
+    async fn mock_s3_service_reference_with_resources(
+        mock_server: &wiremock::MockServer,
+        resource_count: usize,
+    ) {
+        let action_resources: Vec<_> = (0..resource_count)
+            .map(|index| serde_json::json!({ "Name": format!("resource-{index}") }))
+            .collect();
+        let resources: Vec<_> = (0..resource_count)
+            .map(|index| {
+                serde_json::json!({
+                    "Name": format!("resource-{index}"),
+                    "ARNFormats": [
+                        format!("arn:${{Partition}}:s3:::resource-{index}/${{ResourceName}}")
+                    ]
+                })
+            })
+            .collect();
+
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "s3",
+            serde_json::json!({
+                "Name": "s3",
+                "Actions": [
+                    {
+                        "Name": "GetObject",
+                        "Resources": action_resources
+                    }
+                ],
+                "Resources": resources,
+                "Operations": [
+                    {
+                        "Name": "GetObject",
+                        "AuthorizedActions": [
+                            {
+                                "Name": "GetObject",
+                                "Service": "s3"
+                            }
+                        ],
+                        "SDK": [
+                            {
+                                "Name": "s3",
+                                "Method": "get_object",
+                                "Package": "Boto3"
+                            }
+                        ]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
+    async fn mock_mediastore_service_reference(mock_server: &wiremock::MockServer) {
+        mock_remote_service_reference::mock_server_service_reference_response(
+            mock_server,
+            "mediastore",
+            serde_json::json!({
+                "Name": "mediastore",
+                "Actions": [
+                    {
+                        "Name": "GetObject",
+                        "Resources": [
+                            { "Name": "container" },
+                            { "Name": "object" }
+                        ]
+                    }
+                ],
+                "Resources": [
+                    {
+                        "Name": "container",
+                        "ARNFormats": [
+                            "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}"
+                        ]
+                    },
+                    {
+                        "Name": "object",
+                        "ARNFormats": [
+                            "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}/${ObjectPath}"
+                        ]
+                    }
+                ]
+            }),
+        )
+        .await;
+    }
+
     #[tokio::test]
     async fn test_enrich_method_call() {
         use std::collections::HashMap;
@@ -466,7 +577,12 @@ mod tests {
         let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
         let parsed_call = create_test_parsed_method_call();
 
         // Create operation action map file
@@ -503,72 +619,121 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_fallback_for_service_without_operation_action_map() {
-        use std::collections::HashMap;
+    async fn test_resource_cutoff_zero_preserves_empty_resource_list_for_downstream_fallback() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3, 0);
 
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, 0).await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert!(action.resources.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_resource_cutoff_zero_collapses_non_empty_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3, 0);
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, 1).await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
+    }
+
+    #[tokio::test]
+    async fn test_default_resource_cutoff_collapses_larger_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF + 1)
+            .await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
+    }
+
+    #[tokio::test]
+    async fn test_resource_cutoff_keeps_equal_sized_resource_list() {
+        let config = create_empty_service_config();
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
+
+        let mock_server = wiremock::MockServer::start().await;
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        mock_s3_service_reference_with_resources(&mock_server, crate::DEFAULT_RESOURCE_CUTOFF)
+            .await;
+
+        let parsed_call = create_test_parsed_method_call();
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources.len(), crate::DEFAULT_RESOURCE_CUTOFF);
+        assert!(action.resources.iter().all(|resource| resource.name != "*"));
+    }
+
+    #[tokio::test]
+    async fn test_fallback_for_service_without_operation_action_map() {
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["mediastore-data".to_string()],
             metadata: None,
         };
 
-        // Create service configuration with mediastore-data in no_operation_action_map
-        let service_cfg = ServiceConfiguration {
-            rename_services_operation_action_map: [(
-                "mediastore-data".to_string(),
-                "mediastore".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
-            rename_services_service_reference: [(
-                "mediastore-data".to_string(),
-                "mediastore".to_string(),
-            )]
-            .iter()
-            .cloned()
-            .collect(),
-            smithy_botocore_service_name_mapping: HashMap::new(),
-            resource_overrides: HashMap::new(),
-        };
-
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            create_mediastore_service_config(),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        mock_remote_service_reference::mock_server_service_reference_response(&mock_server, "mediastore", serde_json::json!(
-             {
-                                 "Name": "mediastore",
-                                 "Actions": [
-                                     {
-                                         "Name": "GetObject",
-                                         "Resources": [
-                                             {
-                                             "Name": "container"
-                                             },
-                                             {
-                                             "Name": "object"
-                                             }
-                                         ]
-                                     }
-                                 ],
-                                 "Resources": [
-                                     {
-                                         "Name": "container",
-                                         "ARNFormats": [
-                                             "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}"
-                                         ]
-                                         },
-                                     {
-                                     "Name": "object",
-                                     "ARNFormats": [
-                                         "arn:${Partition}:mediastore:${Region}:${Account}:container/${ContainerName}/${ObjectPath}"
-                                     ]
-                                     }
-                                 ]
-                             }
-         )).await;
+        mock_mediastore_service_reference(&mock_server).await;
 
         let result = matcher.enrich_method_call(&parsed_call, &loader).await;
         if let Err(ref e) = result {
@@ -592,13 +757,46 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_resource_cutoff_applies_to_fallback_action() {
+        let parsed_call = SdkMethodCall {
+            name: "get_object".to_string(),
+            possible_services: vec!["mediastore-data".to_string()],
+            metadata: None,
+        };
+
+        let matcher = ResourceMatcher::new(
+            create_mediastore_service_config(),
+            HashMap::new(),
+            SdkType::Boto3,
+            0,
+        );
+
+        let (mock_server, loader) =
+            mock_remote_service_reference::setup_mock_server_with_loader().await;
+        mock_mediastore_service_reference(&mock_server).await;
+
+        let enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+
+        let action = &enriched_calls[0].actions[0];
+        assert_eq!(action.resources, vec![Resource::new("*".to_string(), None)]);
+    }
+
+    #[tokio::test]
     async fn test_error_for_missing_operation_action_map_when_required() {
         use std::collections::HashMap;
 
         // Service configuration without s3 in no_operation_action_map
         let service_cfg = create_empty_service_config();
 
-        let matcher = ResourceMatcher::new(service_cfg, HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            service_cfg,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
         let parsed_call = SdkMethodCall {
             name: "get_object".to_string(),
             possible_services: vec!["s3".to_string()],
@@ -724,7 +922,12 @@ mod tests {
                     } ]
                 })).await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create SdkMethodCall for connectparticipant:send_message
         let parsed_call = SdkMethodCall {
@@ -812,7 +1015,12 @@ mod tests {
         )
         .await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create parsed method call for get_user
         let parsed_call = SdkMethodCall {
@@ -886,7 +1094,12 @@ mod tests {
         let (_mock_server, service_reference_loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
-        let matcher = ResourceMatcher::new(Arc::new(service_cfg), HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            Arc::new(service_cfg),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         // Create parsed method call for get_object
         let parsed_call = SdkMethodCall {
@@ -1304,7 +1517,12 @@ mod tests {
     async fn test_boto3_method_name_requires_lookup() {
         // Test that boto3 methods are correctly mapped using service reference SDK mapping
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Boto3);
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -1331,7 +1549,12 @@ mod tests {
     async fn test_non_boto3_sdk_uses_extracted_name_directly() {
         // Test that non-Boto3 SDKs (e.g., Go) use the extracted operation name directly without renaming
         let config = create_empty_service_config();
-        let matcher = ResourceMatcher::new(config, HashMap::new(), SdkType::Other);
+        let matcher = ResourceMatcher::new(
+            config,
+            HashMap::new(),
+            SdkType::Other,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
 
         let (mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
