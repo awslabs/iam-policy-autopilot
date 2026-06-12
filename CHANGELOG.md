@@ -2,6 +2,8 @@
 
 ### Added
 
+- Variable type tracking for boto3 clients and resources — improves extraction precision when clients are passed across function boundaries (#128)
+- Support for `boto3.Session().client()` / `.resource()` patterns in variable type tracking (#232)
 - `--resource-cutoff` CLI flag and `resource_cutoff` MCP input to configure when resource lists collapse to `*` (#217)
 - Support for namespace imports in TypeScript/JavaScript (#190)
 - Added partial support for permissions needed by [aws-lambda-powertools](https://pypi.org/project/aws-lambda-powertools/) (#186)

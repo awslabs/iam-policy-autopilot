@@ -183,6 +183,26 @@ def create_clients():
 }
 
 #[test]
+fn test_return_value_not_tracked() {
+    // Return value tracking is not yet supported — documenting the limitation.
+    let source_code = r#"
+import boto3
+
+def create_client():
+    session = boto3.Session()
+    return session.client('s3')
+
+client = create_client()
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    // The return value of create_client() is not tracked
+    assert!(tracker.get_service_for_variable("client").is_none());
+}
+
+#[test]
 fn test_non_session_variable_not_matched() {
     let source_code = r#"
 import boto3
