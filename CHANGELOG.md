@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.2.3] - 2026-06-17
+
 ### Added
 
 - Variable type tracking for boto3 clients and resources — improves extraction precision when clients are passed across function boundaries (#128)
