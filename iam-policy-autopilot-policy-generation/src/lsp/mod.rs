@@ -20,6 +20,7 @@ use std::collections::HashSet;
 use std::ops::ControlFlow;
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -31,8 +32,8 @@ use async_lsp::{LanguageServer, MainLoop, ServerSocket};
 use lsp_types::notification::PublishDiagnostics;
 use lsp_types::{
     ClientCapabilities, DidOpenTextDocumentParams, HoverParams, InitializeParams,
-    InitializedParams, Position, TextDocumentIdentifier, TextDocumentItem,
-    TextDocumentPositionParams, Url, WorkDoneProgressParams,
+    InitializedParams, Position, ProgressParamsValue, TextDocumentIdentifier, TextDocumentItem,
+    TextDocumentPositionParams, Url, WorkDoneProgress, WorkDoneProgressParams,
 };
 use tokio::sync::Notify;
 use tokio::time::timeout;
@@ -68,6 +69,9 @@ pub struct LspClientOptions {
     pub request_timeout: Duration,
     /// Timeout for shutdown.
     pub shutdown_timeout: Duration,
+    /// Maximum time to wait for the server to finish all work-done progress
+    /// tokens (e.g., workspace indexing). Used by [`LspClient::wait_for_idle`].
+    pub idle_timeout: Duration,
     /// Client capabilities to advertise during initialization.
     pub capabilities: Option<ClientCapabilities>,
 }
@@ -79,6 +83,7 @@ impl Default for LspClientOptions {
             initialize_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(5),
             shutdown_timeout: Duration::from_secs(2),
+            idle_timeout: Duration::from_mins(2),
             capabilities: None,
         }
     }
@@ -87,6 +92,8 @@ impl Default for LspClientOptions {
 struct ClientState {
     diagnosed_uris: Arc<Mutex<HashSet<Url>>>,
     diagnostics_notify: Arc<Notify>,
+    active_progress: Arc<AtomicUsize>,
+    progress_notify: Arc<Notify>,
 }
 struct Stop;
 
@@ -105,6 +112,8 @@ pub struct LspClient<C: LspServerConfig> {
     opened_documents: HashSet<String>,
     diagnosed_uris: Arc<Mutex<HashSet<Url>>>,
     diagnostics_notify: Arc<Notify>,
+    active_progress: Arc<AtomicUsize>,
+    progress_notify: Arc<Notify>,
 }
 
 impl<C: LspServerConfig> LspClient<C> {
@@ -142,15 +151,26 @@ impl<C: LspServerConfig> LspClient<C> {
 
         let diagnosed_uris = Arc::new(Mutex::new(HashSet::<Url>::new()));
         let diagnostics_notify = Arc::new(Notify::new());
+        let active_progress = Arc::new(AtomicUsize::new(0));
+        let progress_notify = Arc::new(Notify::new());
         let handler_uris = Arc::clone(&diagnosed_uris);
         let handler_notify = Arc::clone(&diagnostics_notify);
+        let handler_progress = Arc::clone(&active_progress);
+        let handler_progress_notify = Arc::clone(&progress_notify);
 
         let (mainloop, mut server) = MainLoop::new_client(|_server| {
             let mut router = Router::new(ClientState {
                 diagnosed_uris: handler_uris,
                 diagnostics_notify: handler_notify,
+                active_progress: handler_progress,
+                progress_notify: handler_progress_notify,
             });
             router
+                .request::<lsp_types::request::WorkDoneProgressCreate, _>(|state, params| {
+                    log::debug!("workDoneProgress/create: token={:?}", params.token);
+                    state.active_progress.fetch_add(1, Ordering::SeqCst);
+                    std::future::ready(Ok(()))
+                })
                 .notification::<PublishDiagnostics>(|state, params| {
                     state
                         .diagnosed_uris
@@ -160,7 +180,33 @@ impl<C: LspServerConfig> LspClient<C> {
                     state.diagnostics_notify.notify_waiters();
                     ControlFlow::Continue(())
                 })
-                .notification::<lsp_types::notification::Progress>(|_, _| ControlFlow::Continue(()))
+                .notification::<lsp_types::notification::Progress>(|state, params| {
+                    let ProgressParamsValue::WorkDone(progress) = params.value;
+                    match progress {
+                        WorkDoneProgress::Begin(begin) => {
+                            log::info!(
+                                "LSP progress begin: {}{}",
+                                begin.title,
+                                begin
+                                    .message
+                                    .as_ref()
+                                    .map(|m| format!(" — {m}"))
+                                    .unwrap_or_default()
+                            );
+                        }
+                        WorkDoneProgress::Report(report) => {
+                            log::debug!(
+                                "LSP progress: {}",
+                                report.message.as_deref().unwrap_or("")
+                            );
+                        }
+                        WorkDoneProgress::End(_) => {
+                            state.active_progress.fetch_sub(1, Ordering::SeqCst);
+                            state.progress_notify.notify_waiters();
+                        }
+                    }
+                    ControlFlow::Continue(())
+                })
                 .unhandled_notification(|_, method| {
                     log::debug!("Unhandled notification from server: {method:?}");
                     ControlFlow::Continue(())
@@ -178,7 +224,10 @@ impl<C: LspServerConfig> LspClient<C> {
 
         let mainloop_handle = tokio::spawn(async move {
             if let Err(e) = mainloop.run_buffered(stdout, stdin).await {
-                log::error!("LSP main loop error: {e}");
+                // An EOF on the server's stream is expected during shutdown
+                // (we kill the process), so this is not necessarily an error.
+                // Genuine operational failures surface as `LspError` to callers.
+                log::debug!("LSP main loop exited: {e}");
             }
         });
 
@@ -224,6 +273,8 @@ impl<C: LspServerConfig> LspClient<C> {
             opened_documents: HashSet::new(),
             diagnosed_uris,
             diagnostics_notify,
+            active_progress,
+            progress_notify,
         })
     }
 
@@ -277,6 +328,42 @@ impl<C: LspServerConfig> LspClient<C> {
         }
 
         Ok(())
+    }
+
+    /// Wait until the server has finished all active work-done progress tokens.
+    ///
+    /// Servers like gopls send `window/workDoneProgress/create` + `$/progress`
+    /// notifications while indexing the workspace. The returned future blocks
+    /// until all progress tokens have received their `end` notification, or the
+    /// configured `idle_timeout` expires.
+    ///
+    /// This is a non-`async` fn returning an owned future on purpose: an
+    /// `async fn(&self)` would capture `&self` for the whole body, and since
+    /// `LspClient<C>` is only `Sync` when `C: Sync`, that future would not be
+    /// `Send`. By cloning the `Arc`s up front, the returned future owns its
+    /// state and stays `Send` regardless of `C`.
+    pub fn wait_for_idle(&self) -> impl std::future::Future<Output = Result<(), LspError>> {
+        let idle_timeout = self.options.idle_timeout;
+        let active_progress = Arc::clone(&self.active_progress);
+        let progress_notify = Arc::clone(&self.progress_notify);
+
+        async move {
+            let deadline = tokio::time::sleep(idle_timeout);
+            tokio::pin!(deadline);
+            loop {
+                if active_progress.load(Ordering::SeqCst) == 0 {
+                    return Ok(());
+                }
+                let notified = progress_notify.notified();
+                tokio::pin!(notified);
+                tokio::select! {
+                    () = &mut notified => {},
+                    () = &mut deadline => {
+                        return Err(LspError::Timeout(idle_timeout));
+                    }
+                }
+            }
+        }
     }
 
     /// Query hover information at a specific position.
@@ -386,14 +473,20 @@ impl<C: LspServerConfig> LspClient<C> {
     /// 2. Sends an exit notification
     /// 3. Waits for the process to exit
     pub async fn shutdown(mut self) -> Result<(), LspError> {
-        timeout(self.options.shutdown_timeout, self.server.shutdown(()))
-            .await
-            .map_err(|_| LspError::Timeout(self.options.shutdown_timeout))?
-            .map_err(|e| LspError::ServerError(format!("Shutdown failed: {e}")))?;
+        let shutdown_result =
+            timeout(self.options.shutdown_timeout, self.server.shutdown(())).await;
 
-        self.server
-            .exit(())
-            .map_err(|e| LspError::SendFailed(std::io::Error::other(format!("{e}"))))?;
+        match shutdown_result {
+            Ok(Ok(())) => {
+                let _ = self.server.exit(());
+            }
+            Ok(Err(e)) => {
+                log::warn!("LSP shutdown request failed: {e}, killing process");
+            }
+            Err(_) => {
+                log::warn!("LSP shutdown timed out, killing process");
+            }
+        }
 
         let _ = self.server.emit(Stop);
 
@@ -401,6 +494,7 @@ impl<C: LspServerConfig> LspClient<C> {
             let _ = handle.await;
         }
 
+        let _ = self.child.start_kill();
         let _ = self.child.wait().await;
 
         Ok(())
@@ -409,6 +503,14 @@ impl<C: LspServerConfig> LspClient<C> {
 
 impl<C: LspServerConfig> Drop for LspClient<C> {
     fn drop(&mut self) {
+        // Abort the main loop before the `ServerSocket` channel is dropped.
+        // Otherwise the still-running loop polls its receiver, observes the
+        // closed sender, and panics with "Sender is alive" (async-lsp).
+        // This matters when the client is dropped without `shutdown()` being
+        // called, e.g. when an error propagates out of the caller via `?`.
+        if let Some(handle) = self.mainloop_handle.take() {
+            handle.abort();
+        }
         let _ = self.child.start_kill();
     }
 }

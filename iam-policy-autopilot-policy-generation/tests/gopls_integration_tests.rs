@@ -63,6 +63,7 @@ async fn open_workspace(fixture: &str) -> (GoTestWorkspace, GoplsClient) {
         open_document_timeout: Duration::from_secs(10),
         request_timeout: Duration::from_secs(10),
         shutdown_timeout: Duration::from_secs(5),
+        idle_timeout: Duration::from_secs(60),
         capabilities: None,
     };
 
@@ -71,6 +72,9 @@ async fn open_workspace(fixture: &str) -> (GoTestWorkspace, GoplsClient) {
         .unwrap();
 
     client.open_document(&file_path, fixture).await.unwrap();
+    // Wait for gopls to finish indexing before issuing call-hierarchy queries,
+    // mirroring how the call graph builder drives the client.
+    client.wait_for_idle().await.unwrap();
 
     (workspace, client)
 }

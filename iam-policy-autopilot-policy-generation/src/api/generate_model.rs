@@ -115,7 +115,12 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
 
 /// Resolve entry point specs in `file:line:column` format to FunctionNodes.
 ///
-/// The position must point to the start of a function declaration (1-based).
+/// The position (1-based) may point anywhere within a function declaration —
+/// the `func` keyword, the function name, or its body. This matches the
+/// positions reported by `gopls symbols` (the function name) as well as
+/// editor cursor positions inside the function. When several functions
+/// contain the position (e.g. a closure inside a function), the innermost
+/// (smallest) enclosing function is chosen.
 fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<FunctionNode>> {
     let mut resolved = Vec::new();
 
@@ -150,11 +155,20 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
             );
         }
 
+        let pos = (line, col);
         let node = nodes
             .iter()
-            .find(|n| {
+            .filter(|n| {
                 n.location.file_path.ends_with(file_path)
-                    && n.location.start_position == (line, col)
+                    && n.location.start_position <= pos
+                    && pos <= n.location.end_position
+            })
+            // Prefer the innermost (smallest) enclosing function.
+            .min_by_key(|n| {
+                (
+                    n.location.end_position.0 - n.location.start_position.0,
+                    n.location.end_position.1,
+                )
             })
             .with_context(|| {
                 let available: Vec<String> = nodes
