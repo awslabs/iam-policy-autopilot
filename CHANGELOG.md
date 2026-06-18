@@ -4,6 +4,7 @@
 
 - Variable type tracking for boto3 clients and resources — improves extraction precision when clients are passed across function boundaries (#128)
 - Support for `boto3.Session().client()` / `.resource()` patterns in variable type tracking (#232)
+- Support for chained and nested boto3 sub-resource actions, including calls on a variable bound to a chain — e.g. `s3.Bucket("b").put_object(...)`, `s3.Bucket("b").Object("k").put(...)`, and `obj = s3.Bucket("b").Object("k"); obj.put(...)` now resolve to the underlying operation with identifiers injected from the chain
 - `--resource-cutoff` CLI flag and `resource_cutoff` MCP input to configure when resource lists collapse to `*` (#217)
 - Support for namespace imports in TypeScript/JavaScript (#190)
 - Added partial support for permissions needed by [aws-lambda-powertools](https://pypi.org/project/aws-lambda-powertools/) (#186)
@@ -17,6 +18,7 @@
 ### Changed
 
 - `EnrichmentEngine::new` now requires a `resource_cutoff` parameter; use `DEFAULT_RESOURCE_CUTOFF` to preserve existing behavior (#217)
+- An unrecognized method on a known boto3 resource no longer expands to every action of that resource. Such calls now contribute no permissions instead of over-approximating.
 
 ## [0.2.2] - 2026-06-05
 

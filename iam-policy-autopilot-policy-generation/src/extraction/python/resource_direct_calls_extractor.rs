@@ -38,6 +38,7 @@ use crate::extraction::python::boto3_resources_model::{
     Boto3ResourcesModel, Boto3ResourcesRegistry, HasManySpec, OperationType,
 };
 use crate::extraction::python::common::ArgumentExtractor;
+use crate::extraction::python::node_kinds;
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
@@ -76,30 +77,16 @@ impl ResourceMethodCallInfo {
     }
 }
 
-/// Resource usage classification for two-tier approach (Tier 3 is now separate)
+/// The leaf resource a sub-resource chain resolves to, with its identifier values.
+///
+/// INVARIANT: `identifier_args[i]` is the value for `resource_type`'s `identifiers[i]`,
+/// i.e. positional in the leaf resource's declared identifier order. This lets them be
+/// consumed directly as positional constructor args by the Tier 1 matcher.
 #[derive(Debug, Clone)]
-enum ResourceUsage {
-    /// All method calls matched to boto3 specs (Tier 1)
-    FullyMatched { matched_calls: Vec<SdkMethodCall> },
-    /// Has at least one unmatched method (Tier 2)
-    HasUnmatchedMethod {
-        matched_calls: Vec<SdkMethodCall>,
-        unmatched_method: ResourceMethodCallInfo,
-    },
-}
-
-/// Tracking structure for resource analysis
-#[derive(Debug)]
-struct ResourceAnalysis {
-    constructor: ResourceConstructorInfo,
-    usage: ResourceUsage,
-}
-
-/// Evidence source for synthetic call generation
-#[derive(Debug, Clone)]
-enum SyntheticEvidenceSource {
-    /// Use position from unmatched method call
-    UnmatchedMethod(ResourceMethodCallInfo),
+struct ResolvedResource {
+    service_name: String,
+    resource_type: String,
+    identifier_args: Vec<Parameter>,
 }
 
 /// Extractor for boto3 resource direct call patterns
@@ -128,52 +115,33 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         ast: &AstWithSourceFile<Python>,
     ) -> Vec<SdkMethodCall> {
         // Step 1: Find all resource constructors using service-agnostic matching
-        let constructors = self.find_resource_constructors(ast, &self.registry);
+        let mut constructors = self.find_resource_constructors(ast, &self.registry);
 
         // Step 2: Find all method calls on resource objects
-        let method_calls = self.find_resource_method_calls(ast);
+        let mut method_calls = self.find_resource_method_calls(ast);
 
-        // Step 3: Analyze each resource's usage pattern
-        let resource_analyses =
-            self.analyze_resource_usage(&constructors, &method_calls, self.registry.models());
+        // Step 2b: Resolve nested sub-resource action calls, including those on a variable
+        // bound to a nested chain (e.g. `s3.Bucket("b").Object("k").put(...)` and
+        // `obj = s3.Bucket("b").Object("k"); obj.put(...)`). These synthesize a
+        // constructor + method-call pair sharing a unique variable name so the matching
+        // step below joins them (injecting the accumulated identifiers).
+        let (chained_constructors, chained_method_calls) =
+            self.find_chained_subresource_calls(ast, &self.registry);
+        constructors.extend(chained_constructors);
+        method_calls.extend(chained_method_calls);
 
-        // Step 4: Generate appropriate calls based on usage tier
-        let mut all_calls = Vec::new();
+        // Step 3: Match each method call against its resource's boto3 spec. Unmatched
+        // methods on a known resource simply produce nothing (an unknown method is not
+        // evidence for any particular operation).
+        let mut all_calls =
+            self.match_resource_method_calls(&constructors, &method_calls, self.registry.models());
 
-        for analysis in resource_analyses {
-            let boto3_model = match self.registry.get_model(&analysis.constructor.service_name) {
-                Some(model) => model,
-                None => continue,
-            };
-
-            match analysis.usage {
-                ResourceUsage::FullyMatched { matched_calls } => {
-                    // Tier 1: Add only matched calls (already have correct positions)
-                    all_calls.extend(matched_calls);
-                }
-                ResourceUsage::HasUnmatchedMethod {
-                    matched_calls,
-                    unmatched_method,
-                } => {
-                    // Tier 2: Add matched + all synthetic (using unmatched position)
-                    all_calls.extend(matched_calls);
-
-                    let synthetics = self.generate_synthetic_calls_for_resource(
-                        &analysis.constructor,
-                        boto3_model,
-                        SyntheticEvidenceSource::UnmatchedMethod(unmatched_method),
-                    );
-                    all_calls.extend(synthetics);
-                }
-            }
-        }
-
-        // Step 5: Find and generate synthetic calls for hasMany collections (Tier 2 approach)
+        // Step 4: Find and generate synthetic calls for hasMany collections
         let collection_synthetics =
             self.find_and_generate_collection_synthetics(ast, &constructors);
         all_calls.extend(collection_synthetics);
 
-        // Step 6: Collect matched positions for Tier 3 deduplication
+        // Step 5: Collect matched positions for Tier 3 deduplication
         let mut matched_locations = HashSet::new();
         for call in &all_calls {
             if let Some(metadata) = &call.metadata {
@@ -181,42 +149,37 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             }
         }
 
-        // Step 7: New Tier 3 - service-agnostic fallback for unknown receivers
+        // Step 6: Service-agnostic fallback for unknown receivers
         let tier3_calls = self.find_unmatched_utility_and_collection_calls(ast, &matched_locations);
         all_calls.extend(tier3_calls);
 
         all_calls
     }
 
-    /// Analyze resource usage to classify into three tiers
-    fn analyze_resource_usage(
+    /// Match resource method calls against their resource's boto3 spec, returning the
+    /// resolved [`SdkMethodCall`]s. A method call resolves either to a direct action or to
+    /// the expansion of a utility method (e.g. `upload_file`). Method calls that match
+    /// neither produce nothing: an unknown method on a known resource is not evidence for
+    /// any particular operation.
+    fn match_resource_method_calls(
         &self,
         constructors: &[ResourceConstructorInfo],
         method_calls: &[ResourceMethodCallInfo],
         boto3_models: &HashMap<String, Boto3ResourcesModel>,
-    ) -> Vec<ResourceAnalysis> {
-        let mut analyses = Vec::new();
+    ) -> Vec<SdkMethodCall> {
+        let mut matched_calls = Vec::new();
 
         for constructor in constructors {
             // Find all method calls for this resource
-            let resource_methods: Vec<_> = method_calls
+            let resource_methods = method_calls
                 .iter()
-                .filter(|mc| mc.resource_var == constructor.variable_name)
-                .collect();
-
-            if resource_methods.is_empty() {
-                // Skip constructors with no method calls - these will be handled by new Tier 3
-                continue;
-            }
+                .filter(|mc| mc.resource_var == constructor.variable_name);
 
             // Try to match each method call
             let boto3_model = match boto3_models.get(&constructor.service_name) {
                 Some(model) => model,
                 None => continue,
             };
-
-            let mut matched_calls = Vec::new();
-            let mut first_unmatched = None;
 
             for method_call in resource_methods {
                 if let Some(call) = self.try_match_method(method_call, constructor, boto3_model) {
@@ -226,34 +189,11 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
 
                 let utility_calls =
                     self.try_expand_resource_utility_method(method_call, constructor, boto3_model);
-                if !utility_calls.is_empty() {
-                    matched_calls.extend(utility_calls);
-                    continue;
-                }
-
-                if first_unmatched.is_none() {
-                    first_unmatched = Some((*method_call).clone());
-                }
+                matched_calls.extend(utility_calls);
             }
-
-            let usage = if let Some(unmatched) = first_unmatched {
-                // Tier 2: Has unmatched method
-                ResourceUsage::HasUnmatchedMethod {
-                    matched_calls,
-                    unmatched_method: unmatched,
-                }
-            } else {
-                // Tier 1: Fully matched
-                ResourceUsage::FullyMatched { matched_calls }
-            };
-
-            analyses.push(ResourceAnalysis {
-                constructor: constructor.clone(),
-                usage,
-            });
         }
 
-        analyses
+        matched_calls
     }
 
     /// Try to match a method call to boto3 actions or collections
@@ -421,86 +361,6 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         expanded_calls
     }
 
-    /// Generate synthetic calls for all resource operations
-    fn generate_synthetic_calls_for_resource(
-        &self,
-        constructor: &ResourceConstructorInfo,
-        boto3_model: &Boto3ResourcesModel,
-        evidence: SyntheticEvidenceSource,
-    ) -> Vec<SdkMethodCall> {
-        let resource_def = match boto3_model.get_resource_definition(&constructor.resource_type) {
-            Some(def) => def,
-            None => return Vec::new(),
-        };
-
-        let mut synthetic_calls = Vec::new();
-
-        // Extract position from evidence source
-        let (expr, location) = match evidence {
-            SyntheticEvidenceSource::UnmatchedMethod(ref method_call) => {
-                (method_call.expr.clone(), method_call.location.clone())
-            }
-        };
-
-        // Generate synthetic call for each action
-        for action_mapping in resource_def.actions.values() {
-            let mut parameters = Vec::new();
-
-            // Inject identifier parameters from constructor
-            for param_mapping in &action_mapping.identifier_params {
-                if let Some(param_name) = &param_mapping.name {
-                    if let Some(_identifier) = resource_def
-                        .identifiers
-                        .iter()
-                        .find(|id| id.name == *param_name)
-                    {
-                        // Get value from constructor args (first positional arg)
-                        if let Some(first_arg) = constructor.constructor_args.first() {
-                            let value = match first_arg {
-                                Parameter::Positional { value, .. } => value.clone(),
-                                Parameter::Keyword { value, .. } => value.clone(),
-                                Parameter::DictionarySplat { expression, .. } => {
-                                    ParameterValue::Unresolved(expression.clone())
-                                }
-                            };
-
-                            parameters.push(Parameter::Keyword {
-                                name: param_mapping.target.clone(),
-                                value,
-                                position: parameters.len(),
-                                type_annotation: None,
-                            });
-                        }
-                    }
-                }
-            }
-
-            // Extract operation name using pattern matching
-            let method_name = match &action_mapping.operation {
-                OperationType::Waiter { waiter_name } => {
-                    // For waiters in synthetic generation, use the waiter name directly
-                    // The actual resolution happens in create_synthetic_method_call_with_waiter_resolution
-                    format!("wait_until_{}", waiter_name.to_case(Case::Snake))
-                }
-                OperationType::SdkOperation(op_name) | OperationType::Load(op_name) => {
-                    op_name.to_case(Case::Snake)
-                }
-            };
-
-            let metadata = SdkMethodCallMetadata::new(expr.clone(), location.clone())
-                .with_parameters(parameters)
-                .with_receiver(constructor.variable_name.clone()); // Use actual variable name from constructor
-
-            synthetic_calls.push(SdkMethodCall {
-                name: method_name,
-                possible_services: vec![constructor.service_name.clone()],
-                metadata: Some(metadata),
-            });
-        }
-
-        synthetic_calls
-    }
-
     /// Find all resource constructor calls in the AST using service-agnostic matching
     fn find_resource_constructors(
         &self,
@@ -572,6 +432,315 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         }
 
         constructors
+    }
+
+    /// Find nested sub-resource action calls, including those on a variable bound to a
+    /// nested sub-resource chain.
+    ///
+    /// Handles:
+    /// - Inline action chains of any depth: `s3.Bucket("b").put_object(...)`,
+    ///   `s3.Bucket("b").Object("k").put(...)`.
+    /// - Nested assigned chains followed by an action:
+    ///   `obj = s3.Bucket("b").Object("k")` then `obj.put(...)`.
+    ///
+    /// The single-level *assigned* form (`bucket = s3.Bucket("b"); bucket.put_object(...)`)
+    /// is already handled by [`find_resource_constructors`] +
+    /// [`find_resource_method_calls`]. To avoid double-counting it, the assignment pass
+    /// here gates on chain depth ≥ 2; the inline action pass has no such overlap (an inline
+    /// constructor is never registered by the existing path) so it accepts any depth.
+    ///
+    /// Each resolved action becomes a synthetic constructor + method-call pair (sharing a
+    /// unique synthetic variable name) so the regular matching path joins them and injects
+    /// the accumulated identifiers. Any chain whose links do not all resolve is dropped
+    /// entirely (logged at debug), rather than emitting partial or speculative operations.
+    fn find_chained_subresource_calls(
+        &self,
+        ast: &AstWithSourceFile<Python>,
+        registry: &Boto3ResourcesRegistry,
+    ) -> (Vec<ResourceConstructorInfo>, Vec<ResourceMethodCallInfo>) {
+        let root = ast.ast.root();
+        let mut constructors = Vec::new();
+        let mut method_calls = Vec::new();
+
+        // First pass: resolve assignments whose RHS is a nested sub-resource chain, e.g.
+        // `obj = s3.Bucket("b").Object("k")`. Maps the assigned variable name to the
+        // resolved leaf resource so later `obj.method(...)` calls can be matched.
+        let assigned_resources = self.resolve_assigned_resource_chains(ast, registry);
+
+        // Second pass: every call `<receiver>.method(args)`. The receiver is either an
+        // inline nested chain or a variable bound to one (from the first pass).
+        for node_match in root.find_all("$RECEIVER.$METHOD($$$ARGS)") {
+            let env = node_match.get_env();
+            let call_node = node_match.get_node();
+
+            let method_name = match env.get_match("METHOD") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
+            let receiver_node = match env.get_match("RECEIVER") {
+                Some(node) => node,
+                None => continue,
+            };
+
+            let args_nodes = env.get_multiple_matches("ARGS");
+            let arguments = ArgumentExtractor::extract_arguments(&args_nodes);
+            let location = Location::from_node(ast.source_file.path.clone(), call_node);
+            let start = call_node.start_pos();
+
+            // Resolve the receiver to a leaf resource: either a variable bound to a nested
+            // chain, or an inline nested chain. `resolve_chain` yields one per service.
+            let receiver_text = receiver_node.text().to_string();
+            let resolved = match assigned_resources.get(&receiver_text) {
+                Some(by_var) => by_var.clone(),
+                None => self.resolve_chain(receiver_node, registry),
+            };
+
+            for resource in resolved {
+                let synthetic_var = format!(
+                    "__chained_{}_{}_{}_{}",
+                    resource.service_name,
+                    resource.resource_type,
+                    start.line() + 1,
+                    start.column(call_node) + 1
+                );
+
+                constructors.push(ResourceConstructorInfo {
+                    variable_name: synthetic_var.clone(),
+                    resource_type: resource.resource_type.clone(),
+                    service_name: resource.service_name.clone(),
+                    constructor_args: resource.identifier_args.clone(),
+                    start_position: (start.line() + 1, start.column(call_node) + 1),
+                    end_position: (start.line() + 1, start.column(call_node) + 1),
+                });
+
+                method_calls.push(ResourceMethodCallInfo {
+                    resource_var: synthetic_var,
+                    method_name: method_name.clone(),
+                    arguments: arguments.clone(),
+                    expr: node_match.text().to_string(),
+                    location: location.clone(),
+                });
+            }
+        }
+
+        (constructors, method_calls)
+    }
+
+    /// Resolve assignments of the form `var = <nested sub-resource chain>` (e.g.
+    /// `obj = s3.Bucket("b").Object("k")`), returning a map from the assigned variable
+    /// name to the resolved leaf resource(s). Assignments whose RHS does not resolve to a
+    /// nested resource chain are omitted.
+    fn resolve_assigned_resource_chains(
+        &self,
+        ast: &AstWithSourceFile<Python>,
+        registry: &Boto3ResourcesRegistry,
+    ) -> HashMap<String, Vec<ResolvedResource>> {
+        let root = ast.ast.root();
+        let mut assigned = HashMap::new();
+
+        for node_match in root.find_all("$VAR = $RHS") {
+            let env = node_match.get_env();
+            let var_name = match env.get_match("VAR") {
+                Some(node) => node.text().to_string(),
+                None => continue,
+            };
+            let rhs_node = match env.get_match("RHS") {
+                Some(node) => node,
+                None => continue,
+            };
+
+            // Only handle NESTED assignments here (depth ≥ 2, e.g.
+            // `obj = s3.Bucket("b").Object("k")`). Single-level assignments
+            // (`bucket = s3.Bucket("b")`) are owned by the existing constructor +
+            // method-call path; resolving them here too would double-count.
+            let depth = Self::collect_chain_links(rhs_node).map_or(0, |links| links.len());
+            if depth < 2 {
+                continue;
+            }
+
+            let resolved = self.resolve_chain(rhs_node, registry);
+            if !resolved.is_empty() {
+                assigned.insert(var_name, resolved);
+            }
+        }
+
+        assigned
+    }
+
+    /// Collect a method/navigation chain as `(accessor, args)` links in base-first order.
+    ///
+    /// For `s3.Bucket("b").Object("k")` this yields `[("Bucket", ["b"]), ("Object", ["k"])]`.
+    /// Walks the receiver inward (each link is a `call` whose function is an `attribute`),
+    /// stopping at the base object (e.g. the `s3` identifier). Returns `None` if the node
+    /// is malformed in a way that should abort resolution.
+    fn collect_chain_links(
+        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+    ) -> Option<Vec<(String, Vec<Parameter>)>> {
+        let mut links = Vec::new(); // (accessor, args), outermost first
+        let mut current = node.clone();
+        loop {
+            if current.kind() != node_kinds::CALL {
+                break;
+            }
+            let function = current.field("function")?;
+            if function.kind() != node_kinds::ATTRIBUTE {
+                // Base is not an attribute access (e.g. a bare name); the outermost
+                // construct must be `<receiver>.Accessor(args)` to be a chain.
+                break;
+            }
+            let accessor = function.field("attribute")?.text().to_string();
+            let args = match current.field("arguments") {
+                Some(arg_list) => {
+                    // `argument_list` children include punctuation tokens (`(`, `)`, `,`);
+                    // keep only named nodes so the extractor sees just the arguments.
+                    let arg_nodes: Vec<_> = arg_list
+                        .children()
+                        .filter(ast_grep_core::Node::is_named)
+                        .collect();
+                    ArgumentExtractor::extract_arguments(&arg_nodes)
+                }
+                None => Vec::new(),
+            };
+            links.push((accessor, args));
+            current = function.field("object")?;
+        }
+
+        // Collected outermost-first; reverse to base-first.
+        links.reverse();
+        Some(links)
+    }
+
+    /// Resolve an expression node to the leaf resource(s) of a boto3 sub-resource chain.
+    ///
+    /// Walks the chain outward from its base. The base must be a known resource
+    /// constructor call (e.g. `s3.Bucket("b")`); each subsequent link must be a known
+    /// sub-resource navigation (e.g. `.Object("k")`). Identifier values are accumulated
+    /// across links in the order of the leaf resource's identifiers. Returns one
+    /// [`ResolvedResource`] per service that provides the base resource type.
+    ///
+    /// Resolves chains of any depth, including a bare base (`s3.Bucket("b")`). Callers
+    /// that overlap with the existing single-level path (e.g. assignment resolution)
+    /// gate on chain depth themselves.
+    ///
+    /// Returns an empty vector if `node` is not a resource chain, or if any link fails to
+    /// resolve (unknown accessor, arg-count mismatch, missing model) — chains are resolved
+    /// fully or not at all.
+    fn resolve_chain(
+        &self,
+        node: &ast_grep_core::Node<ast_grep_core::tree_sitter::StrDoc<Python>>,
+        registry: &Boto3ResourcesRegistry,
+    ) -> Vec<ResolvedResource> {
+        let links = match Self::collect_chain_links(node) {
+            Some(links) => links,
+            None => return Vec::new(),
+        };
+
+        let (base_accessor, base_args) = match links.first() {
+            Some(first) => first,
+            None => return Vec::new(),
+        };
+
+        // The base accessor must be a known resource type provided by some service(s).
+        let services = registry.find_services_for_resource(base_accessor);
+        if services.is_empty() {
+            return Vec::new();
+        }
+
+        let mut results = Vec::new();
+        for service_name in services {
+            if let Some(resource) =
+                self.resolve_chain_for_service(&service_name, &links, base_args, registry)
+            {
+                results.push(resource);
+            }
+        }
+        results
+    }
+
+    /// Resolve a chain's links against a single service's model, accumulating identifier
+    /// values. Returns `None` if any link is unresolvable for this service.
+    fn resolve_chain_for_service(
+        &self,
+        service_name: &str,
+        links: &[(String, Vec<Parameter>)],
+        base_args: &[Parameter],
+        registry: &Boto3ResourcesRegistry,
+    ) -> Option<ResolvedResource> {
+        let model = registry.get_model(service_name)?;
+
+        // Base resource: validate constructor arg count against its identifiers.
+        let (base_accessor, _) = links.first()?;
+        let base_spec = model.get_constructor_spec(base_accessor)?;
+        if base_args.len() != base_spec.identifiers_count {
+            log::debug!(
+                "Chain base '{base_accessor}' arg count {} != identifiers {}",
+                base_args.len(),
+                base_spec.identifiers_count
+            );
+            return None;
+        }
+
+        // Accumulated identifier values for the current resource, as positional args in
+        // the order of that resource's identifiers. The base resource takes them directly
+        // from its constructor call.
+        let mut current_type = base_spec.resource_type.clone();
+        let mut identifier_args: Vec<Parameter> = base_args.to_vec();
+
+        // Walk the remaining links as sub-resource navigations.
+        for (accessor, nav_args) in &links[1..] {
+            let sub = model.get_sub_resource(&current_type, accessor)?;
+
+            // Build the child's identifiers in DECLARED ORDER, so the result stays
+            // positional in the child's identifier order (the ResolvedResource invariant).
+            // Each identifier value comes from the parent (source "identifier", resolved
+            // by name against the parent's own ordered args) or from this navigation's own
+            // arguments (source "input", consumed positionally).
+            let mut next_args: Vec<Parameter> = Vec::new();
+            let mut input_index = 0;
+            for ident in &sub.identifiers {
+                match ident.source.as_str() {
+                    "identifier" => {
+                        let parent_name = ident.name.as_deref()?;
+                        let parent_pos =
+                            self.identifier_position(model, &current_type, parent_name)?;
+                        let value = identifier_args.get(parent_pos)?.clone();
+                        next_args.push(value.into_positional(next_args.len()));
+                    }
+                    "input" => {
+                        let value = nav_args.get(input_index)?.clone();
+                        next_args.push(value.into_positional(next_args.len()));
+                        input_index += 1;
+                    }
+                    other => {
+                        log::debug!("Unsupported sub-resource identifier source '{other}'");
+                        return None;
+                    }
+                }
+            }
+
+            current_type = sub.resource_type.clone();
+            identifier_args = next_args;
+        }
+
+        Some(ResolvedResource {
+            service_name: service_name.to_string(),
+            resource_type: current_type,
+            identifier_args,
+        })
+    }
+
+    /// Position of a named identifier within a resource type's identifier list.
+    fn identifier_position(
+        &self,
+        model: &Boto3ResourcesModel,
+        resource_type: &str,
+        identifier_name: &str,
+    ) -> Option<usize> {
+        model
+            .get_resource_definition(resource_type)?
+            .identifiers
+            .iter()
+            .position(|id| id.name == identifier_name)
     }
 
     /// Find all method calls on potential resource objects

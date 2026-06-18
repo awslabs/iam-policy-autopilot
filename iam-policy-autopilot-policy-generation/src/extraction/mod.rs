@@ -299,6 +299,32 @@ pub mod core {
             position: usize,
         },
     }
+
+    impl Parameter {
+        /// Get this parameter's value, regardless of variant. A [`Parameter::DictionarySplat`]
+        /// has no resolved value, so its unpacking expression is returned as unresolved.
+        pub(crate) fn value(&self) -> ParameterValue {
+            match self {
+                Self::Positional { value, .. } | Self::Keyword { value, .. } => value.clone(),
+                Self::DictionarySplat { expression, .. } => {
+                    ParameterValue::Unresolved(expression.clone())
+                }
+            }
+        }
+
+        /// Reduce this parameter to a positional argument at `position`, dropping any
+        /// keyword name. Used when a value is carried into a new call where it is supplied
+        /// positionally — e.g. carrying the `Bucket` identifier value forward from
+        /// `s3.Bucket("b")` into the synthesized `Object` constructor as its first arg.
+        pub(crate) fn into_positional(self, position: usize) -> Self {
+            Self::Positional {
+                value: self.value(),
+                position,
+                type_annotation: None,
+                struct_fields: None,
+            }
+        }
+    }
 }
 
 /// Output data structures for extraction results and metadata
