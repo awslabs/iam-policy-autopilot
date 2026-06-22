@@ -191,6 +191,31 @@ def handle():
 "#,
     &[]
 )]
+// A `**kwargs` dictionary splat is assumed to supply the identifiers, so the chain still
+// resolves to its operation (the specific identifier values are unknown but the action is
+// known) — assuming all keys are provided avoids under-permissioning.
+#[case::dictionary_splat_constructor(
+    r#"
+import boto3
+
+def handle(ids):
+    s3 = boto3.resource("s3")
+    s3.Object(**ids).put(Body="data")
+"#,
+    &[("s3", "put_object")]
+)]
+// A splat combined with an explicit identifier: the explicit `Key` is taken as given, and
+// `Bucket` is assumed to come from the splat. Still resolves to the operation.
+#[case::dictionary_splat_with_explicit_arg(
+    r#"
+import boto3
+
+def handle(rest):
+    s3 = boto3.resource("s3")
+    s3.Object(key="my-key", **rest).put(Body="data")
+"#,
+    &[("s3", "put_object")]
+)]
 #[tokio::test]
 async fn subresource_action_resolves(#[case] src: &str, #[case] expected_ops: &[(&str, &str)]) {
     let actual = extract(src).await;

@@ -761,27 +761,26 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     /// positionally or by keyword, where the keyword is the snake_case of the identifier
     /// name (e.g. `BucketName` -> `bucket_name`). Keyword args are matched to the identifier
     /// whose snake_case name they equal; positional args fill the remaining identifiers in
-    /// declared order. Returns `None` unless every identifier is supplied exactly once and
-    /// no extra args remain — so a call with the wrong number or names of args bails rather
-    /// than mismapping.
+    /// declared order.
+    ///
+    /// A `**kwargs` dictionary splat is assumed to supply whatever identifiers the explicit
+    /// args do not — those get a `synthetic_<name>` placeholder value, so the chain still
+    /// resolves to its operation (avoiding under-permissioning) even though the specific
+    /// values are unknown. The disambiguator applies the same leniency for unpacking.
+    ///
+    /// Returns `None` when the explicit args cannot line up — too many args, an unknown
+    /// keyword, or a keyword colliding with a positionally-filled identifier — so a
+    /// malformed call bails rather than mismapping.
     fn assign_args_to_identifiers(
         args: &[Parameter],
         identifier_names: &[&str],
     ) -> Option<HashMap<String, ParameterValue>> {
-        // A `**kwargs` splat hides identifier values we cannot map; bail.
-        if args
+        let has_splat = args
             .iter()
-            .any(|a| matches!(a, Parameter::DictionarySplat { .. }))
-        {
-            return None;
-        }
+            .any(|a| matches!(a, Parameter::DictionarySplat { .. }));
 
-        // Wrong arg count can never line up one-to-one with the identifiers.
-        if args.len() != identifier_names.len() {
-            return None;
-        }
-
-        // Index keyword args by name; collect positional values in order.
+        // Index keyword args by name; collect positional values in order. (A splat carries
+        // no mappable name/value, so it is neither — it only relaxes the checks below.)
         let mut keyword: HashMap<&str, &ParameterValue> = HashMap::new();
         let mut positional: Vec<&ParameterValue> = Vec::new();
         for arg in args {
@@ -793,19 +792,33 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     }
                 }
                 Parameter::Positional { value, .. } => positional.push(value),
-                Parameter::DictionarySplat { .. } => unreachable!("splats rejected above"),
+                Parameter::DictionarySplat { .. } => {}
             }
+        }
+
+        // The explicit args must fit within the identifiers. Without a splat the counts
+        // must match exactly; with a splat the remaining identifiers come from the splat,
+        // so only require that the explicit args don't exceed the identifier count.
+        let explicit_count = positional.len() + keyword.len();
+        let fits = if has_splat {
+            explicit_count <= identifier_names.len()
+        } else {
+            explicit_count == identifier_names.len()
+        };
+        if !fits {
+            return None;
         }
 
         // Assign exactly like Python: positional args fill the FIRST identifiers in
         // declared order; keyword args then fill the REMAINING identifiers by name. A
         // keyword that targets an already positionally-filled identifier is a collision
-        // ("got multiple values for argument") — invalid Python, so we bail.
+        // ("got multiple values for argument") — invalid Python, so we bail. Any identifier
+        // still unfilled is assumed to come from the splat (placeholder value).
         let mut assigned = HashMap::with_capacity(identifier_names.len());
         let mut identifiers = identifier_names.iter();
 
         for value in &positional {
-            // `args.len() == identifier_names.len()` guarantees a slot exists here.
+            // `explicit_count <= identifier_names.len()` guarantees a slot exists here.
             let name = identifiers.next()?;
             assigned.insert((*name).to_string(), (*value).clone());
         }
@@ -813,8 +826,13 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         for name in identifiers {
             let kwarg_name =
                 ServiceDiscovery::operation_to_method_name(name, crate::Language::Python);
-            let value = keyword.remove(kwarg_name.as_str())?;
-            assigned.insert((*name).to_string(), value.clone());
+            let value = match keyword.remove(kwarg_name.as_str()) {
+                Some(value) => value.clone(),
+                // Unfilled by an explicit arg: provided by the splat, if present.
+                None if has_splat => ParameterValue::Unresolved(format!("synthetic_{kwarg_name}")),
+                None => return None,
+            };
+            assigned.insert((*name).to_string(), value);
         }
 
         // Any keyword left over either named an identifier already filled positionally
