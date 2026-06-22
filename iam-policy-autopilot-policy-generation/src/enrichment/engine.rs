@@ -23,16 +23,19 @@ use crate::{SdkMethodCall, SdkType};
 pub struct Engine {
     /// Service Reference loader
     service_reference_loader: ServiceReferenceLoader,
+    /// Resource-list cutoff passed to the resource matcher.
+    resource_cutoff: usize,
 }
 
 impl Engine {
-    /// Create a new MethodEnrichmentEngine with custom base paths
+    /// Create a new MethodEnrichmentEngine with custom base paths and a resource-list cutoff.
     ///
     /// Allows customization of the base paths for OperationAction maps and Service Reference files,
     /// useful for testing or alternative configurations.
-    pub fn new(disable_file_system_cache: bool) -> Result<Self> {
+    pub fn new(disable_file_system_cache: bool, resource_cutoff: usize) -> Result<Self> {
         Ok(Self {
             service_reference_loader: ServiceReferenceLoader::new(disable_file_system_cache)?,
+            resource_cutoff,
         })
     }
 
@@ -68,7 +71,8 @@ impl Engine {
             .load_fas_maps_for_services(&unique_services, &service_cfg)
             .await?;
 
-        let resource_matcher = ResourceMatcher::new(service_cfg, fas_maps, sdk);
+        let resource_matcher =
+            ResourceMatcher::new(service_cfg, fas_maps, sdk, self.resource_cutoff);
         let enriched_calls = self
             .enrich_all_methods(extracted_methods, &resource_matcher)
             .await?;
@@ -180,7 +184,7 @@ mod tests {
 
     #[test]
     fn test_get_unique_services() {
-        let engine = Engine::new(false).unwrap();
+        let engine = Engine::new(false, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
 
         let extracted_methods = create_test_extracted_methods();
         let services = engine.get_unique_services(&extracted_methods);
@@ -214,7 +218,7 @@ mod tests {
         }
 
         println!("\nSetting up enrichment engine...");
-        let mut enrichment_engine = Engine::new(true).unwrap();
+        let mut enrichment_engine = Engine::new(true, crate::DEFAULT_RESOURCE_CUTOFF).unwrap();
         println!("Enrichment engine initialized");
 
         println!("\nRunning enrichment on all operations...");

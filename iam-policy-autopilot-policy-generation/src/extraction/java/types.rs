@@ -1,9 +1,12 @@
 //! Java-specific intermediate types for the extraction phase.
 //!
-//! These types are produced by the Java extractors and consumed by [`JavaMatcher`].
-//! They are **not** exposed outside the `extraction::java` module.
+//! These types are produced by the Java extractors and consumed by
+//! [`JavaLanguageExtractor::match_calls`]. They are **not** exposed outside the
+//! `extraction::java` module.
 //!
-//! [`JavaMatcher`]: super::matcher::JavaMatcher
+//! [`JavaLanguageExtractor::match_calls`]: super::JavaLanguageExtractor
+
+use crate::extraction::framework::IrExtend;
 use crate::extraction::Parameter;
 use crate::Location;
 
@@ -13,10 +16,10 @@ use crate::Location;
 
 /// An import statement extracted from a Java source file.
 ///
-/// Used by [`JavaMatcher`] to narrow the set of candidate AWS services for a given
-/// method call (import-based filtering).
+/// Used by [`JavaLanguageExtractor::match_calls`] to narrow the set of candidate AWS
+/// services for a given method call (import-based filtering).
 ///
-/// [`JavaMatcher`]: super::matcher::JavaMatcher
+/// [`JavaLanguageExtractor::match_calls`]: super::JavaLanguageExtractor
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct Import {
@@ -38,9 +41,9 @@ pub(crate) struct Import {
 /// A method call extracted from a Java source file.
 ///
 /// Represents `receiver.method(args)` patterns. The receiver and parameters are used by
-/// [`JavaMatcher`] for import-based and parameter-based filtering.
+/// [`JavaLanguageExtractor::match_calls`] for import-based and parameter-based filtering.
 ///
-/// [`JavaMatcher`]: super::matcher::JavaMatcher
+/// [`JavaLanguageExtractor::match_calls`]: super::JavaLanguageExtractor
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub(crate) struct Call {
@@ -171,13 +174,13 @@ pub(crate) struct UtilityImport {
 // ExtractionResult
 // ================================================================================================
 
-/// All data extracted from a single Java source file by the [`JavaLanguageExtractorSet`].
+/// All data extracted from Java source files by [`JavaLanguageExtractor`].
 ///
-/// This is the intermediate representation consumed by [`JavaMatcher`] to produce
-/// the final [`Vec<SdkMethodCall>`].
+/// This is the intermediate representation consumed by
+/// [`JavaLanguageExtractor::match_calls`] to produce the final [`Vec<SdkMethodCall>`].
 ///
-/// [`JavaLanguageExtractorSet`]: super::extractor::JavaLanguageExtractorSet
-/// [`JavaMatcher`]: super::matcher::JavaMatcher
+/// [`JavaLanguageExtractor`]: super::JavaLanguageExtractor
+/// [`JavaLanguageExtractor::match_calls`]: super::JavaLanguageExtractor
 /// [`Vec<SdkMethodCall>`]: crate::SdkMethodCall
 #[derive(Default, Debug)]
 pub(crate) struct ExtractionResult {
@@ -193,9 +196,12 @@ pub(crate) struct ExtractionResult {
     pub(crate) paginators: Vec<Paginator>,
 }
 
-impl ExtractionResult {
-    /// Merge another result into this one (used when combining per-extractor outputs).
-    pub(crate) fn extend(&mut self, other: Self) {
+// ================================================================================================
+// IrExtend impl for ExtractionResult
+// ================================================================================================
+
+impl IrExtend for ExtractionResult {
+    fn extend_from(&mut self, other: Self) {
         self.imports.extend(other.imports);
         self.utility_imports.extend(other.utility_imports);
         self.calls.extend(other.calls);

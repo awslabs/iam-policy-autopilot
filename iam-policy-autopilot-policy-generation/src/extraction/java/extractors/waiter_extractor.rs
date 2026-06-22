@@ -8,10 +8,12 @@
 //! The scope-walk logic is shared with the paginator and method-call extractors via
 //! [`utils::find_receiver_declaration`].
 
+use ast_grep_language::Java;
 use convert_case::{Case, Casing};
 
-use crate::extraction::java::extractor::{JavaNodeMatch, SdkExtractor};
+use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utils;
+use crate::extraction::java::extractors::utils::JavaNodeMatch;
 use crate::extraction::java::types::{ExtractionResult, Waiter};
 use crate::Location;
 use crate::SourceFile;
@@ -42,7 +44,9 @@ use crate::SourceFile;
 /// The label `$WAIT_METHOD` is the discriminator (captures the `waitUntil*` method name).
 pub(crate) struct JavaWaiterCallExtractor;
 
-impl SdkExtractor for JavaWaiterCallExtractor {
+impl SdkExtractor<Java> for JavaWaiterCallExtractor {
+    type ExtractionResult = ExtractionResult;
+
     fn rule_yaml(&self) -> &'static str {
         r"kind: method_invocation
 all:
@@ -65,7 +69,9 @@ all:
         source_file: &SourceFile,
         result: &mut ExtractionResult,
     ) {
-        let full_method = match node_match.get_env().get_match("WAIT_METHOD") {
+        let env = node_match.get_env();
+
+        let full_method = match env.get_match("WAIT_METHOD") {
             Some(n) => n.text().to_string(),
             None => return,
         };

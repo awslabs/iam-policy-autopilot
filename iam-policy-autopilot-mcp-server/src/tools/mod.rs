@@ -18,12 +18,15 @@ pub(crate) mod policy_autopilot {
         commands::IamPolicyAutopilotService, ApplyOptions, ApplyResult, PlanResult,
     };
 
-    pub async fn plan(error_message: &str) -> Result<PlanResult> {
+    pub async fn plan(
+        error_message: &str,
+        resource_override: Option<String>,
+    ) -> Result<PlanResult> {
         let policy_service = IamPolicyAutopilotService::new()
             .await
             .context("Failed to initialize IamPolicyAutopilot")?;
         policy_service
-            .plan(error_message)
+            .plan(error_message, resource_override)
             .await
             .map_err(|e| anyhow::anyhow!(e))
     }
@@ -40,7 +43,7 @@ pub(crate) mod policy_autopilot {
 }
 
 #[cfg(test)]
-mod policy_autopilot {
+pub(crate) mod policy_autopilot {
     use anyhow::Result;
     use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult, PlanResult};
     use std::sync::Mutex;
@@ -50,7 +53,10 @@ mod policy_autopilot {
     static MOCK_PLAN_RETURN: OnceLock<Mutex<Option<Result<PlanResult>>>> = OnceLock::new();
     static MOCK_APPLY_RETURN: OnceLock<Mutex<Option<Result<ApplyResult>>>> = OnceLock::new();
 
-    pub async fn plan(_error_message: &str) -> Result<PlanResult> {
+    pub async fn plan(
+        _error_message: &str,
+        _resource_override: Option<String>,
+    ) -> Result<PlanResult> {
         let mutex = MOCK_PLAN_RETURN.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         guard

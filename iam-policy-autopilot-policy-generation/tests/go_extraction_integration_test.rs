@@ -6,6 +6,7 @@
 
 use iam_policy_autopilot_policy_generation::{
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SdkType, SourceFile,
+    DEFAULT_RESOURCE_CUTOFF,
 };
 use std::path::PathBuf;
 
@@ -88,7 +89,8 @@ async fn test_go_extraction_to_policy_generation_integration() {
             // Step 3: Enrich method calls with IAM actions and resources
             println!("\nStep 3: Enriching method calls with IAM metadata...");
 
-            let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+            let mut enrichment_engine =
+                EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
 
             match enrichment_engine
                 .enrich_methods(&extracted_methods.methods, SdkType::Other)

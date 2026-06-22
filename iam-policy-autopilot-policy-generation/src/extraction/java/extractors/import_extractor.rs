@@ -7,8 +7,11 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::extraction::java::extractor::{JavaNodeMatch, SdkExtractor};
+use ast_grep_language::Java;
+
+use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utility_import_extractor::classify_utility_import;
+use crate::extraction::java::extractors::utils::JavaNodeMatch;
 use crate::extraction::java::types::{ExtractionResult, Import, UtilityImport};
 use crate::service_configuration::load_service_configuration;
 use crate::Location;
@@ -54,7 +57,9 @@ static JAVA_IMPORT_SERVICE_MAP: LazyLock<HashMap<String, String>> = LazyLock::ne
 /// this extractor's matches in the combined rule.
 pub(crate) struct JavaImportExtractor;
 
-impl SdkExtractor for JavaImportExtractor {
+impl SdkExtractor<Java> for JavaImportExtractor {
+    type ExtractionResult = ExtractionResult;
+
     fn rule_yaml(&self) -> &'static str {
         r"kind: import_declaration
 has:

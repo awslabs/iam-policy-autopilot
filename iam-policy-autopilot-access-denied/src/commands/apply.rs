@@ -12,17 +12,17 @@ use crate::types::{
 
 impl super::service::IamPolicyAutopilotService {
     /// Apply a policy fix: validates denial type, principal, and account; merges into canonical policy.
-    /// Requires exactly one action for audit trail.
+    /// Uses `plan.resource()` (which respects `resource_override`) for the policy statement.
     pub async fn apply(&self, plan: &PlanResult, _options: ApplyOptions) -> ApplyResultWithError {
-        if !matches!(plan.diagnosis.denial_type, DenialType::ImplicitIdentity) {
+        if !matches!(plan.denial_type(), DenialType::ImplicitIdentity) {
             return Err(ApplyError::UnsupportedDenialType);
         }
 
-        let principal_info = resolve_principal(&plan.diagnosis.principal_arn)
-            .map_err(ApplyError::UnsupportedPrincipal)?;
+        let principal_info =
+            resolve_principal(plan.principal_arn()).map_err(ApplyError::UnsupportedPrincipal)?;
 
-        let principal_account = extract_account_from_arn(&plan.diagnosis.principal_arn)
-            .ok_or_else(|| {
+        let principal_account =
+            extract_account_from_arn(plan.principal_arn()).ok_or_else(|| {
                 ApplyError::UnsupportedPrincipal(
                     "could not extract account id from principal ARN".to_string(),
                 )
@@ -44,10 +44,8 @@ impl super::service::IamPolicyAutopilotService {
 
         let date = chrono::Utc::now().format("%Y%m%d").to_string();
 
-        if plan.actions.len() != 1 {
-            return Err(ApplyError::MultiActionError(plan.actions.len()));
-        }
-        let action = plan.actions[0].clone();
+        let action = plan.action().to_string();
+        let resource = plan.resource().to_string();
 
         let existing_policy =
             find_canonical_policy(&self.iam_client, &principal_info.kind, &principal_info.name)
@@ -64,15 +62,14 @@ impl super::service::IamPolicyAutopilotService {
 
             let sid = build_statement_sid(&action, &date, &existing_sids);
 
-            let new_stmt =
-                build_single_statement(action.clone(), plan.diagnosis.resource.clone(), sid);
+            let new_stmt = build_single_statement(action.clone(), resource.clone(), sid);
 
             let new_key = new_stmt.to_key();
             for existing_stmt in &existing.document.statement {
                 if existing_stmt.to_key() == new_key {
                     return Err(ApplyError::DuplicateStatement {
                         action: action.clone(),
-                        resource: plan.diagnosis.resource.clone(),
+                        resource: resource.clone(),
                     });
                 }
             }
@@ -93,7 +90,7 @@ impl super::service::IamPolicyAutopilotService {
             (policy_doc, false)
         } else {
             let sid = build_statement_sid(&action, &date, &[]);
-            let stmt = build_single_statement(action.clone(), plan.diagnosis.resource.clone(), sid);
+            let stmt = build_single_statement(action.clone(), resource.clone(), sid);
 
             let policy_doc = crate::types::PolicyDocument {
                 id: Some(POLICY_PREFIX.to_string()),

@@ -94,6 +94,7 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
         tfstate_paths: inputs.tfstate.iter().map(|f| resolve(f)).collect(),
         tfvars_files: inputs.tfvars.iter().map(|f| resolve(f)).collect(),
         explain_resource_filters: inputs.explain_resource_filters.clone(),
+        resource_cutoff: iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF,
     }
 }
 

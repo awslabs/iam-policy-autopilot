@@ -53,12 +53,6 @@ pub(crate) fn apply_import_filter(
 ///    e.g. `serviceId "S3"` + suffixes `["Client", "AsyncClient"]` matches both
 ///    `"S3Client"` and `"S3AsyncClient"`.
 ///
-///    **Guard**: this path is only entered when at least one AWS wildcard import
-///    (`software.amazon.awssdk.services.<name>.*`) is present in the file.  Without
-///    such an import the type cannot have originated from the AWS SDK, so matching
-///    against `java_service_name` would risk false-positive attribution of a
-///    coincidentally-named type from a non-AWS library.
-///
 /// Returns a filtered subset of `all_services` (may be empty if nothing matches).
 pub(crate) fn resolve_services_by_type_name(
     type_name: &str,
@@ -99,7 +93,7 @@ pub(crate) fn resolve_services_by_type_name(
         }
 
         // Derive the expected type name from each candidate service's pre-computed
-        // java_service_name (stored in the embedded JSON by build.rs).
+        // java_service_name (using the full Java SDK v2 naming algorithm).
         // AWS SDK Java v2 naming: `<javaServiceName><suffix>`.
         // Try each suffix in order; match if any produces the observed type name.
         // e.g. serviceId "EC2" → javaServiceName "Ec2" + suffix "Client" matches "Ec2Client"

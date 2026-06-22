@@ -6,7 +6,7 @@
 
 use iam_policy_autopilot_policy_generation::{
     EnrichmentEngine, ExtractionEngine, FileSystemProvider, JsonProvider, Language,
-    PolicyGenerationEngine, SdkType, SourceFile,
+    PolicyGenerationEngine, SdkType, SourceFile, DEFAULT_RESOURCE_CUTOFF,
 };
 use std::io::Write;
 use std::path::PathBuf;
@@ -88,7 +88,7 @@ def download_object():
     assert!(!methods_json.is_empty());
 
     // 3. Test Enrichment Engine (Public API)
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
 
     let enriched_methods = enrichment_engine
         .enrich_methods(&extracted_methods.methods, SdkType::Boto3)
@@ -259,7 +259,7 @@ def multi_service_operations():
     println!("Extracted methods JSON length: {}", methods_json.len());
 
     // Continue with enrichment and policy generation
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
 
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Boto3)
@@ -414,7 +414,7 @@ def start_policy_generation():
     assert!(!extracted.methods.is_empty(), "Should extract methods");
 
     // Enrich the methods
-    let mut enrichment_engine = EnrichmentEngine::new(false).unwrap();
+    let mut enrichment_engine = EnrichmentEngine::new(false, DEFAULT_RESOURCE_CUTOFF).unwrap();
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, SdkType::Boto3)
         .await

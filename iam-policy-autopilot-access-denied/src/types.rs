@@ -91,12 +91,61 @@ pub struct PolicyMetadata {
     pub document: PolicyDocument,
 }
 
-/// Represents a complete execution plan with all metadata (replaces CLI's Plan type)
+/// Represents a complete execution plan with all metadata.
+/// Fields are private — use getters and `to_policy_document()` to access.
 #[derive(Debug, Clone)]
 pub struct PlanResult {
-    pub diagnosis: ParsedDenial,
-    pub actions: Vec<String>,
-    pub policy: PolicyDocument,
+    diagnosis: ParsedDenial,
+    resource_override: Option<String>,
+}
+
+impl PlanResult {
+    #[must_use]
+    pub fn new(diagnosis: ParsedDenial, resource_override: Option<String>) -> Self {
+        // Treat override as None if it matches the derived resource.
+        let resource_override = resource_override.filter(|r| r != &diagnosis.resource);
+        Self {
+            diagnosis,
+            resource_override,
+        }
+    }
+
+    #[must_use]
+    pub fn principal_arn(&self) -> &str {
+        &self.diagnosis.principal_arn
+    }
+
+    #[must_use]
+    pub fn action(&self) -> &str {
+        &self.diagnosis.action
+    }
+
+    /// The effective resource used for the policy statement.
+    #[must_use]
+    pub fn resource(&self) -> &str {
+        self.resource_override
+            .as_deref()
+            .unwrap_or(&self.diagnosis.resource)
+    }
+
+    #[must_use]
+    pub fn denial_type(&self) -> &DenialType {
+        &self.diagnosis.denial_type
+    }
+
+    /// Build the policy document from the plan's action and effective resource.
+    #[must_use]
+    pub fn to_policy_document(&self) -> PolicyDocument {
+        crate::synthesis::build_inline_allow(
+            vec![self.diagnosis.action.clone()],
+            self.resource().to_string(),
+        )
+    }
+
+    /// Render the policy document as pretty-printed JSON.
+    pub fn to_policy_json_pretty(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string_pretty(&self.to_policy_document())
+    }
 }
 
 /// Configuration options for apply operations
@@ -136,9 +185,6 @@ pub enum ApplyError {
     #[error("Duplicate statement: {action} on {resource}")]
     DuplicateStatement { action: String, resource: String },
 
-    #[error("Expected exactly 1 action, got {0}")]
-    MultiActionError(usize),
-
     #[error("AWS error: {0}")]
     Aws(#[from] crate::aws::AwsError),
 }
@@ -159,8 +205,6 @@ impl Statement {
 
 #[cfg(test)]
 mod tests {
-    use crate::aws::policy_naming::POLICY_PREFIX;
-
     use super::*;
 
     #[test]
@@ -254,16 +298,11 @@ mod tests {
                 "arn:aws:s3:::bucket/*".to_string(),
                 DenialType::ImplicitIdentity,
             ),
-            actions: vec!["s3:GetObject".to_string()],
-            policy: PolicyDocument {
-                id: Some(POLICY_PREFIX.to_string()),
-                version: "2012-10-17".to_string(),
-                statement: vec![],
-            },
+            resource_override: None,
         };
 
-        assert_eq!(plan.actions.len(), 1);
-        assert_eq!(plan.diagnosis.action, "s3:GetObject");
+        assert_eq!(plan.action(), "s3:GetObject");
+        assert_eq!(plan.resource(), "arn:aws:s3:::bucket/*");
     }
 
     #[test]
@@ -313,9 +352,6 @@ mod tests {
             resource: "arn:aws:s3:::bucket/*".to_string(),
         };
         assert!(err.to_string().contains("Duplicate"));
-
-        let err = ApplyError::MultiActionError(2);
-        assert!(err.to_string().contains("Expected exactly 1"));
     }
 
     #[test]

@@ -33,11 +33,12 @@ pub struct GeneratePolicyForAccessDeniedOutput {
 pub async fn generate_policy_for_access_denied(
     input: GeneratePolicyForAccessDeniedInput,
 ) -> Result<GeneratePolicyForAccessDeniedOutput, Error> {
-    let plan = policy_autopilot::plan(&input.error_message)
+    let plan = policy_autopilot::plan(&input.error_message, None)
         .await
         .context("Failed to generate policies")?;
 
-    let policy_str = serde_json::to_string(&plan.policy).context("Failed to serialize policy")?;
+    let policy_str =
+        serde_json::to_string(&plan.to_policy_document()).context("Failed to serialize policy")?;
 
     Ok(GeneratePolicyForAccessDeniedOutput { policy: policy_str })
 }
@@ -47,10 +48,7 @@ pub async fn generate_policy_for_access_denied(
 mod tests {
     use super::*;
     use anyhow::anyhow;
-    use iam_policy_autopilot_access_denied::aws::policy_naming::POLICY_PREFIX;
-    use iam_policy_autopilot_access_denied::{
-        DenialType, ParsedDenial, PlanResult, PolicyDocument,
-    };
+    use iam_policy_autopilot_access_denied::{DenialType, ParsedDenial, PlanResult};
 
     #[tokio::test]
     async fn test_generate_policy_for_access_denied() {
@@ -58,30 +56,23 @@ mod tests {
             error_message: "User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key".to_string(),
         };
 
-        let sample_policy = PolicyDocument {
-            id: Some(POLICY_PREFIX.to_string()),
-            version: "2012-10-17".to_string(),
-            statement: vec![],
-        };
-
-        let plan = PlanResult {
-            diagnosis: ParsedDenial::new(
+        let plan = PlanResult::new(
+            ParsedDenial::new(
                 "arn:aws:iam::123456789012:user/testuser".to_string(),
                 "s3:GetObject".to_string(),
                 "arn:aws:s3:::my-bucket/my-key".to_string(),
                 DenialType::ImplicitIdentity,
             ),
-            actions: vec!["s3:GetObject".to_string()],
-            policy: sample_policy.clone(),
-        };
+            None,
+        );
+
+        let expected_policy = serde_json::to_string(&plan.to_policy_document()).unwrap();
 
         policy_autopilot::set_mock_plan_return(Ok(plan));
         let result = generate_policy_for_access_denied(input).await;
 
         assert!(result.is_ok());
         let output = result.unwrap();
-
-        let expected_policy = serde_json::to_string(&sample_policy).unwrap();
         assert_eq!(output.policy, expected_policy);
     }
 
@@ -107,22 +98,15 @@ mod tests {
             error_message: "User: arn:aws:iam::123456789012:user/testuser is not authorized to perform: s3:GetObject on resource: arn:aws:s3:::my-bucket/my-key".to_string(),
         };
 
-        let sample_policy = PolicyDocument {
-            id: Some(POLICY_PREFIX.to_string()),
-            version: "2012-10-17".to_string(),
-            statement: vec![],
-        };
-
-        let plan = PlanResult {
-            diagnosis: ParsedDenial::new(
+        let plan = PlanResult::new(
+            ParsedDenial::new(
                 "arn:aws:iam::123456789012:user/testuser".to_string(),
                 "s3:GetObject".to_string(),
                 "arn:aws:s3:::my-bucket/my-key".to_string(),
                 DenialType::ImplicitIdentity,
             ),
-            actions: vec!["s3:GetObject".to_string()],
-            policy: sample_policy,
-        };
+            None,
+        );
 
         policy_autopilot::set_mock_plan_return(Ok(plan));
         let result = generate_policy_for_access_denied(input).await;

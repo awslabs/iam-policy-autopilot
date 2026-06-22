@@ -18,3 +18,18 @@ pub(crate) const KEYWORD_ARGUMENT: &str = "keyword_argument";
 
 /// A dictionary splat/unpacking operator (e.g., `**kwargs`)
 pub(crate) const DICTIONARY_SPLAT: &str = "dictionary_splat";
+
+/// A function definition node (e.g., `def func_name(args): body`)
+pub(crate) const FUNCTION_DEFINITION: &str = "function_definition";
+
+/// An identifier node (e.g., variable names, function names)
+pub(crate) const IDENTIFIER: &str = "identifier";
+
+/// A class definition node (e.g., `class MyClass: ...`)
+pub(crate) const CLASS_DEFINITION: &str = "class_definition";
+
+/// A block node (indented body of a function, class, if, etc.)
+pub(crate) const BLOCK: &str = "block";
+
+/// A decorated definition (function or class with decorators)
+pub(crate) const DECORATED_DEFINITION: &str = "decorated_definition";

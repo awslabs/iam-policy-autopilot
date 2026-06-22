@@ -24,7 +24,7 @@
 
 use std::sync::LazyLock;
 
-use crate::extraction::java::extractor::JAVA_UTILITIES_MODEL;
+use crate::extraction::java::JAVA_UTILITIES_MODEL;
 
 // ── Model-driven import prefix table ─────────────────────────────────────────
 
@@ -41,16 +41,21 @@ struct ImportEntry {
 /// Derives unique `(prefix, service_name)` pairs from the already-loaded model so
 /// the embedded JSON is never parsed a second time.
 static IMPORT_TABLE: LazyLock<Vec<ImportEntry>> = LazyLock::new(|| {
-    // Collect unique (prefix, service_name) pairs — multiple features may share the same prefix
+    // Collect unique (prefix, service_name) pairs — multiple features may share the same prefix.
+    // Only entries that have an import_prefix are included; entries without one are not
+    // utility-import-classified (they are matched by receiver class instead).
     let mut seen = std::collections::HashSet::new();
     let mut table = Vec::new();
 
     for (service_name, features) in &JAVA_UTILITIES_MODEL.services {
         for feature in features.values() {
-            let key = (feature.import.clone(), service_name.clone());
+            let Some(prefix) = &feature.import_prefix else {
+                continue;
+            };
+            let key = (prefix.clone(), service_name.clone());
             if seen.insert(key) {
                 table.push(ImportEntry {
-                    prefix: feature.import.clone(),
+                    prefix: prefix.clone(),
                     service_name: service_name.clone(),
                 });
             }

@@ -1,7 +1,10 @@
 //! [`JavaPaginatorExtractor`] — extracts paginator method calls from Java source files.
 
-use crate::extraction::java::extractor::{JavaNodeMatch, SdkExtractor};
+use ast_grep_language::Java;
+
+use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utils;
+use crate::extraction::java::extractors::utils::JavaNodeMatch;
 use crate::extraction::java::types::{ExtractionResult, Paginator};
 use crate::Location;
 use crate::SourceFile;
@@ -31,7 +34,9 @@ use crate::SourceFile;
 /// The label `$PAGINATOR_METHOD` is the discriminator (captures the `*Paginator` method name).
 pub(crate) struct JavaPaginatorExtractor;
 
-impl SdkExtractor for JavaPaginatorExtractor {
+impl SdkExtractor<Java> for JavaPaginatorExtractor {
+    type ExtractionResult = ExtractionResult;
+
     fn rule_yaml(&self) -> &'static str {
         r"kind: method_invocation
 all:
@@ -54,7 +59,9 @@ all:
         source_file: &SourceFile,
         result: &mut ExtractionResult,
     ) {
-        let paginator_method = match node_match.get_env().get_match("PAGINATOR_METHOD") {
+        let env = node_match.get_env();
+
+        let paginator_method = match env.get_match("PAGINATOR_METHOD") {
             Some(n) => n.text().to_string(),
             None => return,
         };

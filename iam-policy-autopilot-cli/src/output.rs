@@ -17,17 +17,15 @@ pub(crate) fn print_plan(plan: &PlanResult) {
     let stderr = io::stderr();
     let mut w = stderr.lock();
     let _ = writeln!(w, "IAM Policy Autopilot Plan");
-    let _ = writeln!(w, "Principal: {}", plan.diagnosis.principal_arn);
-    let _ = writeln!(w, "Action:    {}", plan.diagnosis.action);
-    let _ = writeln!(w, "Resource:  {}", plan.diagnosis.resource);
-    let _ = writeln!(w, "Denial:    {:?}", plan.diagnosis.denial_type);
+    let _ = writeln!(w, "Principal: {}", plan.principal_arn());
+    let _ = writeln!(w, "Action:    {}", plan.action());
+    let _ = writeln!(w, "Resource:  {}", plan.resource());
+    let _ = writeln!(w, "Denial:    {:?}", plan.denial_type());
     let _ = writeln!(w);
     let _ = writeln!(w, "Proposed permissions:");
-    for a in &plan.actions {
-        let _ = writeln!(w, "  - {a}");
-    }
+    let _ = writeln!(w, "  - {}", plan.action());
     let _ = writeln!(w);
-    if !matches!(plan.diagnosis.denial_type, DenialType::ImplicitIdentity) {
+    if !matches!(plan.denial_type(), DenialType::ImplicitIdentity) {
         let _ = writeln!(w, "Note: explain-only; not eligible for apply in V1.");
         let _ = writeln!(w);
     }

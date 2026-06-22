@@ -29,6 +29,7 @@ use iam_policy_autopilot_policy_generation::api::model::{
 };
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
+use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
 
@@ -93,6 +94,8 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
+    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+    resource_cutoff: Option<usize>,
     /// Generate explanations for why actions were added (with optional action filters)
     explain: Option<Vec<String>>,
     /// Optional Terraform project directory
@@ -363,6 +366,16 @@ Use this flag to force fresh data retrieval on every run."
         #[telemetry(value)]
         disable_cache: bool,
 
+        /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+        #[arg(
+            long = "resource-cutoff",
+            long_help = "Resource lists with more than this many entries are collapsed to '*' \
+instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. \
+Default: 4."
+        )]
+        #[telemetry(value, if_present)]
+        resource_cutoff: Option<usize>,
+
         /// Filter extracted SDK calls to specific AWS services
         #[arg(
             long = "service-hints",
@@ -614,6 +627,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         tfstate_paths: config.tfstate.clone(),
         tfvars_files: config.tfvars.clone(),
         explain_resource_filters: config.explain_resources.clone(),
+        resource_cutoff: config.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF),
     })
     .await?;
 
@@ -756,6 +770,7 @@ async fn main() {
             upload_policies,
             minimal_policy_size,
             disable_cache,
+            resource_cutoff,
             service_hints,
             explain,
             tf_dir,
@@ -784,6 +799,7 @@ async fn main() {
                 upload_policies,
                 minimal_policy_size,
                 disable_cache,
+                resource_cutoff,
                 explain,
                 tf_dir,
                 tf_files,

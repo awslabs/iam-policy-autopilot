@@ -45,6 +45,8 @@ pub struct GeneratePolicyConfig {
     /// - `Some(patterns)`: Generate explanations for resources matching the patterns
     ///   (supports wildcards like "arn:aws:s3:::*", "*" for all)
     pub explain_resource_filters: Option<Vec<String>>,
+    /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
+    pub resource_cutoff: usize,
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
