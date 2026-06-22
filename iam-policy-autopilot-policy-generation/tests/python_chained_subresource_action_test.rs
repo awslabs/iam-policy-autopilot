@@ -129,6 +129,55 @@ def handle():
 "#,
     &[]
 )]
+// Depth-3 chain: verifies identifier accumulation recurses beyond two levels.
+// Object("b","k") -> MultipartUpload("id") -> Part(1) -> upload(...) carries
+// BucketName/ObjectKey from Object, UploadId from MultipartUpload, and PartNumber from
+// the Part navigation into the UploadPart operation.
+#[case::deep_chain_multipart_upload_part(
+    r#"
+import boto3
+
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Object("my-bucket", "my-key").MultipartUpload("upload-id").Part(1).upload(Body="data")
+"#,
+    &[("s3", "upload_part")]
+)]
+// Accessor name differs from the target resource type (`Acl` -> type `BucketAcl`),
+// verifying that sub-resources are keyed by accessor, not by type.
+#[case::accessor_differs_from_type_bucket_acl(
+    r#"
+import boto3
+
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Bucket("my-bucket").Acl().put(ACL="private")
+"#,
+    &[("s3", "put_bucket_acl")]
+)]
+// A chain through an unknown sub-resource accessor must resolve to nothing — a chain is
+// resolved fully or not at all, never partially or speculatively (no over-approximation).
+#[case::unknown_sub_resource_accessor(
+    r#"
+import boto3
+
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Bucket("my-bucket").Sprocket("x").put(Body="data")
+"#,
+    &[]
+)]
+// A known nested resource with an unknown leaf action must also resolve to nothing.
+#[case::unknown_leaf_action(
+    r#"
+import boto3
+
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Bucket("my-bucket").Object("my-key").frobnicate(X="data")
+"#,
+    &[]
+)]
 #[tokio::test]
 async fn subresource_action_resolves(#[case] src: &str, #[case] expected_ops: &[(&str, &str)]) {
     let actual = extract(src).await;
