@@ -87,7 +87,10 @@ strsim = "0.11"
 
 # Additional workspace configuration
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny (not forbid): the policy-generation crate contains cfg(wasm32)-gated unsafe FFI
+# for the Emscripten HTTP bridge, and the wasm crate has unsafe FFI exports. forbid
+# cannot be overridden by #[allow] in source, so deny is the strongest level that works.
+unsafe_code = "deny"
 dead_code = "deny"
 
 [workspace.lints.clippy]
