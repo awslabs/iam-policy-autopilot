@@ -1,8 +1,8 @@
 use crate::tools::policy_autopilot;
 use anyhow::Error;
 use anyhow::{bail, Context};
-use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult, PolicyDocument};
-use log::{error, warn};
+use iam_policy_autopilot_access_denied::{ApplyOptions, ApplyResult};
+use log::error;
 use rmcp::{
     elicit_safe,
     service::{ElicitationError, RequestContext},
@@ -60,15 +60,16 @@ impl From<ApplyResult> for FixResult {
 #[telemetry(command = "mcp-tool-fix-access-denied")]
 pub struct FixAccessDeniedInput {
     #[schemars(
-        description = "The IAM Policy JSON to fix access denied that was generated through generate_policy_for_access_denied tool"
-    )]
-    #[telemetry(presence)]
-    pub access_denied_fix_policy: String,
-    #[schemars(
         description = "The original access denied error message to extract principal information"
     )]
     #[telemetry(presence)]
     pub error_message: String,
+
+    #[schemars(
+        description = "Optional resource ARN override. When provided, this resource ARN is used in the policy statement instead of the one derived from the error message. Use this to grant narrower access (e.g., a specific S3 object key) or broader access (e.g., a bucket wildcard for object-level APIs)."
+    )]
+    #[telemetry(presence)]
+    pub resource_override: Option<String>,
 }
 
 // Output struct for the generated IAM policy
@@ -86,58 +87,62 @@ pub struct FixAccessDeniedOutput {
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[schemars(description = "Confirmation from the user")]
-struct UserConfirmation(bool);
+struct UserConfirmation {
+    #[schemars(description = "Check the box and accept to confirm")]
+    confirmed: bool,
+}
 
 // Mark as safe for elicitation
 elicit_safe!(UserConfirmation);
 
-pub async fn fix_access_denied(
-    context: RequestContext<RoleServer>,
-    input: FixAccessDeniedInput,
-) -> Result<FixAccessDeniedOutput, Error> {
-    // Parse the error message to extract principal information
-    let plan = policy_autopilot::plan(&input.error_message)
-        .await
-        .context("Failed to parse access denied error message")?;
-
-    // Get confirmation from the user
-    let elicit_result = context
-        .peer
-        .elicit::<UserConfirmation>(format!(
-            "Are you sure you want to apply the following policy to {}? (yes/no):\n\n{}",
-            plan.diagnosis.principal_arn, input.access_denied_fix_policy
-        ))
-        .await;
-
-    match elicit_result {
+async fn elicit_confirmation(
+    context: &RequestContext<RoleServer>,
+    message: String,
+) -> Result<bool, Error> {
+    match context.peer.elicit::<UserConfirmation>(message).await {
+        Ok(Some(UserConfirmation { confirmed })) => Ok(confirmed),
+        Ok(None) | Err(ElicitationError::UserDeclined | ElicitationError::UserCancelled) => {
+            Ok(false)
+        }
         Err(ElicitationError::CapabilityNotSupported) => {
-            warn!("Elicitation capability not supported");
-            // Continue with the apply
+            bail!("MCP client does not support elicitation; cannot apply policy without user confirmation.");
         }
         Err(e) => {
             error!("Elicitation error {e:#?}");
             bail!("MCP user elicitation failed when applying policies.");
         }
-        Ok(Some(UserConfirmation(true))) => { /* no-op */ }
-        Ok(Some(UserConfirmation(false)) | None) => {
-            return Ok(FixAccessDeniedOutput {
-                policy: input.access_denied_fix_policy,
-                fix_result: None,
-            });
-        }
+    }
+}
+
+pub async fn fix_access_denied(
+    context: RequestContext<RoleServer>,
+    input: FixAccessDeniedInput,
+) -> Result<FixAccessDeniedOutput, Error> {
+    let plan = policy_autopilot::plan(&input.error_message, input.resource_override)
+        .await
+        .context("Failed to parse access denied error message")?;
+
+    let policy_pretty = plan
+        .to_policy_json_pretty()
+        .context("Failed to serialize policy")?;
+
+    let message = format!(
+        "Are you sure you want to apply the following policy to {}?\n\n{}",
+        plan.principal_arn(),
+        policy_pretty
+    );
+
+    let confirmed = elicit_confirmation(&context, message).await?;
+
+    if !confirmed {
+        return Ok(FixAccessDeniedOutput {
+            policy: policy_pretty,
+            fix_result: None,
+        });
     }
 
-    let user_policy: PolicyDocument = serde_json::from_str(&input.access_denied_fix_policy)
-        .context("Failed to parse user-confirmed policy JSON")?;
-
-    let plan_with_user_policy = iam_policy_autopilot_access_denied::PlanResult {
-        policy: user_policy,
-        ..plan
-    };
-
     let apply = policy_autopilot::apply(
-        &plan_with_user_policy,
+        &plan,
         ApplyOptions {
             skip_confirmation: true,
             skip_tty_check: true,
@@ -147,7 +152,7 @@ pub async fn fix_access_denied(
     .context("Failed to apply access denied fix")?;
 
     Ok(FixAccessDeniedOutput {
-        policy: input.access_denied_fix_policy,
+        policy: policy_pretty,
         fix_result: Some(FixResult::from(apply)),
     })
 }
@@ -157,7 +162,6 @@ pub async fn fix_access_denied(
 mod tests {
     use super::*;
     use anyhow::anyhow;
-    use iam_policy_autopilot_access_denied::aws::policy_naming::POLICY_PREFIX;
 
     // Note: These tests focus on the service layer mocking.
     // Full integration tests with RequestContext would require more complex setup.
@@ -167,18 +171,18 @@ mod tests {
         let plan = create_test_plan();
         policy_autopilot::set_mock_plan_return(Ok(plan.clone()));
 
-        let result = policy_autopilot::plan("test error message").await;
+        let result = policy_autopilot::plan("test error message", None).await;
         assert!(result.is_ok());
 
         let returned_plan = result.unwrap();
-        assert_eq!(returned_plan.actions, vec!["s3:GetObject".to_string()]);
+        assert_eq!(returned_plan.action(), "s3:GetObject");
     }
 
     #[tokio::test]
     async fn test_service_plan_failure() {
         policy_autopilot::set_mock_plan_return(Err(anyhow!("Failed to generate policies")));
 
-        let result = policy_autopilot::plan("invalid error message").await;
+        let result = policy_autopilot::plan("invalid error message", None).await;
         assert!(result.is_err());
         assert!(result
             .unwrap_err()
@@ -263,15 +267,15 @@ mod tests {
     #[test]
     fn test_fix_access_denied_input_serialization() {
         let input = FixAccessDeniedInput {
-            access_denied_fix_policy: "{\"Version\":\"2012-10-17\"}".to_string(),
             error_message: "User: arn:aws:iam::123456789012:user/test is not authorized"
                 .to_string(),
+            resource_override: Some("arn:aws:s3:::my-bucket/specific-key".to_string()),
         };
 
         let json = serde_json::to_string(&input).unwrap();
 
-        assert!(json.contains("\"AccessDeniedFixPolicy\":"));
         assert!(json.contains("\"ErrorMessage\":"));
+        assert!(json.contains("\"ResourceOverride\":"));
     }
 
     #[test]
@@ -304,23 +308,16 @@ mod tests {
 
     // Test helper function to create a minimal plan for testing
     fn create_test_plan() -> iam_policy_autopilot_access_denied::PlanResult {
-        use iam_policy_autopilot_access_denied::{
-            DenialType, ParsedDenial, PlanResult, PolicyDocument,
-        };
+        use iam_policy_autopilot_access_denied::{DenialType, ParsedDenial, PlanResult};
 
-        PlanResult {
-            diagnosis: ParsedDenial::new(
+        PlanResult::new(
+            ParsedDenial::new(
                 "arn:aws:iam::123456789012:user/testuser".to_string(),
                 "s3:GetObject".to_string(),
                 "arn:aws:s3:::my-bucket/my-key".to_string(),
                 DenialType::ImplicitIdentity,
             ),
-            actions: vec!["s3:GetObject".to_string()],
-            policy: PolicyDocument {
-                id: Some(POLICY_PREFIX.to_string()),
-                version: "2012-10-17".to_string(),
-                statement: vec![],
-            },
-        }
+            None,
+        )
     }
 }

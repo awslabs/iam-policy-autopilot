@@ -16,7 +16,8 @@ use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
-use crate::extraction::java::extract_java_sdk_calls;
+use crate::extraction::framework::{extract, LanguageExtractor};
+use crate::extraction::java::JavaLanguageExtractor;
 use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{self, ExtractedMethods, ExtractionMetadata, SourceFile};
 use crate::Language;
@@ -78,12 +79,10 @@ impl Engine {
             service_index.method_lookup.len()
         );
 
-        // Java uses a separate entry point that does not go through the legacy Extractor trait.
+        // Java uses the new LanguageExtractor framework.
         if language == Language::Java {
             let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
-
-            let method_calls = extract_java_sdk_calls(source_files, &service_index).await?;
-
+            let method_calls = run(&JavaLanguageExtractor, source_files, &service_index).await?;
             metadata.update_method_count(method_calls.len());
 
             let total_duration = start_time.elapsed();
@@ -99,6 +98,7 @@ impl Engine {
             });
         }
 
+        // Legacy languages (Python, Go, JS, TS) use the old Extractor trait path.
         #[allow(unreachable_patterns)]
         let extractor: Arc<dyn Extractor + Send + Sync> = match language {
             Language::Python => Arc::new(extraction::python::extractor::PythonExtractor::new()),
@@ -173,7 +173,6 @@ impl Engine {
             method_calls.len()
         );
 
-        // Create final results
         Ok(ExtractedMethods {
             methods: method_calls,
             metadata,
@@ -225,6 +224,28 @@ impl Engine {
             .next()
             .expect("Should have detected exactly one language"))
     }
+}
+
+/// Run the two-phase extraction pipeline (extract → match) for a [`LanguageExtractor`].
+async fn run<E: LanguageExtractor>(
+    extractor: &E,
+    source_files: Vec<SourceFile>,
+    service_index: &crate::extraction::ServiceModelIndex,
+) -> Result<Vec<crate::SdkMethodCall>> {
+    let ir = extract(extractor, source_files).await?;
+    let utilities = extractor.utilities_model();
+    let mut calls = extractor.match_calls(&ir, service_index, utilities);
+
+    // Sort by (name, location) to produce a deterministic output order regardless
+    // of which blocking task finished first during extraction.
+    calls.sort_by(|a, b| {
+        fn key(c: &crate::SdkMethodCall) -> impl Ord + '_ {
+            (c.name.as_str(), c.metadata.as_ref().map(|m| &m.location))
+        }
+        key(a).cmp(&key(b))
+    });
+
+    Ok(calls)
 }
 
 #[cfg(test)]

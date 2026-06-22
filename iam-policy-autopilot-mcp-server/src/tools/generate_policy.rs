@@ -4,6 +4,7 @@ use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
     AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
 };
+use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -65,6 +66,13 @@ pub struct GeneratePoliciesInput {
     )]
     #[telemetry(presence)]
     pub tfvars: Option<Vec<String>>,
+
+    #[schemars(
+        description = "Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.",
+        range(min = 0)
+    )]
+    #[telemetry(value, if_present)]
+    pub resource_cutoff: Option<usize>,
 }
 
 // Output struct for the generated IAM policy
@@ -81,13 +89,14 @@ pub async fn generate_application_policies(
 ) -> Result<GeneratePoliciesOutput, Error> {
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
+    let resource_cutoff = input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF);
 
     // Convert service_hints from Vec<String> to ServiceHints if provided
     let service_hints = input.service_hints.map(|hints| ServiceHints {
         service_names: hints,
     });
 
-    let result = api::generate_policies(&GeneratePolicyConfig {
+    let config = GeneratePolicyConfig {
         individual_policies: false,
         extract_sdk_calls_config: ExtractSdkCallsConfig {
             source_files: input
@@ -127,8 +136,10 @@ pub async fn generate_application_policies(
             .map(std::path::PathBuf::from)
             .collect(),
         explain_resource_filters: None,
-    })
-    .await?;
+        resource_cutoff,
+    };
+
+    let result = api::generate_policies(&config).await?;
 
     let policies = result
         .policies
@@ -153,9 +164,15 @@ mod api {
     static MOCK_RETURN_VALUE: OnceLock<Mutex<Option<Result<GeneratePoliciesResult>>>> =
         OnceLock::new();
 
+    static MOCK_RESOURCE_CUTOFF: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+
     pub async fn generate_policies(
-        _config: &GeneratePolicyConfig,
+        config: &GeneratePolicyConfig,
     ) -> Result<GeneratePoliciesResult> {
+        let cutoff_mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
+        let mut cutoff_guard = cutoff_mutex.lock().unwrap();
+        *cutoff_guard = Some(config.resource_cutoff);
+
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         guard
@@ -167,6 +184,12 @@ mod api {
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         *guard = Some(value);
+    }
+
+    pub fn take_resource_cutoff() -> Option<usize> {
+        let mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard.take()
     }
 }
 
@@ -194,6 +217,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -239,12 +263,38 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
         let result = generate_application_policies(input).await;
 
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_generate_application_policies_allows_zero_resource_cutoff() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: Some("us-east-1".to_string()),
+            account: Some("123456789012".to_string()),
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: Some(0),
+        };
+
+        api::set_mock_return(Ok(GeneratePoliciesResult {
+            policies: vec![],
+            explanations: None,
+            resource_binding_explanations: None,
+        }));
+        let result = generate_application_policies(input).await;
+
+        assert!(result.is_ok());
+        assert_eq!(api::take_resource_cutoff(), Some(0));
     }
 
     #[test]
@@ -258,6 +308,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -293,6 +344,7 @@ mod tests {
             tf_files: None,
             tfstate: None,
             tfvars: None,
+            resource_cutoff: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");

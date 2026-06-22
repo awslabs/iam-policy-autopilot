@@ -2001,7 +2001,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-access-denied"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "aws-config",
  "aws-sdk-iam",
@@ -2019,7 +2019,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-cli"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-common"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "iam-policy-autopilot-proc-macros",
  "log",
@@ -2061,7 +2061,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-mcp-server"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2085,7 +2085,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-policy-generation"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-proc-macros"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-tools"
-version = "0.2.2-rc.1"
+version = "0.2.3"
 dependencies = [
  "aws-config",
  "aws-sdk-iam",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "iam-policy-autopilot-wasm"
-version = "0.2.1"
+version = "0.2.3"
 dependencies = [
  "iam-policy-autopilot-policy-generation",
  "serde",

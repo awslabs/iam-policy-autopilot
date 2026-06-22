@@ -22,6 +22,7 @@ Telemetry records which commands and parameters are used, and whether the comman
 | `upload_policies` | presence (boolean) |
 | `minimal_policy_size` | actual value (boolean) |
 | `disable_cache` | actual value (boolean) |
+| `resource_cutoff` | value if provided, omitted otherwise |
 | `service_hints` | list of values if non-empty, omitted otherwise |
 | `explain` | list of values if non-empty, omitted otherwise |
 | `tf_dir` | presence (boolean) |
@@ -56,6 +57,7 @@ Telemetry records which commands and parameters are used, and whether the comman
 | `tf_files` | presence (boolean) |
 | `tfstate` | presence (boolean) |
 | `tfvars` | presence (boolean) |
+| `resource_cutoff` | value if provided, omitted otherwise |
 
 ### MCP: `mcp-tool-generate-policy-for-access-denied`
 
@@ -67,8 +69,8 @@ Telemetry records which commands and parameters are used, and whether the comman
 
 | Parameter | What We Record |
 |-----------|---------------|
-| `access_denied_fix_policy` | presence (boolean) |
 | `error_message` | presence (boolean) |
+| `resource_override` | presence (boolean) |
 
 <!-- END TELEMETRY TABLE -->
 

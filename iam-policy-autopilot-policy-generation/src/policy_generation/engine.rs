@@ -319,6 +319,21 @@ mod tests {
     }
 
     #[test]
+    fn test_process_action_resources_empty_list_falls_back_to_wildcard() {
+        let engine = create_test_engine();
+        let action = Action::new(
+            "s3:GetObject".to_string(),
+            vec![],
+            vec![],
+            Explanation::default(),
+        );
+
+        let processed_resources = engine.process_action_resources(&action).unwrap();
+
+        assert_eq!(processed_resources, vec!["*".to_string()]);
+    }
+
+    #[test]
     fn test_generate_policy_single_action() {
         let engine = create_test_engine();
         let sdk_call = create_test_sdk_call();
