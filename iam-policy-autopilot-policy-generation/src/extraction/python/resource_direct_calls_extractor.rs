@@ -797,19 +797,28 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             }
         }
 
-        let mut positional = positional.into_iter();
+        // Assign exactly like Python: positional args fill the FIRST identifiers in
+        // declared order; keyword args then fill the REMAINING identifiers by name. A
+        // keyword that targets an already positionally-filled identifier is a collision
+        // ("got multiple values for argument") — invalid Python, so we bail.
         let mut assigned = HashMap::with_capacity(identifier_names.len());
-        for name in identifier_names {
-            let kwarg_name =
-                ServiceDiscovery::operation_to_method_name(name, crate::Language::Python);
-            let value = match keyword.remove(kwarg_name.as_str()) {
-                Some(value) => value.clone(),
-                None => positional.next()?.clone(),
-            };
-            assigned.insert((*name).to_string(), value);
+        let mut identifiers = identifier_names.iter();
+
+        for value in &positional {
+            // `args.len() == identifier_names.len()` guarantees a slot exists here.
+            let name = identifiers.next()?;
+            assigned.insert((*name).to_string(), (*value).clone());
         }
 
-        // Any keyword left over didn't match an identifier — the call doesn't line up.
+        for name in identifiers {
+            let kwarg_name =
+                ServiceDiscovery::operation_to_method_name(name, crate::Language::Python);
+            let value = keyword.remove(kwarg_name.as_str())?;
+            assigned.insert((*name).to_string(), value.clone());
+        }
+
+        // Any keyword left over either named an identifier already filled positionally
+        // (collision) or named no identifier at all — both mean the call doesn't line up.
         if !keyword.is_empty() {
             return None;
         }

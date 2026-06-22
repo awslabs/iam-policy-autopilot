@@ -178,6 +178,19 @@ def handle():
 "#,
     &[]
 )]
+// Mixing a positional and a keyword that target the same identifier is invalid Python
+// ("got multiple values for argument"). We must not silently mis-assign it — bail.
+// Here the positional "b" fills BucketName, and `bucket_name="x"` collides with it.
+#[case::positional_keyword_collision(
+    r#"
+import boto3
+
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Object("b", bucket_name="x").put(Body="data")
+"#,
+    &[]
+)]
 #[tokio::test]
 async fn subresource_action_resolves(#[case] src: &str, #[case] expected_ops: &[(&str, &str)]) {
     let actual = extract(src).await;
