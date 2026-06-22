@@ -77,7 +77,7 @@ impl LanguageConventions for GoConventions {
         ParsedFunctionName {
             module_path: String::new(),
             class_name: None,
-            function_name: name.to_string(),
+            function_name: name.clone(),
         }
     }
 

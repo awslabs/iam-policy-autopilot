@@ -170,9 +170,8 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
 
         if matching_files.len() > 1 {
             anyhow::bail!(
-                "Ambiguous file path '{file}' in entry point '{spec}', matches multiple files: {:?}. \
-                 Use a longer path to disambiguate.",
-                matching_files
+                "Ambiguous file path '{file}' in entry point '{spec}', matches multiple files: \
+                 {matching_files:?}. Use a longer path to disambiguate."
             );
         }
 
