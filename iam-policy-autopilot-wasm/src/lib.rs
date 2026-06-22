@@ -69,8 +69,7 @@ fn default_wildcard() -> String {
 /// - `input_ptr` must be a valid, non-null, null-terminated C string.
 /// - The caller must free the returned pointer with `free_string`.
 #[no_mangle]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_char {
+pub unsafe extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_char {
     // Null guard — CStr::from_ptr(null) is instant UB.
     if input_ptr.is_null() {
         let err = serde_json::json!({"error": "input_ptr is null"}).to_string();
@@ -78,7 +77,7 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
     }
 
     let result = std::panic::catch_unwind(|| {
-        let input_str = match unsafe { CStr::from_ptr(input_ptr) }.to_str() {
+        let input_str = match CStr::from_ptr(input_ptr).to_str() {
             Ok(s) => s,
             Err(e) => {
                 let err = serde_json::json!({"error": format!("Input is not valid UTF-8: {e}")})
@@ -105,12 +104,9 @@ pub extern "C" fn generate_policies_wasm(input_ptr: *const c_char) -> *mut c_cha
 /// # Safety
 /// `ptr` must have been returned by `generate_policies_wasm` and must not be freed twice.
 #[no_mangle]
-#[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C" fn free_string(ptr: *mut c_char) {
+pub unsafe extern "C" fn free_string(ptr: *mut c_char) {
     if !ptr.is_null() {
-        unsafe {
-            drop(CString::from_raw(ptr));
-        }
+        drop(CString::from_raw(ptr));
     }
 }
 

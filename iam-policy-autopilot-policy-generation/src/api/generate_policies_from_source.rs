@@ -59,7 +59,8 @@ pub async fn generate_policies_from_source(
 
     // 2. Enrich (filesystem cache disabled — no FS in WASM)
     let mut enrichment_engine =
-        EnrichmentEngine::new(true).context("Failed to create enrichment engine")?;
+        EnrichmentEngine::new(true, crate::DEFAULT_RESOURCE_CUTOFF)
+            .context("Failed to create enrichment engine")?;
 
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, sdk)
@@ -85,5 +86,9 @@ pub async fn generate_policies_from_source(
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
 
+    // Explanations are omitted in the WASM/from-source path: the browser consumer only
+    // needs the final policies, and including per-action explanations would significantly
+    // increase the JSON payload size over the wire. Explanations remain available in the
+    // CLI/MCP paths via generate_policies().
     Ok(GeneratePoliciesResult::new(merged, None))
 }

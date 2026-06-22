@@ -117,7 +117,13 @@ export interface InitOptions {
 export async function init(options?: InitOptions): Promise<void> {
   if (modulePromise) return;
   modulePromise = loadModule(options);
-  await modulePromise;
+  try {
+    await modulePromise;
+  } catch (e) {
+    // Reset so the next call can retry
+    modulePromise = null;
+    throw e;
+  }
 }
 
 async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
@@ -172,10 +178,8 @@ async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
  * @throws Error if the WASM module fails to load or generation encounters an unrecoverable error
  */
 export async function generatePolicies(input: GenerateInput): Promise<GenerateResult> {
-  if (!modulePromise) {
-    modulePromise = loadModule();
-  }
-  const Module = await modulePromise;
+  await init();
+  const Module = await modulePromise!;
 
   if (!generateFn) {
     throw new Error('WASM module loaded but generate function not available');
