@@ -478,8 +478,9 @@ Examples:\n  \
         long_about = "Analyzes source code to build a call graph from specified entry points, \
 extracts AWS SDK calls reachable from those entry points, and outputs an external library model \
 JSON that maps each entry point to its required SDK operations.\n\n\
-Entry points are specified as file:line:column (1-based). Point to the start of a function \
-declaration. Example: --entry-point handler.go:14:1"
+Entry points are specified either as file:line:column (1-based; point anywhere inside a function \
+declaration; e.g. --entry-point handler.go:14:1) or as a language-specific symbol \
+(Go: pkg.func; e.g. --entry-point-symbol s3.resourceBucketCreate). Both flags may be combined."
     )]
     #[telemetry(skip)]
     GenerateModel {
@@ -488,9 +489,14 @@ declaration. Example: --entry-point handler.go:14:1"
         source_files: Vec<PathBuf>,
 
         /// Entry points as file:line:column (1-based, pointing to function declaration).
-        /// If omitted, all exported functions are used as entry points.
+        /// If omitted (along with --entry-point-symbol), all exported functions are used.
         #[arg(long = "entry-point", num_args = 1..)]
         entry_points: Vec<String>,
+
+        /// Entry points as language-specific symbols. For Go: pkg.func
+        /// (e.g. s3.resourceBucketCreate); the full import-path form is also accepted.
+        #[arg(long = "entry-point-symbol", num_args = 1..)]
+        entry_point_symbols: Vec<String>,
 
         /// Name for the generated library model
         #[arg(long = "library-name", required = true)]
@@ -726,6 +732,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
 async fn handle_generate_model(
     source_files: Vec<PathBuf>,
     entry_points: Vec<String>,
+    entry_point_symbols: Vec<String>,
     library_name: String,
     language: Option<String>,
     service_hints: Option<Vec<String>>,
@@ -747,6 +754,7 @@ async fn handle_generate_model(
         language,
         library_name,
         entry_points,
+        entry_point_symbols,
         service_hints: service_hints.map(|service_names| ServiceHints { service_names }),
     };
 
@@ -912,6 +920,7 @@ async fn main() {
         Commands::GenerateModel {
             source_files,
             entry_points,
+            entry_point_symbols,
             library_name,
             debug: debug_flag,
             pretty,
@@ -926,6 +935,7 @@ async fn main() {
             match handle_generate_model(
                 source_files,
                 entry_points,
+                entry_point_symbols,
                 library_name,
                 language,
                 service_hints,
