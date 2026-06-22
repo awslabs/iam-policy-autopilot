@@ -58,9 +58,8 @@ pub async fn generate_policies_from_source(
     );
 
     // 2. Enrich (filesystem cache disabled — no FS in WASM)
-    let mut enrichment_engine =
-        EnrichmentEngine::new(true, crate::DEFAULT_RESOURCE_CUTOFF)
-            .context("Failed to create enrichment engine")?;
+    let mut enrichment_engine = EnrichmentEngine::new(true, crate::DEFAULT_RESOURCE_CUTOFF)
+        .context("Failed to create enrichment engine")?;
 
     let enriched = enrichment_engine
         .enrich_methods(&extracted.methods, sdk)
