@@ -87,9 +87,7 @@ strsim = "0.11"
 
 # Additional workspace configuration
 [workspace.lints.rust]
-# deny (not forbid) so the emscripten WASM crate can #[allow(unsafe_code)] for FFI.
-# All other crates should avoid unsafe code.
-unsafe_code = "deny"
+unsafe_code = "forbid"
 dead_code = "deny"
 
 [workspace.lints.clippy]
