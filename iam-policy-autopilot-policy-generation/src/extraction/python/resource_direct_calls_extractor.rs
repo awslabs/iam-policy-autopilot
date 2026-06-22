@@ -39,6 +39,7 @@ use crate::extraction::python::boto3_resources_model::{
 };
 use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::python::node_kinds;
+use crate::extraction::sdk_model::ServiceDiscovery;
 use crate::extraction::{
     AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata,
 };
@@ -79,14 +80,14 @@ impl ResourceMethodCallInfo {
 
 /// The leaf resource a sub-resource chain resolves to, with its identifier values.
 ///
-/// INVARIANT: `identifier_args[i]` is the value for `resource_type`'s `identifiers[i]`,
-/// i.e. positional in the leaf resource's declared identifier order. This lets them be
-/// consumed directly as positional constructor args by the Tier 1 matcher.
+/// `identifiers` maps each identifier name on `resource_type` (e.g. `BucketName`, `Key`)
+/// to its resolved value. Keyed by name — not position — so values are carried and
+/// injected by identifier name throughout, matching how boto3 specs reference them.
 #[derive(Debug, Clone)]
 struct ResolvedResource {
     service_name: String,
     resource_type: String,
-    identifier_args: Vec<Parameter>,
+    identifiers: HashMap<String, ParameterValue>,
 }
 
 /// Extractor for boto3 resource direct call patterns
@@ -496,6 +497,20 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             };
 
             for resource in resolved {
+                // `find_all` also matches the intermediate calls of a chain: for
+                // `s3.Bucket("b").Object("k").put(...)` it yields the `.Object("k")` call
+                // too, whose method is itself a sub-resource navigation rather than an
+                // action. Skip those — the outer match that includes the next link already
+                // covers them, and a navigation never resolves to an action downstream.
+                if let Some(model) = registry.get_model(&resource.service_name) {
+                    if model
+                        .get_sub_resource(&resource.resource_type, &method_name)
+                        .is_some()
+                    {
+                        continue;
+                    }
+                }
+
                 let synthetic_var = format!(
                     "__chained_{}_{}_{}_{}",
                     resource.service_name,
@@ -504,11 +519,25 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                     start.column(call_node) + 1
                 );
 
+                // Carry each resolved identifier as a named keyword arg so the Tier 1
+                // matcher injects it by name into the operation's required parameters.
+                let constructor_args = resource
+                    .identifiers
+                    .iter()
+                    .enumerate()
+                    .map(|(position, (name, value))| Parameter::Keyword {
+                        name: name.clone(),
+                        value: value.clone(),
+                        position,
+                        type_annotation: None,
+                    })
+                    .collect();
+
                 constructors.push(ResourceConstructorInfo {
                     variable_name: synthetic_var.clone(),
                     resource_type: resource.resource_type.clone(),
                     service_name: resource.service_name.clone(),
-                    constructor_args: resource.identifier_args.clone(),
+                    constructor_args,
                     start_position: (start.line() + 1, start.column(call_node) + 1),
                     end_position: (start.line() + 1, start.column(call_node) + 1),
                 });
@@ -668,79 +697,124 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
     ) -> Option<ResolvedResource> {
         let model = registry.get_model(service_name)?;
 
-        // Base resource: validate constructor arg count against its identifiers.
+        // Base resource: assign the constructor args to its identifiers by name. Keyword
+        // args match the identifier's snake_case name; positional args fill the remaining
+        // identifiers in declared order. Yields a name -> value map for the base resource.
         let (base_accessor, _) = links.first()?;
         let base_spec = model.get_constructor_spec(base_accessor)?;
-        if base_args.len() != base_spec.identifiers_count {
-            log::debug!(
-                "Chain base '{base_accessor}' arg count {} != identifiers {}",
-                base_args.len(),
-                base_spec.identifiers_count
-            );
-            return None;
-        }
+        let base_identifier_names: Vec<&str> = model
+            .get_resource_definition(&base_spec.resource_type)?
+            .identifiers
+            .iter()
+            .map(|id| id.name.as_str())
+            .collect();
 
-        // Accumulated identifier values for the current resource, as positional args in
-        // the order of that resource's identifiers. The base resource takes them directly
-        // from its constructor call.
         let mut current_type = base_spec.resource_type.clone();
-        let mut identifier_args: Vec<Parameter> = base_args.to_vec();
+        let mut identifiers = Self::assign_args_to_identifiers(base_args, &base_identifier_names)?;
 
         // Walk the remaining links as sub-resource navigations.
         for (accessor, nav_args) in &links[1..] {
             let sub = model.get_sub_resource(&current_type, accessor)?;
 
-            // Build the child's identifiers in DECLARED ORDER, so the result stays
-            // positional in the child's identifier order (the ResolvedResource invariant).
-            // Each identifier value comes from the parent (source "identifier", resolved
-            // by name against the parent's own ordered args) or from this navigation's own
-            // arguments (source "input", consumed positionally).
-            let mut next_args: Vec<Parameter> = Vec::new();
-            let mut input_index = 0;
+            // The navigation's own arguments supply the `input`-sourced identifiers, in
+            // their declared order, keyed by their target name. This validates the count,
+            // so a navigation given the wrong number of args bails (like the base does).
+            let input_names: Vec<&str> = sub
+                .identifiers
+                .iter()
+                .filter(|id| id.source == "input")
+                .map(|id| id.target.as_str())
+                .collect();
+            let mut input_values = Self::assign_args_to_identifiers(nav_args, &input_names)?;
+
+            // Build the child's identifier map: each value comes from the parent (source
+            // "identifier", looked up by the named parent identifier) or from this
+            // navigation (source "input"), keyed by the child's target identifier name.
+            let mut next_identifiers = HashMap::new();
             for ident in &sub.identifiers {
-                match ident.source.as_str() {
-                    "identifier" => {
-                        let parent_name = ident.name.as_deref()?;
-                        let parent_pos =
-                            self.identifier_position(model, &current_type, parent_name)?;
-                        let value = identifier_args.get(parent_pos)?.clone();
-                        next_args.push(value.into_positional(next_args.len()));
-                    }
-                    "input" => {
-                        let value = nav_args.get(input_index)?.clone();
-                        next_args.push(value.into_positional(next_args.len()));
-                        input_index += 1;
-                    }
+                let value = match ident.source.as_str() {
+                    "identifier" => identifiers.get(ident.name.as_deref()?)?.clone(),
+                    "input" => input_values.remove(&ident.target)?,
                     other => {
                         log::debug!("Unsupported sub-resource identifier source '{other}'");
                         return None;
                     }
-                }
+                };
+                next_identifiers.insert(ident.target.clone(), value);
             }
 
             current_type = sub.resource_type.clone();
-            identifier_args = next_args;
+            identifiers = next_identifiers;
         }
 
         Some(ResolvedResource {
             service_name: service_name.to_string(),
             resource_type: current_type,
-            identifier_args,
+            identifiers,
         })
     }
 
-    /// Position of a named identifier within a resource type's identifier list.
-    fn identifier_position(
-        &self,
-        model: &Boto3ResourcesModel,
-        resource_type: &str,
-        identifier_name: &str,
-    ) -> Option<usize> {
-        model
-            .get_resource_definition(resource_type)?
-            .identifiers
+    /// Assign a call's arguments to the named `identifier_names`, returning a
+    /// `name -> value` map.
+    ///
+    /// boto3 resource constructors and sub-resource navigations accept their identifiers
+    /// positionally or by keyword, where the keyword is the snake_case of the identifier
+    /// name (e.g. `BucketName` -> `bucket_name`). Keyword args are matched to the identifier
+    /// whose snake_case name they equal; positional args fill the remaining identifiers in
+    /// declared order. Returns `None` unless every identifier is supplied exactly once and
+    /// no extra args remain — so a call with the wrong number or names of args bails rather
+    /// than mismapping.
+    fn assign_args_to_identifiers(
+        args: &[Parameter],
+        identifier_names: &[&str],
+    ) -> Option<HashMap<String, ParameterValue>> {
+        // A `**kwargs` splat hides identifier values we cannot map; bail.
+        if args
             .iter()
-            .position(|id| id.name == identifier_name)
+            .any(|a| matches!(a, Parameter::DictionarySplat { .. }))
+        {
+            return None;
+        }
+
+        // Wrong arg count can never line up one-to-one with the identifiers.
+        if args.len() != identifier_names.len() {
+            return None;
+        }
+
+        // Index keyword args by name; collect positional values in order.
+        let mut keyword: HashMap<&str, &ParameterValue> = HashMap::new();
+        let mut positional: Vec<&ParameterValue> = Vec::new();
+        for arg in args {
+            match arg {
+                Parameter::Keyword { name, value, .. } => {
+                    // A duplicate keyword would be invalid Python; treat as unresolvable.
+                    if keyword.insert(name.as_str(), value).is_some() {
+                        return None;
+                    }
+                }
+                Parameter::Positional { value, .. } => positional.push(value),
+                Parameter::DictionarySplat { .. } => unreachable!("splats rejected above"),
+            }
+        }
+
+        let mut positional = positional.into_iter();
+        let mut assigned = HashMap::with_capacity(identifier_names.len());
+        for name in identifier_names {
+            let kwarg_name =
+                ServiceDiscovery::operation_to_method_name(name, crate::Language::Python);
+            let value = match keyword.remove(kwarg_name.as_str()) {
+                Some(value) => value.clone(),
+                None => positional.next()?.clone(),
+            };
+            assigned.insert((*name).to_string(), value);
+        }
+
+        // Any keyword left over didn't match an identifier — the call doesn't line up.
+        if !keyword.is_empty() {
+            return None;
+        }
+
+        Some(assigned)
     }
 
     /// Find all method calls on potential resource objects
@@ -892,35 +966,26 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
         // Build parameters list starting with identifier parameters
         let mut combined_parameters = Vec::new();
 
-        // Inject identifier parameters from boto3 spec
+        // Inject identifier parameters from the boto3 spec. Each action `identifier_param`
+        // maps a resource identifier (named by `param_mapping.name`, e.g. `BucketName`) to
+        // the operation's target parameter (`param_mapping.target`, e.g. `Bucket`). Pull
+        // the value from the constructor arg with the *matching identifier name* — not the
+        // first arg — so a multi-identifier resource (e.g. `Object` -> `Bucket` + `Key`)
+        // gives each target its own value rather than repeating the first.
         for param_mapping in &action_mapping.identifier_params {
-            if let Some(param_name) = &param_mapping.name {
-                // Find the identifier definition to get the value position
-                if let Some(_identifier) = resource_def
-                    .identifiers
-                    .iter()
-                    .find(|id| id.name == *param_name)
-                {
-                    // Get value from constructor args
-                    // For now, we assume the first positional arg is the identifier value
-                    if let Some(first_arg) = constructor.constructor_args.first() {
-                        let value = match first_arg {
-                            Parameter::Positional { value, .. } => value.clone(),
-                            Parameter::Keyword { value, .. } => value.clone(),
-                            Parameter::DictionarySplat { expression, .. } => {
-                                ParameterValue::Unresolved(expression.clone())
-                            }
-                        };
-
-                        // Use the target parameter name from boto3 spec
-                        combined_parameters.push(Parameter::Keyword {
-                            name: param_mapping.target.clone(),
-                            value,
-                            position: combined_parameters.len(),
-                            type_annotation: None,
-                        });
-                    }
-                }
+            let Some(param_name) = &param_mapping.name else {
+                continue;
+            };
+            if let Some(value) =
+                Self::constructor_identifier_value(constructor, resource_def, param_name)
+            {
+                // Use the target parameter name from the boto3 spec.
+                combined_parameters.push(Parameter::Keyword {
+                    name: param_mapping.target.clone(),
+                    value,
+                    position: combined_parameters.len(),
+                    type_annotation: None,
+                });
             }
         }
 
@@ -966,6 +1031,47 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
             possible_services: vec![constructor.service_name.clone()],
             metadata: Some(metadata),
         })
+    }
+
+    /// Resolve the value of a resource identifier (e.g. `BucketName`) from a constructor's
+    /// arguments.
+    ///
+    /// The chain resolver labels each constructor arg with its identifier name, so the
+    /// arg whose keyword name matches is preferred — this is what lets a multi-identifier
+    /// resource map each identifier to its own value. For example, for
+    /// `s3.Bucket("b").Object("k").put(...)` the synthesized `Object` constructor carries
+    /// `[Bucket="b", Key="k"]`, so `BucketName` resolves to `"b"` and `Key` to `"k"`.
+    ///
+    /// The fallback (positional arg at the identifier's declared index) covers the
+    /// single-level path, where constructor args come straight from the user's call and
+    /// carry no identifier label — e.g. `bucket = s3.Bucket("my-bucket")` produces an
+    /// unnamed `Positional("my-bucket")`, which maps to `Name` at index 0.
+    fn constructor_identifier_value(
+        constructor: &ResourceConstructorInfo,
+        resource_def: &crate::extraction::python::boto3_resources_model::ResourceDefinition,
+        identifier_name: &str,
+    ) -> Option<ParameterValue> {
+        // Prefer the constructor arg explicitly labelled with this identifier's name.
+        let by_name = constructor
+            .constructor_args
+            .iter()
+            .find_map(|arg| match arg {
+                Parameter::Keyword { name, .. } if name == identifier_name => Some(arg.value()),
+                _ => None,
+            });
+        if by_name.is_some() {
+            return by_name;
+        }
+
+        // Fallback: positional arg at the identifier's declared index.
+        let index = resource_def
+            .identifiers
+            .iter()
+            .position(|id| id.name == identifier_name)?;
+        constructor
+            .constructor_args
+            .get(index)
+            .map(Parameter::value)
     }
 
     /// Find hasMany collection accesses and generate synthetic calls (Tier 2 approach)
@@ -1358,5 +1464,113 @@ impl<'a> ResourceDirectCallsExtractor<'a> {
                 type_annotation: None,
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{Language, SourceFile};
+    use ast_grep_core::tree_sitter::LanguageExt;
+    use rstest::rstest;
+    use std::path::PathBuf;
+
+    fn create_test_ast(source_code: &str) -> AstWithSourceFile<Python> {
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), source_code.to_string(), Language::Python);
+        let ast_grep = Python.ast_grep(&source_file.content);
+        AstWithSourceFile::new(ast_grep, source_file.clone())
+    }
+
+    /// The value of the keyword parameter named `name`, or `None`. Returns the full
+    /// [`ParameterValue`] so tests can assert the resolution kind (`Resolved` literal vs
+    /// `Unresolved` expression), not just the text.
+    fn keyword_value<'a>(call: &'a SdkMethodCall, name: &str) -> Option<&'a ParameterValue> {
+        call.metadata
+            .as_ref()?
+            .parameters
+            .iter()
+            .find_map(|p| match p {
+                Parameter::Keyword { name: n, value, .. } if n == name => Some(value),
+                _ => None,
+            })
+    }
+
+    /// A chain's leaf operation must receive each identifier's *own* value — distinct
+    /// values for distinct identifiers, accumulated correctly across navigations, and
+    /// preserving each value's resolution kind. This asserts injected parameter VALUES
+    /// directly (not just the operation name), which is the only level at which the
+    /// per-identifier mapping is observable: disambiguation validates parameter names,
+    /// not values.
+    #[rstest]
+    // Two-identifier leaf: Bucket -> Object carries the bucket name and takes the key.
+    #[case::bucket_object_put(
+        r#"
+import boto3
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Bucket("my-bucket").Object("my-key").put(Body="data")
+"#,
+        "put_object",
+        &[
+            ("Bucket", ParameterValue::Resolved("my-bucket".into())),
+            ("Key", ParameterValue::Resolved("my-key".into())),
+        ]
+    )]
+    // Non-literal arguments (a variable and a function call) must map to the correct
+    // identifiers AND stay unresolved — the chain logic carries the expression verbatim.
+    #[case::non_literal_values(
+        r#"
+import boto3
+def handle(bucket_var):
+    s3 = boto3.resource("s3")
+    s3.Bucket(bucket_var).Object(get_key()).put(Body="data")
+"#,
+        "put_object",
+        &[
+            ("Bucket", ParameterValue::Unresolved("bucket_var".into())),
+            ("Key", ParameterValue::Unresolved("get_key()".into())),
+        ]
+    )]
+    // Depth-3 chain accumulating three distinct identifiers into UploadPart.
+    #[case::deep_multipart_upload_part(
+        r#"
+import boto3
+def handle():
+    s3 = boto3.resource("s3")
+    s3.Object("my-bucket", "my-key").MultipartUpload("upload-id").Part(1).upload(Body="data")
+"#,
+        "upload_part",
+        &[
+            ("Bucket", ParameterValue::Resolved("my-bucket".into())),
+            ("Key", ParameterValue::Resolved("my-key".into())),
+            ("UploadId", ParameterValue::Resolved("upload-id".into())),
+        ]
+    )]
+    #[tokio::test]
+    async fn chain_injects_distinct_identifier_values(
+        #[case] source: &str,
+        #[case] operation: &str,
+        #[case] expected: &[(&str, ParameterValue)],
+    ) {
+        let service_index = ServiceDiscovery::load_service_index(Language::Python)
+            .await
+            .expect("failed to load service index");
+        let extractor = ResourceDirectCallsExtractor::new(&service_index);
+
+        let ast = create_test_ast(source);
+        let calls = extractor.extract_resource_method_calls(&ast);
+        let call = calls
+            .iter()
+            .find(|c| c.name == operation)
+            .unwrap_or_else(|| panic!("{operation} should be extracted, got: {calls:?}"));
+
+        for (name, value) in expected {
+            assert_eq!(
+                keyword_value(call, name),
+                Some(value),
+                "{name} should carry its own value {value:?}; call: {call:?}"
+            );
+        }
     }
 }
