@@ -155,18 +155,24 @@ impl LanguageConventions for GoConventions {
 ///
 /// Accepts the short form `pkg.func` (`s3.resourceBucketCreate`) as well as the
 /// fully-qualified import-path form produced by reflection
-/// (`github.com/.../internal/service/s3.resourceBucketCreate`) — in both cases
-/// `pkg` is the last path segment before the final `.`.
+/// (`github.com/.../internal/service/s3.resourceBucketCreate`).
+///
+/// The package is the path segment after the last `/`, up to the FIRST `.`.
+/// Everything after that first `.` is the function — which may itself contain
+/// dots and a receiver for methods, e.g. `sqs.(*queueAttributeHandler).Upsert`
+/// → pkg `sqs`, func `(*queueAttributeHandler).Upsert`. gopls names method
+/// nodes the same way (`(*Type).Method`), so the func string matches directly.
 fn parse_go_symbol(spec: &str) -> Result<(&str, &str)> {
-    let (path, func) = spec.rsplit_once('.').with_context(|| {
+    // Drop any import-path prefix; keep the final path segment (`pkg.func...`).
+    let segment = spec.rsplit('/').next().unwrap_or(spec);
+    let (pkg, func) = segment.split_once('.').with_context(|| {
         format!("Invalid Go symbol '{spec}', expected 'pkg.func' (e.g. s3.resourceBucketCreate)")
     })?;
-    if func.is_empty() {
-        anyhow::bail!("Invalid Go symbol '{spec}': empty function name");
-    }
-    let pkg = path.rsplit('/').next().unwrap_or(path);
     if pkg.is_empty() {
         anyhow::bail!("Invalid Go symbol '{spec}': empty package name");
+    }
+    if func.is_empty() {
+        anyhow::bail!("Invalid Go symbol '{spec}': empty function name");
     }
     Ok((pkg, func))
 }
@@ -270,6 +276,18 @@ mod tests {
         "s3",
         "resourceBucketCreate"
     )]
+    // Method form: package splits at the FIRST dot; the receiver+method (which
+    // contains a dot) stays intact as the function part.
+    #[case(
+        "sqs.(*queueAttributeHandler).Upsert",
+        "sqs",
+        "(*queueAttributeHandler).Upsert"
+    )]
+    #[case(
+        "github.com/hashicorp/terraform-provider-aws/internal/service/sqs.(*queueAttributeHandler).Read",
+        "sqs",
+        "(*queueAttributeHandler).Read"
+    )]
     fn test_parse_go_symbol_ok(#[case] spec: &str, #[case] pkg: &str, #[case] func: &str) {
         assert_eq!(parse_go_symbol(spec).unwrap(), (pkg, func));
     }
@@ -300,6 +318,24 @@ mod tests {
             .resolve_symbol("rds.resourceInstanceRead", &nodes)
             .unwrap();
         assert!(rds.location.file_path.ends_with("rds/instance.go"));
+    }
+
+    #[test]
+    fn test_resolve_symbol_method_form() {
+        // gopls names method nodes "(*Type).Method"; a method-value handler
+        // symbol must resolve to that node.
+        let nodes = vec![
+            node_at(
+                "(*queueAttributeHandler).Upsert",
+                "internal/service/sqs/queue.go",
+            ),
+            node_at("resourceQueueCreate", "internal/service/sqs/queue.go"),
+        ];
+        let conv = GoConventions;
+        let n = conv
+            .resolve_symbol("sqs.(*queueAttributeHandler).Upsert", &nodes)
+            .unwrap();
+        assert_eq!(n.name, "(*queueAttributeHandler).Upsert");
     }
 
     #[test]
