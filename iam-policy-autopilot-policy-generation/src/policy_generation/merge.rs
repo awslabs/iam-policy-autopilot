@@ -243,20 +243,23 @@ impl PolicyMerger {
     /// action's service. The "same service stays together" property therefore
     /// holds only when cross-service merging is off (the default).
     fn sort_statements_by_service(statements: &mut [Statement]) {
-        fn service(statement: &Statement) -> &str {
-            statement
-                .action
-                .first()
-                .and_then(|action| action.split(':').next())
-                .unwrap_or("")
-        }
-
         statements.sort_by(|a, b| {
-            service(a)
-                .cmp(service(b))
+            Self::service_prefix(a)
+                .cmp(Self::service_prefix(b))
                 .then_with(|| a.action.cmp(&b.action))
                 .then_with(|| a.resource.cmp(&b.resource))
         });
+    }
+
+    /// Service prefix of a statement's first action (e.g. `s3` from
+    /// `s3:GetObject`). Returns an empty string when the statement has no
+    /// actions, so callers never panic on malformed statements.
+    fn service_prefix(statement: &Statement) -> &str {
+        statement
+            .action
+            .first()
+            .and_then(|action| action.split(':').next())
+            .unwrap_or("")
     }
 
     /// Collect all statements from multiple policies
@@ -727,16 +730,6 @@ mod tests {
         )
     }
 
-    /// Extract the service prefix of a statement's first action (e.g. "s3").
-    /// Returns an empty string when the statement has no actions.
-    fn service_prefix(statement: &Statement) -> &str {
-        statement
-            .action
-            .first()
-            .and_then(|action| action.split(':').next())
-            .unwrap_or("")
-    }
-
     #[test]
     fn test_statements_sorted_by_service() {
         let merger = PolicyMerger::new();
@@ -769,7 +762,7 @@ mod tests {
         let services: Vec<&str> = merged_policies[0]
             .statements
             .iter()
-            .map(service_prefix)
+            .map(PolicyMerger::service_prefix)
             .collect();
         assert_eq!(
             services,
@@ -777,10 +770,22 @@ mod tests {
             "statements must be ordered by service prefix with same-service statements adjacent"
         );
 
-        // Sorting must be deterministic across repeated runs over the same input.
-        let rerun = merger.merge_statements(&statements).unwrap();
-        let rerun_services: Vec<&str> = rerun[0].statements.iter().map(service_prefix).collect();
-        assert_eq!(services, rerun_services, "sort order must be stable");
+        // The output must be independent of input order: feeding the same set
+        // in a different (scrambled) order must produce the identical merged
+        // result, statement-for-statement. Comparing the full statements (not
+        // just service prefixes) catches ordering regressions the prefix check
+        // would miss, e.g. the two same-service s3 statements swapping places.
+        let scrambled = vec![
+            statements[2].clone(), // s3:GetObject
+            statements[0].clone(), // s3:PutObject
+            statements[3].clone(), // kms:Decrypt
+            statements[1].clone(), // dynamodb:GetItem
+        ];
+        let scrambled_policies = merger.merge_statements(&scrambled).unwrap();
+        assert_eq!(
+            scrambled_policies[0].statements, merged_policies[0].statements,
+            "sort order must depend only on statement content, not input order"
+        );
     }
 
     #[test]
@@ -826,7 +831,7 @@ mod tests {
         // order. The concatenation must be globally non-decreasing by service.
         let services: Vec<&str> = merged_policies
             .iter()
-            .flat_map(|policy| policy.statements.iter().map(service_prefix))
+            .flat_map(|policy| policy.statements.iter().map(PolicyMerger::service_prefix))
             .collect();
         let mut sorted = services.clone();
         sorted.sort_unstable();
