@@ -34,6 +34,24 @@ pub struct BatchOptions {
     /// Workspace root the language server is started against. Every job's source
     /// files must live under this directory (they share one indexed workspace).
     pub workspace_root: PathBuf,
+    /// Restart the language server after this many jobs to cap memory growth.
+    ///
+    /// gopls accumulates per-package analysis state that cannot be configured
+    /// away or freed via `didClose`; over a large batch its memory grows until
+    /// it OOMs. Restarting periodically hard-caps the footprint at the cost of
+    /// re-paying the one-time workspace indexing each restart. `0` disables
+    /// restarts (single server for the whole batch). Defaults to a value that
+    /// balances peak memory against re-index overhead.
+    pub restart_every_n: usize,
+}
+
+impl Default for BatchOptions {
+    fn default() -> Self {
+        Self {
+            workspace_root: PathBuf::new(),
+            restart_every_n: 25,
+        }
+    }
 }
 
 /// Generate an external library model from source files and entry points.
@@ -50,7 +68,10 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
     let conventions = conventions_for(language)?;
     let workspace_root = conventions.detect_workspace_root(&source_files)?;
 
-    let options = BatchOptions { workspace_root };
+    let options = BatchOptions {
+        workspace_root,
+        restart_every_n: 0, // single job — no restart needed
+    };
     let mut models = generate_models_batch(std::slice::from_ref(config), &options).await?;
     Ok(models.pop().expect("one job yields one model"))
 }
@@ -108,10 +129,32 @@ pub async fn generate_models_batch(
 
     // Build each job's call graph against the shared, already-indexed server.
     // Jobs run serially: the dominant per-package cost is the server's one-time
-    // workspace indexing, which is already shared across the whole batch.
+    // workspace indexing, which is shared across the jobs in a restart window.
+    //
+    // The server is restarted every `restart_every_n` jobs to cap memory: gopls
+    // accumulates per-package analysis state that grows unbounded over a large
+    // batch (and cannot be freed via didClose or disabled via settings), so a
+    // periodic fresh start is the only reliable cap. Each restart re-pays the
+    // one-time workspace indexing.
+    let restart_every_n = options.restart_every_n;
     let mut models = Vec::with_capacity(configs.len());
     let result: Result<()> = async {
-        for (config, source_files) in configs.iter().zip(&jobs) {
+        for (index, (config, source_files)) in configs.iter().zip(&jobs).enumerate() {
+            // Restart before this job if we've hit the interval (never before
+            // the first job — the server was just started).
+            if restart_every_n != 0 && index != 0 && index % restart_every_n == 0 {
+                log::info!("Restarting language server after {index} jobs to cap memory");
+                let old = std::mem::replace(
+                    &mut builder,
+                    start_call_graph_builder(language, &canonical_root)
+                        .await
+                        .context("Failed to restart language server")?,
+                );
+                if let Err(e) = old.shutdown().await {
+                    log::warn!("Failed to shut down language server during restart: {e}");
+                }
+            }
+
             if !builder.is_running() {
                 anyhow::bail!(
                     "Language server is no longer running (failed before job '{}')",

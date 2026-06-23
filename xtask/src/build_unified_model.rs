@@ -304,6 +304,7 @@ pub async fn run(opts: BuildOptions) -> Result<()> {
     // inside the batch call — a partial provider model is silently wrong.
     let options = BatchOptions {
         workspace_root: opts.terraform_provider_aws_root.clone(),
+        ..Default::default()
     };
     let models = generate_models_batch(&configs, &options)
         .await
