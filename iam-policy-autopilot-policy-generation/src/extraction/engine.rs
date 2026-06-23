@@ -7,12 +7,8 @@
 
 use std::fmt::Write;
 use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
@@ -116,42 +112,12 @@ impl Engine {
         let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
 
         // Extract SDK method calls from all source files
-        let mut all_extraction_results = Vec::new();
+        let tasks = source_files.into_iter().map(|source_file| {
+            let extractor = extractor.clone();
+            move || async move { extractor.parse(&source_file).await }
+        });
 
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let mut join_set = JoinSet::new();
-
-            for source_file in source_files {
-                let extractor = extractor.clone();
-                join_set.spawn(async move { extractor.parse(&source_file).await });
-            }
-
-            // Collect results from concurrent tasks
-            while let Some(result) = join_set.join_next().await {
-                match result {
-                    Ok(extraction_result) => {
-                        all_extraction_results.push(extraction_result);
-                    }
-                    Err(e) => {
-                        // Task join error - this is more serious
-                        return Err(ExtractorError::method_extraction(
-                            "unsupported",
-                            PathBuf::from("unknown"),
-                            format!("Task execution failed: {e}"),
-                        ));
-                    }
-                }
-            }
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            for source_file in source_files {
-                let result = extractor.parse(&source_file).await;
-                all_extraction_results.push(result);
-            }
-        }
+        let mut all_extraction_results = crate::providers::concurrency::run_all(tasks).await;
 
         extractor.filter_map(&mut all_extraction_results, &service_index);
 

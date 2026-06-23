@@ -64,13 +64,54 @@ pub struct GeneratePoliciesResult {
 }
 
 impl GeneratePoliciesResult {
-    /// Create a new result with policies and optional explanations.
+    /// Create a builder for `GeneratePoliciesResult`.
+    ///
+    /// `policies` is the only required field. Optional fields (explanations,
+    /// resource_binding_explanations) default to `None`.
     #[must_use]
-    pub fn new(policies: Vec<PolicyWithMetadata>, explanations: Option<Explanations>) -> Self {
-        Self {
+    pub fn builder(policies: Vec<PolicyWithMetadata>) -> GeneratePoliciesResultBuilder {
+        GeneratePoliciesResultBuilder {
             policies,
-            explanations,
+            explanations: None,
             resource_binding_explanations: None,
+        }
+    }
+}
+
+/// Builder for [`GeneratePoliciesResult`].
+///
+/// Created via [`GeneratePoliciesResult::builder()`].
+pub struct GeneratePoliciesResultBuilder {
+    policies: Vec<PolicyWithMetadata>,
+    explanations: Option<Explanations>,
+    resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
+}
+
+impl GeneratePoliciesResultBuilder {
+    /// Set action explanations.
+    #[must_use]
+    pub fn explanations(mut self, explanations: Explanations) -> Self {
+        self.explanations = Some(explanations);
+        self
+    }
+
+    /// Set resource binding explanations (Terraform).
+    #[must_use]
+    pub fn resource_binding_explanations(
+        mut self,
+        explanations: Vec<ResourceBindingExplanation>,
+    ) -> Self {
+        self.resource_binding_explanations = Some(explanations);
+        self
+    }
+
+    /// Build the final result.
+    #[must_use]
+    pub fn build(self) -> GeneratePoliciesResult {
+        GeneratePoliciesResult {
+            policies: self.policies,
+            explanations: self.explanations,
+            resource_binding_explanations: self.resource_binding_explanations,
         }
     }
 }

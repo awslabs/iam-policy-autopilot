@@ -222,7 +222,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     if all_source_files.is_empty() {
         info!("No source files found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult::new(vec![], None));
+        return Ok(GeneratePoliciesResult::builder(vec![]).build());
     }
 
     // Create the extractor
@@ -259,7 +259,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Handle empty method lists gracefully
     if extracted_methods.is_empty() {
         info!("No methods found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult::new(vec![], None));
+        return Ok(GeneratePoliciesResult::builder(vec![]).build());
     }
 
     // Run the complete enrichment pipeline
@@ -342,10 +342,15 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         final_policies.len(),
     );
 
-    let mut result = GeneratePoliciesResult::new(final_policies, explanations);
-    result.resource_binding_explanations = binding_explanations;
+    let mut builder = GeneratePoliciesResult::builder(final_policies);
+    if let Some(explanations) = explanations {
+        builder = builder.explanations(explanations);
+    }
+    if let Some(binding_explanations) = binding_explanations {
+        builder = builder.resource_binding_explanations(binding_explanations);
+    }
 
-    Ok(result)
+    Ok(builder.build())
 }
 
 #[cfg(test)]

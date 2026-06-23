@@ -159,7 +159,8 @@ pub(crate) use emscripten::EmscriptenHttpClient;
 // Factory function
 // ---------------------------------------------------------------------------
 
-/// Create the platform-appropriate HTTP client.
+/// Create the platform-appropriate HTTP client (used in tests).
+#[cfg(test)]
 pub(crate) fn create_http_client() -> crate::errors::Result<Box<dyn HttpGet>> {
     #[cfg(not(target_arch = "wasm32"))]
     {

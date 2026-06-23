@@ -275,7 +275,9 @@ impl<'a> Engine<'a> {
         // Collect explanations
         let explanations = extract_explanations(enriched_calls);
 
-        Ok(GeneratePoliciesResult::new(policies, Some(explanations)))
+        Ok(GeneratePoliciesResult::builder(policies)
+            .explanations(explanations)
+            .build())
     }
 }
 

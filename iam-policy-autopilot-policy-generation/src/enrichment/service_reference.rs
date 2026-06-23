@@ -4,10 +4,8 @@
 //! from the filesystem with exact service name matching and caching for
 //! performance optimization.
 //!
-//! Caching is abstracted behind the [`ServiceCache`] trait, with platform-specific
-//! implementations:
-//! - **Native** (`NativeServiceCache`): In-memory TTL + optional filesystem persistence.
-//! - **WASM** (`WasmServiceCache`): In-memory only, no expiry (session-scoped).
+//! The [`ServiceCache`] provides in-memory TTL-based caching on all platforms.
+//! On native builds, an additional filesystem cache layer persists entries to disk.
 
 use crate::enrichment::http_client::{self, HttpGet};
 use crate::enrichment::Context;
@@ -18,7 +16,6 @@ use serde_json::Value;
 use std::collections::HashMap;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, SystemTime};
 #[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
@@ -27,7 +24,6 @@ use tokio::sync::{OnceCell, RwLock};
 type OperationName = String;
 #[cfg(not(target_arch = "wasm32"))]
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-#[cfg(not(target_arch = "wasm32"))]
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
@@ -323,7 +319,10 @@ fn deserialize_service_reference_mapping(
 #[derive(Debug)]
 
 pub(crate) struct RemoteServiceReferenceLoader {
-    client: Box<dyn HttpGet>,
+    #[cfg(not(target_arch = "wasm32"))]
+    client: http_client::ReqwestHttpClient,
+    #[cfg(target_arch = "wasm32")]
+    client: http_client::EmscriptenHttpClient,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
     cache: ServiceCache,
     mapping_url: String,
@@ -337,14 +336,12 @@ pub(crate) struct RemoteServiceReferenceLoader {
 
 /// Abstraction over the in-memory service reference cache.
 ///
-/// Native builds store entries with a timestamp for TTL expiry.
-/// WASM builds store entries without expiry (session-scoped, no persistence).
+/// Stores entries with a timestamp for TTL expiry on all platforms.
+/// On WASM, entries rarely expire within a session but the TTL logic
+/// is retained for simplicity and consistency with native.
 #[derive(Debug)]
 struct ServiceCache {
-    #[cfg(not(target_arch = "wasm32"))]
     inner: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
-    #[cfg(target_arch = "wasm32")]
-    inner: RwLock<HashMap<String, ServiceReference>>,
 }
 
 impl ServiceCache {
@@ -356,44 +353,25 @@ impl ServiceCache {
 
     /// Returns a cached entry if it exists and has not expired.
     async fn get(&self, service_name: &str) -> Option<ServiceReference> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let guard = self.inner.read().await;
-            let result = guard.get(service_name).and_then(|(cached, timestamp)| {
-                let elapsed = SystemTime::now().duration_since(*timestamp).ok()?;
-                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                    Some(cached.clone())
-                } else {
-                    None
-                }
-            });
-            drop(guard);
-            result
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            let guard = self.inner.read().await;
-            let result = guard.get(service_name).cloned();
-            drop(guard);
-            result
-        }
+        let guard = self.inner.read().await;
+        let result = guard.get(service_name).and_then(|(cached, timestamp)| {
+            let elapsed = SystemTime::now().duration_since(*timestamp).ok()?;
+            if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                Some(cached.clone())
+            } else {
+                None
+            }
+        });
+        drop(guard);
+        result
     }
 
     /// Insert or update a cache entry.
     async fn insert(&self, service_name: String, service_ref: ServiceReference) {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            self.inner
-                .write()
-                .await
-                .insert(service_name, (service_ref, SystemTime::now()));
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            self.inner.write().await.insert(service_name, service_ref);
-        }
+        self.inner
+            .write()
+            .await
+            .insert(service_name, (service_ref, SystemTime::now()));
     }
 }
 
@@ -405,7 +383,7 @@ impl RemoteServiceReferenceLoader {
         let mapping_url =
             std::env::var(MAPPING_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_MAPPING_URL.to_string());
         Ok(Self {
-            client: http_client::create_http_client()?,
+            client: Self::create_platform_client()?,
             service_reference_mapping: OnceCell::new(),
             cache: ServiceCache::new(),
             mapping_url,
@@ -419,7 +397,7 @@ impl RemoteServiceReferenceLoader {
 
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
-            client: http_client::create_http_client()?,
+            client: Self::create_platform_client()?,
             service_reference_mapping: OnceCell::new(),
             cache: ServiceCache::new(),
             mapping_url: String::new(),
@@ -442,6 +420,18 @@ impl RemoteServiceReferenceLoader {
         self.mapping_url = url;
         self.service_reference_mapping = OnceCell::new();
         self
+    }
+
+    /// Create the platform-appropriate HTTP client at compile time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn create_platform_client() -> crate::errors::Result<http_client::ReqwestHttpClient> {
+        http_client::ReqwestHttpClient::new()
+    }
+
+    /// Create the platform-appropriate HTTP client at compile time.
+    #[cfg(target_arch = "wasm32")]
+    fn create_platform_client() -> crate::errors::Result<http_client::EmscriptenHttpClient> {
+        http_client::EmscriptenHttpClient::new()
     }
 
     async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
