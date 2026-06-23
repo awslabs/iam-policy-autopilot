@@ -36,7 +36,7 @@ pub async fn generate_policies_from_source(
     config: &GenerateFromSourceConfig,
 ) -> Result<GeneratePoliciesResult> {
     if config.source_files.is_empty() {
-        return Ok(GeneratePoliciesResult::new(vec![], None));
+        return Ok(GeneratePoliciesResult::builder(vec![]).build());
     }
 
     // 1. Extract SDK calls
@@ -47,7 +47,7 @@ pub async fn generate_policies_from_source(
         .context("Failed to extract SDK method calls")?;
 
     if extracted.methods.is_empty() {
-        return Ok(GeneratePoliciesResult::new(vec![], None));
+        return Ok(GeneratePoliciesResult::builder(vec![]).build());
     }
 
     let sdk = config.language.sdk_type();
@@ -89,5 +89,5 @@ pub async fn generate_policies_from_source(
     // needs the final policies, and including per-action explanations would significantly
     // increase the JSON payload size over the wire. Explanations remain available in the
     // CLI/MCP paths via generate_policies().
-    Ok(GeneratePoliciesResult::new(merged, None))
+    Ok(GeneratePoliciesResult::builder(merged).build())
 }
