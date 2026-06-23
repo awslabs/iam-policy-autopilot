@@ -46,6 +46,8 @@ tokio = { workspace = true, features = ["process", "io-util"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 rust-embed = { version = "8.11", features = ["include-exclude"] }
+# Workspace tokio includes fs/rt-multi-thread/signal which pull in mio's net features,
+# incompatible with wasm32. We only need the single-threaded runtime here.
 tokio = { version = "1.0", features = ["rt", "macros", "sync"] }
 getrandom = { version = "0.2", features = ["js"] }
 
