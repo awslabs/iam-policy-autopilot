@@ -301,6 +301,19 @@ pub mod core {
             position: usize,
         },
     }
+
+    impl Parameter {
+        /// Get this parameter's value, regardless of variant. A [`Parameter::DictionarySplat`]
+        /// has no resolved value, so its unpacking expression is returned as unresolved.
+        pub(crate) fn value(&self) -> ParameterValue {
+            match self {
+                Self::Positional { value, .. } | Self::Keyword { value, .. } => value.clone(),
+                Self::DictionarySplat { expression, .. } => {
+                    ParameterValue::Unresolved(expression.clone())
+                }
+            }
+        }
+    }
 }
 
 /// Output data structures for extraction results and metadata

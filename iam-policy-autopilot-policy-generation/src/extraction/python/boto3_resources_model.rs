@@ -97,6 +97,12 @@ pub struct ResourceDefinition {
     pub(crate) identifiers: Vec<ResourceIdentifier>,
     pub(crate) actions: HashMap<String, ActionMapping>,
     pub(crate) has_many: HashMap<String, HasManySpec>, // Key: snake_case collection name
+    /// Singular sub-resources reachable from this resource (boto3 resource-level `has`).
+    /// Key: accessor name as written in code (e.g. `"Object"`, `"Acl"`). Note the
+    /// accessor frequently differs from the target resource type (e.g. `Bucket.Acl`
+    /// has type `BucketAcl`), which is why this is keyed by accessor, not type.
+    /// The value is the same [`ResourceRef`] shape used by `service.has`.
+    pub(crate) sub_resources: HashMap<String, ResourceRef>,
 }
 
 /// Resource identifier mapping
@@ -166,17 +172,22 @@ struct ServiceSpec {
     has_many: Option<HashMap<String, HasManySpecJson>>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 struct HasSpec {
     resource: ResourceRef,
 }
 
-#[derive(Debug, Deserialize)]
-struct ResourceRef {
+/// A resource reference inside a `has`/`hasMany` spec: the target resource type plus
+/// its identifiers. Mirrors the JSON shape directly. Identifiers reuse [`ParamMapping`]
+/// (`{target, source, name}`); `source` is `"identifier"` (value carried from the
+/// parent identifier named by `name`) or `"input"` (value taken positionally from the
+/// navigation call's arguments).
+#[derive(Debug, Clone, Deserialize)]
+pub struct ResourceRef {
     #[serde(rename = "type")]
-    resource_type: String,
+    pub(crate) resource_type: String,
     #[serde(default)]
-    identifiers: Option<serde_json::Value>,
+    pub(crate) identifiers: Vec<ParamMapping>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -186,6 +197,7 @@ struct ResourceSpec {
     // Special operations
     load: Option<LoadSpec>,
     waiters: Option<HashMap<String, WaiterSpec>>,
+    has: Option<HashMap<String, HasSpec>>,
     #[serde(rename = "hasMany")]
     has_many: Option<HashMap<String, HasManySpecJson>>,
 }
@@ -437,13 +449,7 @@ impl Boto3ResourcesModel {
         // Parse service.has for resource constructors
         if let Some(has) = service.has {
             for (constructor_name, has_spec) in has {
-                let identifiers_count = has_spec
-                    .resource
-                    .identifiers
-                    .as_ref()
-                    .and_then(|v| v.as_array())
-                    .map(std::vec::Vec::len)
-                    .unwrap_or(0);
+                let identifiers_count = has_spec.resource.identifiers.len();
 
                 let constructor_spec = ServiceConstructorSpec {
                     resource_type: has_spec.resource.resource_type.clone(),
@@ -498,10 +504,19 @@ impl Boto3ResourcesModel {
             // Parse hasMany collections
             let has_many = Self::parse_has_many_collections(resource_spec.has_many)?;
 
+            // Parse singular sub-resources (resource-level `has`), keyed by accessor name.
+            let sub_resources = resource_spec
+                .has
+                .unwrap_or_default()
+                .into_iter()
+                .map(|(accessor, has_spec)| (accessor, has_spec.resource))
+                .collect();
+
             let resource_def = ResourceDefinition {
                 identifiers: resource_spec.identifiers.unwrap_or_default(),
                 actions,
                 has_many,
+                sub_resources,
             };
 
             model.resource_types.insert(resource_name, resource_def);
@@ -634,6 +649,15 @@ impl Boto3ResourcesModel {
     /// Get constructor spec for a resource type
     pub fn get_constructor_spec(&self, constructor_name: &str) -> Option<&ServiceConstructorSpec> {
         self.service_constructors.get(constructor_name)
+    }
+
+    /// Get a singular sub-resource navigation by parent resource type and accessor name.
+    ///
+    /// `accessor` is the attribute/method written in code (e.g. `"Object"` in
+    /// `bucket.Object("key")`), which may differ from the returned resource type.
+    pub fn get_sub_resource(&self, resource_type: &str, accessor: &str) -> Option<&ResourceRef> {
+        let resource_def = self.resource_types.get(resource_type)?;
+        resource_def.sub_resources.get(accessor)
     }
 
     /// Get resource definition by type name

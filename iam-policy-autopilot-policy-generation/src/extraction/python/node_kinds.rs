@@ -33,3 +33,9 @@ pub(crate) const BLOCK: &str = "block";
 
 /// A decorated definition (function or class with decorators)
 pub(crate) const DECORATED_DEFINITION: &str = "decorated_definition";
+
+/// A function/method call node (e.g., `f(x)`, `obj.method(x)`)
+pub(crate) const CALL: &str = "call";
+
+/// An attribute access node (e.g., `obj.attr`)
+pub(crate) const ATTRIBUTE: &str = "attribute";
