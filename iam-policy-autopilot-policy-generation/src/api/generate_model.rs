@@ -203,8 +203,9 @@ async fn generate_one(
         conventions,
     );
 
-    // Per-package phase timing. Call-graph build (gopls) is expected to dominate;
-    // this breakdown lets us confirm before optimizing.
+    // Per-package phase breakdown — one concise line per model. Useful for
+    // monitoring batch runs and catching performance regressions (gopls call
+    // graph build typically dominates).
     info!(
         "Timing [{}]: build={}ms extract={}ms generate={}ms | {} files, {} nodes, {} entry points, {} SDK calls",
         config.library_name,

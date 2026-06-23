@@ -4,6 +4,7 @@
 //! paginator creation calls, which contain the meaningful parameters for IAM policy generation.
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crate::extraction::go::utils;
 use crate::extraction::shared::{
@@ -12,7 +13,15 @@ use crate::extraction::shared::{
 use crate::extraction::{AstWithSourceFile, SdkMethodCall};
 use crate::Location;
 use crate::ServiceModelIndex;
+use ast_grep_core::matcher::Pattern;
 use ast_grep_language::Go;
+
+/// Compiled once and reused across all files (see `waiter_extractor` for why —
+/// per-file `Pattern` construction dominated extraction time).
+static PAGINATOR_CREATION_PATTERN: LazyLock<Pattern> =
+    LazyLock::new(|| Pattern::new("$VAR := $PACKAGE.$FUNCTION($$$ARGS)", Go));
+static CHAINED_PAGINATOR_PATTERN: LazyLock<Pattern> =
+    LazyLock::new(|| Pattern::new("$PACKAGE.$FUNCTION($$$ARGS).NextPage($$$NEXT_ARGS)", Go));
 
 /// Extractor for Go AWS SDK paginator patterns
 ///
@@ -65,9 +74,7 @@ impl<'a> GoPaginatorExtractor<'a> {
         let mut paginators = Vec::new();
 
         // Pattern: $VAR := $PACKAGE.$FUNCTION($$$ARGS) where FUNCTION contains "New" and "Paginator"
-        let paginator_pattern = "$VAR := $PACKAGE.$FUNCTION($$$ARGS)";
-
-        for node_match in root.find_all(paginator_pattern) {
+        for node_match in root.find_all(&*PAGINATOR_CREATION_PATTERN) {
             if let Some(paginator_info) =
                 self.parse_paginator_creation_call(&node_match, &ast.source_file.path)
             {
@@ -87,9 +94,7 @@ impl<'a> GoPaginatorExtractor<'a> {
         let mut chained_calls = Vec::new();
 
         // Pattern: $PACKAGE.$FUNCTION($$$ARGS).NextPage($$$NEXT_ARGS)
-        let chained_pattern = "$PACKAGE.$FUNCTION($$$ARGS).NextPage($$$NEXT_ARGS)";
-
-        for node_match in root.find_all(chained_pattern) {
+        for node_match in root.find_all(&*CHAINED_PAGINATOR_PATTERN) {
             if let Some(chained_info) =
                 self.parse_chained_paginator_call(&node_match, &ast.source_file.path)
             {
