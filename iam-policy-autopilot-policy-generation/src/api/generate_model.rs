@@ -345,25 +345,34 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
 /// the shared SDK-import service map (also used for Java imports), falling back
 /// to the segment itself when it is already a valid Botocore service.
 ///
-/// Returns `None` for services with no Botocore data (e.g. `evidently`,
-/// `qldb`); callers should then generate without a service hint rather than
-/// filtering against a service that does not exist.
+/// Returns `None` when the resolved service is not one the extractor actually
+/// knows — i.e. has no Botocore data (e.g. `evidently`, `qldb`,
+/// `elastictranscoder`). Callers should then generate without a service hint
+/// rather than passing one the extractor's hint validator would reject.
 ///
 /// Deliberately NOT based on `arn_namespace`: that collapses distinct SDK
 /// services to one IAM prefix (e.g. `chime`, `chimesdkvoice` both → `chime`),
 /// which mis-attributes operations.
 #[must_use]
 pub fn terraform_service_hint(go_sdk_import_package: &str) -> Option<String> {
+    // The set of services the extractor (and its hint validator) recognizes.
+    // A returned hint MUST be a member, or extraction rejects it. The
+    // smithy→botocore map can yield names absent from this set (services with
+    // no bundled data), so both resolution paths are validated against it.
+    let known_services = crate::embedded_data::BotocoreData::build_service_versions_map();
+
     let config = crate::service_configuration::load_service_configuration().ok()?;
     if let Some(service) = config
         .build_sdk_import_service_map()
         .get(go_sdk_import_package)
     {
-        return Some(service.clone());
+        if known_services.contains_key(service) {
+            return Some(service.clone());
+        }
     }
     // Fallback: the import segment is already a valid Botocore service id
     // (e.g. `s3`, `ec2`, `events`) with no rename needed.
-    crate::embedded_data::BotocoreData::build_service_versions_map()
+    known_services
         .contains_key(go_sdk_import_package)
         .then(|| go_sdk_import_package.to_string())
 }
