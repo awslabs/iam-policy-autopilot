@@ -104,14 +104,15 @@ pub(crate) use native::ReqwestHttpClient;
 #[allow(unsafe_code)]
 mod emscripten {
     use super::*;
+    use std::os::raw::c_char;
 
     extern "C" {
         /// Call browser fetch(url) and return the response text.
         /// Returns a pointer to a null-terminated UTF-8 string allocated with malloc.
         /// Caller must free with `em_fetch_free`. Returns null on error.
-        fn em_fetch_get_sync(url_ptr: *const u8, url_len: u32) -> *mut u8;
+        fn em_fetch_get_sync(url_ptr: *const u8, url_len: u32) -> *mut c_char;
         /// Free a string returned by `em_fetch_get_sync`.
-        fn em_fetch_free(ptr: *mut u8);
+        fn em_fetch_free(ptr: *mut c_char);
     }
 
     #[derive(Debug, Clone)]
@@ -138,7 +139,7 @@ mod emscripten {
             }
 
             // Read the C string, then free immediately to avoid leaks on error paths.
-            let c_str = unsafe { std::ffi::CStr::from_ptr(result_ptr as *const i8) };
+            let c_str = unsafe { std::ffi::CStr::from_ptr(result_ptr) };
             let result = c_str.to_str().map(|s| s.to_owned());
             unsafe { em_fetch_free(result_ptr) };
 
