@@ -29,9 +29,9 @@ derive-new.workspace = true
 hcl-rs.workspace = true
 walkdir.workspace = true
 # Tree-sitter / ast-grep dependencies
-ast-grep-config = { workspace = true }
-ast-grep-core = { workspace = true }
-ast-grep-language = { workspace = true }
+ast-grep-config.workspace = true
+ast-grep-core.workspace = true
+ast-grep-language.workspace = true
 
 # Native-only dependencies (not available on WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -39,9 +39,9 @@ async-lsp = { version = "0.2", features = ["tokio"] }
 lsp-types = "0.95"
 tower = "0.5"
 which = "6.0"
-tokio-util = { workspace = true }
-rust-embed = { workspace = true }
-reqwest = { workspace = true }
+tokio-util.workspace = true
+rust-embed.workspace = true
+reqwest.workspace = true
 tokio = { workspace = true, features = ["process", "io-util"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
