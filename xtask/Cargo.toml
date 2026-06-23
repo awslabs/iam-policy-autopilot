@@ -6,3 +6,12 @@ publish = false
 
 [dependencies]
 regex = { workspace = true }
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", features = ["model-generation"] }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+clap = { workspace = true }
+futures = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }

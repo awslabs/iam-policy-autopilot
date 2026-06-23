@@ -29,109 +29,240 @@ pub struct GenerateModelConfig {
     pub service_hints: Option<ServiceHints>,
 }
 
+/// Options for a batch model-generation run.
+pub struct BatchOptions {
+    /// Workspace root the language server is started against. Every job's source
+    /// files must live under this directory (they share one indexed workspace).
+    pub workspace_root: PathBuf,
+}
+
 /// Generate an external library model from source files and entry points.
 ///
-/// This builds a call graph via gopls, extracts SDK calls, and produces
-/// an `ExternalLibraryModel` mapping each entry point to its reachable SDK operations.
+/// Convenience wrapper for the single-job case: starts a language server,
+/// generates one model, and shuts the server down. For many jobs that share a
+/// workspace, prefer [`generate_models_batch`], which reuses one server (the
+/// per-job cost is dominated by the server's one-time workspace indexing).
 pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibraryModel> {
-    info!("Generating model for library '{}'", config.library_name);
-
-    // Canonicalize paths so that LSP URI resolution (which resolves symlinks)
-    // produces paths matching those stored in SDK call locations by the extractor.
-    let source_files: Vec<PathBuf> = config
-        .source_files
-        .iter()
-        .map(|f| f.canonicalize().unwrap_or_else(|_| f.clone()))
-        .collect();
-
-    // Resolve the language once, honoring the `--language` override if given and
-    // otherwise detecting from the source files. Everything downstream (call
-    // graph conventions, language server, and SDK extraction) keys off this so
-    // an override applies consistently across all of them.
-    let language = match config.language.as_deref() {
-        Some(override_str) => Language::try_from_str(override_str)
-            .with_context(|| format!("Invalid --language override '{override_str}'"))?,
-        None => {
-            let extractor = crate::ExtractionEngine::new();
-            let paths: Vec<&Path> = source_files.iter().map(PathBuf::as_path).collect();
-            extractor.detect_and_validate_language(&paths)?
-        }
-    };
-
-    let conventions: Box<dyn LanguageConventions> = match language {
-        Language::Go => Box::new(GoConventions),
-        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
-    };
-
+    // Derive the workspace root the same way batch generation expects it, so the
+    // single-job and batch paths share all downstream logic.
+    let source_files = canonicalize_files(&config.source_files);
+    let language = detect_language(&source_files)?;
+    let conventions = conventions_for(language)?;
     let workspace_root = conventions.detect_workspace_root(&source_files)?;
 
-    let mut builder: Box<dyn CallGraphBuilder> = match language {
-        Language::Go => Box::new(
-            GoplsCallGraphBuilder::new(&workspace_root)
-                .await
-                .context("Failed to start language server")?,
-        ),
-        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
-    };
+    let options = BatchOptions { workspace_root };
+    let mut models = generate_models_batch(std::slice::from_ref(config), &options).await?;
+    Ok(models.pop().expect("one job yields one model"))
+}
 
-    // Run the fallible pipeline in an inner block so the language server is
-    // always shut down afterwards, even if any step fails — otherwise an error
-    // between here and shutdown would leak the gopls process.
-    let result: Result<ExternalLibraryModel> = async {
-        let graph = builder
-            .build(&workspace_root, &source_files)
-            .await
-            .context("Failed to build call graph")?;
+/// Generate models for many jobs that share a single workspace, reusing one
+/// language server across all of them.
+///
+/// The server (e.g. gopls) pays a large one-time cost to index the workspace;
+/// running every job against the same warm server amortizes that across the
+/// whole batch instead of paying it per job. The server's lifecycle is owned
+/// here — callers never see it. Any job failure aborts the whole batch.
+///
+/// All jobs must target the same language and have source files under
+/// `options.workspace_root`.
+pub async fn generate_models_batch(
+    configs: &[GenerateModelConfig],
+    options: &BatchOptions,
+) -> Result<Vec<ExternalLibraryModel>> {
+    if configs.is_empty() {
+        return Ok(Vec::new());
+    }
 
-        let entry_nodes = if config.entry_points.is_empty()
-            && config.entry_point_symbols.is_empty()
-        {
-            graph
-                .nodes()
-                .iter()
-                .filter(|n| conventions.is_exported(n))
-                .cloned()
-                .collect()
-        } else {
-            let mut nodes = resolve_entry_points(&config.entry_points, graph.nodes())?;
-            for spec in &config.entry_point_symbols {
-                let node = conventions
-                    .resolve_symbol(spec, graph.nodes())
-                    .with_context(|| format!("Failed to resolve entry point symbol '{spec}'"))?;
-                nodes.push(node.clone());
+    // Canonicalize every job's paths up front (LSP resolves symlinks, so call
+    // locations must match), and verify they live under the shared workspace.
+    let canonical_root = options
+        .workspace_root
+        .canonicalize()
+        .unwrap_or_else(|_| options.workspace_root.clone());
+    let jobs: Vec<Vec<PathBuf>> = configs
+        .iter()
+        .map(|c| canonicalize_files(&c.source_files))
+        .collect();
+    for (config, files) in configs.iter().zip(&jobs) {
+        for file in files {
+            if !file.starts_with(&canonical_root) {
+                anyhow::bail!(
+                    "Job '{}' has source file outside workspace root {}: {}",
+                    config.library_name,
+                    canonical_root.display(),
+                    file.display()
+                );
             }
-            nodes
-        };
+        }
+    }
 
-        let extracted = {
-            let extractor = crate::ExtractionEngine::new();
-            process_source_files(
-                &extractor,
-                &source_files,
-                Some(language.to_string().as_str()),
-                config.service_hints.clone(),
+    // Detect language from the first job and require the rest to agree — one
+    // server, one language. Resolving conventions per language keeps this
+    // generic over future call-graph-backed languages.
+    let language = detect_language(&jobs[0])?;
+    let conventions = conventions_for(language)?;
+
+    let mut builder = start_call_graph_builder(language, &canonical_root)
+        .await
+        .context("Failed to start language server")?;
+
+    // Build each job's call graph against the shared, already-indexed server.
+    // Jobs run serially: the dominant per-package cost is the server's one-time
+    // workspace indexing, which is already shared across the whole batch.
+    let mut models = Vec::with_capacity(configs.len());
+    let result: Result<()> = async {
+        for (config, source_files) in configs.iter().zip(&jobs) {
+            if !builder.is_running() {
+                anyhow::bail!(
+                    "Language server is no longer running (failed before job '{}')",
+                    config.library_name
+                );
+            }
+            let model = generate_one(
+                builder.as_mut(),
+                conventions.as_ref(),
+                language,
+                config,
+                source_files,
             )
             .await
-            .context("Failed to extract SDK calls")?
-        };
-
-        Ok(ModelGenerationEngine::new().generate(
-            &graph,
-            &entry_nodes,
-            &extracted.methods,
-            &config.library_name,
-            language,
-            conventions.as_ref(),
-        ))
+            .with_context(|| format!("Failed to generate model for '{}'", config.library_name))?;
+            models.push(model);
+        }
+        Ok(())
     }
     .await;
 
-    // Always shut the server down before propagating, so failures don't leak it.
+    // Always shut the server down, even on a job failure, before propagating.
     if let Err(e) = builder.shutdown().await {
         log::warn!("Failed to shut down language server: {e}");
     }
+    result?;
+    Ok(models)
+}
 
-    result
+/// Generate a single model against an already-running call-graph builder.
+async fn generate_one(
+    builder: &mut dyn CallGraphBuilder,
+    conventions: &dyn LanguageConventions,
+    language: Language,
+    config: &GenerateModelConfig,
+    source_files: &[PathBuf],
+) -> Result<ExternalLibraryModel> {
+    info!("Generating model for library '{}'", config.library_name);
+
+    let t_build = std::time::Instant::now();
+    let graph = builder
+        .build(
+            &config_workspace_root(conventions, source_files)?,
+            source_files,
+        )
+        .await
+        .context("Failed to build call graph")?;
+    let build_ms = t_build.elapsed().as_millis();
+
+    let entry_nodes = if config.entry_points.is_empty() && config.entry_point_symbols.is_empty() {
+        graph
+            .nodes()
+            .iter()
+            .filter(|n| conventions.is_exported(n))
+            .cloned()
+            .collect()
+    } else {
+        let mut nodes = resolve_entry_points(&config.entry_points, graph.nodes())?;
+        for spec in &config.entry_point_symbols {
+            let node = conventions
+                .resolve_symbol(spec, graph.nodes())
+                .with_context(|| format!("Failed to resolve entry point symbol '{spec}'"))?;
+            nodes.push(node.clone());
+        }
+        nodes
+    };
+
+    let t_extract = std::time::Instant::now();
+    let extracted = {
+        let extractor = crate::ExtractionEngine::new();
+        process_source_files(
+            &extractor,
+            source_files,
+            config.language.as_deref(),
+            config.service_hints.clone(),
+        )
+        .await
+        .context("Failed to extract SDK calls")?
+    };
+    let extract_ms = t_extract.elapsed().as_millis();
+
+    let t_gen = std::time::Instant::now();
+    let model = ModelGenerationEngine::new().generate(
+        &graph,
+        &entry_nodes,
+        &extracted.methods,
+        &config.library_name,
+        language,
+        conventions,
+    );
+
+    // Per-package phase timing. Call-graph build (gopls) is expected to dominate;
+    // this breakdown lets us confirm before optimizing.
+    info!(
+        "Timing [{}]: build={}ms extract={}ms generate={}ms | {} files, {} nodes, {} entry points, {} SDK calls",
+        config.library_name,
+        build_ms,
+        extract_ms,
+        t_gen.elapsed().as_millis(),
+        source_files.len(),
+        graph.nodes().len(),
+        entry_nodes.len(),
+        extracted.methods.len(),
+    );
+
+    Ok(model)
+}
+
+/// Canonicalize source paths so LSP URIs (which resolve symlinks) match the
+/// paths the extractor stores in SDK call locations. Unresolvable paths are
+/// kept as-is so the downstream error names the real input.
+fn canonicalize_files(files: &[PathBuf]) -> Vec<PathBuf> {
+    files
+        .iter()
+        .map(|f| f.canonicalize().unwrap_or_else(|_| f.clone()))
+        .collect()
+}
+
+/// Detect and validate the source language for a set of files.
+fn detect_language(source_files: &[PathBuf]) -> Result<Language> {
+    let extractor = crate::ExtractionEngine::new();
+    let paths: Vec<&Path> = source_files.iter().map(PathBuf::as_path).collect();
+    Ok(extractor.detect_and_validate_language(&paths)?)
+}
+
+/// Resolve the language conventions for a model-generation-capable language.
+fn conventions_for(language: Language) -> Result<Box<dyn LanguageConventions>> {
+    match language {
+        Language::Go => Ok(Box::new(GoConventions)),
+        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
+    }
+}
+
+/// Start the call-graph builder (language server) for a language.
+async fn start_call_graph_builder(
+    language: Language,
+    workspace_root: &Path,
+) -> Result<Box<dyn CallGraphBuilder>> {
+    match language {
+        Language::Go => Ok(Box::new(GoplsCallGraphBuilder::new(workspace_root).await?)),
+        _ => anyhow::bail!("Model generation is not yet supported for {language}"),
+    }
+}
+
+/// The workspace root for a single job (the builder ignores this for the shared
+/// server, but `build` still takes it; kept consistent with the conventions).
+fn config_workspace_root(
+    conventions: &dyn LanguageConventions,
+    source_files: &[PathBuf],
+) -> Result<PathBuf> {
+    conventions.detect_workspace_root(source_files)
 }
 
 /// Resolve entry point specs in `file:line:column` format to FunctionNodes.
@@ -200,4 +331,38 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
     }
 
     Ok(resolved)
+}
+
+/// The AWS service hint (Botocore service id) for an AWS SDK for Go v2 import
+/// package — the last path segment of `aws-sdk-go-v2/service/<pkg>` that a
+/// Terraform provider service imports (e.g. `elasticsearchservice`,
+/// `chimesdkvoice`, `applicationautoscaling`).
+///
+/// The Go import segment is the dash-free Smithy service name; this resolves it
+/// to the dashed Botocore service id the SDK-call extractor recognizes
+/// (`elasticsearchservice` → `es`, `chimesdkvoice` → `chime-sdk-voice`). Uses
+/// the shared SDK-import service map (also used for Java imports), falling back
+/// to the segment itself when it is already a valid Botocore service.
+///
+/// Returns `None` for services with no Botocore data (e.g. `evidently`,
+/// `qldb`); callers should then generate without a service hint rather than
+/// filtering against a service that does not exist.
+///
+/// Deliberately NOT based on `arn_namespace`: that collapses distinct SDK
+/// services to one IAM prefix (e.g. `chime`, `chimesdkvoice` both → `chime`),
+/// which mis-attributes operations.
+#[must_use]
+pub fn terraform_service_hint(go_sdk_import_package: &str) -> Option<String> {
+    let config = crate::service_configuration::load_service_configuration().ok()?;
+    if let Some(service) = config
+        .build_sdk_import_service_map()
+        .get(go_sdk_import_package)
+    {
+        return Some(service.clone());
+    }
+    // Fallback: the import segment is already a valid Botocore service id
+    // (e.g. `s3`, `ec2`, `events`) with no rename needed.
+    crate::embedded_data::BotocoreData::build_service_versions_map()
+        .contains_key(go_sdk_import_package)
+        .then(|| go_sdk_import_package.to_string())
 }

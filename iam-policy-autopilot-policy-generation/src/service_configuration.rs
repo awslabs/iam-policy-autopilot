@@ -56,21 +56,24 @@ impl ServiceConfiguration {
         }
     }
 
-    /// Build a lookup map for normalising Java SDK import segments to Botocore service names.
+    /// Build a lookup map from dash-free SDK import segments to Botocore service names.
     ///
-    /// The Java SDK derives its package segment from the Smithy service name by **removing
-    /// all dashes** (e.g. Smithy `"cloudwatch-logs"` → Java import segment `"cloudwatchlogs"`).
-    /// This method iterates over [`SmithyBotocoreServiceNameMapping`], strips dashes from each
-    /// Smithy key, and maps the result to the corresponding Botocore name.
+    /// Both the Java SDK and the Go SDK derive their package/import segment from the Smithy
+    /// service name by **removing all dashes** (e.g. Smithy `"cloudwatch-logs"` → import
+    /// segment `"cloudwatchlogs"`; `"chime-sdk-voice"` → `"chimesdkvoice"`). This method
+    /// iterates over [`SmithyBotocoreServiceNameMapping`], strips dashes from each Smithy key,
+    /// and maps the result to the corresponding Botocore name.
     ///
     /// In addition, for every botocore service whose canonical name contains a dash (e.g.
     /// `"bedrock-runtime"`, `"s3-outposts"`) and that is **not** already covered by the
     /// Smithy mapping above, a self-mapping `dashfreevariant → dashed-name` is added so
-    /// that Java import segments like `bedrockruntime` are correctly resolved to the
+    /// that import segments like `bedrockruntime` are correctly resolved to the
     /// botocore service name `bedrock-runtime`.
     ///
-    /// The returned map is keyed by the dash-free Java import segment so that
-    /// `extract_service_from_import` can do a single O(1) lookup.
+    /// The returned map is keyed by the dash-free import segment so that callers
+    /// (Java `extract_service_from_import`, Go Terraform service-hint resolution) can do a
+    /// single O(1) lookup. Java and Go share this map because their import segments are
+    /// identical (both are the dash-free Smithy name).
     ///
     /// # Collisions
     ///
@@ -78,7 +81,7 @@ impl ServiceConfiguration {
     /// auto-generated botocore self-mappings.  If two botocore names produce the same
     /// dash-free key the last entry wins (non-deterministic, but no such collisions exist
     /// in practice).
-    pub(crate) fn build_java_import_service_map(&self) -> HashMap<String, String> {
+    pub(crate) fn build_sdk_import_service_map(&self) -> HashMap<String, String> {
         // Step 1: explicit Smithy → Botocore mappings (highest priority).
         let mut map: HashMap<String, String> = self
             .smithy_botocore_service_name_mapping

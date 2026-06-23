@@ -59,6 +59,7 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
 
         let source_file_set: BTreeSet<&PathBuf> = source_files.iter().collect();
 
+        let t_open = std::time::Instant::now();
         for file in source_files {
             let content = std::fs::read_to_string(file).map_err(|e| {
                 CallGraphError::Other(format!("Failed to read {}: {e}", file.display()))
@@ -69,7 +70,9 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
         log::info!("Waiting for language server to finish indexing...");
         client.wait_for_idle().await?;
         log::info!("Language server ready");
+        let open_idle_ms = t_open.elapsed().as_millis();
 
+        let t_symbols = std::time::Instant::now();
         let mut nodes = Vec::new();
         // Maps node index → (uri, selection_range start) for prepare_call_hierarchy
         let mut name_positions: Vec<(lsp_types::Url, lsp_types::Position)> = Vec::new();
@@ -113,6 +116,9 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
             }
         }
 
+        let symbols_ms = t_symbols.elapsed().as_millis();
+
+        let t_hierarchy = std::time::Instant::now();
         let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
         for (i, node) in nodes.iter().enumerate() {
             let (ref uri, ref name_pos) = name_positions[i];
@@ -177,7 +183,20 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
             edges.insert(node.clone(), callees);
         }
 
+        // Sub-phase breakdown of call-graph build. The per-node call-hierarchy
+        // loop issues 2 serial LSP round-trips per node and is expected to
+        // dominate; this confirms it before optimizing.
+        log::info!(
+            "Call graph build: open+idle={open_idle_ms}ms symbols={symbols_ms}ms hierarchy={}ms ({} nodes, 2 round-trips each)",
+            t_hierarchy.elapsed().as_millis(),
+            nodes.len(),
+        );
+
         Ok(CallGraph::new(nodes, edges))
+    }
+
+    fn is_running(&self) -> bool {
+        self.client.is_alive()
     }
 
     async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError> {

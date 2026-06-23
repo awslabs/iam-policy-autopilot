@@ -22,7 +22,7 @@ use crate::SourceFile;
 /// The Java SDK derives its package segment from the Smithy service name by removing all
 /// dashes (e.g. Smithy `"cloudwatch-logs"` → Java import segment `"cloudwatchlogs"`).
 /// This static is built once from [`SmithyBotocoreServiceNameMapping`] via
-/// [`ServiceConfiguration::build_java_import_service_map`] and used by
+/// [`ServiceConfiguration::build_sdk_import_service_map`] and used by
 /// [`extract_service_from_import`] to normalise extracted service names.
 ///
 /// # Panics
@@ -34,7 +34,7 @@ use crate::SourceFile;
 static JAVA_IMPORT_SERVICE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     load_service_configuration()
         .expect("service-configuration.json must be present in embedded data")
-        .build_java_import_service_map()
+        .build_sdk_import_service_map()
 });
 
 /// Extracts all `import` declarations from a Java source file.

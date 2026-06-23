@@ -9,7 +9,10 @@ mod get_submodule_version;
 pub use crate::extraction::external_library_models::ExternalLibraryModel;
 pub use extract_sdk_calls::extract_sdk_calls;
 #[cfg(feature = "model-generation")]
-pub use generate_model::{generate_model, GenerateModelConfig};
+pub use generate_model::{
+    generate_model, generate_models_batch, terraform_service_hint, BatchOptions,
+    GenerateModelConfig,
+};
 pub use generate_policies::generate_policies;
 pub use get_submodule_version::{get_boto3_version_info, get_botocore_version_info};
 pub(crate) mod common;

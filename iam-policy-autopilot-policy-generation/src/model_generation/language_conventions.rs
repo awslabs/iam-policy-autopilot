@@ -13,8 +13,8 @@ pub(crate) struct ParsedFunctionName {
 
 /// Language-specific conventions for interpreting function nodes.
 ///
-/// Requires `Send + Sync` so that a `Box<dyn LanguageConventions>` (and shared
-/// `&dyn` references to it) can be held across `.await` points in async model
+/// Requires `Send + Sync` so that a `Box<dyn LanguageConventions>` and shared
+/// `&dyn` references can be held across `.await` points in async model
 /// generation without making the resulting future non-`Send`.
 pub(crate) trait LanguageConventions: Send + Sync {
     /// Whether a function is visible outside its package/module.
@@ -32,11 +32,8 @@ pub(crate) trait LanguageConventions: Send + Sync {
     /// `pkg.func` (e.g. `s3.resourceBucketCreate`); other languages may use
     /// fully-qualified class names, dotted module paths, etc. Implementations
     /// must error if the spec matches zero or more than one node.
-    fn resolve_symbol<'a>(
-        &self,
-        spec: &str,
-        nodes: &'a [FunctionNode],
-    ) -> Result<&'a FunctionNode>;
+    fn resolve_symbol<'a>(&self, spec: &str, nodes: &'a [FunctionNode])
+        -> Result<&'a FunctionNode>;
 }
 
 /// Go language conventions.
@@ -57,6 +54,12 @@ impl LanguageConventions for GoConventions {
 
     fn parse_function_name(&self, node: &FunctionNode) -> ParsedFunctionName {
         let name = &node.name;
+        // In Go, package == the directory containing the source file. gopls does
+        // not put the package on the symbol name, so recover it from the path.
+        // This makes (module_path, function_name) a provider-wide unique key,
+        // which matters when merging per-service models (the short function name
+        // alone collides, e.g. resourceInstanceRead in both ec2 and rds).
+        let module_path = go_package_of(&node.location.file_path).unwrap_or_default();
 
         if let Some(dot_pos) = name.find(").") {
             let receiver_part = &name[..=dot_pos];
@@ -68,14 +71,14 @@ impl LanguageConventions for GoConventions {
                 .trim_end_matches(')');
 
             return ParsedFunctionName {
-                module_path: String::new(),
+                module_path,
                 class_name: Some(type_name.to_string()),
                 function_name: method_name.to_string(),
             };
         }
 
         ParsedFunctionName {
-            module_path: String::new(),
+            module_path,
             class_name: None,
             function_name: name.clone(),
         }
@@ -168,13 +171,18 @@ fn parse_go_symbol(spec: &str) -> Result<(&str, &str)> {
     Ok((pkg, func))
 }
 
+/// The Go package a file belongs to (its parent directory name), per Go's
+/// package = directory rule. Returns `None` if the path has no usable parent.
+fn go_package_of(file: &std::path::Path) -> Option<String> {
+    file.parent()
+        .and_then(|d| d.file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+}
+
 /// Whether `file` lives directly in a directory named `pkg` (Go's package =
 /// directory rule).
 fn file_in_package_dir(file: &std::path::Path, pkg: &str) -> bool {
-    file.parent()
-        .and_then(|d| d.file_name())
-        .map(|n| n == pkg)
-        .unwrap_or(false)
+    go_package_of(file).as_deref() == Some(pkg)
 }
 
 #[cfg(test)]
@@ -213,20 +221,42 @@ mod tests {
         assert_eq!(conventions.is_exported(&node(name)), expected);
     }
 
+    // module_path is recovered from the file's parent directory (the Go package).
     #[rstest]
-    #[case("main", "", None, "main")]
-    #[case("helper", "", None, "helper")]
-    #[case("(*Server).HandleRequest", "", Some("Server"), "HandleRequest")]
-    #[case("(*Server).fetchData", "", Some("Server"), "fetchData")]
-    #[case("(Server).Method", "", Some("Server"), "Method")]
+    #[case("main", "internal/service/s3/bucket.go", "s3", None, "main")]
+    #[case(
+        "resourceBucketCreate",
+        "internal/service/s3/bucket.go",
+        "s3",
+        None,
+        "resourceBucketCreate"
+    )]
+    #[case(
+        "(*Server).HandleRequest",
+        "internal/service/ec2/server.go",
+        "ec2",
+        Some("Server"),
+        "HandleRequest"
+    )]
+    #[case(
+        "(*Server).fetchData",
+        "internal/service/ec2/server.go",
+        "ec2",
+        Some("Server"),
+        "fetchData"
+    )]
+    #[case("(Server).Method", "rds/instance.go", "rds", Some("Server"), "Method")]
+    // Bare filename with no parent directory => empty package.
+    #[case("helper", "helper.go", "", None, "helper")]
     fn test_go_parse_function_name(
         #[case] name: &str,
+        #[case] file: &str,
         #[case] expected_module: &str,
         #[case] expected_class: Option<&str>,
         #[case] expected_func: &str,
     ) {
         let conventions = GoConventions;
-        let parsed = conventions.parse_function_name(&node(name));
+        let parsed = conventions.parse_function_name(&node_at(name, file));
         assert_eq!(parsed.module_path, expected_module);
         assert_eq!(parsed.class_name.as_deref(), expected_class);
         assert_eq!(parsed.function_name, expected_func);
@@ -240,11 +270,7 @@ mod tests {
         "s3",
         "resourceBucketCreate"
     )]
-    fn test_parse_go_symbol_ok(
-        #[case] spec: &str,
-        #[case] pkg: &str,
-        #[case] func: &str,
-    ) {
+    fn test_parse_go_symbol_ok(#[case] spec: &str, #[case] pkg: &str, #[case] func: &str) {
         assert_eq!(parse_go_symbol(spec).unwrap(), (pkg, func));
     }
 
@@ -265,10 +291,14 @@ mod tests {
         ];
         let conv = GoConventions;
 
-        let ec2 = conv.resolve_symbol("ec2.resourceInstanceRead", &nodes).unwrap();
+        let ec2 = conv
+            .resolve_symbol("ec2.resourceInstanceRead", &nodes)
+            .unwrap();
         assert!(ec2.location.file_path.ends_with("ec2/instance.go"));
 
-        let rds = conv.resolve_symbol("rds.resourceInstanceRead", &nodes).unwrap();
+        let rds = conv
+            .resolve_symbol("rds.resourceInstanceRead", &nodes)
+            .unwrap();
         assert!(rds.location.file_path.ends_with("rds/instance.go"));
     }
 
@@ -290,12 +320,19 @@ mod tests {
 
     #[test]
     fn test_resolve_symbol_no_match() {
-        let nodes = vec![node_at("resourceBucketRead", "internal/service/s3/bucket.go")];
+        let nodes = vec![node_at(
+            "resourceBucketRead",
+            "internal/service/s3/bucket.go",
+        )];
         let conv = GoConventions;
 
         // Function name not present at all.
-        assert!(conv.resolve_symbol("s3.resourceBucketWrite", &nodes).is_err());
+        assert!(conv
+            .resolve_symbol("s3.resourceBucketWrite", &nodes)
+            .is_err());
         // Right function, wrong package.
-        assert!(conv.resolve_symbol("ec2.resourceBucketRead", &nodes).is_err());
+        assert!(conv
+            .resolve_symbol("ec2.resourceBucketRead", &nodes)
+            .is_err());
     }
 }
