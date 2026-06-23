@@ -29,7 +29,7 @@ jobs:
 
       - uses: mymindstorm/setup-emsdk@v14
         with:
-          version: 3.1.73
+          version: 5.0.7
 
       - uses: actions/setup-node@v4
         with:
