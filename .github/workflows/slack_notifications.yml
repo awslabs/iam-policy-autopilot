@@ -184,16 +184,13 @@ jobs:
           webhook-type: incoming-webhook
           payload: |
             {
-              "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} #${{
-steps.context.outputs.number }} ${{ steps.context.outputs.action }} by ${{ steps.context.outputs.sender }} in ${{
-steps.context.outputs.repo }}",
+              "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} #${{ steps.context.outputs.number }} ${{ steps.context.outputs.action }} by ${{ steps.context.outputs.sender }} in ${{ steps.context.outputs.repo }}",
               "blocks": [
                 {
                   "type": "header",
                   "text": {
                     "type": "plain_text",
-                    "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} ${{
-steps.context.outputs.action }}",
+                    "text": "${{ steps.context.outputs.emoji }} ${{ steps.context.outputs.label }} ${{ steps.context.outputs.action }}",
                     "emoji": true
                   }
                 },
@@ -201,8 +198,7 @@ steps.context.outputs.action }}",
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "<${{ steps.context.outputs.url }}|#${{ steps.context.outputs.number }} ${{
-steps.context.outputs.title }}>"
+                    "text": "<${{ steps.context.outputs.url }}|#${{ steps.context.outputs.number }} ${{ steps.context.outputs.title }}>"
                   },
                   "accessory": {
                     "type": "button",
@@ -218,8 +214,7 @@ steps.context.outputs.title }}>"
                   "elements": [
                     {
                       "type": "mrkdwn",
-                      "text": "*Action by:* ${{ steps.context.outputs.sender }}  •  *Repo:* ${{
-steps.context.outputs.repo }}"
+                      "text": "*Action by:* ${{ steps.context.outputs.sender }}  •  *Repo:* ${{ steps.context.outputs.repo }}"
                     }
                   ]
                 },
@@ -227,8 +222,7 @@ steps.context.outputs.repo }}"
                   "type": "section",
                   "text": {
                     "type": "mrkdwn",
-                    "text": "${{ steps.mentions.outputs.mentions && format('cc {0}', steps.mentions.outputs.mentions) ||
-' ' }}"
+                    "text": "${{ steps.mentions.outputs.mentions && format('cc {0}', steps.mentions.outputs.mentions) || ' ' }}"
                   }
                 }
               ]
