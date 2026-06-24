@@ -65,6 +65,59 @@ impl NonSparseSubmodule {
     pub fn root(&self) -> &Path {
         &self.root
     }
+
+    /// A human-readable version string for the checked-out commit: the exact tag
+    /// on HEAD (e.g. `v6.0.0`) if known, otherwise the short commit hash.
+    ///
+    /// A submodule is often a shallow, single-commit checkout with no tag refs,
+    /// so `git describe` finds nothing. Rather than fetch *all* tags (which on a
+    /// shallow clone pulls every tagged commit's history — hundreds of MB), we
+    /// ask the remote which tag points at HEAD (`ls-remote`, metadata only — no
+    /// objects fetched).
+    pub fn version(&self) -> Result<String> {
+        if let Some(tag) = self.describe_tags() {
+            return Ok(tag);
+        }
+        if let Some(tag) = self.remote_tag_for_head() {
+            return Ok(tag);
+        }
+        let commit = git(&self.root, &["rev-parse", "--short", "HEAD"])?;
+        Ok(commit.trim().to_string())
+    }
+
+    /// `git describe --tags` if it yields a non-empty result, else `None`.
+    fn describe_tags(&self) -> Option<String> {
+        let desc = git(&self.root, &["describe", "--tags"]).ok()?;
+        let desc = desc.trim();
+        (!desc.is_empty()).then(|| desc.to_string())
+    }
+
+    /// The tag name pointing at HEAD, resolved from the remote via `ls-remote`.
+    ///
+    /// Metadata-only — no objects are fetched. On a shallow checkout (no local
+    /// tag refs), this is how we name the version without pulling tag history.
+    /// `None` if HEAD is not tagged or the lookup fails.
+    fn remote_tag_for_head(&self) -> Option<String> {
+        let head = git(&self.root, &["rev-parse", "HEAD"]).ok()?;
+        let head = head.trim();
+
+        // `ls-remote --tags` lists each tag's ref and, for annotated tags, its
+        // peeled target as `refs/tags/<name>^{}`. Match HEAD against either, so
+        // both lightweight and annotated tags resolve.
+        let listing = git(&self.root, &["ls-remote", "--tags", "origin"]).ok()?;
+        let tag_ref = listing.lines().find_map(|line| {
+            let (sha, refname) = line.split_once('\t')?;
+            (sha.trim() == head).then(|| refname.trim().to_string())
+        })?;
+        // Strip the `refs/tags/` prefix and any `^{}` peel suffix.
+        Some(
+            tag_ref
+                .strip_prefix("refs/tags/")
+                .unwrap_or(&tag_ref)
+                .trim_end_matches("^{}")
+                .to_string(),
+        )
+    }
 }
 
 impl Drop for NonSparseSubmodule {

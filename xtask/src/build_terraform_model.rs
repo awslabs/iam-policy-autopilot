@@ -300,6 +300,14 @@ pub async fn run(opts: BuildOptions) -> Result<()> {
     let provider = NonSparseSubmodule::new(&opts.terraform_provider_aws_root)
         .context("Failed to materialize full provider checkout")?;
 
+    // Record which provider version this model was built against, stamped into
+    // the model so the provenance travels with the artifact (it cannot drift
+    // from the committed model the way a build-time submodule hash could).
+    let provider_version = provider
+        .version()
+        .context("Failed to determine terraform-provider-aws version")?;
+    log::info!("Building against terraform-provider-aws {provider_version}");
+
     let configs = plan_configs(&opts, provider.root())?;
     let total = configs.len();
     log::info!("Building Terraform model: {total} packages");
@@ -334,7 +342,7 @@ pub async fn run(opts: BuildOptions) -> Result<()> {
     let unified = ExternalLibraryModel {
         library_name: "terraform-provider-aws".to_string(),
         language: iam_policy_autopilot_policy_generation::Language::Go,
-        version: None,
+        version: Some(provider_version),
         call_patterns: patterns.into_values().collect(),
     };
 
