@@ -3,7 +3,9 @@ use regex::Regex;
 use std::path::PathBuf;
 use std::{fs, path::Path};
 
-mod build_unified_model;
+mod build_terraform_model;
+mod extract_terraform_crud_map;
+mod utils;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Repository maintenance tasks")]
@@ -17,21 +19,36 @@ enum Task {
     /// Regenerate tests/java/service_name_test_cases.txt
     RegenerateServiceNames,
 
+    /// Extract the Terraform resource → CRUD-handler map from the provider.
+    ///
+    /// Runs the Go extractor against the terraform-provider-aws submodule and
+    /// writes `terraform-crud-map.json` (resource type → CRUD handler symbols).
+    /// Requires a full (non-sparse) provider checkout and Go on PATH.
+    ExtractTerraformCrudMap {
+        /// Root of the terraform-provider-aws checkout (the Go module root).
+        #[arg(long)]
+        terraform_provider_aws_root: PathBuf,
+
+        /// Where to write terraform-crud-map.json.
+        #[arg(long)]
+        output: PathBuf,
+    },
+
     /// Build a single ExternalLibraryModel for the whole Terraform AWS provider.
     ///
-    /// Reads the reflection-derived CRUD operation model (output.json), runs
-    /// model generation per service package, and unions the results into one
-    /// model file.
-    BuildUnifiedModel {
-        /// Path to the reflection CRUD operation model (output.json).
+    /// Reads the Terraform CRUD map (terraform-crud-map.json), runs model
+    /// generation per service package, and unions the results into one model
+    /// file (terraform-model.json).
+    BuildTerraformModel {
+        /// Path to the Terraform CRUD map (terraform-crud-map.json).
         #[arg(long)]
-        crud_operation_model: PathBuf,
+        crud_map: PathBuf,
 
         /// Root of the terraform-provider-aws checkout (contains internal/service).
         #[arg(long)]
         terraform_provider_aws_root: PathBuf,
 
-        /// Where to write the unified model JSON.
+        /// Where to write the model JSON.
         #[arg(long)]
         output: PathBuf,
 
@@ -49,8 +66,23 @@ fn main() {
     let cli = Cli::parse();
     match cli.task {
         Task::RegenerateServiceNames => regenerate_service_names(),
-        Task::BuildUnifiedModel {
-            crud_operation_model,
+        Task::ExtractTerraformCrudMap {
+            terraform_provider_aws_root,
+            output,
+        } => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .init();
+            let opts = extract_terraform_crud_map::ExtractOptions {
+                terraform_provider_aws_root,
+                output,
+            };
+            if let Err(e) = extract_terraform_crud_map::run(opts) {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Task::BuildTerraformModel {
+            crud_map,
             terraform_provider_aws_root,
             output,
             only,
@@ -58,8 +90,8 @@ fn main() {
         } => {
             env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
                 .init();
-            let opts = build_unified_model::BuildOptions {
-                crud_operation_model,
+            let opts = build_terraform_model::BuildOptions {
+                crud_map,
                 terraform_provider_aws_root,
                 output,
                 only_packages: only,
@@ -69,7 +101,7 @@ fn main() {
                 .enable_all()
                 .build()
                 .expect("Failed to build Tokio runtime");
-            if let Err(e) = runtime.block_on(build_unified_model::run(opts)) {
+            if let Err(e) = runtime.block_on(build_terraform_model::run(opts)) {
                 eprintln!("error: {e:#}");
                 std::process::exit(1);
             }

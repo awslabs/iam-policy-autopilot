@@ -1,8 +1,8 @@
-//! Build a single unified `ExternalLibraryModel` covering the entire Terraform
-//! AWS provider, driven by the reflection output (`output.json`).
+//! Build a single `ExternalLibraryModel` covering the entire Terraform AWS
+//! provider, driven by the Terraform CRUD map (`terraform-crud-map.json`).
 //!
 //! Pipeline:
-//!   1. Parse `output.json` (resource_type + CRUD handler symbols).
+//!   1. Parse the CRUD map (resource_type + CRUD handler symbols).
 //!   2. Group handler symbols by Go service package into one
 //!      `GenerateModelConfig` each.
 //!   3. Hand the whole batch to `generate_models_batch`, which reuses one
@@ -24,6 +24,8 @@ use iam_policy_autopilot_policy_generation::api::{
     GenerateModelConfig,
 };
 use serde::Deserialize;
+
+use crate::utils::NonSparseSubmodule;
 
 /// Only handlers under this import-path segment are real provider resource
 /// handlers we can model; anything else (e.g. `schema.NoopContext`) is skipped.
@@ -56,13 +58,13 @@ impl ResourceEntry {
     }
 }
 
-/// Options for the unified-model build.
+/// Options for the Terraform model build.
 pub struct BuildOptions {
-    /// Path to the reflection-derived CRUD operation model (`output.json`).
-    pub crud_operation_model: PathBuf,
+    /// Path to the Terraform CRUD map (`terraform-crud-map.json`).
+    pub crud_map: PathBuf,
     /// Root of the terraform-provider-aws checkout (contains `internal/service`).
     pub terraform_provider_aws_root: PathBuf,
-    /// Where to write the unified model JSON.
+    /// Where to write the model JSON.
     pub output: PathBuf,
     /// If set, only build these packages (for iteration/debugging).
     pub only_packages: Option<Vec<String>>,
@@ -152,15 +154,15 @@ fn normalize_go_entry_point(qualifier: &str) -> String {
 /// package. Handler symbols are passed as `pkg.func` entry points so the
 /// lowercase SDKv2 free functions (which the default exported-functions
 /// heuristic would skip) are covered.
-fn plan_configs(opts: &BuildOptions) -> Result<Vec<GenerateModelConfig>> {
-    let raw = std::fs::read_to_string(&opts.crud_operation_model).with_context(|| {
+fn plan_configs(opts: &BuildOptions, provider_root: &Path) -> Result<Vec<GenerateModelConfig>> {
+    let raw = std::fs::read_to_string(&opts.crud_map).with_context(|| {
         format!(
-            "Failed to read CRUD operation model at {}",
-            opts.crud_operation_model.display()
+            "Failed to read Terraform CRUD map at {}",
+            opts.crud_map.display()
         )
     })?;
     let resources: Vec<ResourceEntry> =
-        serde_json::from_str(&raw).context("Failed to parse CRUD operation model")?;
+        serde_json::from_str(&raw).context("Failed to parse Terraform CRUD map")?;
 
     let mut by_package: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     let mut skipped = 0usize;
@@ -182,10 +184,7 @@ fn plan_configs(opts: &BuildOptions) -> Result<Vec<GenerateModelConfig>> {
         skipped
     );
 
-    let service_root = opts
-        .terraform_provider_aws_root
-        .join("internal")
-        .join("service");
+    let service_root = provider_root.join("internal").join("service");
     let only: Option<BTreeSet<&str>> = opts
         .only_packages
         .as_ref()
@@ -294,16 +293,23 @@ fn go_source_files(dir: &Path) -> Result<Vec<PathBuf>> {
 /// Build the unified provider model and write it to `opts.output`.
 pub async fn run(opts: BuildOptions) -> Result<()> {
     let overall = Instant::now();
-    let configs = plan_configs(&opts)?;
+
+    // Materialize the full provider tree (restored on drop). Both reading the
+    // service source files (plan_configs) and the gopls call-graph build need
+    // the whole module, not the lean sparse checkout. Held for the whole run.
+    let provider = NonSparseSubmodule::new(&opts.terraform_provider_aws_root)
+        .context("Failed to materialize full provider checkout")?;
+
+    let configs = plan_configs(&opts, provider.root())?;
     let total = configs.len();
-    log::info!("Building unified model: {total} packages");
+    log::info!("Building Terraform model: {total} packages");
 
     // Hand the whole batch to the policy-generation API, which reuses a single
     // language server across all packages (its one-time workspace indexing
     // dominates per-package cost). Any package failure aborts the whole build
     // inside the batch call — a partial provider model is silently wrong.
     let options = BatchOptions {
-        workspace_root: opts.terraform_provider_aws_root.clone(),
+        workspace_root: provider.root().to_path_buf(),
         ..Default::default()
     };
     let models = generate_models_batch(&configs, &options)
