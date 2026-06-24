@@ -215,19 +215,28 @@ fn plan_configs(opts: &BuildOptions, provider_root: &Path) -> Result<Vec<Generat
         // A few services (evidently, qldb) have no Botocore data; for those we
         // generate without a hint rather than filtering against a missing
         // service.
-        let service_hints = go_sdk_import_package(&dir)?
-            .and_then(|pkg| terraform_service_hint(&pkg))
-            .map(|hint| vec![hint]);
-        if service_hints.is_none() {
-            log::warn!("No service hint resolved for package '{package}'; generating without one");
-        }
+        // Resolve the AWS service this package targets. A service with no SDK
+        // data in the index (e.g. elastictranscoder, evidently, qldb) cannot be
+        // modeled correctly — its operations would be mis-attributed to other
+        // services that happen to share an operation name — so skip it entirely
+        // rather than emit a wrong model. `None` here means either no SDK client
+        // import or a service absent from the index; both are unmodelable.
+        let Some(service_hint) =
+            go_sdk_import_package(&dir)?.and_then(|pkg| terraform_service_hint(&pkg))
+        else {
+            log::warn!(
+                "Skipping package '{package}': its AWS service has no data in the SDK index \
+                 (cannot model it correctly)"
+            );
+            continue;
+        };
         configs.push(GenerateModelConfig {
             source_files,
             language: Some("go".to_string()),
             library_name: format!("terraform-provider-aws-{package}"),
             entry_points: Vec::new(),
             entry_point_symbols: symbols.into_iter().collect(),
-            service_hints,
+            service_hints: Some(vec![service_hint]),
         });
     }
     Ok(configs)
