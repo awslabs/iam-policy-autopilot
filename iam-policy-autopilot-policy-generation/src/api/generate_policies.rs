@@ -14,7 +14,7 @@ use crate::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
         Explanation, Explanations,
     },
-    extraction::SdkMethodCall,
+    extraction::{terraform::plan_to_calls, SdkMethodCall},
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, PolicyGenerationEngine,
 };
@@ -217,43 +217,78 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         None
     };
 
-    // --- Determine source files ---
+    // --- Determine SDK method calls ---
+    // Two sources of `SdkMethodCall`s: a Terraform plan (resource changes
+    // resolved through the embedded CRUD map + model) or application source
+    // files. A plan is auto-detected by content among the inputs (the same way
+    // other input types are inferred), so no dedicated flag is needed. The plan
+    // path short-circuits source extraction entirely; ARN binding above still
+    // composes for free.
     let all_source_files: Vec<PathBuf> = config.extract_sdk_calls_config.source_files.clone();
 
-    if all_source_files.is_empty() {
-        info!("No source files found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
-    }
+    let plan_path = all_source_files
+        .iter()
+        .find(|p| plan_to_calls::plan_reader::file_looks_like_plan(p));
 
-    // Create the extractor
-    let extractor = crate::ExtractionEngine::new();
+    let (extracted_methods, sdk) = if let Some(plan_path) = plan_path {
+        debug!("Detected Terraform plan input: {}", plan_path.display());
+        if all_source_files.len() > 1 {
+            log::warn!(
+                "A Terraform plan was detected among the inputs; deriving actions from the plan \
+                 and ignoring the other {} input file(s)",
+                all_source_files.len() - 1
+            );
+        }
+        let (mapped, _resources) = plan_to_calls::plan_to_sdk_calls(plan_path)
+            .context("Failed to derive SDK calls from Terraform plan")?;
+        for warning in &mapped.warnings {
+            log::warn!("{warning}");
+        }
+        debug!(
+            "Derived {} SDK calls from Terraform plan ({} warning(s))",
+            mapped.calls.len(),
+            mapped.warnings.len()
+        );
+        // The model emits botocore service ids in `possible_services`, exactly
+        // as the Go source extractor does, so the SDK type is Go.
+        (mapped.calls, crate::Language::Go.sdk_type())
+    } else {
+        if all_source_files.is_empty() {
+            info!("No source files found to process, returning empty policy list");
+            return Ok(GeneratePoliciesResult {
+                policies: vec![],
+                explanations: None,
+                resource_binding_explanations: None,
+            });
+        }
 
-    // Process source files to get extracted methods
-    let extracted_methods = process_source_files(
-        &extractor,
-        &all_source_files,
-        config.extract_sdk_calls_config.language.as_deref(),
-        config.extract_sdk_calls_config.service_hints.clone(),
-    )
-    .await
-    .context("Failed to process source files")?;
+        // Create the extractor
+        let extractor = crate::ExtractionEngine::new();
 
-    // Relies on the invariant that all source files must be of the same language, which we
-    // enforce in process_source_files
-    let sdk = extracted_methods
-        .metadata
-        .source_files
-        .first()
-        .map_or(crate::SdkType::Other, |f| f.language.sdk_type());
+        // Process source files to get extracted methods
+        let extracted_methods = process_source_files(
+            &extractor,
+            &all_source_files,
+            config.extract_sdk_calls_config.language.as_deref(),
+            config.extract_sdk_calls_config.service_hints.clone(),
+        )
+        .await
+        .context("Failed to process source files")?;
 
-    let extracted_methods = extracted_methods
-        .methods
-        .into_iter()
-        .collect::<Vec<SdkMethodCall>>();
+        // Relies on the invariant that all source files must be of the same language, which we
+        // enforce in process_source_files
+        let sdk = extracted_methods
+            .metadata
+            .source_files
+            .first()
+            .map_or(crate::SdkType::Other, |f| f.language.sdk_type());
+
+        let extracted_methods = extracted_methods
+            .methods
+            .into_iter()
+            .collect::<Vec<SdkMethodCall>>();
+        (extracted_methods, sdk)
+    };
 
     debug!(
         "Extracted {} methods, starting enrichment pipeline",
