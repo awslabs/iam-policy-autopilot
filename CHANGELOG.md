@@ -1,8 +1,11 @@
 ## [Unreleased]
 
+### Added
+- Support for chained and nested boto3 sub-resource actions, including calls on a variable bound to a chain — e.g. `s3.Bucket("b").put_object(...)`, `s3.Bucket("b").Object("k").put(...)`, and `obj = s3.Bucket("b").Object("k"); obj.put(...)` now resolve to the underlying operation with identifiers injected from the chain
+
 ### Changed
 
-- Generated policy statements are now sorted globally by service before being assigned to policies, so statements for the same service stay together (within size limits), producing deterministic, review-friendly output and stable diffs. Note: when `--minimize-policy-size` (cross-service action merging) is enabled, statements are grouped by shared resource rather than by service, so a single service's actions may span multiple statements and the "same service stays together" grouping does not hold. (#153)
+- An unrecognized method on a known boto3 resource no longer expands to every action of that resource. Such calls now contribute no permissions instead of over-approximating
 
 ## [0.2.3] - 2026-06-17
 
