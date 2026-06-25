@@ -1,0 +1,55 @@
+name: WASM Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "iam-policy-autopilot-wasm/**"
+      - "iam-policy-autopilot-policy-generation/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - "iam-policy-autopilot-wasm/**"
+      - "iam-policy-autopilot-policy-generation/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+jobs:
+  build-wasm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-emscripten
+
+      - uses: emscripten-core/setup-emsdk@v16
+        with:
+          version: 5.0.7
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build WASM + npm package
+        run: ./iam-policy-autopilot-wasm/build.sh
+
+      - name: Verify artifacts exist
+        run: |
+          test -f iam-policy-autopilot-wasm/npm/dist/iam_policy_autopilot.js
+          test -f iam-policy-autopilot-wasm/npm/dist/iam_policy_autopilot.wasm
+          test -f iam-policy-autopilot-wasm/npm/dist/index.js
+          test -f iam-policy-autopilot-wasm/npm/dist/index.d.ts
+          echo "All artifacts present"
+          ls -lh iam-policy-autopilot-wasm/npm/dist/
+
+      - name: Upload npm package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-package
+          path: iam-policy-autopilot-wasm/npm/dist/
+          retention-days: 7

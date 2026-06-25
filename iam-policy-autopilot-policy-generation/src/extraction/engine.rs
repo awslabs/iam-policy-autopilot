@@ -6,10 +6,9 @@
 //! source code analysis.
 
 use std::fmt::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::task::JoinSet;
 
 use crate::errors::{ExtractorError, Result};
 use crate::extraction::extractor::Extractor;
@@ -112,30 +111,13 @@ impl Engine {
         // Initialize metadata with loaded files
         let mut metadata = ExtractionMetadata::new(source_files.clone(), Vec::new());
 
-        // Extract SDK method calls from all source files concurrently
-        let mut all_extraction_results = Vec::new();
-        let mut join_set = JoinSet::new();
-
-        for source_file in source_files {
+        // Extract SDK method calls from all source files
+        let tasks = source_files.into_iter().map(|source_file| {
             let extractor = extractor.clone();
-            join_set.spawn(async move { extractor.parse(&source_file).await });
-        }
+            move || async move { extractor.parse(&source_file).await }
+        });
 
-        // Collect results from concurrent tasks
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(extraction_result) => {
-                    all_extraction_results.push(extraction_result);
-                }
-                Err(e) => {
-                    return Err(ExtractorError::method_extraction(
-                        "unsupported",
-                        PathBuf::from("unknown"),
-                        format!("Task execution failed: {e}"),
-                    ));
-                }
-            }
-        }
+        let mut all_extraction_results = crate::providers::concurrency::run_all(tasks).await;
 
         extractor.filter_map(&mut all_extraction_results, &service_index);
 
