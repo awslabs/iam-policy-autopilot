@@ -55,6 +55,10 @@ export interface GenerateError {
   error: string;
 }
 
+// Emscripten exports C functions with a leading underscore prefix (the standard
+// C name-mangling convention for exported symbols). E.g., a Rust `#[no_mangle]`
+// function `generate_policies_wasm` becomes `_generate_policies_wasm` in the
+// Emscripten JS glue. Helper functions like malloc/free follow the same pattern.
 type EmscriptenModule = {
   _generate_policies_wasm: (ptr: number) => number;
   _free_string: (ptr: number) => void;
@@ -88,7 +92,7 @@ export function checkBrowserSupport(): { supported: boolean; missing: string[] }
     missing.push('WebAssembly');
   } else {
     if (typeof (WebAssembly as any).promising !== 'function') {
-      missing.push('WebAssembly.promising (JSPI) — requires Chrome 131+ or a Chromium-based browser');
+      missing.push('WebAssembly.promising (JSPI) — requires Chrome/Edge 137+, Firefox 153+, or a browser with JSPI support');
     }
     if (typeof (WebAssembly as any).Suspending !== 'function') {
       missing.push('WebAssembly.Suspending (JSPI)');
@@ -132,7 +136,7 @@ async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
   if (!support.supported) {
     throw new Error(
       `Browser does not support required WebAssembly features: ${support.missing.join('; ')}. ` +
-      `IAM Policy Autopilot requires JSPI (JavaScript Promise Integration), available in Chrome 131+ and Chromium-based browsers.`
+      `See https://webassembly.org/features/ for browser compatibility.`
     );
   }
 

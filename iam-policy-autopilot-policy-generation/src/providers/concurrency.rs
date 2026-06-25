@@ -36,7 +36,7 @@ where
         match result {
             Ok(value) => results.push(value),
             Err(e) => {
-                log::error!("Task panicked: {e}");
+                log::error!("Task failed (JoinError): {e}");
             }
         }
     }
