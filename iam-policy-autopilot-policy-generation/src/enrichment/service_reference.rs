@@ -16,13 +16,11 @@ use std::{
     time::{Duration, SystemTime},
 };
 use tokio::fs;
-use tokio::sync::{OnceCell, RwLock};
+use tokio::sync::RwLock;
 
 type OperationName = String;
 const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 5 minutes.
-// We can allow cache duration override in future.
-const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
+
 /// Service Reference data structure
 ///
 /// Represents the complete service reference loaded from service reference endpoint.
@@ -264,21 +262,34 @@ where
         .collect())
 }
 
+/// Represents a single entry in the service reference index
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ServiceReferenceEntry {
+    /// URL to fetch the full service reference
+    pub(crate) url: Url,
+    /// Epoch timestamp indicating when this service was last modified
+    pub(crate) modified: u64,
+}
+
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
-    pub(crate) service_reference_mapping: HashMap<String, Url>,
+    pub(crate) service_reference_mapping: HashMap<String, ServiceReferenceEntry>,
 }
 
 fn deserialize_service_reference_mapping(
     value: Value,
-) -> crate::errors::Result<HashMap<String, Url>> {
+) -> crate::errors::Result<HashMap<String, ServiceReferenceEntry>> {
     #[derive(Deserialize)]
     struct ServiceEntry {
         service: String,
         url: String,
+        /// Defaults to 0 for backward compatibility with index entries that
+        /// predate the `modified` field.
+        #[serde(default)]
+        modified: u64,
     }
 
     let entries: Vec<ServiceEntry> = serde_json::from_value(value)?;
@@ -294,7 +305,13 @@ fn deserialize_service_reference_mapping(
                 e,
             )
         })?;
-        map.insert(entry.service, url);
+        map.insert(
+            entry.service,
+            ServiceReferenceEntry {
+                url,
+                modified: entry.modified,
+            },
+        );
     }
     Ok(map)
 }
@@ -305,11 +322,20 @@ fn deserialize_service_reference_mapping(
 /// with exact service name matching and thread-safe caching. Service names
 /// must match exactly between input and Service Reference Name (case-sensitive).
 #[derive(Debug)]
-
 pub(crate) struct RemoteServiceReferenceLoader {
     client: Client,
-    service_reference_mapping: OnceCell<ServiceReferenceMapping>,
-    service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
+    /// The index mapping; refreshed by `refresh_index()` before each enrichment run.
+    service_reference_mapping: RwLock<Option<ServiceReferenceMapping>>,
+    /// In-memory cache: service name → (parsed data, `modified` timestamp from the index).
+    /// Entries are evicted by `refresh_index()` when the remote `modified` increases.
+    service_cache: RwLock<HashMap<String, (ServiceReference, u64)>>,
+    /// When the index was last successfully fetched. Used together with
+    /// `refresh_interval` to skip redundant network calls.
+    last_refreshed: RwLock<Option<SystemTime>>,
+    /// Optional minimum interval between index refreshes. When `Some`, `refresh_index()`
+    /// is a no-op if the index was already fetched within this window. `None` (the default)
+    /// means refresh every invocation.
+    refresh_interval: Option<Duration>,
     mapping_url: String,
     disable_file_system_cache: bool,
 }
@@ -323,8 +349,10 @@ impl RemoteServiceReferenceLoader {
             std::env::var(MAPPING_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_MAPPING_URL.to_string());
         Ok(Self {
             client: Self::create_client()?,
-            service_reference_mapping: OnceCell::new(),
+            service_reference_mapping: RwLock::new(None),
             service_cache: RwLock::new(HashMap::new()),
+            last_refreshed: RwLock::new(None),
+            refresh_interval: None,
             mapping_url,
             disable_file_system_cache,
         })
@@ -333,94 +361,149 @@ impl RemoteServiceReferenceLoader {
     /// Creates a loader that always returns `None` for any service.
     /// Useful in tests that don't need real SDF data.
     #[cfg(test)]
-
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
             client: Self::create_client()?,
-            service_reference_mapping: OnceCell::new(),
+            service_reference_mapping: RwLock::new(Some(ServiceReferenceMapping {
+                service_reference_mapping: HashMap::new(),
+            })),
             service_cache: RwLock::new(HashMap::new()),
+            last_refreshed: RwLock::new(None),
+            refresh_interval: None,
             mapping_url: String::new(),
             disable_file_system_cache: true,
         };
-        // Pre-initialize with an empty mapping so no network call is ever made.
-        let _ = loader
-            .service_reference_mapping
-            .set(ServiceReferenceMapping {
-                service_reference_mapping: HashMap::new(),
-            });
         Ok(loader)
     }
 
     /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
     /// so the next call fetches from the new URL.
     #[cfg(test)]
-
     pub(crate) fn with_mapping_url(mut self, url: String) -> Self {
         self.mapping_url = url;
-        self.service_reference_mapping = OnceCell::new();
+        self.service_reference_mapping = RwLock::new(None);
+        self.last_refreshed = RwLock::new(None);
         self
     }
 
-    async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
-        self.service_reference_mapping
-            .get_or_try_init(|| async {
-                let json_text = self
-                    .client
-                    .get(&self.mapping_url)
-                    .send()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to connect to the service reference endpoint at '{}'. \
-                             Verify that this URL is reachable from your network \
-                             (e.g. not blocked by a firewall or VPN). \
-                             If you need to route through a proxy, \
-                             set the HTTPS_PROXY environment variable \
-                             (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .error_for_status()
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Service reference endpoint at '{}' returned an error status",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to read response body from service reference endpoint at '{}'",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?;
+    /// Sets the minimum interval between index refreshes. When set,
+    /// `refresh_index()` is a no-op if the index was already fetched
+    /// within this window.
+    #[cfg(test)]
+    pub(crate) fn with_refresh_interval(mut self, interval: Duration) -> Self {
+        self.refresh_interval = Some(interval);
+        self
+    }
 
-                let json_value: serde_json::Value =
-                    serde_json::from_str(&json_text).map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            &self.mapping_url,
-                            "Failed to parse JSON from service reference endpoint".to_string(),
-                            e,
-                        )
-                    })?;
-
-                let mapping = deserialize_service_reference_mapping(json_value).map_err(|e| {
-                    ExtractorError::service_reference_parse_error_with_source(
-                        &self.mapping_url,
-                        "Failed to deserialize service reference mapping".to_string(),
-                        e,
-                    )
-                })?;
-
-                Ok(ServiceReferenceMapping {
-                    service_reference_mapping: mapping,
-                })
-            })
+    /// Fetches the index from the remote endpoint and returns a `ServiceReferenceMapping`.
+    async fn fetch_mapping(&self) -> crate::errors::Result<ServiceReferenceMapping> {
+        let json_text = self
+            .client
+            .get(&self.mapping_url)
+            .send()
             .await
+            .map_err(|e| ExtractorError::Network {
+                message: format!(
+                    "Failed to connect to the service reference endpoint at '{}'. \
+                     Verify that this URL is reachable from your network \
+                     (e.g. not blocked by a firewall or VPN). \
+                     If you need to route through a proxy, \
+                     set the HTTPS_PROXY environment variable \
+                     (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
+                    self.mapping_url
+                ),
+                source: Some(Box::new(e)),
+            })?
+            .error_for_status()
+            .map_err(|e| ExtractorError::Network {
+                message: format!(
+                    "Service reference endpoint at '{}' returned an error status",
+                    self.mapping_url
+                ),
+                source: Some(Box::new(e)),
+            })?
+            .text()
+            .await
+            .map_err(|e| ExtractorError::Network {
+                message: format!(
+                    "Failed to read response body from service reference endpoint at '{}'",
+                    self.mapping_url
+                ),
+                source: Some(Box::new(e)),
+            })?;
+
+        let json_value: serde_json::Value = serde_json::from_str(&json_text).map_err(|e| {
+            ExtractorError::service_reference_parse_error_with_source(
+                &self.mapping_url,
+                "Failed to parse JSON from service reference endpoint".to_string(),
+                e,
+            )
+        })?;
+
+        let mapping = deserialize_service_reference_mapping(json_value).map_err(|e| {
+            ExtractorError::service_reference_parse_error_with_source(
+                &self.mapping_url,
+                "Failed to deserialize service reference mapping".to_string(),
+                e,
+            )
+        })?;
+
+        Ok(ServiceReferenceMapping {
+            service_reference_mapping: mapping,
+        })
+    }
+
+    /// Refresh the service index and invalidate any cached entries whose
+    /// `modified` timestamp has increased. Call once per invocation, before
+    /// the enrichment loop.
+    ///
+    /// When `refresh_interval` is set, the refresh is skipped if the index
+    /// was already fetched within that window.
+    pub(crate) async fn refresh_index(&self) -> crate::errors::Result<()> {
+        // Skip if the index was recently refreshed and an interval is configured
+        if let Some(interval) = self.refresh_interval {
+            let last = *self.last_refreshed.read().await;
+            if let Some(last) = last {
+                if let Ok(elapsed) = SystemTime::now().duration_since(last) {
+                    if elapsed < interval {
+                        return Ok(());
+                    }
+                }
+            }
+        }
+
+        let new_mapping = self.fetch_mapping().await?;
+
+        // Evict entries whose `modified` timestamp in the new index is greater
+        // than the `cached_modified` we stored when the entry was last fetched.
+        // After eviction, the next `load()` call will re-fetch from remote.
+        // (`last_refreshed` tracks when *this index fetch* happened, for
+        // refresh-interval gating; `cached_modified` tracks the per-service
+        // version from the index, for staleness detection.)
+        let mut cache = self.service_cache.write().await;
+        let stale_services: Vec<String> = cache
+            .iter()
+            .filter(|(name, (_, cached_modified))| {
+                new_mapping
+                    .service_reference_mapping
+                    .get(name.as_str())
+                    .is_some_and(|entry| entry.modified > *cached_modified)
+            })
+            .map(|(name, _)| name.clone())
+            .collect();
+
+        for name in &stale_services {
+            cache.remove(name);
+            if !self.disable_file_system_cache {
+                let _ = fs::remove_file(Self::get_cache_path(name)).await;
+                let _ = fs::remove_file(Self::get_cache_modified_path(name)).await;
+            }
+        }
+        drop(cache);
+
+        *self.service_reference_mapping.write().await = Some(new_mapping);
+        *self.last_refreshed.write().await = Some(SystemTime::now());
+        Ok(())
     }
 
     fn create_client() -> crate::errors::Result<Client> {
@@ -459,15 +542,17 @@ impl RemoteServiceReferenceLoader {
         Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
-    async fn is_cache_valid(path: &PathBuf) -> bool {
-        if let Ok(metadata) = fs::metadata(path).await {
-            if let Ok(modified) = metadata.modified() {
-                if let Ok(elapsed) = SystemTime::now().duration_since(modified) {
-                    return elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS);
-                }
-            }
-        }
-        false
+    /// Path to the `.modified` sidecar for a cached service. Each service gets
+    /// its own sidecar rather than a single index file so that individual
+    /// entries can be written/evicted independently without locking a shared file.
+    fn get_cache_modified_path(service_name: &str) -> PathBuf {
+        Self::get_cache_dir().join(format!("{service_name}.modified"))
+    }
+
+    async fn read_cached_modified(service_name: &str) -> Option<u64> {
+        let modified_path = Self::get_cache_modified_path(service_name);
+        let content = fs::read_to_string(&modified_path).await.ok()?;
+        content.trim().parse().ok()
     }
 
     pub(crate) async fn get_resource_arns(
@@ -482,82 +567,149 @@ impl RemoteServiceReferenceLoader {
         }
     }
 
+    /// Load a service reference by name.
+    ///
+    /// Tries three sources in order:
+    /// 1. In-memory cache (already validated by `refresh_index`)
+    /// 2. Filesystem cache (validated against the index `modified` timestamp)
+    /// 3. Remote fetch (updates both caches)
+    ///
+    /// If `refresh_index()` has not been called yet (e.g. callers outside the
+    /// enrichment path like Terraform resource resolution), the index is lazily
+    /// fetched here so the caller doesn't need to remember to call it.
     pub(crate) async fn load(
         &self,
         service_name: &str,
     ) -> crate::errors::Result<Option<ServiceReference>> {
-        if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
-            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
-                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                    return Ok(Some(cached.clone()));
-                }
-            }
+        if let Some(hit) = self.load_from_memory_cache(service_name).await {
+            return Ok(Some(hit));
         }
 
-        // check temp file
+        self.ensure_mapping_initialized().await?;
+
+        let entry = match self.resolve_index_entry(service_name).await {
+            Some(e) => e,
+            None => return Ok(None),
+        };
+
+        if let Some(hit) = self.load_from_filesystem_cache(service_name, &entry).await {
+            return Ok(Some(hit));
+        }
+
+        self.fetch_and_cache_service(service_name, &entry).await
+    }
+
+    /// Returns the cached `ServiceReference` if present in the in-memory cache.
+    async fn load_from_memory_cache(&self, service_name: &str) -> Option<ServiceReference> {
+        self.service_cache
+            .read()
+            .await
+            .get(service_name)
+            .map(|(cached, _)| cached.clone())
+    }
+
+    /// Lazily initializes the index mapping if `refresh_index()` hasn't been
+    /// called yet. This ensures callers outside the enrichment path (e.g.
+    /// Terraform resource resolution) don't need to explicitly call
+    /// `refresh_index()` first.
+    async fn ensure_mapping_initialized(&self) -> crate::errors::Result<()> {
+        if self.service_reference_mapping.read().await.is_none() {
+            let fresh = self.fetch_mapping().await?;
+            *self.service_reference_mapping.write().await = Some(fresh);
+        }
+        Ok(())
+    }
+
+    /// Looks up the service in the index mapping. Returns `None` if the
+    /// mapping is empty (should not happen after `ensure_mapping_initialized`)
+    /// or the service is not listed in the index.
+    async fn resolve_index_entry(&self, service_name: &str) -> Option<ServiceReferenceEntry> {
+        let guard = self.service_reference_mapping.read().await;
+        guard
+            .as_ref()
+            .and_then(|m| m.service_reference_mapping.get(service_name).cloned())
+    }
+
+    /// Attempts to load from the filesystem cache. Returns `Some` only when
+    /// the cached `modified` timestamp is still current.
+    async fn load_from_filesystem_cache(
+        &self,
+        service_name: &str,
+        entry: &ServiceReferenceEntry,
+    ) -> Option<ServiceReference> {
+        if self.disable_file_system_cache {
+            return None;
+        }
+        let cached_modified = Self::read_cached_modified(service_name).await?;
+        if cached_modified < entry.modified {
+            return None;
+        }
         let cache_path = Self::get_cache_path(service_name);
-        if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
-            if let Ok(content) = fs::read_to_string(&cache_path).await {
-                if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await {
-                    self.service_cache.write().await.insert(
-                        service_name.to_string(),
-                        (service_ref.clone(), SystemTime::now()),
-                    );
-                    return Ok(Some(service_ref));
-                }
-            }
+        let content = fs::read_to_string(&cache_path).await.ok()?;
+        let service_ref = JsonProvider::parse::<ServiceReference>(&content)
+            .await
+            .ok()?;
+        self.service_cache.write().await.insert(
+            service_name.to_string(),
+            (service_ref.clone(), cached_modified),
+        );
+        Some(service_ref)
+    }
+
+    /// Fetches the service reference from the remote URL and updates both
+    /// the in-memory and filesystem caches.
+    async fn fetch_and_cache_service(
+        &self,
+        service_name: &str,
+        entry: &ServiceReferenceEntry,
+    ) -> crate::errors::Result<Option<ServiceReference>> {
+        let service_reference_content = self
+            .client
+            .get(entry.url.as_ref())
+            .send()
+            .await
+            .map_err(|e| {
+                ExtractorError::service_reference_parse_error_with_source(
+                    service_name,
+                    "Failed to fetch service reference data".to_string(),
+                    e,
+                )
+            })?
+            .text()
+            .await
+            .map_err(|e| {
+                ExtractorError::service_reference_parse_error_with_source(
+                    service_name,
+                    "Failed to read service reference response".to_string(),
+                    e,
+                )
+            })?;
+
+        let service_ref: ServiceReference = JsonProvider::parse(&service_reference_content)
+            .await
+            .map_err(|e| {
+            ExtractorError::service_reference_parse_error_with_source(
+                service_name,
+                format!("Failed to parse service reference content. Detailed error: {e}"),
+                e,
+            )
+        })?;
+
+        if !self.disable_file_system_cache {
+            let cache_path = Self::get_cache_path(service_name);
+            let _ = fs::write(&cache_path, &service_reference_content).await;
+            let _ = fs::write(
+                &Self::get_cache_modified_path(service_name),
+                entry.modified.to_string(),
+            )
+            .await;
         }
 
-        let mapping = self.get_or_init_mapping().await?;
-        let service_url = mapping.service_reference_mapping.get(service_name);
-
-        match service_url {
-            Some(service_url) => {
-                let service_reference_content = self
-                    .client
-                    .get(service_url.as_ref())
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            service_name,
-                            "Failed to fetch service reference data".to_string(),
-                            e,
-                        )
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            service_name,
-                            "Failed to read service reference response".to_string(),
-                            e,
-                        )
-                    })?;
-
-                let service_ref: ServiceReference = JsonProvider::parse(&service_reference_content)
-                    .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            service_name,
-                            format!(
-                                "Failed to parse service reference content. Detailed error: {e}"
-                            ),
-                            e,
-                        )
-                    })?;
-                // persist content into the temp file as well
-                if !self.disable_file_system_cache {
-                    let _ = fs::write(&cache_path, &service_reference_content).await;
-                }
-                self.service_cache.write().await.insert(
-                    service_name.to_string(),
-                    (service_ref.clone(), SystemTime::now()),
-                );
-                Ok(Option::Some(service_ref))
-            }
-            None => Ok(None),
-        }
+        self.service_cache.write().await.insert(
+            service_name.to_string(),
+            (service_ref.clone(), entry.modified),
+        );
+        Ok(Some(service_ref))
     }
 }
 
@@ -616,7 +768,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_memory_cache_expiry() {
+    async fn test_memory_cache_invalidation_via_refresh() {
         let (_mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
 
@@ -624,23 +776,30 @@ mod tests {
         let result = loader.load("s3").await;
         assert!(result.is_ok());
 
-        // Manually expire the cache by setting old timestamp
-        let expired_time =
-            SystemTime::now() - Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS + 1);
-        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
-            entry.1 = expired_time;
-        }
-
-        // Load again - should fetch fresh data, not use expired cache
-        let result = loader.load("s3").await;
-        assert!(result.is_ok());
-
-        // Verify cache has fresh timestamp
+        // Verify cache is populated with modified=1000 (from mock)
         let cached = loader.service_cache.read().await.get("s3").cloned();
         assert!(cached.is_some());
-        let (_, timestamp) = cached.unwrap();
-        let elapsed = SystemTime::now().duration_since(timestamp).unwrap();
-        assert!(elapsed < Duration::from_secs(10));
+        assert_eq!(cached.unwrap().1, 1000);
+
+        // Manually set a stale modified timestamp so refresh_index will evict it.
+        // The mock index returns modified=1000, so setting cached to 0 means
+        // 1000 > 0 → stale → evicted.
+        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
+            entry.1 = 0;
+        }
+
+        // refresh_index should evict the stale entry
+        loader.refresh_index().await.unwrap();
+        assert!(
+            loader.service_cache.read().await.get("s3").is_none(),
+            "stale entry should be evicted after refresh_index"
+        );
+
+        // load() should re-fetch and re-populate the cache
+        let result = loader.load("s3").await;
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().unwrap().service_name, "s3");
+        assert!(loader.service_cache.read().await.get("s3").is_some());
     }
 
     // Integration test - requires network access
@@ -648,6 +807,7 @@ mod tests {
     #[ignore] // Use `cargo test -- --ignored` to run this test
     async fn test_load_from_service_reference_success() {
         let loader = RemoteServiceReferenceLoader::new(false).unwrap();
+        loader.refresh_index().await.unwrap();
         let result = loader.load("s3").await;
 
         match result {
@@ -671,6 +831,7 @@ mod tests {
     #[ignore] // Use `cargo test -- --ignored` to run this test
     async fn test_load_nonexistent_service() {
         let loader = RemoteServiceReferenceLoader::new(false).unwrap();
+        loader.refresh_index().await.unwrap();
         let result = loader.load("nonexistent-service-xyz").await;
 
         assert!(result.is_ok());
@@ -680,8 +841,8 @@ mod tests {
     #[tokio::test]
     async fn test_deserialize_service_reference_mapping() {
         let json = serde_json::json!([
-            {"service": "s3", "url": "https://example.com/s3.json"},
-            {"service": "ec2", "url": "https://example.com/ec2.json"}
+            {"service": "s3", "url": "https://example.com/s3.json", "modified": 100},
+            {"service": "ec2", "url": "https://example.com/ec2.json", "modified": 200}
         ]);
 
         let result = deserialize_service_reference_mapping(json);
@@ -691,8 +852,10 @@ mod tests {
         assert_eq!(mapping.len(), 2);
         assert!(mapping.contains_key("s3"));
         assert!(mapping.contains_key("ec2"));
-        assert_eq!(mapping["s3"].as_str(), "https://example.com/s3.json");
-        assert_eq!(mapping["ec2"].as_str(), "https://example.com/ec2.json");
+        assert_eq!(mapping["s3"].url.as_str(), "https://example.com/s3.json");
+        assert_eq!(mapping["s3"].modified, 100);
+        assert_eq!(mapping["ec2"].url.as_str(), "https://example.com/ec2.json");
+        assert_eq!(mapping["ec2"].modified, 200);
     }
 
     #[tokio::test]
@@ -726,25 +889,13 @@ mod tests {
     #[tokio::test]
     async fn test_get_cache_path() {
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
-        assert!(
-            cache_path.ends_with("IAMPolicyAutopilot/s3.json")
-                || cache_path.ends_with("IAMAutoPilot\\s3.json")
-        );
+        assert!(cache_path.ends_with("IAMPolicyAutopilot/s3.json"));
     }
 
     #[tokio::test]
-    async fn test_is_cache_valid_nonexistent() {
-        let path = PathBuf::from("/nonexistent/path/file.json");
-        assert!(!RemoteServiceReferenceLoader::is_cache_valid(&path).await);
-    }
-
-    #[tokio::test]
-    async fn test_is_cache_valid_fresh() {
-        let cache_path = RemoteServiceReferenceLoader::get_cache_path("test_fresh");
-        let _ = fs::write(&cache_path, "test content").await;
-
-        assert!(RemoteServiceReferenceLoader::is_cache_valid(&cache_path).await);
-        let _ = fs::remove_file(&cache_path).await;
+    async fn test_get_cache_modified_path() {
+        let modified_path = RemoteServiceReferenceLoader::get_cache_modified_path("s3");
+        assert!(modified_path.ends_with("IAMPolicyAutopilot/s3.modified"));
     }
 
     #[tokio::test]
@@ -754,15 +905,24 @@ mod tests {
         // setup_mock_server_with_loader disables file system cache by default
         loader.disable_file_system_cache = false;
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
+        let modified_path = RemoteServiceReferenceLoader::get_cache_modified_path("s3");
         let _ = fs::remove_file(&cache_path).await;
+        let _ = fs::remove_file(&modified_path).await;
 
         let result = loader.load("s3").await;
         assert!(result.is_ok());
         assert!(cache_path.exists());
+        assert!(modified_path.exists());
 
         let cached_content = fs::read_to_string(&cache_path).await;
         assert!(cached_content.is_ok());
+        let modified_content = fs::read_to_string(&modified_path).await;
+        assert!(modified_content.is_ok());
+        // modified should be parseable as u64
+        assert!(modified_content.unwrap().trim().parse::<u64>().is_ok());
+
         let _ = fs::remove_file(&cache_path).await;
+        let _ = fs::remove_file(&modified_path).await;
     }
 
     #[tokio::test]
@@ -987,6 +1147,176 @@ mod tests {
         assert!(
             err.contains("HTTPS_PROXY"),
             "Error should mention HTTPS_PROXY env var, got: {err}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod integ_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+    use wiremock::matchers::{method, path};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn index_request_count(requests: &[wiremock::Request]) -> usize {
+        requests.iter().filter(|r| r.url.path() == "/").count()
+    }
+
+    fn service_request_count(requests: &[wiremock::Request], svc: &str) -> usize {
+        let p = format!("/{svc}.json");
+        requests.iter().filter(|r| r.url.path() == p).count()
+    }
+
+    /// Tests the full modified-based cache lifecycle on a single mock server:
+    /// 1. Load caches the service data
+    /// 2. Refresh with same modified → cache stays, no re-fetch
+    /// 3. Refresh with bumped modified → cache evicted, next load re-fetches
+    #[tokio::test]
+    async fn test_modified_based_cache_invalidation() {
+        let server = MockServer::start().await;
+        let url = server.uri();
+
+        // Index returns modified=1000
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"service": "s3", "url": format!("{}/s3.json", url), "modified": 1000}
+            ])))
+            .up_to_n_times(2) // first refresh + second refresh (same modified)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+
+        Mock::given(method("GET"))
+            .and(path("/s3.json"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "Name": "s3",
+                "Actions": [{"Name": "GetObject", "Resources": [{"Name": "object"}]}],
+                "Resources": [{"Name": "object", "ARNFormats": ["arn:aws:s3:::*/*"]}],
+                "Operations": []
+            })))
+            .mount(&server)
+            .await;
+
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(url.clone());
+
+        // --- Phase 1: initial load ---
+        loader.refresh_index().await.unwrap();
+        let result = loader.load("s3").await.unwrap().unwrap();
+        assert_eq!(result.service_name, "s3");
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(service_request_count(&reqs, "s3"), 1);
+
+        // --- Phase 2: refresh with same modified → no eviction ---
+        loader.refresh_index().await.unwrap();
+        let _ = loader.load("s3").await.unwrap().unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            service_request_count(&reqs, "s3"),
+            1,
+            "same modified should not re-fetch s3.json"
+        );
+
+        // --- Phase 3: bump modified to 2000 → eviction + re-fetch ---
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"service": "s3", "url": format!("{}/s3.json", url), "modified": 2000}
+            ])))
+            .with_priority(2)
+            .mount(&server)
+            .await;
+
+        loader.refresh_index().await.unwrap();
+        assert!(
+            loader.service_cache.read().await.get("s3").is_none(),
+            "s3 should be evicted after modified increased"
+        );
+
+        let _ = loader.load("s3").await.unwrap().unwrap();
+
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            service_request_count(&reqs, "s3"),
+            2,
+            "bumped modified should trigger re-fetch of s3.json"
+        );
+    }
+
+    /// Tests the refresh interval behavior on a single mock server:
+    /// 1. No interval → always refreshes
+    /// 2. Long interval → skips refresh
+    /// 3. Expired interval → refreshes again
+    /// 4. Interval of 0 → always refreshes
+    #[tokio::test]
+    async fn test_refresh_interval_behavior() {
+        let server = MockServer::start().await;
+        let url = server.uri();
+
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                {"service": "s3", "url": format!("{}/s3.json", url), "modified": 1000}
+            ])))
+            .mount(&server)
+            .await;
+
+        // --- No interval: every call fetches ---
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(url.clone());
+
+        loader.refresh_index().await.unwrap();
+        loader.refresh_index().await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            index_request_count(&reqs),
+            2,
+            "no interval → should fetch every time"
+        );
+
+        // --- Long interval: skip ---
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(url.clone())
+            .with_refresh_interval(Duration::from_secs(3600));
+
+        loader.refresh_index().await.unwrap();
+        loader.refresh_index().await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            index_request_count(&reqs),
+            3,
+            "within 3600s window → second call should skip"
+        );
+
+        // --- Backdate last_refreshed so interval is expired ---
+        *loader.last_refreshed.write().await = Some(SystemTime::now() - Duration::from_secs(7200));
+        loader.refresh_index().await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            index_request_count(&reqs),
+            4,
+            "expired interval → should fetch"
+        );
+
+        // --- Interval of 0: always fetches ---
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(url)
+            .with_refresh_interval(Duration::from_secs(0));
+
+        loader.refresh_index().await.unwrap();
+        loader.refresh_index().await.unwrap();
+        let reqs = server.received_requests().await.unwrap();
+        assert_eq!(
+            index_request_count(&reqs),
+            6,
+            "interval=0 → should always fetch"
         );
     }
 }
