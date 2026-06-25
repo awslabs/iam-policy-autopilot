@@ -281,7 +281,9 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) sdk_method_call: &'a SdkMethodCall,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema,
+)]
 pub enum Operator {
     StringEquals,
     StringLike,
@@ -295,7 +297,9 @@ impl Operator {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]
+#[derive(
+    Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord, JsonSchema,
+)]
 pub(crate) struct Condition {
     pub operator: Operator,
     pub key: String,

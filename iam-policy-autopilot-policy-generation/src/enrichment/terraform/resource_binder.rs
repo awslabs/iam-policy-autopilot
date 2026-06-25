@@ -13,7 +13,7 @@
 //! - ARN substitution into enriched SDK calls
 //! - Binding explanation generation
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -76,7 +76,7 @@ pub(crate) type ResolvedResourceKey = (String, String);
 
 /// Indexed map of resolved resources keyed by `(service_name, resource_type)`.
 /// Multiple terraform resources can map to the same IAM key (e.g. two S3 buckets).
-pub(crate) type ResolvedResourceMap = HashMap<ResolvedResourceKey, Vec<ResolvedTerraformResource>>;
+pub(crate) type ResolvedResourceMap = BTreeMap<ResolvedResourceKey, Vec<ResolvedTerraformResource>>;
 
 impl ResolvedTerraformResource {
     /// Build from a parsed resource with no enrichment.
