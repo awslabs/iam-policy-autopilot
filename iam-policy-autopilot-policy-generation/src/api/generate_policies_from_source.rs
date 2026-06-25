@@ -9,7 +9,7 @@ use anyhow::{Context, Result};
 use log::debug;
 
 use crate::{
-    api::model::{AwsContext, GeneratePoliciesResult},
+    api::model::{AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder},
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
 };
@@ -36,7 +36,7 @@ pub async fn generate_policies_from_source(
     config: &GenerateFromSourceConfig,
 ) -> Result<GeneratePoliciesResult> {
     if config.source_files.is_empty() {
-        return Ok(GeneratePoliciesResult::builder(vec![]).build());
+        return Ok(GeneratePoliciesResult::empty());
     }
 
     // 1. Extract SDK calls
@@ -47,7 +47,7 @@ pub async fn generate_policies_from_source(
         .context("Failed to extract SDK method calls")?;
 
     if extracted.methods.is_empty() {
-        return Ok(GeneratePoliciesResult::builder(vec![]).build());
+        return Ok(GeneratePoliciesResult::empty());
     }
 
     let sdk = config.language.sdk_type();
@@ -89,5 +89,8 @@ pub async fn generate_policies_from_source(
     // needs the final policies, and including per-action explanations would significantly
     // increase the JSON payload size over the wire. Explanations remain available in the
     // CLI/MCP paths via generate_policies().
-    Ok(GeneratePoliciesResult::builder(merged).build())
+    Ok(GeneratePoliciesResultBuilder::default()
+        .policies(merged)
+        .build()
+        .expect("GeneratePoliciesResultBuilder missing required policies"))
 }

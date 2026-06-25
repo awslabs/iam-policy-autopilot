@@ -37,8 +37,7 @@ use std::fmt::Display;
 use std::path::PathBuf;
 
 pub use enrichment::{Engine as EnrichmentEngine, Explanation};
-pub use extraction::{Engine as ExtractionEngine, ExtractedMethods};
-pub use extraction::{SdkMethodCall, SourceFile};
+pub use extraction::{Engine as ExtractionEngine, ExtractedMethods, SdkMethodCall, SourceFile};
 // Not part of the stable public API — exposed only for integration tests in tests/.
 #[doc(hidden)]
 pub use extraction::ServiceDiscovery;

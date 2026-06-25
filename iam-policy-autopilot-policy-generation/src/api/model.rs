@@ -1,4 +1,5 @@
 //! Defined model for API
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
 use crate::enrichment::terraform::ResourceBindingExplanation;
@@ -50,69 +51,30 @@ pub struct GeneratePolicyConfig {
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Builder)]
 #[serde(rename_all = "PascalCase")]
+#[builder(setter(into, strip_option))]
 pub struct GeneratePoliciesResult {
     /// Generated IAM policies
     pub policies: Vec<PolicyWithMetadata>,
     /// Explanations for why actions were added (if requested)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
     pub explanations: Option<Explanations>,
     /// Explanations for where resource ARNs came from (Terraform bindings)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
 }
 
 impl GeneratePoliciesResult {
-    /// Create a builder for `GeneratePoliciesResult`.
-    ///
-    /// `policies` is the only required field. Optional fields (explanations,
-    /// resource_binding_explanations) default to `None`.
+    /// Create an empty result with no policies or explanations.
     #[must_use]
-    pub fn builder(policies: Vec<PolicyWithMetadata>) -> GeneratePoliciesResultBuilder {
-        GeneratePoliciesResultBuilder {
-            policies,
-            explanations: None,
-            resource_binding_explanations: None,
-        }
-    }
-}
-
-/// Builder for [`GeneratePoliciesResult`].
-///
-/// Created via [`GeneratePoliciesResult::builder()`].
-pub struct GeneratePoliciesResultBuilder {
-    policies: Vec<PolicyWithMetadata>,
-    explanations: Option<Explanations>,
-    resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
-}
-
-impl GeneratePoliciesResultBuilder {
-    /// Set action explanations.
-    #[must_use]
-    pub fn explanations(mut self, explanations: Explanations) -> Self {
-        self.explanations = Some(explanations);
-        self
-    }
-
-    /// Set resource binding explanations (Terraform).
-    #[must_use]
-    pub fn resource_binding_explanations(
-        mut self,
-        explanations: Vec<ResourceBindingExplanation>,
-    ) -> Self {
-        self.resource_binding_explanations = Some(explanations);
-        self
-    }
-
-    /// Build the final result.
-    #[must_use]
-    pub fn build(self) -> GeneratePoliciesResult {
-        GeneratePoliciesResult {
-            policies: self.policies,
-            explanations: self.explanations,
-            resource_binding_explanations: self.resource_binding_explanations,
-        }
+    pub fn empty() -> Self {
+        GeneratePoliciesResultBuilder::default()
+            .policies(vec![])
+            .build()
+            .expect("GeneratePoliciesResultBuilder missing required policies")
     }
 }
 
