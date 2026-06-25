@@ -26,6 +26,7 @@ serde_json.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
+derive_builder.workspace = true
 hcl-rs.workspace = true
 walkdir.workspace = true
 # Tree-sitter / ast-grep dependencies

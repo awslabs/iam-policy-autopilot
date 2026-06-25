@@ -1,7 +1,7 @@
 {
   "name": "iam-policy-autopilot-wasm",
-  "version": "0.2.1",
-  "description": "Browser-ready WebAssembly build of IAM Policy Autopilot — generates least-privilege IAM policies from source code. Requires Chrome 131+ (JSPI). Not yet optimized for production use (large binary).",
+  "version": "0.2.3",
+  "description": "Browser-ready WebAssembly build of IAM Policy Autopilot — generates least-privilege IAM policies from source code. Requires JSPI support (Chrome 137+, Firefox 153+). Not yet optimized for production use (large binary).",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,7 +16,9 @@
     "node": ">=18"
   },
   "browserslist": [
-    "chrome >= 131"
+    "chrome >= 137",
+    "firefox >= 153",
+    "edge >= 137"
   ],
   "keywords": [
     "iam",
