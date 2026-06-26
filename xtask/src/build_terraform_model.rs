@@ -42,11 +42,37 @@ struct ResourceEntry {
     read_without_timeout: Option<String>,
     update_without_timeout: Option<String>,
     delete_without_timeout: Option<String>,
+    /// Transparent-tagging entry points (present only for `@Tags` resources whose
+    /// service package implements the tagging interface). The tag SDK calls live
+    /// in these methods (called by the interceptor outside the CRUD handlers), so
+    /// they must be extracted as entry points too — otherwise tag actions like
+    /// `s3:GetBucketTagging` are missing from the model. The consumer applies the
+    /// CRUD-slot => tag-call rule using these symbols.
+    #[serde(default)]
+    tags: Option<TagsEntry>,
+}
+
+/// Tagging entry points for a resource (mirrors the Go extractor's `tags` block).
+#[derive(Debug, Deserialize)]
+struct TagsEntry {
+    #[serde(default)]
+    list_tags_symbol: Option<String>,
+    #[serde(default)]
+    update_tags_symbol: Option<String>,
 }
 
 impl ResourceEntry {
-    /// All non-empty CRUD handler symbols for this resource.
+    /// All non-empty handler symbols for this resource: the four CRUD handlers
+    /// plus, for `@Tags` resources, the `ListTags`/`UpdateTags` methods. All are
+    /// fed to the call-graph extractor as entry points so their SDK operations
+    /// (including tag ops) become `call_pattern`s in the model.
     fn handler_symbols(&self) -> impl Iterator<Item = &str> {
+        let tag_symbols = self.tags.as_ref().map(|t| {
+            [
+                t.list_tags_symbol.as_deref(),
+                t.update_tags_symbol.as_deref(),
+            ]
+        });
         [
             self.create_without_timeout.as_deref(),
             self.read_without_timeout.as_deref(),
@@ -54,6 +80,7 @@ impl ResourceEntry {
             self.delete_without_timeout.as_deref(),
         ]
         .into_iter()
+        .chain(tag_symbols.into_iter().flatten())
         .flatten()
     }
 }

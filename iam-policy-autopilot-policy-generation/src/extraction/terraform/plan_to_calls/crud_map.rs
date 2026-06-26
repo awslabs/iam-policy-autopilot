@@ -36,6 +36,25 @@ pub(crate) struct ResourceEntry {
     pub(crate) update_without_timeout: Option<String>,
     #[serde(default)]
     pub(crate) delete_without_timeout: Option<String>,
+    /// Transparent-tagging entry points, present only for `@Tags` resources
+    /// whose service package implements the tagging interface. References the
+    /// model's `ListTags`/`UpdateTags` `call_pattern`s (the tag SDK calls are
+    /// invoked by the provider's interceptor, outside the CRUD handlers).
+    #[serde(default)]
+    pub(crate) tags: Option<TagsInfo>,
+}
+
+/// Tagging entry-point symbols for a resource (mirrors the Go extractor's
+/// `tags` block). Strictly references — the SDK operations live in the model,
+/// keyed by these symbols, never duplicated here.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+pub(crate) struct TagsInfo {
+    /// `(*servicePackage).ListTags` symbol (tag read), if a lister exists.
+    #[serde(default)]
+    pub(crate) list_tags_symbol: Option<String>,
+    /// `(*servicePackage).UpdateTags` symbol (tag write), if an updater exists.
+    #[serde(default)]
+    pub(crate) update_tags_symbol: Option<String>,
 }
 
 impl ResourceEntry {
@@ -47,6 +66,16 @@ impl ResourceEntry {
             CrudSlot::Update => self.update_without_timeout.as_deref(),
             CrudSlot::Delete => self.delete_without_timeout.as_deref(),
         }
+    }
+
+    /// The `ListTags` (tag-read) symbol, if this resource is tag-managed.
+    pub(crate) fn list_tags_symbol(&self) -> Option<&str> {
+        self.tags.as_ref()?.list_tags_symbol.as_deref()
+    }
+
+    /// The `UpdateTags` (tag-write) symbol, if this resource is tag-managed.
+    pub(crate) fn update_tags_symbol(&self) -> Option<&str> {
+        self.tags.as_ref()?.update_tags_symbol.as_deref()
     }
 }
 
@@ -135,6 +164,40 @@ mod tests {
     fn unknown_resource_type_is_none() {
         let map = CrudMap::from_slice(SAMPLE.as_bytes()).unwrap();
         assert_eq!(map.get("aws_does_not_exist"), None);
+    }
+
+    #[test]
+    fn untagged_entry_has_no_tag_symbols() {
+        // SAMPLE's entries carry no `tags` block.
+        let map = CrudMap::from_slice(SAMPLE.as_bytes()).unwrap();
+        let entry = map.get("aws_s3_bucket").unwrap();
+        assert_eq!(entry.tags, None);
+        assert_eq!(entry.list_tags_symbol(), None);
+        assert_eq!(entry.update_tags_symbol(), None);
+    }
+
+    #[test]
+    fn tagged_entry_exposes_tag_symbols() {
+        let json = r#"[{
+            "resource_type": "aws_bucket_like",
+            "read_without_timeout": "pkg/internal/service/s3.resourceBucketRead",
+            "tags": {
+                "resource_type": "Bucket",
+                "identifier_attribute": "bucket",
+                "list_tags_symbol": "pkg/internal/service/s3.(*servicePackage).ListTags",
+                "update_tags_symbol": "pkg/internal/service/s3.(*servicePackage).UpdateTags"
+            }
+        }]"#;
+        let map = CrudMap::from_slice(json.as_bytes()).unwrap();
+        let entry = map.get("aws_bucket_like").unwrap();
+        assert_eq!(
+            entry.list_tags_symbol(),
+            Some("pkg/internal/service/s3.(*servicePackage).ListTags")
+        );
+        assert_eq!(
+            entry.update_tags_symbol(),
+            Some("pkg/internal/service/s3.(*servicePackage).UpdateTags")
+        );
     }
 
     #[test]

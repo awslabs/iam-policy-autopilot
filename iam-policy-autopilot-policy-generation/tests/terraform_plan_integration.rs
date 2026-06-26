@@ -105,16 +105,27 @@ fn analyzer_plan(actions: &str) -> String {
 
 #[rstest]
 // Create exercises the Create + Read handlers → CreateAnalyzer + GetAnalyzer
-// (botocore id `accessanalyzer` → IAM prefix `access-analyzer`). The shared
-// enrichment layer additionally expands the create into the tagging action it
-// requires (TagResource) — the same behavior the source-code path gets,
-// confirming the plan path reuses enrichment unchanged.
+// (botocore id `accessanalyzer` → IAM prefix `access-analyzer`). aws_accessanalyzer_analyzer
+// is a tagged resource, so the transparent-tagging rule also contributes the
+// tag-write (TagResource/UntagResource via UpdateTags) and tag-read
+// (ListTagsForResource via ListTags) on Create. This is the same set the
+// provider's interceptor invokes around the Create handler.
 #[case::create(
     analyzer_plan(r#"["create"]"#),
-    &["access-analyzer:CreateAnalyzer", "access-analyzer:GetAnalyzer", "access-analyzer:TagResource"]
+    &[
+        "access-analyzer:CreateAnalyzer",
+        "access-analyzer:GetAnalyzer",
+        "access-analyzer:ListTagsForResource",
+        "access-analyzer:TagResource",
+        "access-analyzer:UntagResource",
+    ]
 )]
-// A no-op change still reads state back on apply → Read slot only.
-#[case::no_op(analyzer_plan(r#"["no-op"]"#), &["access-analyzer:GetAnalyzer"])]
+// A no-op change still reads state back on apply → Read slot, which for a tagged
+// resource also reads tags (ListTagsForResource via the tag interceptor).
+#[case::no_op(
+    analyzer_plan(r#"["no-op"]"#),
+    &["access-analyzer:GetAnalyzer", "access-analyzer:ListTagsForResource"]
+)]
 // An empty plan touches nothing → no actions at all.
 #[case::empty(r#"{ "format_version": "1.2", "resource_changes": [] }"#.to_string(), &[])]
 #[tokio::test]

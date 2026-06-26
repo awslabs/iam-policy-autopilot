@@ -151,6 +151,21 @@ mod tests {
         None,
         "resourceResourcePolicyPut"
     )]
+    // Transparent-tagging entry points: the service package's ListTags/UpdateTags
+    // methods. Same `(*Type).Method` shape as the sqs case, so the receiver
+    // splits to class `servicePackage` + the method name.
+    #[case(
+        "s3.(*servicePackage).ListTags",
+        "s3",
+        Some("servicePackage"),
+        "ListTags"
+    )]
+    #[case(
+        "lambda.(*servicePackage).UpdateTags",
+        "lambda",
+        Some("servicePackage"),
+        "UpdateTags"
+    )]
     fn handler_key_matches_model_join_triple(
         #[case] suffix: &str,
         #[case] module_path: &str,

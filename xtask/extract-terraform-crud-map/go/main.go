@@ -10,9 +10,11 @@ import (
 	"sort"
 	"unsafe"
 
-	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"github.com/hashicorp/terraform-provider-aws/internal/conns"
 	"github.com/hashicorp/terraform-provider-aws/internal/provider/sdkv2"
+	tftags "github.com/hashicorp/terraform-provider-aws/internal/tags"
+	inttypes "github.com/hashicorp/terraform-provider-aws/internal/types"
+	tfunique "github.com/hashicorp/terraform-provider-aws/internal/unique"
 )
 
 // ResourceInfo is the minimal per-resource record consumed by the unified
@@ -24,11 +26,86 @@ import (
 // were dropped as unused (they made up ~66% of the output). Add fields back
 // here and in main() if a future consumer needs them.
 type ResourceInfo struct {
-	ResourceType         string `json:"resource_type"`
-	CreateWithoutTimeout string `json:"create_without_timeout,omitempty"`
-	ReadWithoutTimeout   string `json:"read_without_timeout,omitempty"`
-	UpdateWithoutTimeout string `json:"update_without_timeout,omitempty"`
-	DeleteWithoutTimeout string `json:"delete_without_timeout,omitempty"`
+	ResourceType         string    `json:"resource_type"`
+	CreateWithoutTimeout string    `json:"create_without_timeout,omitempty"`
+	ReadWithoutTimeout   string    `json:"read_without_timeout,omitempty"`
+	UpdateWithoutTimeout string    `json:"update_without_timeout,omitempty"`
+	DeleteWithoutTimeout string    `json:"delete_without_timeout,omitempty"`
+	Tags                 *TagsInfo `json:"tags,omitempty"`
+}
+
+// TagsInfo records the transparent-tagging entry points for a resource that
+// carries the `@Tags` annotation. The provider's tagging interceptor calls the
+// service package's ListTags (on Read/Create/Update) and UpdateTags (on
+// Create/Update) OUTSIDE the CRUD handler bodies, so a call graph rooted at the
+// CRUD handlers never reaches the tag SDK calls. Emitting these symbols lets the
+// model build root extraction at them too, and the consumer apply the
+// CRUD-slot => tag-call rule.
+//
+// Present only when the resource is tagged AND its service package actually
+// implements the ListTags/UpdateTags interface (otherwise the framework no-ops,
+// so there is no tag SDK call to attribute).
+type TagsInfo struct {
+	// ResourceType is the @Tags resourceType (e.g. "Bucket"). For services whose
+	// ListTags switches on resourceType, this selects the arm.
+	ResourceType string `json:"resource_type,omitempty"`
+	// IdentifierAttribute is the @Tags identifierAttribute (e.g. "bucket").
+	IdentifierAttribute string `json:"identifier_attribute,omitempty"`
+	// ListTagsSymbol is the (*servicePackage).ListTags method symbol (tag read),
+	// empty if the service package does not implement a lister.
+	ListTagsSymbol string `json:"list_tags_symbol,omitempty"`
+	// UpdateTagsSymbol is the (*servicePackage).UpdateTags method symbol (tag
+	// write), empty if the service package does not implement an updater.
+	UpdateTagsSymbol string `json:"update_tags_symbol,omitempty"`
+}
+
+// tagsInfoFor builds the TagsInfo for an SDK resource, or returns nil when the
+// resource is untagged or its service package implements no tagging methods.
+func tagsInfoFor(sp conns.ServicePackage, res *inttypes.ServicePackageSDKResource) *TagsInfo {
+	if tfunique.IsHandleNil(res.Tags) {
+		return nil // not a @Tags resource
+	}
+	tagsMeta := res.Tags.Value()
+
+	info := &TagsInfo{
+		ResourceType:        tagsMeta.ResourceType,
+		IdentifierAttribute: tagsMeta.IdentifierAttribute,
+	}
+
+	// The interceptor probes the service package for either the plain or the
+	// resourceType-aware lister/updater interface; if neither is implemented it
+	// no-ops, so we only record a symbol when a method is actually present.
+	switch sp.(type) {
+	case tftags.ServiceTagLister, tftags.ResourceTypeTagLister:
+		info.ListTagsSymbol = methodSymbol(sp, "ListTags")
+	}
+	switch sp.(type) {
+	case tftags.ServiceTagUpdater, tftags.ResourceTypeTagUpdater:
+		info.UpdateTagsSymbol = methodSymbol(sp, "UpdateTags")
+	}
+
+	// No tagging methods at all => framework no-ops => nothing to attribute.
+	if info.ListTagsSymbol == "" && info.UpdateTagsSymbol == "" {
+		return nil
+	}
+	return info
+}
+
+// methodSymbol returns the fully-qualified symbol of a method on the concrete
+// type behind a ServicePackage (e.g.
+// ".../internal/service/s3.(*servicePackage).ListTags"), using the same
+// runtime.FuncForPC mechanism as the CRUD handler symbols.
+//
+// NOTE: we resolve via the TYPE's Method.Func, not value.MethodByName().Pointer().
+// A bound method value's Pointer() returns reflect's internal methodValueCall
+// trampoline, not the underlying method, so it cannot be symbolized. The
+// type-level Method.Func is the real (unbound) method and symbolizes correctly.
+func methodSymbol(sp conns.ServicePackage, method string) string {
+	m, ok := reflect.TypeOf(sp).MethodByName(method)
+	if !ok {
+		return ""
+	}
+	return runtime.FuncForPC(m.Func.Pointer()).Name()
 }
 
 // getServicePackagesViaReflection gets service packages by creating a provider
@@ -139,13 +216,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Collect all resources from service packages
-	resourceMap := make(map[string]*schema.Resource)
+	// Collect all resources from service packages. We keep the owning service
+	// package alongside the registration so we can resolve the tagging methods
+	// (ListTags/UpdateTags) on the concrete *servicePackage.
+	type sdkResource struct {
+		sp  conns.ServicePackage
+		res *inttypes.ServicePackageSDKResource
+	}
+	resourceMap := make(map[string]sdkResource)
 
 	for _, sp := range servicePackages {
 		for _, res := range sp.SDKResources(ctx) {
-			// Call the factory function to get the unwrapped resource
-			resourceMap[res.TypeName] = res.Factory()
+			resourceMap[res.TypeName] = sdkResource{sp: sp, res: res}
 		}
 	}
 
@@ -159,7 +241,9 @@ func main() {
 	sort.Strings(resourceNames)
 
 	for _, resourceName := range resourceNames {
-		resource := resourceMap[resourceName]
+		entry := resourceMap[resourceName]
+		// Call the factory function to get the unwrapped resource (CRUD handlers).
+		resource := entry.res.Factory()
 
 		// Only the *_without_timeout handlers are populated by SDKv2 resources.
 		info := ResourceInfo{
@@ -168,6 +252,7 @@ func main() {
 			ReadWithoutTimeout:   getFunctionName(resource.ReadWithoutTimeout),
 			UpdateWithoutTimeout: getFunctionName(resource.UpdateWithoutTimeout),
 			DeleteWithoutTimeout: getFunctionName(resource.DeleteWithoutTimeout),
+			Tags:                 tagsInfoFor(entry.sp, entry.res),
 		}
 
 		resources = append(resources, info)
