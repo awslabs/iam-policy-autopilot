@@ -1,11 +1,14 @@
 //! The Terraform CRUD map: `resource_type` → its four CRUD handler symbols.
 //!
 //! Parses the committed `terraform-crud-map.json` into a lookup keyed by
-//! resource type. Each entry carries the four `*_without_timeout` handler
-//! symbols (full Go import paths, e.g.
-//! `github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketCreate`).
+//! resource type. Each entry carries the four CRUD handler symbols
+//! (`create`/`read`/`update`/`delete`, full Go import paths) — for SDKv2
+//! resources the `*_without_timeout` handler funcs (e.g.
+//! `.../internal/service/s3.resourceBucketCreate`), for Plugin Framework
+//! resources the `Create`/`Read`/`Update`/`Delete` methods (e.g.
+//! `.../internal/service/appsync.(*apiResource).Create`).
 //! A slot is `None` when the provider has no handler for it — most commonly
-//! `update` on immutable resources (~219 of ~1240 resource types).
+//! `update` on immutable resources (~219 of ~1600 resource types).
 
 use std::collections::HashMap;
 
@@ -29,13 +32,13 @@ pub(crate) enum CrudSlot {
 pub(crate) struct ResourceEntry {
     pub(crate) resource_type: String,
     #[serde(default)]
-    pub(crate) create_without_timeout: Option<String>,
+    pub(crate) create: Option<String>,
     #[serde(default)]
-    pub(crate) read_without_timeout: Option<String>,
+    pub(crate) read: Option<String>,
     #[serde(default)]
-    pub(crate) update_without_timeout: Option<String>,
+    pub(crate) update: Option<String>,
     #[serde(default)]
-    pub(crate) delete_without_timeout: Option<String>,
+    pub(crate) delete: Option<String>,
     /// Transparent-tagging entry points, present only for `@Tags` resources
     /// whose service package implements the tagging interface. References the
     /// model's `ListTags`/`UpdateTags` `call_pattern`s (the tag SDK calls are
@@ -61,10 +64,10 @@ impl ResourceEntry {
     /// The handler symbol for a given CRUD slot, if the provider defines one.
     pub(crate) fn handler(&self, slot: CrudSlot) -> Option<&str> {
         match slot {
-            CrudSlot::Create => self.create_without_timeout.as_deref(),
-            CrudSlot::Read => self.read_without_timeout.as_deref(),
-            CrudSlot::Update => self.update_without_timeout.as_deref(),
-            CrudSlot::Delete => self.delete_without_timeout.as_deref(),
+            CrudSlot::Create => self.create.as_deref(),
+            CrudSlot::Read => self.read.as_deref(),
+            CrudSlot::Update => self.update.as_deref(),
+            CrudSlot::Delete => self.delete.as_deref(),
         }
     }
 
@@ -122,16 +125,16 @@ mod tests {
     const SAMPLE: &str = r#"[
         {
             "resource_type": "aws_s3_bucket",
-            "create_without_timeout": "pkg/internal/service/s3.resourceBucketCreate",
-            "read_without_timeout": "pkg/internal/service/s3.resourceBucketRead",
-            "update_without_timeout": "pkg/internal/service/s3.resourceBucketUpdate",
-            "delete_without_timeout": "pkg/internal/service/s3.resourceBucketDelete"
+            "create": "pkg/internal/service/s3.resourceBucketCreate",
+            "read": "pkg/internal/service/s3.resourceBucketRead",
+            "update": "pkg/internal/service/s3.resourceBucketUpdate",
+            "delete": "pkg/internal/service/s3.resourceBucketDelete"
         },
         {
             "resource_type": "aws_immutable_thing",
-            "create_without_timeout": "pkg/internal/service/x.resourceThingCreate",
-            "read_without_timeout": "pkg/internal/service/x.resourceThingRead",
-            "delete_without_timeout": "pkg/internal/service/x.resourceThingDelete"
+            "create": "pkg/internal/service/x.resourceThingCreate",
+            "read": "pkg/internal/service/x.resourceThingRead",
+            "delete": "pkg/internal/service/x.resourceThingDelete"
         }
     ]"#;
 
@@ -180,7 +183,7 @@ mod tests {
     fn tagged_entry_exposes_tag_symbols() {
         let json = r#"[{
             "resource_type": "aws_bucket_like",
-            "read_without_timeout": "pkg/internal/service/s3.resourceBucketRead",
+            "read": "pkg/internal/service/s3.resourceBucketRead",
             "tags": {
                 "resource_type": "Bucket",
                 "identifier_attribute": "bucket",

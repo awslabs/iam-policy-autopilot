@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"runtime"
 	"sort"
+	"unique"
 	"unsafe"
 
 	"github.com/hashicorp/terraform-provider-aws/internal/conns"
@@ -21,17 +22,20 @@ import (
 // model build: the resource type (the plan join key) and its CRUD handler
 // symbols (resolved to pkg.func entry points for unified-model lookup).
 //
-// Only the *_without_timeout handlers are populated by SDKv2 resources; the
-// legacy *_context / bare CRUD variants, schema, timeouts, and other metadata
-// were dropped as unused (they made up ~66% of the output). Add fields back
-// here and in main() if a future consumer needs them.
+// The four CRUD fields are populated for BOTH resource kinds:
+//   - SDKv2 resources: the *_without_timeout handler func pointers.
+//   - Plugin Framework resources: the Create/Read/Update/Delete methods on the
+//     resource struct.
+// The JSON keys are framework-agnostic (`create`, not `create_without_timeout`)
+// since they just carry a handler symbol regardless of how the provider declares
+// it. Schema, timeouts, and other metadata were dropped as unused.
 type ResourceInfo struct {
-	ResourceType         string    `json:"resource_type"`
-	CreateWithoutTimeout string    `json:"create_without_timeout,omitempty"`
-	ReadWithoutTimeout   string    `json:"read_without_timeout,omitempty"`
-	UpdateWithoutTimeout string    `json:"update_without_timeout,omitempty"`
-	DeleteWithoutTimeout string    `json:"delete_without_timeout,omitempty"`
-	Tags                 *TagsInfo `json:"tags,omitempty"`
+	ResourceType string    `json:"resource_type"`
+	Create       string    `json:"create,omitempty"`
+	Read         string    `json:"read,omitempty"`
+	Update       string    `json:"update,omitempty"`
+	Delete       string    `json:"delete,omitempty"`
+	Tags         *TagsInfo `json:"tags,omitempty"`
 }
 
 // TagsInfo records the transparent-tagging entry points for a resource that
@@ -59,13 +63,17 @@ type TagsInfo struct {
 	UpdateTagsSymbol string `json:"update_tags_symbol,omitempty"`
 }
 
-// tagsInfoFor builds the TagsInfo for an SDK resource, or returns nil when the
-// resource is untagged or its service package implements no tagging methods.
-func tagsInfoFor(sp conns.ServicePackage, res *inttypes.ServicePackageSDKResource) *TagsInfo {
-	if tfunique.IsHandleNil(res.Tags) {
+// tagsInfoFor builds the TagsInfo for a resource's `@Tags` handle, or returns
+// nil when the resource is untagged or its service package implements no tagging
+// methods. Both SDKv2 and Plugin Framework resources carry the same
+// `unique.Handle[ServicePackageResourceTags]` and route tagging through the same
+// servicePackage.ListTags/UpdateTags (via interceptors.HTags), so one helper
+// serves both — the caller passes the resource's Tags handle.
+func tagsInfoFor(sp conns.ServicePackage, tags unique.Handle[inttypes.ServicePackageResourceTags]) *TagsInfo {
+	if tfunique.IsHandleNil(tags) {
 		return nil // not a @Tags resource
 	}
-	tagsMeta := res.Tags.Value()
+	tagsMeta := tags.Value()
 
 	info := &TagsInfo{
 		ResourceType:        tagsMeta.ResourceType,
@@ -75,13 +83,14 @@ func tagsInfoFor(sp conns.ServicePackage, res *inttypes.ServicePackageSDKResourc
 	// The interceptor probes the service package for either the plain or the
 	// resourceType-aware lister/updater interface; if neither is implemented it
 	// no-ops, so we only record a symbol when a method is actually present.
+	spType := reflect.TypeOf(sp)
 	switch sp.(type) {
 	case tftags.ServiceTagLister, tftags.ResourceTypeTagLister:
-		info.ListTagsSymbol = methodSymbol(sp, "ListTags")
+		info.ListTagsSymbol = methodSymbol(spType, "ListTags")
 	}
 	switch sp.(type) {
 	case tftags.ServiceTagUpdater, tftags.ResourceTypeTagUpdater:
-		info.UpdateTagsSymbol = methodSymbol(sp, "UpdateTags")
+		info.UpdateTagsSymbol = methodSymbol(spType, "UpdateTags")
 	}
 
 	// No tagging methods at all => framework no-ops => nothing to attribute.
@@ -91,17 +100,50 @@ func tagsInfoFor(sp conns.ServicePackage, res *inttypes.ServicePackageSDKResourc
 	return info
 }
 
-// methodSymbol returns the fully-qualified symbol of a method on the concrete
-// type behind a ServicePackage (e.g.
-// ".../internal/service/s3.(*servicePackage).ListTags"), using the same
-// runtime.FuncForPC mechanism as the CRUD handler symbols.
+// frameworkMethodSymbol returns the symbol for a Plugin Framework resource's
+// CRUD method, or "" when that slot is a PROMOTED method (inherited via struct
+// embedding) rather than one the resource declares itself.
+//
+// Why skip promoted methods: a resource satisfies the resource.Resource
+// interface by either defining a CRUD method or embedding a framework base that
+// provides one (e.g. ResourceWithModel embeds withNoOpUpdate[T], WithNoOpDelete
+// provides a no-op Delete). Those promoted methods make no SDK calls, and Go
+// attributes them to the EMBEDDING resource type, so the symbol we'd emit
+// (`pkg.(*fooResource).Update`) has no body in the resource's own package — the
+// per-service-package call-graph builder cannot resolve it and aborts. Since the
+// method is a no-op anyway, the correct result is an empty slot.
+//
+// Detection: a promoted method's compiler-generated wrapper reports its source
+// location as "<autogenerated>", whereas a method the resource declares itself
+// reports its real source file. This is robust to nesting / generics / new
+// framework bases without a maintained allowlist — and it preserves loud
+// failure: a method the resource genuinely declares is NOT <autogenerated>, so
+// if such a symbol is ever unresolvable the build still aborts rather than
+// silently dropping a real handler.
+func frameworkMethodSymbol(rt reflect.Type, method string) string {
+	m, ok := rt.MethodByName(method)
+	if !ok {
+		return "" // resource does not implement this CRUD method at all
+	}
+	fn := runtime.FuncForPC(m.Func.Pointer())
+	if file, _ := fn.FileLine(fn.Entry()); file == "<autogenerated>" {
+		return "" // promoted from an embedded base (no-op); not the resource's own
+	}
+	return fn.Name()
+}
+
+// methodSymbol returns the fully-qualified symbol of a method on a concrete type
+// (e.g. ".../internal/service/s3.(*servicePackage).ListTags" or
+// ".../internal/service/appsync.(*apiResource).Create"), using the same
+// runtime.FuncForPC mechanism as the SDKv2 CRUD handler symbols. Returns "" when
+// the type has no such method.
 //
 // NOTE: we resolve via the TYPE's Method.Func, not value.MethodByName().Pointer().
 // A bound method value's Pointer() returns reflect's internal methodValueCall
 // trampoline, not the underlying method, so it cannot be symbolized. The
 // type-level Method.Func is the real (unbound) method and symbolizes correctly.
-func methodSymbol(sp conns.ServicePackage, method string) string {
-	m, ok := reflect.TypeOf(sp).MethodByName(method)
+func methodSymbol(t reflect.Type, method string) string {
+	m, ok := t.MethodByName(method)
 	if !ok {
 		return ""
 	}
@@ -216,18 +258,45 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Collect all resources from service packages. We keep the owning service
-	// package alongside the registration so we can resolve the tagging methods
-	// (ListTags/UpdateTags) on the concrete *servicePackage.
-	type sdkResource struct {
-		sp  conns.ServicePackage
-		res *inttypes.ServicePackageSDKResource
-	}
-	resourceMap := make(map[string]sdkResource)
+	// Collect every resource (SDKv2 + Plugin Framework) into one map keyed by
+	// resource type, so the two frameworks are unified in the output. Each entry
+	// resolves to the same ResourceInfo shape.
+	resourceMap := make(map[string]ResourceInfo)
 
 	for _, sp := range servicePackages {
+		// --- SDKv2 resources: CRUD handlers are *_without_timeout func fields ---
 		for _, res := range sp.SDKResources(ctx) {
-			resourceMap[res.TypeName] = sdkResource{sp: sp, res: res}
+			r := res.Factory()
+			resourceMap[res.TypeName] = ResourceInfo{
+				ResourceType: res.TypeName,
+				Create:       getFunctionName(r.CreateWithoutTimeout),
+				Read:         getFunctionName(r.ReadWithoutTimeout),
+				Update:       getFunctionName(r.UpdateWithoutTimeout),
+				Delete:       getFunctionName(r.DeleteWithoutTimeout),
+				Tags:         tagsInfoFor(sp, res.Tags),
+			}
+		}
+
+		// --- Plugin Framework resources: CRUD are Create/Read/Update/Delete
+		// methods on the resource struct. Symbolize them via reflection on the
+		// instantiated resource's type (same runtime.FuncForPC mechanism). Tagging
+		// uses the SAME servicePackage.ListTags/UpdateTags as SDKv2, so tagsInfoFor
+		// is reused unchanged. ---
+		for _, res := range sp.FrameworkResources(ctx) {
+			instance, err := res.Factory(ctx)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: framework factory for %s failed: %v\n", res.TypeName, err)
+				continue
+			}
+			rt := reflect.TypeOf(instance)
+			resourceMap[res.TypeName] = ResourceInfo{
+				ResourceType: res.TypeName,
+				Create:       frameworkMethodSymbol(rt, "Create"),
+				Read:         frameworkMethodSymbol(rt, "Read"),
+				Update:       frameworkMethodSymbol(rt, "Update"),
+				Delete:       frameworkMethodSymbol(rt, "Delete"),
+				Tags:         tagsInfoFor(sp, res.Tags),
+			}
 		}
 	}
 
@@ -241,21 +310,7 @@ func main() {
 	sort.Strings(resourceNames)
 
 	for _, resourceName := range resourceNames {
-		entry := resourceMap[resourceName]
-		// Call the factory function to get the unwrapped resource (CRUD handlers).
-		resource := entry.res.Factory()
-
-		// Only the *_without_timeout handlers are populated by SDKv2 resources.
-		info := ResourceInfo{
-			ResourceType:         resourceName,
-			CreateWithoutTimeout: getFunctionName(resource.CreateWithoutTimeout),
-			ReadWithoutTimeout:   getFunctionName(resource.ReadWithoutTimeout),
-			UpdateWithoutTimeout: getFunctionName(resource.UpdateWithoutTimeout),
-			DeleteWithoutTimeout: getFunctionName(resource.DeleteWithoutTimeout),
-			Tags:                 tagsInfoFor(entry.sp, entry.res),
-		}
-
-		resources = append(resources, info)
+		resources = append(resources, resourceMap[resourceName])
 		fmt.Printf("  Extracted: %s\n", resourceName)
 	}
 

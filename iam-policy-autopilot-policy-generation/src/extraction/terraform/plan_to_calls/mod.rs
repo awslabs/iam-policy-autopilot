@@ -9,8 +9,9 @@
 //! The mapping is driven by two committed, embedded artifacts (under
 //! `resources/config/terraform/`):
 //!
-//! - **`terraform-crud-map.json`** — `resource_type` → its four
-//!   `*_without_timeout` CRUD handler symbols (full Go import paths).
+//! - **`terraform-crud-map.json`** — `resource_type` → its four CRUD handler
+//!   symbols (`create`/`read`/`update`/`delete`, full Go import paths; SDKv2
+//!   handler funcs or Plugin Framework `(*Resource).Create` methods).
 //! - **`terraform-model.json`** — an [`ExternalLibraryModel`] whose
 //!   `call_patterns` map a handler `(module_path, class_name, function_name)`
 //!   to the AWS SDK operations it invokes.

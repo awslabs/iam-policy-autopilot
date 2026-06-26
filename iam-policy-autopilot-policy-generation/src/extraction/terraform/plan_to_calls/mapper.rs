@@ -132,8 +132,8 @@ mod tests {
         format!(
             r#"[{{
                 "resource_type": "aws_accessanalyzer_analyzer",
-                "create_without_timeout": "{PFX}{create}",
-                "read_without_timeout": "{PFX}{read}"
+                "create": "{PFX}{create}",
+                "read": "{PFX}{read}"
             }}]"#
         )
     }
@@ -283,9 +283,9 @@ mod tests {
     /// their own, plus ListTags/UpdateTags tag symbols.
     const TAGGED_CRUD_JSON: &str = r#"[{
         "resource_type": "aws_bucket_like",
-        "create_without_timeout": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketCreate",
-        "read_without_timeout": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketRead",
-        "delete_without_timeout": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketDelete",
+        "create": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketCreate",
+        "read": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketRead",
+        "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/s3.resourceBucketDelete",
         "tags": {
             "resource_type": "Bucket",
             "identifier_attribute": "bucket",

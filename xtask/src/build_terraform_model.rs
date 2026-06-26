@@ -38,10 +38,10 @@ const SERVICE_PATH_MARKER: &str = "/internal/service/";
 struct ResourceEntry {
     #[allow(dead_code)]
     resource_type: String,
-    create_without_timeout: Option<String>,
-    read_without_timeout: Option<String>,
-    update_without_timeout: Option<String>,
-    delete_without_timeout: Option<String>,
+    create: Option<String>,
+    read: Option<String>,
+    update: Option<String>,
+    delete: Option<String>,
     /// Transparent-tagging entry points (present only for `@Tags` resources whose
     /// service package implements the tagging interface). The tag SDK calls live
     /// in these methods (called by the interceptor outside the CRUD handlers), so
@@ -74,10 +74,10 @@ impl ResourceEntry {
             ]
         });
         [
-            self.create_without_timeout.as_deref(),
-            self.read_without_timeout.as_deref(),
-            self.update_without_timeout.as_deref(),
-            self.delete_without_timeout.as_deref(),
+            self.create.as_deref(),
+            self.read.as_deref(),
+            self.update.as_deref(),
+            self.delete.as_deref(),
         ]
         .into_iter()
         .chain(tag_symbols.into_iter().flatten())
@@ -360,14 +360,24 @@ pub async fn run(opts: BuildOptions) -> Result<()> {
         .await
         .context("Aborting unified-model build: a package failed")?;
 
-    // Union all packages' call patterns into one model, sorted by
-    // (module_path, function_name) for stable, diffable output.
-    let mut patterns: BTreeMap<(String, String), _> = BTreeMap::new();
+    // Union all packages' call patterns into one model, keyed by
+    // (module_path, class_name, function_name) — the same triple the consumer
+    // joins on (see plan_to_calls go_symbol::HandlerKey). class_name is essential
+    // for Plugin Framework resources, whose CRUD methods are all named
+    // Create/Read/Update/Delete and are distinguished only by their receiver type
+    // (e.g. amp `(*workspaceConfigurationResource).Create` vs
+    // `(*scraperResource).Create`) — keying on (module_path, function_name) alone
+    // would collide them. Sorted for stable, diffable output.
+    let mut patterns: BTreeMap<(String, Option<String>, String), _> = BTreeMap::new();
     for model in models {
         for pattern in model.call_patterns {
-            let key = (pattern.module_path.clone(), pattern.function_name.clone());
+            let key = (
+                pattern.module_path.clone(),
+                pattern.class_name.clone(),
+                pattern.function_name.clone(),
+            );
             // Distinct handlers => distinct keys; a duplicate key would mean two
-            // packages claimed the same (pkg, func), which the uniqueness
+            // resources claimed the same (pkg, class, func), which the uniqueness
             // analysis says cannot happen — treat it as a hard error.
             if patterns.insert(key.clone(), pattern).is_some() {
                 anyhow::bail!("Duplicate call pattern for {key:?} — model key is not unique");
