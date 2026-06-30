@@ -255,9 +255,10 @@ impl ResourceMatcher {
                                 operation_to_authorized_action.name
                             );
                             for action in &operation_to_authorized_action.authorized_actions {
+                                let action_name = action.name.clone();
                                 let enriched_resources = self
                                     .find_resources_for_action_in_service_reference(
-                                        &action.name,
+                                        &action_name,
                                         &service_reference,
                                     )?;
                                 let enriched_resources =
@@ -280,7 +281,7 @@ impl ResourceMatcher {
                                     reasons: vec![Reason::new(ops)],
                                 };
                                 let enriched_action = Action::new(
-                                    action.name.clone(),
+                                    action_name.clone(),
                                     enriched_resources,
                                     conditions,
                                     explanation,

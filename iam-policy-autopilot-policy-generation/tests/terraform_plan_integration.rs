@@ -30,13 +30,14 @@ fn temp_json(contents: &str) -> NamedTempFile {
     file
 }
 
-/// Build a plan-only config. The plan is passed as a positional input file (no
+/// Build a plan-only config. Plans are passed as positional input files (no
 /// dedicated flag) and auto-detected by content; no ARN binding inputs are
-/// provided, so resources fall back to wildcards.
-fn plan_only_config(plan_path: std::path::PathBuf) -> GeneratePolicyConfig {
+/// provided, so resources fall back to wildcards. Accepts one or more plans
+/// (multiple plans are unioned).
+fn plan_only_config(plan_paths: Vec<std::path::PathBuf>) -> GeneratePolicyConfig {
     GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
-            source_files: vec![plan_path],
+            source_files: plan_paths,
             language: None,
             service_hints: None,
         },
@@ -103,6 +104,20 @@ fn analyzer_plan(actions: &str) -> String {
     )
 }
 
+/// A standalone SQS-queue create plan, for the multi-plan union case. SQS is
+/// chosen for a small, stable action set (5 actions) so the unioned set can be
+/// asserted exactly.
+fn sqs_plan() -> String {
+    r#"{
+        "format_version": "1.2",
+        "resource_changes": [
+            { "address": "aws_sqs_queue.q", "type": "aws_sqs_queue", "mode": "managed",
+              "change": { "actions": ["create"], "after": { "name": "q" } } }
+        ]
+    }"#
+    .to_string()
+}
+
 #[rstest]
 // Create exercises the Create + Read handlers → CreateAnalyzer + GetAnalyzer
 // (botocore id `accessanalyzer` → IAM prefix `access-analyzer`). aws_accessanalyzer_analyzer
@@ -111,7 +126,7 @@ fn analyzer_plan(actions: &str) -> String {
 // (ListTagsForResource via ListTags) on Create. This is the same set the
 // provider's interceptor invokes around the Create handler.
 #[case::create(
-    analyzer_plan(r#"["create"]"#),
+    vec![analyzer_plan(r#"["create"]"#)],
     &[
         "access-analyzer:CreateAnalyzer",
         "access-analyzer:GetAnalyzer",
@@ -123,18 +138,39 @@ fn analyzer_plan(actions: &str) -> String {
 // A no-op change still reads state back on apply → Read slot, which for a tagged
 // resource also reads tags (ListTagsForResource via the tag interceptor).
 #[case::no_op(
-    analyzer_plan(r#"["no-op"]"#),
+    vec![analyzer_plan(r#"["no-op"]"#)],
     &["access-analyzer:GetAnalyzer", "access-analyzer:ListTagsForResource"]
 )]
 // An empty plan touches nothing → no actions at all.
-#[case::empty(r#"{ "format_version": "1.2", "resource_changes": [] }"#.to_string(), &[])]
+#[case::empty(vec![r#"{ "format_version": "1.2", "resource_changes": [] }"#.to_string()], &[])]
+// Multiple plans are unioned: the policy is exactly the union of the analyzer
+// plan's actions and the SQS plan's actions (deduped).
+#[case::multiple_plans_unioned(
+    vec![analyzer_plan(r#"["create"]"#), sqs_plan()],
+    &[
+        "access-analyzer:CreateAnalyzer",
+        "access-analyzer:GetAnalyzer",
+        "access-analyzer:ListTagsForResource",
+        "access-analyzer:TagResource",
+        "access-analyzer:UntagResource",
+        "sqs:CreateQueue",
+        "sqs:GetQueueAttributes",
+        "sqs:ListQueueTags",
+        "sqs:TagQueue",
+        "sqs:UntagQueue",
+    ]
+)]
 #[tokio::test]
-async fn plan_emits_expected_actions(#[case] plan: String, #[case] expected: &[&str]) {
-    let plan_file = temp_json(&plan);
-    let config = plan_only_config(plan_file.path().to_path_buf());
+async fn plan_emits_expected_actions(#[case] plans: Vec<String>, #[case] expected: &[&str]) {
+    // Hold the temp files for the duration; collect their paths.
+    let files: Vec<_> = plans.iter().map(|p| temp_json(p)).collect();
+    let paths = files.iter().map(|f| f.path().to_path_buf()).collect();
+    let config = plan_only_config(paths);
 
     let result = generate_policies(&config).await.expect("generate policies");
 
+    // For the union case we assert the exact set too — it is the union of the
+    // per-plan action sets, deduped.
     assert_eq!(
         actions(&result),
         expected

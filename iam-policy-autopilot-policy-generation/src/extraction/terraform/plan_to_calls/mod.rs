@@ -24,7 +24,7 @@
 //!   ─► SdkMethodCall { name: operation, possible_services: [service] }
 //! ```
 
-use std::path::Path;
+use std::path::PathBuf;
 
 use anyhow::Result;
 use rust_embed::RustEmbed;
@@ -36,21 +36,31 @@ pub(crate) mod model_index;
 pub(crate) mod plan_reader;
 
 pub(crate) use mapper::MappedPlan;
-pub(crate) use plan_reader::PlannedResource;
+pub(crate) use plan_reader::{file_looks_like_plan, PlannedResource};
 
-/// Derive SDK method calls from a `terraform show -json` plan file.
+/// Derive SDK method calls from one or more `terraform show -json` plan files.
 ///
-/// Loads the embedded CRUD map and model, reads the plan, and maps each
-/// managed resource's exercised CRUD slots to the SDK operations its handlers
-/// invoke. The returned [`MappedPlan`] carries the calls plus any non-fatal
-/// warnings (unmodelable resource types, handlers absent from the model).
+/// Loads the embedded CRUD map and model once, reads every plan, **unions**
+/// their resource changes, and maps each managed resource's exercised CRUD
+/// slots to the SDK operations its handlers invoke. Multiple plans are
+/// additive: the mapper dedups identical `(service, operation)` calls, so a
+/// resource appearing in more than one plan contributes its actions once.
 ///
-/// The returned [`PlannedResource`] list is also provided so callers can use
-/// the `name_prefix` signal for ARN scoping (§5.1).
-pub(crate) fn plan_to_sdk_calls(plan_path: &Path) -> Result<(MappedPlan, Vec<PlannedResource>)> {
+/// The returned [`MappedPlan`] carries the calls plus any non-fatal warnings
+/// (unmodelable resource types, handlers absent from the model). The combined
+/// [`PlannedResource`] list is also provided so callers can use the
+/// `name_prefix` signal for ARN scoping (§5.1).
+pub(crate) fn plan_to_sdk_calls(
+    plan_paths: &[PathBuf],
+) -> Result<(MappedPlan, Vec<PlannedResource>)> {
     let crud_map = crud_map::CrudMap::load()?;
     let model = model_index::ModelIndex::load()?;
-    let resources = plan_reader::read_plan(plan_path)?;
+
+    let mut resources = Vec::new();
+    for plan_path in plan_paths {
+        resources.extend(plan_reader::read_plan(plan_path)?);
+    }
+
     let mapped = mapper::map_plan(&resources, &crud_map, &model);
     Ok((mapped, resources))
 }

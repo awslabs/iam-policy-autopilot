@@ -18,4 +18,5 @@ pub use get_submodule_version::{
     get_boto3_version_info, get_botocore_version_info, get_terraform_model_version,
 };
 pub(crate) mod common;
+pub(crate) mod input_kind;
 pub mod model;
