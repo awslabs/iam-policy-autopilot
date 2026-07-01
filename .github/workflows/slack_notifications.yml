@@ -9,6 +9,9 @@ on:
   pull_request_review:
   discussion:
   discussion_comment:
+  workflow_run:
+    workflows: ["Nightly Integration Tests"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -16,6 +19,7 @@ permissions:
 jobs:
   notify:
     runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'failure' }}
     permissions:
       contents: read
     steps:
@@ -81,6 +85,13 @@ jobs:
                 title = context.payload.discussion.title;
                 number = context.payload.discussion.number;
                 break;
+              case 'workflow_run':
+                emoji = '🚨';
+                label = 'Nightly Tests Failed';
+                url = context.payload.workflow_run.html_url;
+                title = context.payload.workflow_run.name;
+                number = context.payload.workflow_run.run_number;
+                break;
               default:
                 emoji = '📢';
                 label = 'Event';
@@ -98,7 +109,7 @@ jobs:
             core.setOutput('title', safeTitle);
             core.setOutput('number', String(number));
             core.setOutput('sender', sender);
-            core.setOutput('action', action);
+            core.setOutput('action', action || 'completed');
             core.setOutput('repo', repo);
 
       - name: Resolve mentions
@@ -149,6 +160,11 @@ jobs:
                 break;
               case 'discussion_comment':
                 targets.add(context.payload.discussion.user.login);
+                break;
+              case 'workflow_run':
+                // Notify the actor who triggered the nightly run
+                const actor = context.payload.workflow_run.actor.login;
+                targets.add(actor);
                 break;
             }
 

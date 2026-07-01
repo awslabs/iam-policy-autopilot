@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 pub(crate) mod engine;
 pub(crate) mod external_library_models;
 pub(crate) mod extractor;
+pub(crate) mod framework;
 pub(crate) mod go;
 pub(crate) mod java;
 pub(crate) mod javascript;
@@ -297,6 +298,19 @@ pub mod core {
             /// Positional index in method call (0-based)
             position: usize,
         },
+    }
+
+    impl Parameter {
+        /// Get this parameter's value, regardless of variant. A [`Parameter::DictionarySplat`]
+        /// has no resolved value, so its unpacking expression is returned as unresolved.
+        pub(crate) fn value(&self) -> ParameterValue {
+            match self {
+                Self::Positional { value, .. } | Self::Keyword { value, .. } => value.clone(),
+                Self::DictionarySplat { expression, .. } => {
+                    ParameterValue::Unresolved(expression.clone())
+                }
+            }
+        }
     }
 }
 

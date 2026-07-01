@@ -268,6 +268,9 @@
   "ResourceOverrides": {
     "iam:GetUser": {
         "user": "*"
+    },
+    "cloudwatch:PutMetricData": {
+        "dataset": "*"
     }
   }
 }
