@@ -57,6 +57,7 @@ impl Engine {
         let unique_services = self.get_unique_services(extracted_methods);
 
         // Record each detected service into the telemetry span (no-ops if no scope active)
+        #[cfg(feature = "telemetry")]
         for service in &unique_services {
             iam_policy_autopilot_common::telemetry::span::record_result_set(
                 "services_used",

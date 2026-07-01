@@ -1,12 +1,16 @@
 //! Filesystem provider implementation using `tokio::fs`
 
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
 
+#[cfg(not(target_arch = "wasm32"))]
 use crate::errors::{ExtractorError, Result};
 
 /// Native filesystem provider using `tokio::fs` for async file operations.
 ///
+/// Not available on WASM targets — use in-memory APIs instead.
 /// This implementation provides robust file system operations with proper error
 /// handling, Unicode support, and glob pattern matching for file listing.
 ///
@@ -18,9 +22,11 @@ use crate::errors::{ExtractorError, Result};
 /// - Efficient directory traversal with early termination on errors
 /// - Pattern compilation is cached when possible
 /// - Large directories are processed incrementally
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct FileSystemProvider;
 
+#[cfg(not(target_arch = "wasm32"))]
 impl FileSystemProvider {
     /// Read the entire contents of a file as a UTF-8 string.
     ///

@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use super::merge::{PolicyMerger, PolicyMergerConfig};
 use super::utils::{ArnParser, ConditionValueProcessor};
 use super::{IamPolicy, Statement};
-use crate::api::model::GeneratePoliciesResult;
+use crate::api::model::{GeneratePoliciesResult, GeneratePoliciesResultBuilder};
 use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall, Explanations};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
@@ -275,11 +275,11 @@ impl<'a> Engine<'a> {
         // Collect explanations
         let explanations = extract_explanations(enriched_calls);
 
-        Ok(GeneratePoliciesResult {
-            policies,
-            explanations: Some(explanations),
-            resource_binding_explanations: None,
-        })
+        Ok(GeneratePoliciesResultBuilder::default()
+            .policies(policies)
+            .explanations(explanations)
+            .build()
+            .expect("GeneratePoliciesResultBuilder missing required policies"))
     }
 }
 
