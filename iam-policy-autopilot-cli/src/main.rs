@@ -125,8 +125,8 @@ match other services like Chime. Note: The final policy may still include action
 not in your hints if they are required for the operations you perform (e.g., KMS actions for S3 \
 encryption).";
 
-const LONG_ABOUT: &str = r"Unified tool that combines IAM policy generation from source code analysis with
-automatic AccessDenied error fixing.
+const LONG_ABOUT: &str = r"Unified tool that combines IAM policy generation from source code or Terraform
+plan analysis with automatic AccessDenied error fixing.
 
 Examples:
 
@@ -140,6 +140,10 @@ Examples:
 
   iam-policy-autopilot generate-policies src/**/*.py \
     --service-hints s3 iam --region us-east-1 --account 123456789012 --pretty
+
+  terraform plan -out=plan.tfplan
+  terraform show -json plan.tfplan > plan.json
+  iam-policy-autopilot generate-policies plan.json --pretty
 
   iam-policy-autopilot mcp-server
 
@@ -262,23 +266,34 @@ This flag has no effect on the generate-policies subcommand."
 
     /// Generates baseline IAM policy documents from source files
     #[command(
-        long_about = r#"Generates baseline IAM policy documents from source files using
-deterministic static analysis. Optionally takes AWS context (region and account)
-for accurate ARN generation.
+        long_about = r#"Generates baseline IAM policy documents from application source code
+or a Terraform plan, using deterministic static analysis. Optionally takes AWS
+context (region and account) for accurate ARN generation.
 
-Supported languages and SDKs:
+The input kind is detected automatically. Application source code is analyzed
+for AWS SDK calls; a Terraform plan (`terraform show -json`) has its resource
+changes mapped to the AWS SDK operations the AWS provider performs. Source code
+and Terraform plans cannot be mixed in one invocation.
+
+Supported source languages and SDKs:
   Go          Go v2
   Java        Java v2
   JavaScript  JavaScript v3
   TypeScript  JavaScript v3
   Python      Boto3, Botocore
 
+To generate from a Terraform plan (the plan must be in JSON form):
+  terraform plan -out=plan.tfplan
+  terraform show -json plan.tfplan > plan.json
+  iam-policy-autopilot generate-policies plan.json --pretty
+
 TIP: Use --service-hints to specify the AWS services your application uses. The
 final policy may still include actions from other services if required."#
     )]
     #[telemetry(command = "generate-policies")]
     GeneratePolicies {
-        /// Source files to analyze for SDK method extraction
+        /// Inputs to derive the policy from: application source code, or a
+        /// `terraform show -json` plan. Auto-detected; the two cannot be mixed.
         #[arg(required = true, num_args = 1..)]
         #[telemetry(count)]
         source_files: Vec<PathBuf>,

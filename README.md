@@ -302,7 +302,7 @@ Usage: iam-policy-autopilot <COMMAND>
 
 Commands:
   fix-access-denied  Fix AccessDenied errors by analyzing and optionally applying IAM policy changes
-  generate-policies    Generates complete IAM policy documents from source files
+  generate-policies    Generates complete IAM policy documents from source code or a Terraform plan
   mcp-server         Start MCP server
   help               Print this message or the help of the given subcommand(s)
 
@@ -313,13 +313,17 @@ Options:
 
 ### Commands
 
-**generate-policies** - Generates complete IAM policy documents from source files
+**generate-policies** - Generates complete IAM policy documents from application source code or a Terraform plan
 
 ```bash
-iam-policy-autopilot generate-policies <source_files> [OPTIONS]
+iam-policy-autopilot generate-policies <inputs> [OPTIONS]
 ```
 
-Example:
+The inputs are either application source code or a Terraform plan in JSON form.
+The input kind is detected automatically and the two cannot be mixed in a single
+invocation.
+
+Example (source code):
 
 ```bash
 iam-policy-autopilot generate-policies \
@@ -327,6 +331,15 @@ iam-policy-autopilot generate-policies \
   --region us-east-1 \
   --account 123456789012 \
   --pretty
+```
+
+Example (Terraform plan). The plan must be in JSON form; produce it from a saved
+plan with `terraform show -json`:
+
+```bash
+terraform plan -out=plan.tfplan          # write the (binary) plan
+terraform show -json plan.tfplan > plan.json   # render it to JSON
+iam-policy-autopilot generate-policies plan.json --pretty
 ```
 
 Options:
