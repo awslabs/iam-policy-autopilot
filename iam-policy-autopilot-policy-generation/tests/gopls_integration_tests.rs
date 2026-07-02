@@ -61,7 +61,7 @@ async fn open_workspace(fixture: &str) -> (GoTestWorkspace, GoplsClient) {
     let options = LspClientOptions {
         initialize_timeout: Duration::from_secs(30),
         open_document_timeout: Duration::from_secs(10),
-        hover_timeout: Duration::from_secs(10),
+        request_timeout: Duration::from_secs(10),
         shutdown_timeout: Duration::from_secs(5),
     };
 
