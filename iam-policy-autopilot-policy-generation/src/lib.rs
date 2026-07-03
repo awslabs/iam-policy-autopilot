@@ -249,6 +249,26 @@ impl Location {
         }
     }
 
+    /// Create a new Location from an LSP URI and range.
+    ///
+    /// Converts 0-based LSP positions to 1-based Location positions.
+    /// Returns `None` if the URI cannot be converted to a file path.
+    #[must_use]
+    pub fn from_lsp(uri: &lsp_types::Url, range: &lsp_types::Range) -> Option<Self> {
+        let file_path = uri.to_file_path().ok()?;
+        Some(Self {
+            file_path,
+            start_position: (
+                range.start.line as usize + 1,
+                range.start.character as usize + 1,
+            ),
+            end_position: (
+                range.end.line as usize + 1,
+                range.end.character as usize + 1,
+            ),
+        })
+    }
+
     /// Line where the finding starts
     #[must_use]
     pub fn start_line(&self) -> usize {

@@ -2164,16 +2164,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "iam-policy-autopilot-wasm"
-version = "0.2.3"
-dependencies = [
- "iam-policy-autopilot-policy-generation",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
