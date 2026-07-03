@@ -6,11 +6,15 @@
 //! extended to other servers (e.g., gopls for Go) via the [`LspServerConfig`] trait.
 
 mod error;
+#[doc(hidden)]
+pub mod gopls;
+mod ty;
 
 #[cfg(any(test, feature = "integ-test"))]
 pub mod test_utils;
 
 pub use error::LspError;
+pub use ty::TyLspClient;
 
 use std::collections::HashSet;
 use std::ops::ControlFlow;
@@ -52,23 +56,6 @@ pub trait LspServerConfig {
     }
 }
 
-/// Configuration for the ty Python type checker.
-pub struct TyConfig;
-
-impl LspServerConfig for TyConfig {
-    fn binary_name(&self) -> &'static str {
-        "ty"
-    }
-
-    fn args(&self) -> &[&str] {
-        &["server"]
-    }
-
-    fn language_id(&self) -> &'static str {
-        "python"
-    }
-}
-
 /// Options for configuring `LspClient` behavior.
 #[derive(Debug)]
 pub struct LspClientOptions {
@@ -76,8 +63,9 @@ pub struct LspClientOptions {
     pub open_document_timeout: Duration,
     /// Timeout for the initialize handshake.
     pub initialize_timeout: Duration,
-    /// Timeout for hover requests.
-    pub hover_timeout: Duration,
+    /// Timeout for individual server requests (hover, document symbols, call
+    /// hierarchy).
+    pub request_timeout: Duration,
     /// Timeout for shutdown.
     pub shutdown_timeout: Duration,
 }
@@ -87,7 +75,7 @@ impl Default for LspClientOptions {
         Self {
             open_document_timeout: Duration::from_secs(1),
             initialize_timeout: Duration::from_secs(10),
-            hover_timeout: Duration::from_secs(5),
+            request_timeout: Duration::from_secs(5),
             shutdown_timeout: Duration::from_secs(2),
         }
     }
@@ -295,28 +283,99 @@ impl<C: LspServerConfig> LspClient<C> {
     /// Returns the extracted type information string if available.
     pub async fn hover(
         &mut self,
-        file_uri: &str,
+        uri: &Url,
         line: u32,
-        character: u32,
+        column: u32,
     ) -> Result<Option<String>, LspError> {
-        let uri = file_uri
-            .parse::<Url>()
-            .map_err(|e| LspError::ParseFailed(format!("Invalid URI: {e}")))?;
-
         let params = HoverParams {
             text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
-                position: Position::new(line, character),
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(line, column),
             },
             work_done_progress_params: WorkDoneProgressParams::default(),
         };
 
-        let response = timeout(self.options.hover_timeout, self.server.hover(params))
+        let response = timeout(self.options.request_timeout, self.server.hover(params))
             .await
-            .map_err(|_| LspError::Timeout(self.options.hover_timeout))?
+            .map_err(|_| LspError::Timeout(self.options.request_timeout))?
             .map_err(|e| LspError::ServerError(format!("{e}")))?;
 
         Ok(response.and_then(|hover| extract_type_from_hover(&hover)))
+    }
+
+    /// Get document symbols (functions, methods, classes) for a file.
+    pub async fn document_symbols(
+        &mut self,
+        uri: &Url,
+    ) -> Result<Option<lsp_types::DocumentSymbolResponse>, LspError> {
+        let params = lsp_types::DocumentSymbolParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: lsp_types::PartialResultParams::default(),
+        };
+
+        let response = timeout(
+            self.options.request_timeout,
+            self.server.document_symbol(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.request_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
+    }
+
+    /// Prepare call hierarchy at a given position.
+    ///
+    /// Returns the call hierarchy items at the position, typically one item
+    /// representing the function/method at that location.
+    pub async fn prepare_call_hierarchy(
+        &mut self,
+        uri: &Url,
+        line: u32,
+        column: u32,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyItem>>, LspError> {
+        let params = lsp_types::CallHierarchyPrepareParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: Position::new(line, column),
+            },
+            work_done_progress_params: WorkDoneProgressParams::default(),
+        };
+
+        let response = timeout(
+            self.options.request_timeout,
+            self.server.prepare_call_hierarchy(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.request_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
+    }
+
+    /// Get outgoing calls from a call hierarchy item.
+    ///
+    /// Returns all functions/methods called from the given item.
+    pub async fn outgoing_calls(
+        &mut self,
+        item: lsp_types::CallHierarchyItem,
+    ) -> Result<Option<Vec<lsp_types::CallHierarchyOutgoingCall>>, LspError> {
+        let params = lsp_types::CallHierarchyOutgoingCallsParams {
+            item,
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: lsp_types::PartialResultParams::default(),
+        };
+
+        let response = timeout(
+            self.options.request_timeout,
+            self.server.outgoing_calls(params),
+        )
+        .await
+        .map_err(|_| LspError::Timeout(self.options.request_timeout))?
+        .map_err(|e| LspError::ServerError(format!("{e}")))?;
+
+        Ok(response)
     }
 
     /// Shutdown the LSP server gracefully.
@@ -386,24 +445,6 @@ fn non_empty(s: &str) -> Option<String> {
         None
     } else {
         Some(s.to_string())
-    }
-}
-
-/// Convenience type alias for the ty Python type checker client.
-pub type TyLspClient = LspClient<TyConfig>;
-
-impl TyLspClient {
-    /// Create a new ty LSP client with default options.
-    pub async fn create(workspace_root: impl AsRef<Path>) -> Result<Self, LspError> {
-        Self::new(TyConfig, workspace_root).await
-    }
-
-    /// Create a new ty LSP client with custom options.
-    pub async fn create_with_options(
-        workspace_root: impl AsRef<Path>,
-        options: LspClientOptions,
-    ) -> Result<Self, LspError> {
-        Self::with_options(TyConfig, workspace_root, options).await
     }
 }
 

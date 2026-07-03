@@ -67,7 +67,16 @@ impl ResourceGroup {
 /// Configuration for policy merging behavior
 #[derive(Debug, Clone, Default)]
 pub struct PolicyMergerConfig {
-    /// Allow merging actions from different services into the same statement
+    /// Allow merging actions from different services into the same statement.
+    ///
+    /// This trades readability for compactness. When enabled, statements are
+    /// grouped by shared resource rather than kept one-service-per-statement,
+    /// so a single service's actions may be spread across multiple statements.
+    /// In that mode the by-service statement ordering done by
+    /// `sort_statements_by_service` no longer keeps every service's actions
+    /// adjacent — a cross-service statement is sorted by the service of its
+    /// first action only, so the remaining services' actions can land in a
+    /// non-adjacent statement.
     pub(crate) allow_cross_service_merging: bool,
 }
 
@@ -155,13 +164,22 @@ impl PolicyMerger {
         // Group statements by mergeable resources with size awareness
         let groups = self.group_statements_by_mergeable_resources(statements)?;
 
+        // Create every merged statement first, then sort the whole set by
+        // service. Sorting globally before distributing across policies keeps a
+        // service's statements together even when size limits force a split,
+        // rather than sorting each policy in isolation (which could tear a
+        // service across the policy boundary and obscure a human review).
+        let mut merged_statements: Vec<Statement> = groups
+            .iter()
+            .map(|group| self.create_merged_statement_from_group(group))
+            .collect::<Result<Vec<_>>>()?;
+        Self::sort_statements_by_service(&mut merged_statements);
+
         let mut policies = Vec::new();
         let mut current_policy = IamPolicy::new();
 
-        // Process each group and add to policies with size checking
-        for group in groups {
-            let merged_statement = self.create_merged_statement_from_group(&group)?;
-
+        // Distribute the pre-sorted statements across policies with size checking
+        for merged_statement in merged_statements {
             // Check if adding this statement would exceed the size limit
             if self.would_exceed_size_limit(&current_policy, &merged_statement)? {
                 // If current policy is not empty, save it and start a new one
@@ -204,6 +222,44 @@ impl PolicyMerger {
         }
 
         Ok(policies)
+    }
+
+    /// Sort statements in place by service for deterministic, diff-stable output.
+    ///
+    /// Statements are emitted in insertion order by the grouping logic, which
+    /// scatters same-service statements across the policy. Sorting groups them
+    /// together and makes the generated policy stable across runs.
+    ///
+    /// The sort key is a stable composite:
+    /// 1. Service prefix of the first action (e.g. `s3` from `s3:GetObject`)
+    /// 2. The full action list (breaks ties between same-service statements)
+    /// 3. The resource list (final tie-breaker)
+    ///
+    /// An empty action list is treated as an empty-string service key so the
+    /// function never panics on malformed statements.
+    ///
+    /// Note: when `allow_cross_service_merging` is enabled, a statement can
+    /// contain actions from several services but is keyed only by its first
+    /// action's service. The "same service stays together" property therefore
+    /// holds only when cross-service merging is off (the default).
+    fn sort_statements_by_service(statements: &mut [Statement]) {
+        statements.sort_by(|a, b| {
+            Self::service_prefix(a)
+                .cmp(Self::service_prefix(b))
+                .then_with(|| a.action.cmp(&b.action))
+                .then_with(|| a.resource.cmp(&b.resource))
+        });
+    }
+
+    /// Service prefix of a statement's first action (e.g. `s3` from
+    /// `s3:GetObject`). Returns an empty string when the statement has no
+    /// actions, so callers never panic on malformed statements.
+    fn service_prefix(statement: &Statement) -> &str {
+        statement
+            .action
+            .first()
+            .and_then(|action| action.split(':').next())
+            .unwrap_or("")
     }
 
     /// Collect all statements from multiple policies
@@ -672,6 +728,117 @@ mod tests {
             actions.into_iter().map(String::from).collect(),
             resources.into_iter().map(String::from).collect(),
         )
+    }
+
+    #[test]
+    fn test_statements_sorted_by_service() {
+        let merger = PolicyMerger::new();
+
+        // Feed statements for scrambled services. Different services are kept as
+        // separate statements (cross-service merging is disabled by default), and
+        // the two S3 statements have a subsumption relationship so they are also
+        // kept separate, letting us assert that same-service statements end up
+        // adjacent in the output.
+        let statements = vec![
+            create_test_statement(
+                vec!["s3:PutObject"],
+                vec!["arn:aws:s3:::bucket/specific.txt"],
+            ),
+            create_test_statement(
+                vec!["dynamodb:GetItem"],
+                vec!["arn:aws:dynamodb:us-east-1:123456789012:table/MyTable"],
+            ),
+            create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::bucket/*"]),
+            create_test_statement(
+                vec!["kms:Decrypt"],
+                vec!["arn:aws:kms:us-east-1:123456789012:key/abc"],
+            ),
+        ];
+
+        let merged_policies = merger.merge_statements(&statements).unwrap();
+        assert_eq!(merged_policies.len(), 1);
+
+        // All four statements survive: dynamodb, kms, and two distinct s3 ones.
+        let services: Vec<&str> = merged_policies[0]
+            .statements
+            .iter()
+            .map(PolicyMerger::service_prefix)
+            .collect();
+        assert_eq!(
+            services,
+            vec!["dynamodb", "kms", "s3", "s3"],
+            "statements must be ordered by service prefix with same-service statements adjacent"
+        );
+
+        // The output must be independent of input order: feeding the same set
+        // in a different (scrambled) order must produce the identical merged
+        // result, statement-for-statement. Comparing the full statements (not
+        // just service prefixes) catches ordering regressions the prefix check
+        // would miss, e.g. the two same-service s3 statements swapping places.
+        let scrambled = vec![
+            statements[2].clone(), // s3:GetObject
+            statements[0].clone(), // s3:PutObject
+            statements[3].clone(), // kms:Decrypt
+            statements[1].clone(), // dynamodb:GetItem
+        ];
+        let scrambled_policies = merger.merge_statements(&scrambled).unwrap();
+        assert_eq!(
+            scrambled_policies[0].statements, merged_policies[0].statements,
+            "sort order must depend only on statement content, not input order"
+        );
+    }
+
+    #[test]
+    fn test_statements_sorted_by_service_across_policy_split() {
+        let merger = PolicyMerger::new();
+
+        // Interleave two services with resources large enough that the result
+        // must split across more than one policy. The sort has to happen
+        // globally (before statements are distributed across policies) rather
+        // than per-policy: otherwise a service could be torn across the policy
+        // boundary, defeating the review-friendliness this ordering provides.
+        let mut statements = Vec::new();
+        for i in 0..40 {
+            let s3_resource = format!(
+                "arn:aws:s3:::very-long-bucket-name-{}/path/to/object/{}/*",
+                "x".repeat(100),
+                i
+            );
+            statements.push(create_test_statement(
+                vec!["s3:GetObject"],
+                vec![&s3_resource],
+            ));
+
+            let ddb_resource = format!(
+                "arn:aws:dynamodb:us-east-1:123456789012:table/VeryLongTableName-{}/index/Idx-{}",
+                "x".repeat(100),
+                i
+            );
+            statements.push(create_test_statement(
+                vec!["dynamodb:GetItem"],
+                vec![&ddb_resource],
+            ));
+        }
+
+        let merged_policies = merger.merge_statements(&statements).unwrap();
+        assert!(
+            merged_policies.len() > 1,
+            "test requires a multi-policy split to be meaningful; got {} policy",
+            merged_policies.len()
+        );
+
+        // Flatten every statement across all policies, in policy then statement
+        // order. The concatenation must be globally non-decreasing by service.
+        let services: Vec<&str> = merged_policies
+            .iter()
+            .flat_map(|policy| policy.statements.iter().map(PolicyMerger::service_prefix))
+            .collect();
+        let mut sorted = services.clone();
+        sorted.sort_unstable();
+        assert_eq!(
+            services, sorted,
+            "statements must be globally ordered by service across the policy split, not just within each policy"
+        );
     }
 
     #[test]
