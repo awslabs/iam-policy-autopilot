@@ -135,8 +135,7 @@ async function loadModule(options?: InitOptions): Promise<EmscriptenModule> {
   const support = checkBrowserSupport();
   if (!support.supported) {
     throw new Error(
-      `Browser does not support required WebAssembly features: ${support.missing.join('; ')}. ` +
-      `See https://webassembly.org/features/ for browser compatibility.`
+      `Browser does not support required WebAssembly features: ${support.missing.join('; ')}`
     );
   }
 

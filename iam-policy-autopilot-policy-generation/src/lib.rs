@@ -256,6 +256,7 @@ impl Location {
     ///
     /// Converts 0-based LSP positions to 1-based Location positions.
     /// Returns `None` if the URI cannot be converted to a file path.
+    #[cfg(not(target_arch = "wasm32"))]
     #[must_use]
     pub fn from_lsp(uri: &lsp_types::Url, range: &lsp_types::Range) -> Option<Self> {
         let file_path = uri.to_file_path().ok()?;

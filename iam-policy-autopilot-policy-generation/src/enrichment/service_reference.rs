@@ -22,8 +22,6 @@ use tokio::fs;
 use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
-#[cfg(not(target_arch = "wasm32"))]
-const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
@@ -468,7 +466,7 @@ impl RemoteServiceReferenceLoader {
         // not using tempfile crate
         // instead, using the std to resolve temp dir and then manage the file itself
         // file deletion is delegated to the OS.
-        let cache_dir = std::env::temp_dir().join(IAM_POLICY_AUTOPILOT);
+        let cache_dir = std::env::temp_dir().join("IAMPolicyAutopilot");
         let _ = std::fs::create_dir_all(&cache_dir);
         cache_dir
     }
