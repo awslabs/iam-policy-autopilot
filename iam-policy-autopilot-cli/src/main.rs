@@ -351,7 +351,8 @@ The tool automatically finds the lowest available number for each policy name.")
             long_help = "When enabled, allows merging of actions from \
 different AWS services into the same policy statement. This can result in smaller, more compact policies \
 but may be less readable. By default, actions from different services are kept in separate statements \
-for better organization."
+for better organization. Note: with this flag, statements are grouped by shared resource rather than by \
+service, so a single service's actions may be spread across multiple statements instead of staying together."
         )]
         #[telemetry(value)]
         minimal_policy_size: bool,

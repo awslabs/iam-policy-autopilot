@@ -10,6 +10,7 @@ use iam_policy_autopilot_policy_generation::lsp::{
     test_utils::{find_position, python},
     LspError, TyLspClient,
 };
+use lsp_types::Url;
 use rstest::rstest;
 use serial_test::serial;
 use std::path::PathBuf;
@@ -57,11 +58,9 @@ impl TestWorkspace {
         Ok(file_path)
     }
 
-    fn file_uri(&self, relative_path: &str) -> String {
+    fn file_uri(&self, relative_path: &str) -> Url {
         let path = self.root_path.join(relative_path);
-        lsp_types::Url::from_file_path(&path)
-            .map(|url| url.to_string())
-            .unwrap_or_else(|_| format!("file://{}", path.display()))
+        Url::from_file_path(&path).unwrap()
     }
 }
 
