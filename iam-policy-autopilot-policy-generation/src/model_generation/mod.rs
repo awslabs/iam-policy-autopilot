@@ -91,6 +91,11 @@ fn deduplicate_operations(calls: &[SdkMethodCall]) -> Vec<SdkOperationMapping> {
         }
     }
 
+    // Sort for deterministic output: SDK calls are collected in call-graph
+    // traversal order, which is not stable across runs, so an unsorted list
+    // makes regenerated models differ only by ordering.
+    ops.sort();
+
     ops
 }
 

@@ -27119,6 +27119,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
           "operation": "GetInstanceUefiData"
         },
         {
@@ -27128,14 +27136,6 @@
         {
           "service": "ec2",
           "operation": "CopyImage"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -27151,6 +27151,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
           "operation": "RegisterImage"
         },
         {
@@ -27160,14 +27168,6 @@
         {
           "service": "ec2",
           "operation": "EnableImageDeprecation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -27203,15 +27203,15 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "CreateImage"
-        },
-        {
-          "service": "ec2",
           "operation": "GetInstanceUefiData"
         },
         {
           "service": "ec2",
           "operation": "EnableImageDeprecation"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateImage"
         },
         {
           "service": "ec2",
@@ -27719,6 +27719,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
           "operation": "ReplaceNetworkAclAssociation"
         },
         {
@@ -27728,14 +27736,6 @@
         {
           "service": "ec2",
           "operation": "DeleteNetworkAclEntry"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -27775,6 +27775,18 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "DeleteRoute"
+        },
+        {
+          "service": "ec2",
           "operation": "CreateRoute"
         },
         {
@@ -27784,18 +27796,6 @@
         {
           "service": "ec2",
           "operation": "EnableVgwRoutePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteRoute"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -27831,6 +27831,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
           "operation": "RevokeSecurityGroupIngress"
         },
         {
@@ -27851,14 +27859,6 @@
         },
         {
           "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeSecurityGroups"
         }
       ]
@@ -27871,7 +27871,11 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "CreateDefaultSubnet"
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -27887,11 +27891,7 @@
         },
         {
           "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
+          "operation": "CreateDefaultSubnet"
         },
         {
           "service": "ec2",
@@ -27931,15 +27931,15 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "CreateDefaultVpc"
-        },
-        {
-          "service": "ec2",
           "operation": "DeleteTags"
         },
         {
           "service": "ec2",
           "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateDefaultVpc"
         },
         {
           "service": "ec2",
@@ -28223,19 +28223,19 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "ImportSnapshot"
-        },
-        {
-          "service": "ec2",
-          "operation": "ModifySnapshotTier"
-        },
-        {
-          "service": "ec2",
           "operation": "DeleteTags"
         },
         {
           "service": "ec2",
           "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "ImportSnapshot"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifySnapshotTier"
         },
         {
           "service": "ec2",
@@ -29151,6 +29151,46 @@
         },
         {
           "service": "ec2",
+          "operation": "DescribeTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceCreditSpecifications"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceTypes"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLaunchTemplates"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLaunchTemplateVersions"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeSpotInstanceRequests"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumesModifications"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeImages"
+        },
+        {
+          "service": "ec2",
           "operation": "RunInstances"
         },
         {
@@ -29235,10 +29275,6 @@
         },
         {
           "service": "ec2",
-          "operation": "DescribeTags"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeInstanceAttribute"
         },
         {
@@ -29252,6 +29288,162 @@
         {
           "service": "ec2",
           "operation": "StopInstances"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceDelete",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "CancelSpotInstanceRequests"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyInstanceAttribute"
+        },
+        {
+          "service": "ec2",
+          "operation": "TerminateInstances"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceRead",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceCreditSpecifications"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceTypes"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLaunchTemplates"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLaunchTemplateVersions"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeSpotInstanceRequests"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceAttribute"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetPasswordData"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceStateCreate",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceStatus"
+        },
+        {
+          "service": "ec2",
+          "operation": "StartInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "StopInstances"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceStateRead",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceStateUpdate",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeInstanceStatus"
+        },
+        {
+          "service": "ec2",
+          "operation": "StartInstances"
+        },
+        {
+          "service": "ec2",
+          "operation": "StopInstances"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
+      "function_name": "resourceInstanceUpdate",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeTags"
         },
         {
           "service": "ec2",
@@ -29284,162 +29476,6 @@
         {
           "service": "ec2",
           "operation": "DescribeVpcs"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeImages"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceDelete",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "CancelSpotInstanceRequests"
-        },
-        {
-          "service": "ec2",
-          "operation": "ModifyInstanceAttribute"
-        },
-        {
-          "service": "ec2",
-          "operation": "TerminateInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstances"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceRead",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "DescribeVolumes"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceAttribute"
-        },
-        {
-          "service": "ec2",
-          "operation": "GetPasswordData"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceCreditSpecifications"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceTypes"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeLaunchTemplates"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeLaunchTemplateVersions"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeSpotInstanceRequests"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeVpcs"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceStateCreate",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "StartInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "StopInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceStatus"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceStateRead",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceStatus"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceStateUpdate",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "StartInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "StopInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceStatus"
-        }
-      ]
-    },
-    {
-      "module_path": "ec2",
-      "class_name": null,
-      "function_name": "resourceInstanceUpdate",
-      "call_type": "function",
-      "sdk_operations": [
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -29523,10 +29559,6 @@
         },
         {
           "service": "ec2",
-          "operation": "DescribeTags"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeInstanceAttribute"
         },
         {
@@ -29540,38 +29572,6 @@
         {
           "service": "ec2",
           "operation": "StopInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstances"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceCreditSpecifications"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeInstanceTypes"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeLaunchTemplates"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeLaunchTemplateVersions"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeSpotInstanceRequests"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeVolumesModifications"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeVpcs"
         }
       ]
     },
@@ -30555,6 +30555,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
           "operation": "CreateNetworkInterface"
         },
         {
@@ -30568,14 +30576,6 @@
         {
           "service": "ec2",
           "operation": "AttachNetworkInterface"
-        },
-        {
-          "service": "ec2",
-          "operation": "DeleteTags"
-        },
-        {
-          "service": "ec2",
-          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -31427,14 +31427,6 @@
         },
         {
           "service": "ec2",
-          "operation": "DescribeVolumes"
-        },
-        {
-          "service": "ec2",
-          "operation": "GetPasswordData"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeInstances"
         },
         {
@@ -31456,6 +31448,14 @@
         {
           "service": "ec2",
           "operation": "DescribeImages"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetPasswordData"
         }
       ]
     },
@@ -31471,11 +31471,11 @@
         },
         {
           "service": "ec2",
-          "operation": "TerminateInstances"
+          "operation": "DescribeInstances"
         },
         {
           "service": "ec2",
-          "operation": "DescribeInstances"
+          "operation": "TerminateInstances"
         }
       ]
     },
@@ -31487,14 +31487,6 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "DescribeVolumes"
-        },
-        {
-          "service": "ec2",
-          "operation": "GetPasswordData"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeInstances"
         },
         {
@@ -31504,6 +31496,14 @@
         {
           "service": "ec2",
           "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetPasswordData"
         }
       ]
     },
@@ -31515,14 +31515,6 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "DescribeVolumes"
-        },
-        {
-          "service": "ec2",
-          "operation": "GetPasswordData"
-        },
-        {
-          "service": "ec2",
           "operation": "DescribeInstances"
         },
         {
@@ -31532,6 +31524,14 @@
         {
           "service": "ec2",
           "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetPasswordData"
         }
       ]
     },
@@ -31963,6 +31963,14 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "AssociateTransitGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
+          "operation": "DisassociateTransitGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
           "operation": "EnableTransitGatewayRouteTablePropagation"
         },
         {
@@ -31972,14 +31980,6 @@
         {
           "service": "ec2",
           "operation": "CreateTransitGatewayConnect"
-        },
-        {
-          "service": "ec2",
-          "operation": "AssociateTransitGatewayRouteTable"
-        },
-        {
-          "service": "ec2",
-          "operation": "DisassociateTransitGatewayRouteTable"
         },
         {
           "service": "ec2",
@@ -32111,19 +32111,19 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "EnableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DisableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
           "operation": "AssociateTransitGatewayRouteTable"
         },
         {
           "service": "ec2",
           "operation": "DisassociateTransitGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
+          "operation": "EnableTransitGatewayRouteTablePropagation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DisableTransitGatewayRouteTablePropagation"
         },
         {
           "service": "ec2",
@@ -32399,15 +32399,15 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "AcceptTransitGatewayPeeringAttachment"
-        },
-        {
-          "service": "ec2",
           "operation": "DeleteTags"
         },
         {
           "service": "ec2",
           "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "AcceptTransitGatewayPeeringAttachment"
         },
         {
           "service": "ec2",
@@ -32927,15 +32927,11 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "EnableTransitGatewayRouteTablePropagation"
+          "operation": "DeleteTags"
         },
         {
           "service": "ec2",
-          "operation": "DisableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "AcceptTransitGatewayVpcAttachment"
+          "operation": "CreateTags"
         },
         {
           "service": "ec2",
@@ -32947,11 +32943,15 @@
         },
         {
           "service": "ec2",
-          "operation": "DeleteTags"
+          "operation": "EnableTransitGatewayRouteTablePropagation"
         },
         {
           "service": "ec2",
-          "operation": "CreateTags"
+          "operation": "DisableTransitGatewayRouteTablePropagation"
+        },
+        {
+          "service": "ec2",
+          "operation": "AcceptTransitGatewayVpcAttachment"
         },
         {
           "service": "ec2",
@@ -33019,19 +33019,19 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "EnableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DisableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
           "operation": "AssociateTransitGatewayRouteTable"
         },
         {
           "service": "ec2",
           "operation": "DisassociateTransitGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
+          "operation": "EnableTransitGatewayRouteTablePropagation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DisableTransitGatewayRouteTablePropagation"
         },
         {
           "service": "ec2",
@@ -33055,14 +33055,6 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "EnableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DisableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
           "operation": "AssociateTransitGatewayRouteTable"
         },
         {
@@ -33072,6 +33064,14 @@
         {
           "service": "ec2",
           "operation": "CreateTransitGatewayVpcAttachment"
+        },
+        {
+          "service": "ec2",
+          "operation": "EnableTransitGatewayRouteTablePropagation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DisableTransitGatewayRouteTablePropagation"
         },
         {
           "service": "ec2",
@@ -33139,14 +33139,6 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "EnableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
-          "operation": "DisableTransitGatewayRouteTablePropagation"
-        },
-        {
-          "service": "ec2",
           "operation": "AssociateTransitGatewayRouteTable"
         },
         {
@@ -33156,6 +33148,14 @@
         {
           "service": "ec2",
           "operation": "ModifyTransitGatewayVpcAttachment"
+        },
+        {
+          "service": "ec2",
+          "operation": "EnableTransitGatewayRouteTablePropagation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DisableTransitGatewayRouteTablePropagation"
         },
         {
           "service": "ec2",
@@ -33935,19 +33935,19 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "AcceptVpcPeeringConnection"
-        },
-        {
-          "service": "ec2",
-          "operation": "ModifyVpcPeeringConnectionOptions"
-        },
-        {
-          "service": "ec2",
           "operation": "DeleteTags"
         },
         {
           "service": "ec2",
           "operation": "CreateTags"
+        },
+        {
+          "service": "ec2",
+          "operation": "AcceptVpcPeeringConnection"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyVpcPeeringConnectionOptions"
         },
         {
           "service": "ec2",
@@ -35595,11 +35595,11 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "CreateVpcBlockPublicAccessExclusion"
+          "operation": "DescribeVpcBlockPublicAccessExclusions"
         },
         {
           "service": "ec2",
-          "operation": "DescribeVpcBlockPublicAccessExclusions"
+          "operation": "CreateVpcBlockPublicAccessExclusion"
         }
       ]
     },
@@ -35611,11 +35611,11 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "DeleteVpcBlockPublicAccessExclusion"
+          "operation": "DescribeVpcBlockPublicAccessExclusions"
         },
         {
           "service": "ec2",
-          "operation": "DescribeVpcBlockPublicAccessExclusions"
+          "operation": "DeleteVpcBlockPublicAccessExclusion"
         }
       ]
     },
@@ -35639,11 +35639,11 @@
       "sdk_operations": [
         {
           "service": "ec2",
-          "operation": "ModifyVpcBlockPublicAccessExclusion"
+          "operation": "DescribeVpcBlockPublicAccessExclusions"
         },
         {
           "service": "ec2",
-          "operation": "DescribeVpcBlockPublicAccessExclusions"
+          "operation": "ModifyVpcBlockPublicAccessExclusion"
         }
       ]
     },
@@ -47123,14 +47123,6 @@
       "sdk_operations": [
         {
           "service": "iam",
-          "operation": "UntagInstanceProfile"
-        },
-        {
-          "service": "iam",
-          "operation": "TagInstanceProfile"
-        },
-        {
-          "service": "iam",
           "operation": "CreateInstanceProfile"
         },
         {
@@ -47144,6 +47136,14 @@
         {
           "service": "iam",
           "operation": "GetInstanceProfile"
+        },
+        {
+          "service": "iam",
+          "operation": "UntagInstanceProfile"
+        },
+        {
+          "service": "iam",
+          "operation": "TagInstanceProfile"
         },
         {
           "service": "iam",
@@ -48611,6 +48611,10 @@
         },
         {
           "service": "iam",
+          "operation": "ListInstanceProfileTags"
+        },
+        {
+          "service": "iam",
           "operation": "ListServerCertificateTags"
         },
         {
@@ -48620,10 +48624,6 @@
         {
           "service": "iam",
           "operation": "ListMFADeviceTags"
-        },
-        {
-          "service": "iam",
-          "operation": "ListInstanceProfileTags"
         },
         {
           "service": "iam",
@@ -57075,15 +57075,15 @@
       "sdk_operations": [
         {
           "service": "lightsail",
+          "operation": "GetOperation"
+        },
+        {
+          "service": "lightsail",
           "operation": "UntagResource"
         },
         {
           "service": "lightsail",
           "operation": "TagResource"
-        },
-        {
-          "service": "lightsail",
-          "operation": "GetOperation"
         },
         {
           "service": "lightsail",
@@ -62851,14 +62851,6 @@
         },
         {
           "service": "networkmanager",
-          "operation": "DisassociateTransitGatewayConnectPeer"
-        },
-        {
-          "service": "networkmanager",
-          "operation": "GetTransitGatewayConnectPeerAssociations"
-        },
-        {
-          "service": "networkmanager",
           "operation": "DeleteGlobalNetwork"
         },
         {
@@ -62872,6 +62864,14 @@
         {
           "service": "networkmanager",
           "operation": "GetTransitGatewayRegistrations"
+        },
+        {
+          "service": "networkmanager",
+          "operation": "DisassociateTransitGatewayConnectPeer"
+        },
+        {
+          "service": "networkmanager",
+          "operation": "GetTransitGatewayConnectPeerAssociations"
         }
       ]
     },
@@ -76435,7 +76435,7 @@
       "sdk_operations": [
         {
           "service": "s3",
-          "operation": "GetBucketRequestPayment"
+          "operation": "GetBucketAccelerateConfiguration"
         },
         {
           "service": "s3",
@@ -76443,7 +76443,27 @@
         },
         {
           "service": "s3",
-          "operation": "GetBucketAccelerateConfiguration"
+          "operation": "GetBucketAcl"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketRequestPayment"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketVersioning"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketWebsite"
+        },
+        {
+          "service": "s3",
+          "operation": "GetObjectLockConfiguration"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketEncryption"
         },
         {
           "service": "s3",
@@ -76455,23 +76475,7 @@
         },
         {
           "service": "s3",
-          "operation": "GetBucketAcl"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketEncryption"
-        },
-        {
-          "service": "s3",
-          "operation": "GetObjectLockConfiguration"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketVersioning"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketWebsite"
+          "operation": "GetBucketReplication"
         },
         {
           "service": "s3",
@@ -76484,10 +76488,6 @@
         {
           "service": "s3",
           "operation": "DeleteBucketTagging"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketReplication"
         },
         {
           "service": "s3",
@@ -77171,7 +77171,7 @@
       "sdk_operations": [
         {
           "service": "s3",
-          "operation": "GetBucketRequestPayment"
+          "operation": "GetBucketAccelerateConfiguration"
         },
         {
           "service": "s3",
@@ -77179,27 +77179,11 @@
         },
         {
           "service": "s3",
-          "operation": "GetBucketAccelerateConfiguration"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketPolicy"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketLogging"
-        },
-        {
-          "service": "s3",
           "operation": "GetBucketAcl"
         },
         {
           "service": "s3",
-          "operation": "GetBucketEncryption"
-        },
-        {
-          "service": "s3",
-          "operation": "GetObjectLockConfiguration"
+          "operation": "GetBucketRequestPayment"
         },
         {
           "service": "s3",
@@ -77208,6 +77192,22 @@
         {
           "service": "s3",
           "operation": "GetBucketWebsite"
+        },
+        {
+          "service": "s3",
+          "operation": "GetObjectLockConfiguration"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketEncryption"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketPolicy"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketLogging"
         },
         {
           "service": "s3",
@@ -77403,7 +77403,7 @@
       "sdk_operations": [
         {
           "service": "s3",
-          "operation": "GetBucketRequestPayment"
+          "operation": "GetBucketAccelerateConfiguration"
         },
         {
           "service": "s3",
@@ -77411,27 +77411,11 @@
         },
         {
           "service": "s3",
-          "operation": "GetBucketAccelerateConfiguration"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketPolicy"
-        },
-        {
-          "service": "s3",
-          "operation": "GetBucketLogging"
-        },
-        {
-          "service": "s3",
           "operation": "GetBucketAcl"
         },
         {
           "service": "s3",
-          "operation": "GetBucketEncryption"
-        },
-        {
-          "service": "s3",
-          "operation": "GetObjectLockConfiguration"
+          "operation": "GetBucketRequestPayment"
         },
         {
           "service": "s3",
@@ -77440,6 +77424,22 @@
         {
           "service": "s3",
           "operation": "GetBucketWebsite"
+        },
+        {
+          "service": "s3",
+          "operation": "GetObjectLockConfiguration"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketEncryption"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketPolicy"
+        },
+        {
+          "service": "s3",
+          "operation": "GetBucketLogging"
         },
         {
           "service": "s3",
@@ -77663,11 +77663,11 @@
       "sdk_operations": [
         {
           "service": "s3",
-          "operation": "HeadObject"
+          "operation": "CopyObject"
         },
         {
           "service": "s3",
-          "operation": "CopyObject"
+          "operation": "HeadObject"
         }
       ]
     },
@@ -77715,11 +77715,11 @@
       "sdk_operations": [
         {
           "service": "s3",
-          "operation": "HeadObject"
+          "operation": "CopyObject"
         },
         {
           "service": "s3",
-          "operation": "CopyObject"
+          "operation": "HeadObject"
         }
       ]
     },
