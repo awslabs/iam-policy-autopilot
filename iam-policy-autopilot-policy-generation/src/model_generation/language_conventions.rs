@@ -13,10 +13,10 @@ pub(crate) struct ParsedFunctionName {
 
 /// Language-specific conventions for interpreting function nodes.
 ///
-/// Requires `Send` so that a `Box<dyn LanguageConventions>` can be held across
-/// `.await` points in async model generation without making the resulting
-/// future non-`Send`.
-pub(crate) trait LanguageConventions: Send {
+/// Requires `Send + Sync` so that a `Box<dyn LanguageConventions>` (and shared
+/// `&dyn` references to it) can be held across `.await` points in async model
+/// generation without making the resulting future non-`Send`.
+pub(crate) trait LanguageConventions: Send + Sync {
     /// Whether a function is visible outside its package/module.
     fn is_exported(&self, node: &FunctionNode) -> bool;
 

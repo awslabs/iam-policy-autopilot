@@ -130,71 +130,75 @@ pub(crate) trait CallGraphBuilder: Send + Sync {
     async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError>;
 }
 
+/// Build a `CallGraph` from a compact edge spec, for tests.
+///
+/// Each string in `edge_specs` has the form `"caller -> callee1, callee2"`.
+/// Nodes are auto-created with non-overlapping ranges in "test.go". Shared with
+/// the `model_generation` tests, which build graphs the same way.
+#[cfg(test)]
+pub(crate) fn graph_from_spec(edge_specs: &[&str]) -> CallGraph {
+    use std::path::PathBuf;
+
+    let mut all_names = Vec::new();
+    let mut edge_pairs: Vec<(&str, &str)> = Vec::new();
+
+    for spec in edge_specs {
+        let parts: Vec<&str> = spec.split("->").collect();
+        let caller = parts[0].trim();
+        if !all_names.contains(&caller) {
+            all_names.push(caller);
+        }
+        if parts.len() == 2 {
+            for callee in parts[1].split(',') {
+                let callee = callee.trim();
+                if !all_names.contains(&callee) {
+                    all_names.push(callee);
+                }
+                edge_pairs.push((caller, callee));
+            }
+        }
+    }
+
+    let nodes: Vec<FunctionNode> = all_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let start_line = i * 10 + 1;
+            FunctionNode {
+                name: name.to_string(),
+                qualified_name: None,
+                location: Location::new(
+                    PathBuf::from("test.go"),
+                    (start_line, 1),
+                    (start_line + 9, 1),
+                ),
+            }
+        })
+        .collect();
+
+    let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
+    for (caller_name, callee_name) in edge_pairs {
+        let caller = nodes
+            .iter()
+            .find(|n| n.name == caller_name)
+            .unwrap()
+            .clone();
+        let callee = nodes
+            .iter()
+            .find(|n| n.name == callee_name)
+            .unwrap()
+            .clone();
+        edges.entry(caller).or_default().push(callee);
+    }
+
+    CallGraph::new(nodes, edges)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::rstest;
     use std::path::PathBuf;
-
-    /// Build a CallGraph from a compact edge spec.
-    ///
-    /// Each string in `edge_specs` has the form `"caller -> callee1, callee2"`.
-    /// Nodes are auto-created with non-overlapping ranges in "test.go".
-    fn graph_from_spec(edge_specs: &[&str]) -> CallGraph {
-        let mut all_names = Vec::new();
-        let mut edge_pairs: Vec<(&str, &str)> = Vec::new();
-
-        for spec in edge_specs {
-            let parts: Vec<&str> = spec.split("->").collect();
-            let caller = parts[0].trim();
-            if !all_names.contains(&caller) {
-                all_names.push(caller);
-            }
-            if parts.len() == 2 {
-                for callee in parts[1].split(',') {
-                    let callee = callee.trim();
-                    if !all_names.contains(&callee) {
-                        all_names.push(callee);
-                    }
-                    edge_pairs.push((caller, callee));
-                }
-            }
-        }
-
-        let nodes: Vec<FunctionNode> = all_names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                let start_line = i * 10 + 1;
-                FunctionNode {
-                    name: name.to_string(),
-                    qualified_name: None,
-                    location: Location::new(
-                        PathBuf::from("test.go"),
-                        (start_line, 1),
-                        (start_line + 9, 1),
-                    ),
-                }
-            })
-            .collect();
-
-        let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
-        for (caller_name, callee_name) in edge_pairs {
-            let caller = nodes
-                .iter()
-                .find(|n| n.name == caller_name)
-                .unwrap()
-                .clone();
-            let callee = nodes
-                .iter()
-                .find(|n| n.name == callee_name)
-                .unwrap()
-                .clone();
-            edges.entry(caller).or_default().push(callee);
-        }
-
-        CallGraph::new(nodes, edges)
-    }
 
     /// Place an SDK call inside a named function's range.
     fn sdk_call_in(graph: &CallGraph, operation: &str, function_name: &str) -> SdkMethodCall {

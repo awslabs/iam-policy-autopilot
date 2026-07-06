@@ -41,11 +41,18 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         .map(|f| f.canonicalize().unwrap_or_else(|_| f.clone()))
         .collect();
 
-    // Detect language and resolve conventions
-    let language = {
-        let extractor = crate::ExtractionEngine::new();
-        let paths: Vec<&Path> = source_files.iter().map(|p| p.as_path()).collect();
-        extractor.detect_and_validate_language(&paths)?
+    // Resolve the language once, honoring the `--language` override if given and
+    // otherwise detecting from the source files. Everything downstream (call
+    // graph conventions, language server, and SDK extraction) keys off this so
+    // an override applies consistently across all of them.
+    let language = match config.language.as_deref() {
+        Some(override_str) => Language::try_from_str(override_str)
+            .with_context(|| format!("Invalid --language override '{override_str}'"))?,
+        None => {
+            let extractor = crate::ExtractionEngine::new();
+            let paths: Vec<&Path> = source_files.iter().map(PathBuf::as_path).collect();
+            extractor.detect_and_validate_language(&paths)?
+        }
     };
 
     let conventions: Box<dyn LanguageConventions> = match language {
@@ -64,53 +71,59 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         _ => anyhow::bail!("Model generation is not yet supported for {language}"),
     };
 
-    let graph = builder
-        .build(&workspace_root, &source_files)
-        .await
-        .context("Failed to build call graph")?;
+    // Run the fallible pipeline in an inner block so the language server is
+    // always shut down afterwards, even if any step fails — otherwise an error
+    // between here and shutdown would leak the gopls process.
+    let result: Result<ExternalLibraryModel> = async {
+        let graph = builder
+            .build(&workspace_root, &source_files)
+            .await
+            .context("Failed to build call graph")?;
 
-    let entry_nodes = if config.entry_points.is_empty() {
-        graph
-            .nodes()
-            .iter()
-            .filter(|n| conventions.is_exported(n))
-            .cloned()
-            .collect()
-    } else {
-        resolve_entry_points(&config.entry_points, graph.nodes())?
-    };
+        let entry_nodes = if config.entry_points.is_empty() {
+            graph
+                .nodes()
+                .iter()
+                .filter(|n| conventions.is_exported(n))
+                .cloned()
+                .collect()
+        } else {
+            resolve_entry_points(&config.entry_points, graph.nodes())?
+        };
 
-    let extracted = {
-        use crate::api::model::ServiceHints;
-        let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
-            service_names: names.clone(),
-        });
-        let extractor = crate::ExtractionEngine::new();
-        process_source_files(
-            &extractor,
-            &source_files,
-            config.language.as_deref(),
-            service_hints,
-        )
-        .await
-        .context("Failed to extract SDK calls")?
-    };
+        let extracted = {
+            use crate::api::model::ServiceHints;
+            let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
+                service_names: names.clone(),
+            });
+            let extractor = crate::ExtractionEngine::new();
+            process_source_files(
+                &extractor,
+                &source_files,
+                Some(language.to_string().as_str()),
+                service_hints,
+            )
+            .await
+            .context("Failed to extract SDK calls")?
+        };
 
-    let model = ModelGenerationEngine::new().generate(
-        &graph,
-        &entry_nodes,
-        &extracted.methods,
-        &config.library_name,
-        language,
-        conventions.as_ref(),
-    );
+        Ok(ModelGenerationEngine::new().generate(
+            &graph,
+            &entry_nodes,
+            &extracted.methods,
+            &config.library_name,
+            language,
+            conventions.as_ref(),
+        ))
+    }
+    .await;
 
-    builder
-        .shutdown()
-        .await
-        .context("Failed to shut down language server")?;
+    // Always shut the server down before propagating, so failures don't leak it.
+    if let Err(e) = builder.shutdown().await {
+        log::warn!("Failed to shut down language server: {e}");
+    }
 
-    Ok(model)
+    result
 }
 
 /// Resolve entry point specs in `file:line:column` format to FunctionNodes.
