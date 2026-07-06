@@ -3,7 +3,7 @@
 
 pub(crate) mod gopls;
 
-use std::collections::{BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -30,12 +30,12 @@ pub(crate) enum CallGraphError {
 
 /// The call graph for a set of source files.
 pub(crate) struct CallGraph {
-    edges: HashMap<FunctionNode, Vec<FunctionNode>>,
+    edges: BTreeMap<FunctionNode, Vec<FunctionNode>>,
     nodes: Vec<FunctionNode>,
 }
 
 impl CallGraph {
-    pub fn new(nodes: Vec<FunctionNode>, edges: HashMap<FunctionNode, Vec<FunctionNode>>) -> Self {
+    pub fn new(nodes: Vec<FunctionNode>, edges: BTreeMap<FunctionNode, Vec<FunctionNode>>) -> Self {
         Self { edges, nodes }
     }
 
@@ -182,7 +182,7 @@ mod tests {
             })
             .collect();
 
-        let mut edges: HashMap<FunctionNode, Vec<FunctionNode>> = HashMap::new();
+        let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
         for (caller_name, callee_name) in edge_pairs {
             let caller = nodes
                 .iter()
@@ -347,7 +347,7 @@ mod tests {
             location: Location::new(PathBuf::from("f.go"), (5, 1), (15, 1)),
         };
 
-        let graph = CallGraph::new(vec![outer, inner], HashMap::new());
+        let graph = CallGraph::new(vec![outer, inner], BTreeMap::new());
 
         let loc = Location::new(PathBuf::from("f.go"), (10, 5), (10, 15));
         assert_eq!(graph.enclosing_function(&loc).unwrap().name, "inner");

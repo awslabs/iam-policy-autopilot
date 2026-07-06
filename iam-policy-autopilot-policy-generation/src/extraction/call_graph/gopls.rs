@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -101,7 +101,7 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
             }
         }
 
-        let mut edges: HashMap<FunctionNode, Vec<FunctionNode>> = HashMap::new();
+        let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
         for (i, node) in nodes.iter().enumerate() {
             let (ref uri, ref name_pos) = name_positions[i];
 
@@ -122,8 +122,18 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
                 }
             };
 
-            let Some(outgoing) = client.outgoing_calls(item).await? else {
-                continue;
+            let outgoing = match client.outgoing_calls(item).await {
+                Ok(Some(outgoing)) => outgoing,
+                Ok(None) => continue,
+                Err(e) => {
+                    log::debug!(
+                        "outgoing_calls failed for '{}' at {}:{}: {e}",
+                        node.name,
+                        name_pos.line,
+                        name_pos.character
+                    );
+                    continue;
+                }
             };
 
             let callees: Vec<FunctionNode> = outgoing
