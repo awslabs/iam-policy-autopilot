@@ -731,6 +731,7 @@ async fn handle_generate_model(
     service_hints: Option<Vec<String>>,
     pretty: bool,
 ) -> Result<()> {
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
     use iam_policy_autopilot_policy_generation::api::{generate_model, GenerateModelConfig};
 
     info!("Running generate-model command");
@@ -746,7 +747,7 @@ async fn handle_generate_model(
         language,
         library_name,
         entry_points,
-        service_hints,
+        service_hints: service_hints.map(|service_names| ServiceHints { service_names }),
     };
 
     let model = generate_model(&config).await?;

@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use log::info;
 
 use crate::api::common::process_source_files;
+use crate::api::model::ServiceHints;
 use crate::extraction::call_graph::gopls::GoplsCallGraphBuilder;
 use crate::extraction::call_graph::{innermost_enclosing, CallGraphBuilder, FunctionNode};
 use crate::extraction::external_library_models::ExternalLibraryModel;
@@ -23,7 +24,7 @@ pub struct GenerateModelConfig {
     /// Entry points in `file:line:column` format (1-based).
     pub entry_points: Vec<String>,
     /// Optional service hints to filter SDK calls to specific AWS services.
-    pub service_hints: Option<Vec<String>>,
+    pub service_hints: Option<ServiceHints>,
 }
 
 /// Generate an external library model from source files and entry points.
@@ -92,16 +93,12 @@ pub async fn generate_model(config: &GenerateModelConfig) -> Result<ExternalLibr
         };
 
         let extracted = {
-            use crate::api::model::ServiceHints;
-            let service_hints = config.service_hints.as_ref().map(|names| ServiceHints {
-                service_names: names.clone(),
-            });
             let extractor = crate::ExtractionEngine::new();
             process_source_files(
                 &extractor,
                 &source_files,
                 Some(language.to_string().as_str()),
-                service_hints,
+                config.service_hints.clone(),
             )
             .await
             .context("Failed to extract SDK calls")?
