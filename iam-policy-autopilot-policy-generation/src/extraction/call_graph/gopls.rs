@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use lsp_types::{DocumentSymbolResponse, SymbolKind};
 
-use super::{CallGraph, CallGraphBuilder, CallGraphError, FunctionNode};
+use super::{innermost_enclosing, CallGraph, CallGraphBuilder, CallGraphError, FunctionNode};
 use crate::lsp::gopls::GoplsClient;
 use crate::lsp::{file_url, LspClientOptions};
 use crate::Location;
@@ -155,11 +155,22 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
                     if !source_file_set.contains(&callee_path) {
                         return None;
                     }
-                    // Match against existing nodes to ensure consistent Location values
-                    nodes
-                        .iter()
-                        .find(|n| n.name == call.to.name && n.location.file_path == callee_path)
-                        .cloned()
+                    // Match the callee to a discovered node by position, not name:
+                    // documentSymbol qualifies methods as `(*Type).Method` while
+                    // outgoing_calls reports a bare `Method`, so names don't line
+                    // up. Both agree `call.to.range` sits inside the declaration,
+                    // so we pick the node enclosing it (none ⇒ external call,
+                    // dropped).
+                    let callee_start =
+                        Location::from_lsp(&call.to.uri, &call.to.range)?.start_position;
+                    let hit = innermost_enclosing(&nodes, callee_start, |path| path == callee_path);
+                    if hit.is_none() {
+                        log::debug!(
+                            "outgoing call to '{}' at {callee_start:?} matched no known node",
+                            call.to.name,
+                        );
+                    }
+                    hit.cloned()
                 })
                 .collect();
 
@@ -261,12 +272,15 @@ mod tests {
             .iter()
             .map(|n| n.name.as_str())
             .collect();
+        // Method callees are matched by position, so the recorded node keeps the
+        // documentSymbol form `(*Server).fetchData`, not the bare name gopls
+        // reports in the call hierarchy.
         assert!(
-            callees.contains(&"fetchData"),
+            callees.iter().any(|c| c.contains("fetchData")),
             "HandleRequest calls: {callees:?}"
         );
         assert!(
-            callees.contains(&"format"),
+            callees.iter().any(|c| c.contains("format")),
             "HandleRequest calls: {callees:?}"
         );
     }

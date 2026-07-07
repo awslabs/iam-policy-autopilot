@@ -78,20 +78,9 @@ impl CallGraph {
     }
 
     fn enclosing_function(&self, location: &Location) -> Option<&FunctionNode> {
-        self.nodes
-            .iter()
-            .filter(|node| {
-                node.location.file_path == location.file_path
-                    && node.location.start_position <= location.start_position
-                    && node.location.end_position >= location.end_position
-            })
-            .min_by_key(|node| {
-                // Prefer the smallest enclosing range (innermost function)
-                (
-                    node.location.end_position.0 - node.location.start_position.0,
-                    node.location.end_position.1,
-                )
-            })
+        innermost_enclosing(&self.nodes, location.start_position, |path| {
+            path == location.file_path
+        })
     }
 
     fn reachable_set<'a>(&'a self, from: &'a FunctionNode) -> BTreeSet<&'a FunctionNode> {
@@ -111,6 +100,35 @@ impl CallGraph {
 
         visited
     }
+}
+
+/// Find the innermost function node enclosing `point` in a matching file.
+///
+/// `point` is a 1-based `(line, column)`. `file_matches` decides which nodes'
+/// files are eligible — callers pass exact equality when both sides are
+/// canonical LSP paths, or a suffix match when resolving a partial user-supplied
+/// path. When several nodes enclose the point (which the graph builder avoids
+/// for top-level declarations but can happen for arbitrary locations), the one
+/// with the smallest range wins, so a call inside a nested scope is attributed
+/// to the tightest enclosing function.
+pub(crate) fn innermost_enclosing(
+    nodes: &[FunctionNode],
+    point: (usize, usize),
+    mut file_matches: impl FnMut(&Path) -> bool,
+) -> Option<&FunctionNode> {
+    nodes
+        .iter()
+        .filter(|node| {
+            file_matches(&node.location.file_path)
+                && node.location.start_position <= point
+                && point <= node.location.end_position
+        })
+        .min_by_key(|node| {
+            (
+                node.location.end_position.0 - node.location.start_position.0,
+                node.location.end_position.1,
+            )
+        })
 }
 
 /// Trait for building a call graph from source files.

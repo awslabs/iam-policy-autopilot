@@ -6,7 +6,7 @@ use log::info;
 
 use crate::api::common::process_source_files;
 use crate::extraction::call_graph::gopls::GoplsCallGraphBuilder;
-use crate::extraction::call_graph::{CallGraphBuilder, FunctionNode};
+use crate::extraction::call_graph::{innermost_enclosing, CallGraphBuilder, FunctionNode};
 use crate::extraction::external_library_models::ExternalLibraryModel;
 use crate::model_generation::language_conventions::{GoConventions, LanguageConventions};
 use crate::model_generation::Engine as ModelGenerationEngine;
@@ -169,20 +169,10 @@ fn resolve_entry_points(specs: &[String], nodes: &[FunctionNode]) -> Result<Vec<
         }
 
         let pos = (line, col);
-        let node = nodes
-            .iter()
-            .filter(|n| {
-                n.location.file_path.ends_with(file_path)
-                    && n.location.start_position <= pos
-                    && pos <= n.location.end_position
-            })
-            // Prefer the innermost (smallest) enclosing function.
-            .min_by_key(|n| {
-                (
-                    n.location.end_position.0 - n.location.start_position.0,
-                    n.location.end_position.1,
-                )
-            })
+        // `file_path` is a partial, user-supplied path, so match by suffix
+        // against the canonical node paths. The helper picks the innermost
+        // enclosing function when the position falls inside several.
+        let node = innermost_enclosing(nodes, pos, |path| path.ends_with(file_path))
             .with_context(|| {
                 let available: Vec<String> = nodes
                     .iter()
