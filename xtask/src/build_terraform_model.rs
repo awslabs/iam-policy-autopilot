@@ -19,6 +19,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 use iam_policy_autopilot_policy_generation::api::{
     generate_models_batch, terraform_service_hint, BatchOptions, ExternalLibraryModel,
     GenerateModelConfig,
@@ -263,7 +264,9 @@ fn plan_configs(opts: &BuildOptions, provider_root: &Path) -> Result<Vec<Generat
             library_name: format!("terraform-provider-aws-{package}"),
             entry_points: Vec::new(),
             entry_point_symbols: symbols.into_iter().collect(),
-            service_hints: Some(vec![service_hint]),
+            service_hints: Some(ServiceHints {
+                service_names: vec![service_hint],
+            }),
         });
     }
     Ok(configs)
