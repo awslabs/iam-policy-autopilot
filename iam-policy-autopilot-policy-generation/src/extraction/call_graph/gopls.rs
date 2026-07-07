@@ -175,7 +175,7 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
     }
 }
 
-#[cfg(all(test, feature = "integ-test", feature = "call-graph"))]
+#[cfg(all(test, feature = "integ-test", feature = "model-generation"))]
 mod tests {
     use super::*;
     use crate::lsp::test_utils::go;

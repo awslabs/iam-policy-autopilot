@@ -56,8 +56,7 @@ convert_case.workspace = true
 [features]
 default = []
 integ-test = []
-call-graph = []
-model-generation = ["call-graph"]
+model-generation = []
 # Development features
 dev = ["tokio/test-util"]
 

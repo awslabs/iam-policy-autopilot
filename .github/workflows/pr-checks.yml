@@ -222,7 +222,7 @@ jobs:
         run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test --test gopls_integration_tests -- --ignored
 
       - name: Run call-graph tests
-        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test,call-graph --lib call_graph -- --include-ignored
+        run: cargo test -p iam-policy-autopilot-policy-generation --features integ-test,model-generation --lib call_graph -- --include-ignored
 
       - name: Run generate-model CLI integration tests
         run: cargo test -p iam-policy-autopilot-cli --features model-generation --test generate_model_tests -- --ignored
