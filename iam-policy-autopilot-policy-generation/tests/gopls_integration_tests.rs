@@ -64,6 +64,7 @@ async fn open_workspace(fixture: &str) -> (GoTestWorkspace, GoplsClient) {
         request_timeout: Duration::from_secs(10),
         shutdown_timeout: Duration::from_secs(5),
         idle_timeout: Duration::from_secs(60),
+        progress_startup_grace: Duration::from_secs(10),
         capabilities: None,
     };
 

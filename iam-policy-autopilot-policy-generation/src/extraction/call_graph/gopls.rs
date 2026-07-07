@@ -22,6 +22,9 @@ impl GoplsCallGraphBuilder {
             request_timeout: Duration::from_secs(30),
             shutdown_timeout: Duration::from_secs(5),
             idle_timeout: Duration::from_secs(300),
+            // gopls is slow to announce indexing on a cold module cache; give the
+            // first progress token generous headroom before assuming there is none.
+            progress_startup_grace: Duration::from_secs(10),
             // gopls returns Flat (SymbolInformation) by default, which lacks selection_range.
             // Hierarchical mode gives us DocumentSymbol with selection_range — needed to
             // position prepare_call_hierarchy on the function name, not the `func` keyword.
