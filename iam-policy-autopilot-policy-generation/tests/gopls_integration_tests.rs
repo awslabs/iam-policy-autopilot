@@ -63,6 +63,7 @@ async fn open_workspace(fixture: &str) -> (GoTestWorkspace, GoplsClient) {
         open_document_timeout: Duration::from_secs(10),
         request_timeout: Duration::from_secs(10),
         shutdown_timeout: Duration::from_secs(5),
+        capabilities: None,
     };
 
     let mut client = GoplsClient::create_with_options(&workspace.root_path, options)

@@ -68,6 +68,8 @@ pub struct LspClientOptions {
     pub request_timeout: Duration,
     /// Timeout for shutdown.
     pub shutdown_timeout: Duration,
+    /// Client capabilities to advertise during initialization.
+    pub capabilities: Option<ClientCapabilities>,
 }
 
 impl Default for LspClientOptions {
@@ -77,6 +79,7 @@ impl Default for LspClientOptions {
             initialize_timeout: Duration::from_secs(10),
             request_timeout: Duration::from_secs(5),
             shutdown_timeout: Duration::from_secs(2),
+            capabilities: None,
         }
     }
 }
@@ -190,7 +193,7 @@ impl<C: LspServerConfig> LspClient<C> {
         let init_params = InitializeParams {
             process_id: Some(std::process::id()),
             root_uri: Some(workspace_uri.clone()),
-            capabilities: ClientCapabilities::default(),
+            capabilities: options.capabilities.clone().unwrap_or_default(),
             workspace_folders: Some(vec![lsp_types::WorkspaceFolder {
                 uri: workspace_uri,
                 name: workspace_root
@@ -233,9 +236,7 @@ impl<C: LspServerConfig> LspClient<C> {
         file_path: impl AsRef<Path>,
         content: &str,
     ) -> Result<(), LspError> {
-        let uri = Url::from_file_path(file_path.as_ref()).map_err(|()| {
-            LspError::ParseFailed(format!("Invalid file path: {:?}", file_path.as_ref()))
-        })?;
+        let uri = file_url(file_path.as_ref())?;
 
         let uri_string = uri.to_string();
         if self.opened_documents.contains(&uri_string) {
@@ -446,6 +447,11 @@ fn non_empty(s: &str) -> Option<String> {
     } else {
         Some(s.to_string())
     }
+}
+
+/// Convert a file path to a `file://` URL.
+pub fn file_url(path: &Path) -> Result<Url, LspError> {
+    Url::from_file_path(path).map_err(|()| LspError::InvalidPath(path.to_path_buf()))
 }
 
 #[cfg(test)]
