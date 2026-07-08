@@ -4,22 +4,23 @@
 //! "terraform-provider-aws"`, `language: go`). Each `call_pattern` maps a
 //! handler `(module_path, class_name, function_name)` to the AWS SDK
 //! operations it invokes. This module parses the model once and exposes a
-//! lookup keyed by [`HandlerKey`] so the mapper can resolve a CRUD handler
+//! lookup keyed by [`CallPatternKey`] so the mapper can resolve a CRUD handler
 //! symbol to its operations.
 
 use std::collections::HashMap;
 
 use anyhow::{ensure, Context, Result};
 
-use crate::extraction::external_library_models::{ExternalLibraryModel, SdkOperationMapping};
+use crate::extraction::external_library_models::{
+    CallPatternKey, ExternalLibraryModel, SdkOperationMapping,
+};
 use crate::Language;
 
-use super::go_symbol::HandlerKey;
 use super::{TerraformArtifacts, TERRAFORM_LIBRARY_NAME};
 
 /// Lookup of handler join key → SDK operations, plus the model's version tag.
 pub(crate) struct ModelIndex {
-    by_handler: HashMap<HandlerKey, Vec<SdkOperationMapping>>,
+    by_handler: HashMap<CallPatternKey, Vec<SdkOperationMapping>>,
     version: Option<String>,
 }
 
@@ -51,18 +52,13 @@ impl ModelIndex {
             model.language
         );
 
-        let mut by_handler: HashMap<HandlerKey, Vec<SdkOperationMapping>> = HashMap::new();
+        let mut by_handler: HashMap<CallPatternKey, Vec<SdkOperationMapping>> = HashMap::new();
         for pattern in model.call_patterns {
-            let key = HandlerKey {
-                module_path: pattern.module_path,
-                class_name: pattern.class_name,
-                function_name: pattern.function_name,
-            };
             // The model builder unions duplicate (module_path, class, func)
             // patterns, so keys are unique; extend defensively in case that
             // ever changes.
             by_handler
-                .entry(key)
+                .entry(pattern.key())
                 .or_default()
                 .extend(pattern.sdk_operations);
         }
@@ -74,7 +70,7 @@ impl ModelIndex {
     }
 
     /// SDK operations invoked by the handler with this join key, if modeled.
-    pub(crate) fn operations(&self, key: &HandlerKey) -> Option<&[SdkOperationMapping]> {
+    pub(crate) fn operations(&self, key: &CallPatternKey) -> Option<&[SdkOperationMapping]> {
         self.by_handler.get(key).map(Vec::as_slice)
     }
 
@@ -132,7 +128,7 @@ mod tests {
     #[test]
     fn indexes_free_function_handler() {
         let index = ModelIndex::from_slice(SAMPLE.as_bytes()).unwrap();
-        let key = HandlerKey {
+        let key = CallPatternKey {
             module_path: "accessanalyzer".to_string(),
             class_name: None,
             function_name: "resourceAnalyzerCreate".to_string(),
@@ -152,7 +148,7 @@ mod tests {
     #[test]
     fn indexes_method_handler_by_class_and_method() {
         let index = ModelIndex::from_slice(SAMPLE.as_bytes()).unwrap();
-        let key = HandlerKey {
+        let key = CallPatternKey {
             module_path: "sqs".to_string(),
             class_name: Some("queueAttributeHandler".to_string()),
             function_name: "Upsert".to_string(),
@@ -166,7 +162,7 @@ mod tests {
     #[test]
     fn unknown_handler_is_none() {
         let index = ModelIndex::from_slice(SAMPLE.as_bytes()).unwrap();
-        let key = HandlerKey {
+        let key = CallPatternKey {
             module_path: "s3".to_string(),
             class_name: None,
             function_name: "resourceBucketCreate".to_string(),
@@ -191,7 +187,7 @@ mod tests {
     fn embedded_model_parses_and_resolves_known_handler() {
         let index = ModelIndex::load().unwrap();
         assert_eq!(index.version(), Some("v6.34.0"));
-        let key = HandlerKey {
+        let key = CallPatternKey {
             module_path: "accessanalyzer".to_string(),
             class_name: None,
             function_name: "resourceAnalyzerCreate".to_string(),

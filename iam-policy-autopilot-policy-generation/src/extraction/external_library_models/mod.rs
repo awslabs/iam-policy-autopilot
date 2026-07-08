@@ -48,6 +48,34 @@ pub struct CallPattern {
     pub sdk_operations: Vec<SdkOperationMapping>,
 }
 
+/// The identity a [`CallPattern`] is looked up by: the language-neutral triple
+/// `(module_path, class_name, function_name)`.
+///
+/// This is the single join key shared across the model pipeline. The model
+/// *builder* derives it from a call-graph node (via
+/// `LanguageConventions::parse_function_name`), and the Terraform plan *consumer*
+/// reconstructs the same triple from a handler symbol — both must agree, so they
+/// name one type rather than each defining their own. `class_name` is part of the
+/// key because Plugin Framework resources have CRUD methods all named
+/// `Create`/`Read`/… distinguished only by their receiver type.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) struct CallPatternKey {
+    pub module_path: String,
+    pub class_name: Option<String>,
+    pub function_name: String,
+}
+
+impl CallPattern {
+    /// The lookup key identifying this pattern.
+    pub(crate) fn key(&self) -> CallPatternKey {
+        CallPatternKey {
+            module_path: self.module_path.clone(),
+            class_name: self.class_name.clone(),
+            function_name: self.function_name.clone(),
+        }
+    }
+}
+
 /// Describes the kind of callable in the source library.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

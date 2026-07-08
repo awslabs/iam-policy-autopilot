@@ -3,13 +3,7 @@ use std::path::PathBuf;
 use anyhow::{Context, Result};
 
 use crate::extraction::call_graph::FunctionNode;
-
-/// Parsed components of a function name.
-pub(crate) struct ParsedFunctionName {
-    pub module_path: String,
-    pub class_name: Option<String>,
-    pub function_name: String,
-}
+use crate::extraction::external_library_models::CallPatternKey;
 
 /// Language-specific conventions for interpreting function nodes.
 ///
@@ -20,8 +14,8 @@ pub(crate) trait LanguageConventions: Send + Sync {
     /// Whether a function is visible outside its package/module.
     fn is_exported(&self, node: &FunctionNode) -> bool;
 
-    /// Parse the node's name into structured components.
-    fn parse_function_name(&self, node: &FunctionNode) -> ParsedFunctionName;
+    /// Parse the node's name into the [`CallPatternKey`] the model is keyed by.
+    fn parse_function_name(&self, node: &FunctionNode) -> CallPatternKey;
 
     /// Detect the workspace/project root from source file paths.
     fn detect_workspace_root(&self, source_files: &[PathBuf]) -> Result<PathBuf>;
@@ -52,7 +46,7 @@ impl LanguageConventions for GoConventions {
         method_name.starts_with(|c: char| c.is_uppercase())
     }
 
-    fn parse_function_name(&self, node: &FunctionNode) -> ParsedFunctionName {
+    fn parse_function_name(&self, node: &FunctionNode) -> CallPatternKey {
         let name = &node.name;
         // In Go, package == the directory containing the source file. gopls does
         // not put the package on the symbol name, so recover it from the path.
@@ -70,14 +64,14 @@ impl LanguageConventions for GoConventions {
                 .trim_start_matches('*')
                 .trim_end_matches(')');
 
-            return ParsedFunctionName {
+            return CallPatternKey {
                 module_path,
                 class_name: Some(type_name.to_string()),
                 function_name: method_name.to_string(),
             };
         }
 
-        ParsedFunctionName {
+        CallPatternKey {
             module_path,
             class_name: None,
             function_name: name.clone(),

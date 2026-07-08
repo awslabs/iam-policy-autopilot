@@ -18,26 +18,16 @@
 //!   `resourceResourcePolicy.resourceResourcePolicyPut.func1` → the innermost
 //!   *named* enclosing function (`resourceResourcePolicyPut`).
 
+use crate::extraction::external_library_models::CallPatternKey;
+
 /// Marker separating the import path prefix from `<package>.<qualifier>`.
 const SERVICE_PATH_MARKER: &str = "/internal/service/";
 
-/// A handler's join key into `terraform-model.json`'s `call_patterns`.
-///
-/// Mirrors `model_generation::language_conventions::ParsedFunctionName` for Go:
-/// `module_path` is the service package short name, and methods carry a
-/// `class_name` (the receiver type) while free functions do not.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub(crate) struct HandlerKey {
-    pub(crate) module_path: String,
-    pub(crate) class_name: Option<String>,
-    pub(crate) function_name: String,
-}
-
-/// Parse a CRUD-map handler symbol into its model join key.
+/// Parse a CRUD-map handler symbol into its model join key ([`CallPatternKey`]).
 ///
 /// Returns `None` for symbols that do not live under `/internal/service/`
 /// (the model builder skips these too, so they have no `call_pattern`).
-pub(crate) fn handler_key(full_symbol: &str) -> Option<HandlerKey> {
+pub(crate) fn handler_key(full_symbol: &str) -> Option<CallPatternKey> {
     let after = full_symbol.split_once(SERVICE_PATH_MARKER)?.1;
 
     // package = first path-or-dot-delimited segment after the marker.
@@ -59,7 +49,7 @@ pub(crate) fn handler_key(full_symbol: &str) -> Option<HandlerKey> {
     }
 
     let (class_name, function_name) = split_receiver(&entry);
-    Some(HandlerKey {
+    Some(CallPatternKey {
         module_path: package.to_string(),
         class_name,
         function_name,
@@ -175,7 +165,7 @@ mod tests {
         let key = handler_key(&format!("{PFX}{suffix}")).unwrap();
         assert_eq!(
             key,
-            HandlerKey {
+            CallPatternKey {
                 module_path: module_path.to_string(),
                 class_name: class_name.map(str::to_string),
                 function_name: function_name.to_string(),
