@@ -79,6 +79,12 @@ impl ModelIndex {
         self.version.as_deref()
     }
 
+    /// Every handler join key present in the model.
+    #[cfg(test)]
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &CallPatternKey> {
+        self.by_handler.keys()
+    }
+
     /// Build an index from raw JSON bytes, for cross-module tests.
     #[cfg(test)]
     pub(crate) fn from_slice_for_test(bytes: &[u8]) -> Self {

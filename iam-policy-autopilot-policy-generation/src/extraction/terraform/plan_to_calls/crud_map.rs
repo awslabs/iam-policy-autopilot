@@ -80,6 +80,24 @@ impl ResourceEntry {
     pub(crate) fn update_tags_symbol(&self) -> Option<&str> {
         self.tags.as_ref()?.update_tags_symbol.as_deref()
     }
+
+    /// Every handler symbol this entry carries: the four CRUD slots plus, for
+    /// `@Tags` resources, the `ListTags`/`UpdateTags` methods. Mirrors the model
+    /// builder's `ResourceEntry::handler_symbols` (xtask) — the set of symbols
+    /// that must each resolve to a model `call_pattern`.
+    #[cfg(test)]
+    pub(crate) fn handler_symbols(&self) -> impl Iterator<Item = &str> {
+        [
+            self.create.as_deref(),
+            self.read.as_deref(),
+            self.update.as_deref(),
+            self.delete.as_deref(),
+            self.list_tags_symbol(),
+            self.update_tags_symbol(),
+        ]
+        .into_iter()
+        .flatten()
+    }
 }
 
 /// Resource-type → CRUD handler symbols, loaded from the embedded JSON.
@@ -108,6 +126,12 @@ impl CrudMap {
     /// Look up a resource type's CRUD entry, e.g. `"aws_s3_bucket"`.
     pub(crate) fn get(&self, resource_type: &str) -> Option<&ResourceEntry> {
         self.by_type.get(resource_type)
+    }
+
+    /// Every resource entry in the map.
+    #[cfg(test)]
+    pub(crate) fn entries(&self) -> impl Iterator<Item = &ResourceEntry> {
+        self.by_type.values()
     }
 
     /// Build a CRUD map from raw JSON bytes, for cross-module tests.

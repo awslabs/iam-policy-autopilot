@@ -114,4 +114,43 @@ mod tests {
         assert!(!TerraformArtifacts::crud_map_bytes().is_empty());
         assert!(!TerraformArtifacts::model_bytes().is_empty());
     }
+
+    /// Exercises the consumer (`go_symbol::handler_key`) against the two real
+    /// committed artifacts: every key in `terraform-model.json` must be
+    /// reproducible by `handler_key` from some `terraform-crud-map.json` handler
+    /// symbol.
+    ///
+    /// The model is built from the CRUD map, so each model key came from some
+    /// handler symbol. If `handler_key` cannot reproduce a key, the consumer
+    /// parses that symbol differently than the model was keyed on, and the
+    /// handler would silently resolve to no actions (under-scoping). A no-op
+    /// handler produces no model key, so it cannot cause a spurious miss.
+    ///
+    /// Scope: this pins the consumer to the shipped model. It does not run the
+    /// model builder, so it cannot catch the builder and consumer drifting
+    /// together across a regeneration.
+    #[test]
+    fn every_model_key_is_reproducible_from_a_crud_map_symbol() {
+        use std::collections::HashSet;
+
+        let crud = crud_map::CrudMap::load().unwrap();
+        let model = model_index::ModelIndex::load().unwrap();
+
+        // Keys the consumer reproduces from every CRUD-map handler symbol.
+        let reachable: HashSet<_> = crud
+            .entries()
+            .flat_map(|entry| entry.handler_symbols())
+            .filter_map(go_symbol::handler_key)
+            .collect();
+
+        let unreachable: Vec<_> = model.keys().filter(|k| !reachable.contains(k)).collect();
+
+        assert!(
+            unreachable.is_empty(),
+            "{} model key(s) are not reproducible from any CRUD-map handler symbol — \
+             go_symbol::handler_key parses these differently than the model was keyed on, \
+             so these handlers would silently resolve to no actions:\n{unreachable:#?}",
+            unreachable.len(),
+        );
+    }
 }
