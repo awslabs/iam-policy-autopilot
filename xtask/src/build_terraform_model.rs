@@ -33,12 +33,10 @@ use crate::utils::NonSparseSubmodule;
 const SERVICE_PATH_MARKER: &str = "/internal/service/";
 
 /// A single resource entry as emitted by the schema-extractor reflection tool.
-/// Only the fields we need are deserialized; the rest (`schema`, timeouts, …)
-/// are ignored.
+/// Only the fields we need are deserialized; the rest (`resource_type`, `schema`,
+/// timeouts, …) are ignored.
 #[derive(Debug, Deserialize)]
 struct ResourceEntry {
-    #[allow(dead_code)]
-    resource_type: String,
     create: Option<String>,
     read: Option<String>,
     update: Option<String>,
