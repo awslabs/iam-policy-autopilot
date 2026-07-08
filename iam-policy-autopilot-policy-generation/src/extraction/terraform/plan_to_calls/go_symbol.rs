@@ -20,11 +20,17 @@ use crate::extraction::go::naming::{normalize_go_entry_point, split_receiver};
 /// Marker separating the import path prefix from `<package>.<qualifier>`.
 const SERVICE_PATH_MARKER: &str = "/internal/service/";
 
-/// Parse a CRUD-map handler symbol into its model join key ([`CallPatternKey`]).
+/// Peel the `/internal/service/<pkg>` prefix off a handler symbol and normalize
+/// the Go runtime decorations, yielding `(package, entry)` where `entry` is the
+/// resolvable Go entry point (`resourceBucketCreate`, or `(*Type).Method` for a
+/// method — receiver form preserved so it matches a gopls node name directly).
 ///
-/// Returns `None` for symbols that do not live under `/internal/service/`
-/// (the model builder skips these too, so they have no `call_pattern`).
-pub(crate) fn handler_key(full_symbol: &str) -> Option<CallPatternKey> {
+/// Returns `None` for symbols that do not live under `/internal/service/` (the
+/// model builder skips these too, so they have no `call_pattern`). This is the
+/// single Terraform-specific parse shared by the plan consumer ([`handler_key`])
+/// and the model builder (via the `terraform_handler_symbol` API seam), so both
+/// derive the same key from the same symbol.
+pub(crate) fn service_entry_point(full_symbol: &str) -> Option<(String, String)> {
     let after = full_symbol.split_once(SERVICE_PATH_MARKER)?.1;
 
     // package = first path-or-dot-delimited segment after the marker.
@@ -44,10 +50,18 @@ pub(crate) fn handler_key(full_symbol: &str) -> Option<CallPatternKey> {
     if entry.is_empty() {
         return None;
     }
+    Some((package.to_string(), entry))
+}
 
+/// Parse a CRUD-map handler symbol into its model join key ([`CallPatternKey`]).
+///
+/// Returns `None` for symbols that do not live under `/internal/service/`
+/// (the model builder skips these too, so they have no `call_pattern`).
+pub(crate) fn handler_key(full_symbol: &str) -> Option<CallPatternKey> {
+    let (package, entry) = service_entry_point(full_symbol)?;
     let (class_name, function_name) = split_receiver(&entry);
     Some(CallPatternKey {
-        module_path: package.to_string(),
+        module_path: package,
         class_name,
         function_name,
     })

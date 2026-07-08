@@ -419,3 +419,23 @@ pub fn terraform_service_hint(go_sdk_import_package: &str) -> Option<String> {
         .contains_key(go_sdk_import_package)
         .then(|| go_sdk_import_package.to_string())
 }
+
+/// Parse a terraform-provider-aws CRUD-handler symbol into
+/// `(service_package, entry_point_symbol)`, or `None` if it is not a provider
+/// service handler (e.g. lives in the plugin SDK, so has no model entry).
+///
+/// The model *builder* uses this to turn each reflected handler symbol
+/// (`github.com/.../internal/service/s3.resourceBucketCreate`) into the
+/// `pkg.func` entry point the call-graph resolver matches (`s3`,
+/// `s3.resourceBucketCreate`), stripping the Go runtime's `-fm`/`.funcN`
+/// decorations. It shares the exact same parse the plan *consumer* uses to build
+/// its lookup key, so a symbol resolves to the same key on both sides.
+#[must_use]
+pub fn terraform_handler_symbol(full_symbol: &str) -> Option<(String, String)> {
+    crate::extraction::terraform::plan_to_calls::go_symbol::service_entry_point(full_symbol).map(
+        |(package, entry)| {
+            let symbol = format!("{package}.{entry}");
+            (package, symbol)
+        },
+    )
+}

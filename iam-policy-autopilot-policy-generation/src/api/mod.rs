@@ -10,8 +10,8 @@ pub use crate::extraction::external_library_models::ExternalLibraryModel;
 pub use extract_sdk_calls::extract_sdk_calls;
 #[cfg(feature = "model-generation")]
 pub use generate_model::{
-    generate_model, generate_models_batch, terraform_service_hint, BatchOptions,
-    GenerateModelConfig,
+    generate_model, generate_models_batch, terraform_handler_symbol, terraform_service_hint,
+    BatchOptions, GenerateModelConfig,
 };
 pub use generate_policies::generate_policies;
 pub use get_submodule_version::{

@@ -21,16 +21,12 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 use iam_policy_autopilot_policy_generation::api::{
-    generate_models_batch, terraform_service_hint, BatchOptions, ExternalLibraryModel,
-    GenerateModelConfig,
+    generate_models_batch, terraform_handler_symbol, terraform_service_hint, BatchOptions,
+    ExternalLibraryModel, GenerateModelConfig,
 };
 use serde::Deserialize;
 
 use crate::utils::NonSparseSubmodule;
-
-/// Only handlers under this import-path segment are real provider resource
-/// handlers we can model; anything else (e.g. `schema.NoopContext`) is skipped.
-const SERVICE_PATH_MARKER: &str = "/internal/service/";
 
 /// A single resource entry as emitted by the schema-extractor reflection tool.
 /// Only the fields we need are deserialized; the rest (`resource_type`, `schema`,
@@ -98,84 +94,6 @@ pub struct BuildOptions {
     pub pretty: bool,
 }
 
-/// Split a reflection handler symbol into `(package, entry_point_symbol)`, or
-/// `None` if it is not a provider service handler (e.g. lives in the plugin SDK).
-///
-/// The package is always the path segment immediately after
-/// `internal/service/` — never inferred by splitting on dots, since the
-/// qualifier after the package can itself contain dots / receivers.
-///
-/// The qualifier is normalized to a resolvable Go entry point:
-/// - plain free function: `glue.resourceBucketRead` → `glue.resourceBucketRead`
-/// - closure: `glue.resourceResourcePolicyPut.func1` → the enclosing function
-///   `glue.resourceResourcePolicyPut` (Go runtime appends `.funcN` to closures)
-/// - bound method value: `sqs.(*queueAttributeHandler).Upsert-fm` →
-///   `sqs.(*queueAttributeHandler).Upsert` (Go runtime appends `-fm` to method
-///   values; the resolver matches the method node by its receiver+name)
-fn service_symbol(full: &str) -> Option<(String, String)> {
-    let after = full.split_once(SERVICE_PATH_MARKER)?.1;
-    // package = first path-or-dot-delimited segment after the marker.
-    let pkg_end = after.find(['/', '.'])?;
-    let package = &after[..pkg_end];
-    // qualifier = everything after "<package>." (must be a '.', not a '/': a
-    // '/' would mean a sub-package path we don't handle).
-    if after.as_bytes().get(pkg_end) != Some(&b'.') {
-        return None;
-    }
-    let qualifier = &after[pkg_end + 1..];
-    if package.is_empty() || qualifier.is_empty() {
-        return None;
-    }
-
-    let entry = normalize_go_entry_point(qualifier);
-    if entry.is_empty() {
-        return None;
-    }
-    Some((package.to_string(), format!("{package}.{entry}")))
-}
-
-/// Normalize a Go runtime qualifier (everything after `pkg.`) to the entry
-/// point the symbol resolver can match.
-///
-/// The Go runtime decorates handler function names in two ways:
-/// - method value: trailing `-fm`, e.g. `(*queueAttributeHandler).Upsert-fm`
-///   → keep the receiver form `(*queueAttributeHandler).Upsert`.
-/// - closure: trailing `.funcN` (possibly nested), prefixed by the enclosing
-///   function chain, e.g. `resourceResourcePolicy.resourceResourcePolicyPut.func1`.
-///   The real entry point is the innermost *named* function the closure is
-///   defined in — the last identifier segment before the `.funcN` suffix
-///   (`resourceResourcePolicyPut`) — which is the function gopls has a node for
-///   and whose body holds the SDK calls.
-fn normalize_go_entry_point(qualifier: &str) -> String {
-    // Method value: strip `-fm`, keep the `(*Type).Method` form whole.
-    if let Some(method) = qualifier.strip_suffix("-fm") {
-        return method.to_string();
-    }
-
-    // Closure: strip trailing `.funcN` segments, then take the last named
-    // segment of the remaining dotted chain.
-    let mut q = qualifier;
-    let mut had_closure = false;
-    while let Some((head, tail)) = q.rsplit_once('.') {
-        let is_closure_seg = tail.len() > 4
-            && tail.starts_with("func")
-            && tail[4..].bytes().all(|b| b.is_ascii_digit());
-        if is_closure_seg {
-            q = head;
-            had_closure = true;
-        } else {
-            break;
-        }
-    }
-    if had_closure {
-        // For a closure, the enclosing named function is the last segment.
-        return q.rsplit('.').next().unwrap_or(q).to_string();
-    }
-
-    // Plain free function (no decoration).
-    q.to_string()
-}
-
 /// Parse `output.json` and build one model-generation config per service
 /// package. Handler symbols are passed as `pkg.func` entry points so the
 /// lowercase SDKv2 free functions (which the default exported-functions
@@ -194,7 +112,7 @@ fn plan_configs(opts: &BuildOptions, provider_root: &Path) -> Result<Vec<Generat
     let mut skipped = 0usize;
     for resource in &resources {
         for handler in resource.handler_symbols() {
-            match service_symbol(handler) {
+            match terraform_handler_symbol(handler) {
                 Some((package, symbol)) => {
                     by_package.entry(package).or_default().insert(symbol);
                 }
@@ -421,18 +339,23 @@ mod tests {
 
     const PFX: &str = "github.com/hashicorp/terraform-provider-aws/internal/service/";
 
+    // The symbol parse itself is owned and unit-tested in policy-generation
+    // (extraction::go::naming + plan_to_calls::go_symbol). These verify the
+    // `terraform_handler_symbol` API seam this builder consumes reassembles the
+    // `pkg.entry` form correctly across the four real handler shapes.
+
     #[test]
-    fn service_symbol_plain_free_function() {
-        let (pkg, sym) = service_symbol(&format!("{PFX}s3.resourceBucketRead")).unwrap();
+    fn handler_symbol_plain_free_function() {
+        let (pkg, sym) = terraform_handler_symbol(&format!("{PFX}s3.resourceBucketRead")).unwrap();
         assert_eq!(pkg, "s3");
         assert_eq!(sym, "s3.resourceBucketRead");
     }
 
     #[test]
-    fn service_symbol_closure_strips_to_enclosing_func() {
+    fn handler_symbol_closure_strips_to_enclosing_func() {
         // Go runtime: closure inside resourceResourcePolicyPut, attributed under
         // the enclosing resourceResourcePolicy chain with a .func1 suffix.
-        let (pkg, sym) = service_symbol(&format!(
+        let (pkg, sym) = terraform_handler_symbol(&format!(
             "{PFX}glue.resourceResourcePolicy.resourceResourcePolicyPut.func1"
         ))
         .unwrap();
@@ -441,38 +364,19 @@ mod tests {
     }
 
     #[test]
-    fn service_symbol_method_value_keeps_receiver() {
+    fn handler_symbol_method_value_keeps_receiver() {
         let (pkg, sym) =
-            service_symbol(&format!("{PFX}sqs.(*queueAttributeHandler).Upsert-fm")).unwrap();
+            terraform_handler_symbol(&format!("{PFX}sqs.(*queueAttributeHandler).Upsert-fm"))
+                .unwrap();
         assert_eq!(pkg, "sqs");
         assert_eq!(sym, "sqs.(*queueAttributeHandler).Upsert");
     }
 
     #[test]
-    fn service_symbol_rejects_non_service() {
-        assert!(service_symbol(
+    fn handler_symbol_rejects_non_service() {
+        assert!(terraform_handler_symbol(
             "github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema.NoopContext"
         )
         .is_none());
-    }
-
-    #[test]
-    fn normalize_entry_point_forms() {
-        assert_eq!(
-            normalize_go_entry_point("resourceBucketRead"),
-            "resourceBucketRead"
-        );
-        assert_eq!(
-            normalize_go_entry_point("resourceResourcePolicyPut.func1"),
-            "resourceResourcePolicyPut"
-        );
-        assert_eq!(
-            normalize_go_entry_point("resourceResourcePolicy.resourceResourcePolicyPut.func2"),
-            "resourceResourcePolicyPut"
-        );
-        assert_eq!(
-            normalize_go_entry_point("(*queueAttributeHandler).Read-fm"),
-            "(*queueAttributeHandler).Read"
-        );
     }
 }
