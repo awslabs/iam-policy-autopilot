@@ -23,7 +23,7 @@ pub(crate) mod waiter_model;
 
 pub(crate) mod terraform;
 
-#[cfg(feature = "call-graph")]
+#[cfg(feature = "model-generation")]
 pub(crate) mod call_graph;
 
 // Re-export main types for convenience

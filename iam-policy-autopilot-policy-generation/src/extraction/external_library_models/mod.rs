@@ -20,7 +20,7 @@ struct ExternalLibraryModelsAsset;
 /// Each model describes one library for one language, mapping its function calls
 /// to underlying AWS SDK operations.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct ExternalLibraryModel {
+pub struct ExternalLibraryModel {
     /// Library name (e.g., "aws_lambda_powertools")
     pub library_name: String,
     /// Target programming language
@@ -34,7 +34,7 @@ pub(crate) struct ExternalLibraryModel {
 
 /// Describes how to match a specific library function call and what SDK operations it maps to.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct CallPattern {
+pub struct CallPattern {
     /// Module path (e.g., "aws_lambda_powertools.utilities.parameters")
     pub module_path: String,
     /// Class or type name for `StaticMethod`/`InstanceMethod` patterns (e.g., "SSMProvider")
@@ -51,7 +51,7 @@ pub(crate) struct CallPattern {
 /// Describes the kind of callable in the source library.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum CallType {
+pub enum CallType {
     /// A function defined in a module/namespace: `mod.func()`, `pkg.Func()`, `func()`
     Function,
     /// A method called on a class/type: `Class.method()`, `Type::method()`
@@ -62,7 +62,7 @@ pub(crate) enum CallType {
 
 /// Maps a library call to a specific AWS SDK operation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(crate) struct SdkOperationMapping {
+pub struct SdkOperationMapping {
     /// AWS service name (e.g., "ssm", "secretsmanager")
     pub service: String,
     /// AWS operation name in PascalCase (e.g., "GetParameter")

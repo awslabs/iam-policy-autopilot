@@ -5,7 +5,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use lsp_types::{DocumentSymbolResponse, SymbolKind};
 
-use super::{CallGraph, CallGraphBuilder, CallGraphError, FunctionNode};
+use super::{innermost_enclosing, CallGraph, CallGraphBuilder, CallGraphError, FunctionNode};
 use crate::lsp::gopls::GoplsClient;
 use crate::lsp::{file_url, LspClientOptions};
 use crate::Location;
@@ -18,9 +18,13 @@ impl GoplsCallGraphBuilder {
     pub(crate) async fn new(workspace_root: &Path) -> Result<Self, CallGraphError> {
         let options = LspClientOptions {
             initialize_timeout: Duration::from_secs(30),
-            open_document_timeout: Duration::from_secs(10),
-            request_timeout: Duration::from_secs(10),
+            open_document_timeout: Duration::from_secs(30),
+            request_timeout: Duration::from_secs(30),
             shutdown_timeout: Duration::from_secs(5),
+            idle_timeout: Duration::from_secs(300),
+            // gopls is slow to announce indexing on a cold module cache; give the
+            // first progress token generous headroom before assuming there is none.
+            progress_startup_grace: Duration::from_secs(10),
             // gopls returns Flat (SymbolInformation) by default, which lacks selection_range.
             // Hierarchical mode gives us DocumentSymbol with selection_range — needed to
             // position prepare_call_hierarchy on the function name, not the `func` keyword.
@@ -30,6 +34,10 @@ impl GoplsCallGraphBuilder {
                         hierarchical_document_symbol_support: Some(true),
                         ..Default::default()
                     }),
+                    ..Default::default()
+                }),
+                window: Some(lsp_types::WindowClientCapabilities {
+                    work_done_progress: Some(true),
                     ..Default::default()
                 }),
                 ..Default::default()
@@ -57,6 +65,10 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
             })?;
             client.open_document(file, &content).await?;
         }
+
+        log::info!("Waiting for language server to finish indexing...");
+        client.wait_for_idle().await?;
+        log::info!("Language server ready");
 
         let mut nodes = Vec::new();
         // Maps node index → (uri, selection_range start) for prepare_call_hierarchy
@@ -143,12 +155,22 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
                     if !source_file_set.contains(&callee_path) {
                         return None;
                     }
-                    let location = Location::from_lsp(&call.to.uri, &call.to.range)?;
-                    Some(FunctionNode {
-                        name: call.to.name,
-                        qualified_name: call.to.detail,
-                        location,
-                    })
+                    // Match the callee to a discovered node by position, not name:
+                    // documentSymbol qualifies methods as `(*Type).Method` while
+                    // outgoing_calls reports a bare `Method`, so names don't line
+                    // up. Both agree `call.to.range` sits inside the declaration,
+                    // so we pick the node enclosing it (none ⇒ external call,
+                    // dropped).
+                    let callee_start =
+                        Location::from_lsp(&call.to.uri, &call.to.range)?.start_position;
+                    let hit = innermost_enclosing(&nodes, callee_start, |path| path == callee_path);
+                    if hit.is_none() {
+                        log::debug!(
+                            "outgoing call to '{}' at {callee_start:?} matched no known node",
+                            call.to.name,
+                        );
+                    }
+                    hit.cloned()
                 })
                 .collect();
 
@@ -158,13 +180,13 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
         Ok(CallGraph::new(nodes, edges))
     }
 
-    async fn shutdown(self) -> Result<(), CallGraphError> {
+    async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError> {
         self.client.shutdown().await?;
         Ok(())
     }
 }
 
-#[cfg(all(test, feature = "integ-test", feature = "call-graph"))]
+#[cfg(all(test, feature = "integ-test", feature = "model-generation"))]
 mod tests {
     use super::*;
     use crate::lsp::test_utils::go;
@@ -181,7 +203,7 @@ mod tests {
 
         let mut builder = GoplsCallGraphBuilder::new(&root).await.unwrap();
         let graph = builder.build(&root, &[root.join("main.go")]).await.unwrap();
-        builder.shutdown().await.unwrap();
+        Box::new(builder).shutdown().await.unwrap();
         graph
     }
 
@@ -250,12 +272,15 @@ mod tests {
             .iter()
             .map(|n| n.name.as_str())
             .collect();
+        // Method callees are matched by position, so the recorded node keeps the
+        // documentSymbol form `(*Server).fetchData`, not the bare name gopls
+        // reports in the call hierarchy.
         assert!(
-            callees.contains(&"fetchData"),
+            callees.iter().any(|c| c.contains("fetchData")),
             "HandleRequest calls: {callees:?}"
         );
         assert!(
-            callees.contains(&"format"),
+            callees.iter().any(|c| c.contains("format")),
             "HandleRequest calls: {callees:?}"
         );
     }

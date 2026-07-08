@@ -1,6 +1,3 @@
-// TODO: remove once model_generation or CLI consumes this module
-#![allow(dead_code)]
-
 pub(crate) mod gopls;
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -81,20 +78,9 @@ impl CallGraph {
     }
 
     fn enclosing_function(&self, location: &Location) -> Option<&FunctionNode> {
-        self.nodes
-            .iter()
-            .filter(|node| {
-                node.location.file_path == location.file_path
-                    && node.location.start_position <= location.start_position
-                    && node.location.end_position >= location.end_position
-            })
-            .min_by_key(|node| {
-                // Prefer the smallest enclosing range (innermost function)
-                (
-                    node.location.end_position.0 - node.location.start_position.0,
-                    node.location.end_position.1,
-                )
-            })
+        innermost_enclosing(&self.nodes, location.start_position, |path| {
+            path == location.file_path
+        })
     }
 
     fn reachable_set<'a>(&'a self, from: &'a FunctionNode) -> BTreeSet<&'a FunctionNode> {
@@ -116,6 +102,35 @@ impl CallGraph {
     }
 }
 
+/// Find the innermost function node enclosing `point` in a matching file.
+///
+/// `point` is a 1-based `(line, column)`. `file_matches` decides which nodes'
+/// files are eligible — callers pass exact equality when both sides are
+/// canonical LSP paths, or a suffix match when resolving a partial user-supplied
+/// path. When several nodes enclose the point (which the graph builder avoids
+/// for top-level declarations but can happen for arbitrary locations), the one
+/// with the smallest range wins, so a call inside a nested scope is attributed
+/// to the tightest enclosing function.
+pub(crate) fn innermost_enclosing(
+    nodes: &[FunctionNode],
+    point: (usize, usize),
+    mut file_matches: impl FnMut(&Path) -> bool,
+) -> Option<&FunctionNode> {
+    nodes
+        .iter()
+        .filter(|node| {
+            file_matches(&node.location.file_path)
+                && node.location.start_position <= point
+                && point <= node.location.end_position
+        })
+        .min_by_key(|node| {
+            (
+                node.location.end_position.0 - node.location.start_position.0,
+                node.location.end_position.1,
+            )
+        })
+}
+
 /// Trait for building a call graph from source files.
 #[async_trait]
 pub(crate) trait CallGraphBuilder: Send + Sync {
@@ -130,8 +145,71 @@ pub(crate) trait CallGraphBuilder: Send + Sync {
     ) -> Result<CallGraph, CallGraphError>;
 
     /// Shut down any underlying server/process.
-    /// If dynamic dispatch (`dyn CallGraphBuilder`) is needed, change to `self: Box<Self>`.
-    async fn shutdown(self) -> Result<(), CallGraphError>;
+    async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError>;
+}
+
+/// Build a `CallGraph` from a compact edge spec, for tests.
+///
+/// Each string in `edge_specs` has the form `"caller -> callee1, callee2"`.
+/// Nodes are auto-created with non-overlapping ranges in "test.go". Shared with
+/// the `model_generation` tests, which build graphs the same way.
+#[cfg(test)]
+pub(crate) fn graph_from_spec(edge_specs: &[&str]) -> CallGraph {
+    use std::path::PathBuf;
+
+    let mut all_names = Vec::new();
+    let mut edge_pairs: Vec<(&str, &str)> = Vec::new();
+
+    for spec in edge_specs {
+        let parts: Vec<&str> = spec.split("->").collect();
+        let caller = parts[0].trim();
+        if !all_names.contains(&caller) {
+            all_names.push(caller);
+        }
+        if parts.len() == 2 {
+            for callee in parts[1].split(',') {
+                let callee = callee.trim();
+                if !all_names.contains(&callee) {
+                    all_names.push(callee);
+                }
+                edge_pairs.push((caller, callee));
+            }
+        }
+    }
+
+    let nodes: Vec<FunctionNode> = all_names
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let start_line = i * 10 + 1;
+            FunctionNode {
+                name: name.to_string(),
+                qualified_name: None,
+                location: Location::new(
+                    PathBuf::from("test.go"),
+                    (start_line, 1),
+                    (start_line + 9, 1),
+                ),
+            }
+        })
+        .collect();
+
+    let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
+    for (caller_name, callee_name) in edge_pairs {
+        let caller = nodes
+            .iter()
+            .find(|n| n.name == caller_name)
+            .unwrap()
+            .clone();
+        let callee = nodes
+            .iter()
+            .find(|n| n.name == callee_name)
+            .unwrap()
+            .clone();
+        edges.entry(caller).or_default().push(callee);
+    }
+
+    CallGraph::new(nodes, edges)
 }
 
 #[cfg(test)]
@@ -139,66 +217,6 @@ mod tests {
     use super::*;
     use rstest::rstest;
     use std::path::PathBuf;
-
-    /// Build a CallGraph from a compact edge spec.
-    ///
-    /// Each string in `edge_specs` has the form `"caller -> callee1, callee2"`.
-    /// Nodes are auto-created with non-overlapping ranges in "test.go".
-    fn graph_from_spec(edge_specs: &[&str]) -> CallGraph {
-        let mut all_names = Vec::new();
-        let mut edge_pairs: Vec<(&str, &str)> = Vec::new();
-
-        for spec in edge_specs {
-            let parts: Vec<&str> = spec.split("->").collect();
-            let caller = parts[0].trim();
-            if !all_names.contains(&caller) {
-                all_names.push(caller);
-            }
-            if parts.len() == 2 {
-                for callee in parts[1].split(',') {
-                    let callee = callee.trim();
-                    if !all_names.contains(&callee) {
-                        all_names.push(callee);
-                    }
-                    edge_pairs.push((caller, callee));
-                }
-            }
-        }
-
-        let nodes: Vec<FunctionNode> = all_names
-            .iter()
-            .enumerate()
-            .map(|(i, name)| {
-                let start_line = i * 10 + 1;
-                FunctionNode {
-                    name: name.to_string(),
-                    qualified_name: None,
-                    location: Location::new(
-                        PathBuf::from("test.go"),
-                        (start_line, 1),
-                        (start_line + 9, 1),
-                    ),
-                }
-            })
-            .collect();
-
-        let mut edges: BTreeMap<FunctionNode, Vec<FunctionNode>> = BTreeMap::new();
-        for (caller_name, callee_name) in edge_pairs {
-            let caller = nodes
-                .iter()
-                .find(|n| n.name == caller_name)
-                .unwrap()
-                .clone();
-            let callee = nodes
-                .iter()
-                .find(|n| n.name == callee_name)
-                .unwrap()
-                .clone();
-            edges.entry(caller).or_default().push(callee);
-        }
-
-        CallGraph::new(nodes, edges)
-    }
 
     /// Place an SDK call inside a named function's range.
     fn sdk_call_in(graph: &CallGraph, operation: &str, function_name: &str) -> SdkMethodCall {
