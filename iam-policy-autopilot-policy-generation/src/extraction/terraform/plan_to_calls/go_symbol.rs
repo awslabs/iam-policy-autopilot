@@ -2,23 +2,20 @@
 //!
 //! The CRUD map stores full Go import paths, e.g.
 //! `github.com/hashicorp/terraform-provider-aws/internal/service/sqs.(*queueAttributeHandler).Upsert-fm`.
-//! The model (`terraform-model.json`) keys its `call_patterns` on
-//! `(module_path, class_name, function_name)` — the same triple the model
-//! builder derives via `service_symbol` (xtask) + `parse_function_name`
-//! (`model_generation::language_conventions`). To join a plan resource's
-//! handler to its SDK operations, the consumer must reproduce that triple
-//! identically.
+//! The model (`terraform-model.json`) keys its `call_patterns` on the
+//! [`CallPatternKey`] triple `(module_path, class_name, function_name)` — the
+//! same triple the model builder derives from a call-graph node. To join a plan
+//! resource's handler to its SDK operations, the consumer must reproduce that
+//! triple identically.
 //!
-//! This module is the single shared implementation of that normalization.
-//! The Go runtime decorates handler names in two ways the model builder
-//! already accounts for, so we mirror them here:
-//! - method value: trailing `-fm`, e.g. `(*queueAttributeHandler).Upsert-fm`
-//!   → keep the `(*Type).Method` receiver form, then split into class+method.
-//! - closure: trailing `.funcN` (possibly nested), e.g.
-//!   `resourceResourcePolicy.resourceResourcePolicyPut.func1` → the innermost
-//!   *named* enclosing function (`resourceResourcePolicyPut`).
+//! This module owns only the Terraform-specific part of that join: peeling the
+//! `internal/service/<pkg>` prefix to recover `module_path`. The general-Go
+//! string normalization (stripping the runtime's `-fm`/`.funcN` decorations,
+//! splitting a `(*Type).Method` receiver) is shared with the model builder via
+//! [`crate::extraction::go::naming`], so both sides normalize identically.
 
 use crate::extraction::external_library_models::CallPatternKey;
+use crate::extraction::go::naming::{normalize_go_entry_point, split_receiver};
 
 /// Marker separating the import path prefix from `<package>.<qualifier>`.
 const SERVICE_PATH_MARKER: &str = "/internal/service/";
@@ -54,56 +51,6 @@ pub(crate) fn handler_key(full_symbol: &str) -> Option<CallPatternKey> {
         class_name,
         function_name,
     })
-}
-
-/// Strip the Go runtime's closure/method-value decorations from the qualifier
-/// (everything after `pkg.`), yielding the resolvable entry point.
-///
-/// Mirrors `xtask::build_terraform_model::normalize_go_entry_point`.
-fn normalize_go_entry_point(qualifier: &str) -> String {
-    // Method value: strip `-fm`, keep the `(*Type).Method` form whole.
-    if let Some(method) = qualifier.strip_suffix("-fm") {
-        return method.to_string();
-    }
-
-    // Closure: strip trailing `.funcN` segments, then take the last named
-    // segment of the remaining dotted chain.
-    let mut q = qualifier;
-    let mut had_closure = false;
-    while let Some((head, tail)) = q.rsplit_once('.') {
-        let is_closure_seg = tail.len() > 4
-            && tail.starts_with("func")
-            && tail[4..].bytes().all(|b| b.is_ascii_digit());
-        if is_closure_seg {
-            q = head;
-            had_closure = true;
-        } else {
-            break;
-        }
-    }
-    if had_closure {
-        return q.rsplit('.').next().unwrap_or(q).to_string();
-    }
-
-    q.to_string()
-}
-
-/// Split a normalized entry point into `(class_name, function_name)`.
-///
-/// Methods take the gopls `(*Type).Method` form; mirrors
-/// `GoConventions::parse_function_name`'s receiver handling. Free functions
-/// have no class name.
-fn split_receiver(entry: &str) -> (Option<String>, String) {
-    if let Some(dot_pos) = entry.find(").") {
-        let receiver_part = &entry[..=dot_pos];
-        let method_name = &entry[dot_pos + 2..];
-        let type_name = receiver_part
-            .trim_start_matches('(')
-            .trim_start_matches('*')
-            .trim_end_matches(')');
-        return (Some(type_name.to_string()), method_name.to_string());
-    }
-    (None, entry.to_string())
 }
 
 #[cfg(test)]
