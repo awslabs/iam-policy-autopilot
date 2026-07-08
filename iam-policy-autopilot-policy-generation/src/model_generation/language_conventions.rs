@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 
 use crate::extraction::call_graph::FunctionNode;
 use crate::extraction::external_library_models::CallPatternKey;
+use crate::extraction::go::naming::split_receiver;
 
 /// Language-specific conventions for interpreting function nodes.
 ///
@@ -47,7 +48,6 @@ impl LanguageConventions for GoConventions {
     }
 
     fn parse_function_name(&self, node: &FunctionNode) -> CallPatternKey {
-        let name = &node.name;
         // In Go, package == the directory containing the source file. gopls does
         // not put the package on the symbol name, so recover it from the path.
         // This makes (module_path, function_name) a provider-wide unique key,
@@ -55,26 +55,14 @@ impl LanguageConventions for GoConventions {
         // alone collides, e.g. resourceInstanceRead in both ec2 and rds).
         let module_path = go_package_of(&node.location.file_path).unwrap_or_default();
 
-        if let Some(dot_pos) = name.find(").") {
-            let receiver_part = &name[..=dot_pos];
-            let method_name = &name[dot_pos + 2..];
-
-            let type_name = receiver_part
-                .trim_start_matches('(')
-                .trim_start_matches('*')
-                .trim_end_matches(')');
-
-            return CallPatternKey {
-                module_path,
-                class_name: Some(type_name.to_string()),
-                function_name: method_name.to_string(),
-            };
-        }
-
+        // gopls already gives a clean node name (no runtime `-fm`/`.funcN`
+        // decoration), so only the receiver split is needed — shared with the
+        // Terraform consumer so both derive the same key.
+        let (class_name, function_name) = split_receiver(&node.name);
         CallPatternKey {
             module_path,
-            class_name: None,
-            function_name: name.clone(),
+            class_name,
+            function_name,
         }
     }
 
