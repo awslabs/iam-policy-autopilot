@@ -203,10 +203,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Install Python LSP test dependencies
+        env:
+          WORKSPACE_DIR: ${{ github.workspace }}
         run: |
           python3 -m venv .lsp-venv
           .lsp-venv/bin/pip install 'ty>=0.0.39,<0.1' boto3 'boto3-stubs[essential]'
-          echo "${{ github.workspace }}/.lsp-venv/bin" >> $GITHUB_PATH
+          echo "${WORKSPACE_DIR}/.lsp-venv/bin" >> $GITHUB_PATH
 
       - uses: actions/setup-go@v5
         with:
