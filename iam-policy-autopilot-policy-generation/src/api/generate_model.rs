@@ -167,6 +167,7 @@ pub async fn generate_models_batch(
                 language,
                 config,
                 source_files,
+                &canonical_root,
             )
             .await
             .with_context(|| format!("Failed to generate model for '{}'", config.library_name))?;
@@ -185,21 +186,24 @@ pub async fn generate_models_batch(
 }
 
 /// Generate a single model against an already-running call-graph builder.
+///
+/// `workspace_root` is the batch's shared, already-indexed workspace. The
+/// builder ignores it for the shared server (the server was started against it
+/// in `start_call_graph_builder`), but `build` still takes it; passing the
+/// batch value avoids re-detecting per job.
 async fn generate_one(
     builder: &mut dyn CallGraphBuilder,
     conventions: &dyn LanguageConventions,
     language: Language,
     config: &GenerateModelConfig,
     source_files: &[PathBuf],
+    workspace_root: &Path,
 ) -> Result<ExternalLibraryModel> {
     info!("Generating model for library '{}'", config.library_name);
 
     let t_build = std::time::Instant::now();
     let graph = builder
-        .build(
-            &config_workspace_root(conventions, source_files)?,
-            source_files,
-        )
+        .build(workspace_root, source_files)
         .await
         .context("Failed to build call graph")?;
     let build_ms = t_build.elapsed().as_millis();
@@ -298,15 +302,6 @@ async fn start_call_graph_builder(
         Language::Go => Ok(Box::new(GoplsCallGraphBuilder::new(workspace_root).await?)),
         _ => anyhow::bail!("Model generation is not yet supported for {language}"),
     }
-}
-
-/// The workspace root for a single job (the builder ignores this for the shared
-/// server, but `build` still takes it; kept consistent with the conventions).
-fn config_workspace_root(
-    conventions: &dyn LanguageConventions,
-    source_files: &[PathBuf],
-) -> Result<PathBuf> {
-    conventions.detect_workspace_root(source_files)
 }
 
 /// Resolve entry point specs in `file:line:column` format to FunctionNodes.
