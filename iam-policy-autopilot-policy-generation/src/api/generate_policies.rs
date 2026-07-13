@@ -6,17 +6,15 @@ use log::{debug, info, trace};
 
 use crate::{
     api::{
-        common::process_source_files,
-        input_kind::{classify_inputs, ClassifiedInputs, IacFormat},
+        extract_sdk_calls::extract_sdk_calls,
         model::{GeneratePoliciesResult, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
         Explanation, Explanations,
     },
-    extraction::{terraform::plan_to_calls, SdkMethodCall},
     policy_generation::merge::PolicyMergerConfig,
-    EnrichmentEngine, PolicyGenerationEngine,
+    EnrichmentEngine, ExtractedMethods, PolicyGenerationEngine,
 };
 
 /// Check if an action matches a pattern with wildcard support.
@@ -218,72 +216,17 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     };
 
     // --- Determine SDK method calls ---
-    // The action-source inputs are classified into one coherent kind: either
-    // Terraform plan(s) (resource changes resolved through the embedded CRUD map
-    // + model) or application source files (tree-sitter extraction). Mixing is
-    // rejected up front. The plan path short-circuits source extraction; ARN
-    // binding above still composes for free.
-    let inputs = classify_inputs(&config.extract_sdk_calls_config.source_files)
-        .context("Failed to classify generate-policies inputs")?;
-
-    let (extracted_methods, sdk) = match inputs {
-        ClassifiedInputs::Iac(IacFormat::TerraformPlan, plan_paths) => {
-            debug!(
-                "Deriving actions from {} Terraform plan(s)",
-                plan_paths.len()
-            );
-            let (mapped, _resources) = plan_to_calls::plan_to_sdk_calls(&plan_paths)
-                .context("Failed to derive SDK calls from Terraform plan(s)")?;
-            for warning in &mapped.warnings {
-                log::warn!("{warning}");
-            }
-            debug!(
-                "Derived {} SDK calls from Terraform plan(s) ({} warning(s))",
-                mapped.calls.len(),
-                mapped.warnings.len()
-            );
-            // The model emits botocore service ids in `possible_services`, exactly
-            // as the Go source extractor does, so the SDK type is Go.
-            (mapped.calls, crate::Language::Go.sdk_type())
-        }
-        ClassifiedInputs::Source(all_source_files) => {
-            if all_source_files.is_empty() {
-                info!("No source files found to process, returning empty policy list");
-                return Ok(GeneratePoliciesResult {
-                    policies: vec![],
-                    explanations: None,
-                    resource_binding_explanations: None,
-                });
-            }
-
-            // Create the extractor
-            let extractor = crate::ExtractionEngine::new();
-
-            // Process source files to get extracted methods
-            let extracted_methods = process_source_files(
-                &extractor,
-                &all_source_files,
-                config.extract_sdk_calls_config.language.as_deref(),
-                config.extract_sdk_calls_config.service_hints.clone(),
-            )
-            .await
-            .context("Failed to process source files")?;
-
-            // Relies on the invariant that all source files must be of the same language, which we
-            // enforce in process_source_files
-            let sdk = extracted_methods
-                .metadata
-                .source_files
-                .first()
-                .map_or(crate::SdkType::Other, |f| f.language.sdk_type());
-
-            let extracted_methods = extracted_methods
-                .methods
-                .into_iter()
-                .collect::<Vec<SdkMethodCall>>();
-            (extracted_methods, sdk)
-        }
-    };
+    // Delegate to the shared extraction entry point, which classifies the inputs
+    // (application source vs. Terraform plan), rejects mixing, and resolves both
+    // kinds to the same `SdkMethodCall` currency plus the SDK dialect they belong
+    // to. ARN binding above still composes for free regardless of the input kind.
+    let ExtractedMethods {
+        methods: extracted_methods,
+        sdk,
+        ..
+    } = extract_sdk_calls(&config.extract_sdk_calls_config)
+        .await
+        .context("Failed to extract SDK calls from inputs")?;
 
     debug!(
         "Extracted {} methods, starting enrichment pipeline",

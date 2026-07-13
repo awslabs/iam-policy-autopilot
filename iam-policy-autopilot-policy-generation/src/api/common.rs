@@ -135,6 +135,7 @@ mod tests {
                 },
             ],
             metadata: ExtractionMetadata::new(vec![], vec![]),
+            sdk: crate::SdkType::Other,
         };
 
         // Test 1: Filter using smithy name "cloudwatch-logs" should match "logs"
@@ -243,6 +244,7 @@ mod tests {
                 },
             ],
             metadata: ExtractionMetadata::new(vec![], vec![]),
+            sdk: crate::SdkType::Other,
         };
 
         // Test 1: Providing "bedrock" should match both bedrock-runtime and bedrock-agent
