@@ -22,63 +22,10 @@ use anyhow::{Context, Result};
 use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
 use iam_policy_autopilot_policy_generation::api::{
     generate_models_batch, terraform_handler_symbol, terraform_service_hint, BatchOptions,
-    ExternalLibraryModel, GenerateModelConfig,
+    ExternalLibraryModel, GenerateModelConfig, TerraformCrudMapEntry,
 };
-use serde::Deserialize;
 
 use crate::utils::NonSparseSubmodule;
-
-/// A single resource entry as emitted by the schema-extractor reflection tool.
-/// Only the fields we need are deserialized; the rest (`resource_type`, `schema`,
-/// timeouts, …) are ignored.
-#[derive(Debug, Deserialize)]
-struct ResourceEntry {
-    create: Option<String>,
-    read: Option<String>,
-    update: Option<String>,
-    delete: Option<String>,
-    /// Transparent-tagging entry points (present only for `@Tags` resources whose
-    /// service package implements the tagging interface). The tag SDK calls live
-    /// in these methods (called by the interceptor outside the CRUD handlers), so
-    /// they must be extracted as entry points too — otherwise tag actions like
-    /// `s3:GetBucketTagging` are missing from the model. The consumer applies the
-    /// CRUD-slot => tag-call rule using these symbols.
-    #[serde(default)]
-    tags: Option<TagsEntry>,
-}
-
-/// Tagging entry points for a resource (mirrors the Go extractor's `tags` block).
-#[derive(Debug, Deserialize)]
-struct TagsEntry {
-    #[serde(default)]
-    list_tags_symbol: Option<String>,
-    #[serde(default)]
-    update_tags_symbol: Option<String>,
-}
-
-impl ResourceEntry {
-    /// All non-empty handler symbols for this resource: the four CRUD handlers
-    /// plus, for `@Tags` resources, the `ListTags`/`UpdateTags` methods. All are
-    /// fed to the call-graph extractor as entry points so their SDK operations
-    /// (including tag ops) become `call_pattern`s in the model.
-    fn handler_symbols(&self) -> impl Iterator<Item = &str> {
-        let tag_symbols = self.tags.as_ref().map(|t| {
-            [
-                t.list_tags_symbol.as_deref(),
-                t.update_tags_symbol.as_deref(),
-            ]
-        });
-        [
-            self.create.as_deref(),
-            self.read.as_deref(),
-            self.update.as_deref(),
-            self.delete.as_deref(),
-        ]
-        .into_iter()
-        .chain(tag_symbols.into_iter().flatten())
-        .flatten()
-    }
-}
 
 /// Options for the Terraform model build.
 pub struct BuildOptions {
@@ -105,7 +52,7 @@ fn plan_configs(opts: &BuildOptions, provider_root: &Path) -> Result<Vec<Generat
             opts.crud_map.display()
         )
     })?;
-    let resources: Vec<ResourceEntry> =
+    let resources: Vec<TerraformCrudMapEntry> =
         serde_json::from_str(&raw).context("Failed to parse Terraform CRUD map")?;
 
     let mut by_package: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();

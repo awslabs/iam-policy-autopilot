@@ -28,8 +28,13 @@ pub(crate) enum CrudSlot {
 
 /// A single resource type's CRUD handler symbols, as committed in
 /// `terraform-crud-map.json`. Field names match the JSON keys exactly.
+///
+/// This is the single deserialization view of the CRUD-map file schema, shared
+/// by the plan consumer here and the model builder (xtask, via the
+/// `TerraformCrudMapEntry` API re-export) so the two never drift on the file
+/// format.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-pub(crate) struct ResourceEntry {
+pub struct ResourceEntry {
     pub(crate) resource_type: String,
     #[serde(default)]
     pub(crate) create: Option<String>,
@@ -82,11 +87,15 @@ impl ResourceEntry {
     }
 
     /// Every handler symbol this entry carries: the four CRUD slots plus, for
-    /// `@Tags` resources, the `ListTags`/`UpdateTags` methods. Mirrors the model
-    /// builder's `ResourceEntry::handler_symbols` (xtask) — the set of symbols
-    /// that must each resolve to a model `call_pattern`.
-    #[cfg(test)]
-    pub(crate) fn handler_symbols(&self) -> impl Iterator<Item = &str> {
+    /// `@Tags` resources, the `ListTags`/`UpdateTags` methods.
+    ///
+    /// This is the set of symbols the model builder (xtask) feeds to the
+    /// call-graph extractor as entry points, and that the consistency test
+    /// checks each resolve to a model `call_pattern`. Only the model-generation
+    /// path (and the test) need it; the always-compiled plan consumer resolves
+    /// handlers per CRUD slot instead.
+    #[cfg(any(test, feature = "model-generation"))]
+    pub fn handler_symbols(&self) -> impl Iterator<Item = &str> {
         [
             self.create.as_deref(),
             self.read.as_deref(),
