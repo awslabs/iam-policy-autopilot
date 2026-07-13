@@ -68,13 +68,16 @@ jobs:
 
     - name: Compare versions
       id: compare
+      env:
+        PYPI_OUTPUT: ${{ steps.pypi.outputs.output }}
+        BUILT_OUTPUT: ${{ steps.built.outputs.output }}
       run: |
         extract_hash() { echo "$1" | grep "$2" | sed 's/.*data_hash=\([^ ]*\).*/\1/'; }
         
-        PYPI_BOTO3_HASH=$(extract_hash "${{ steps.pypi.outputs.output }}" "boto3")
-        PYPI_BOTOCORE_HASH=$(extract_hash "${{ steps.pypi.outputs.output }}" "botocore")
-        BUILT_BOTO3_HASH=$(extract_hash "${{ steps.built.outputs.output }}" "boto3")
-        BUILT_BOTOCORE_HASH=$(extract_hash "${{ steps.built.outputs.output }}" "botocore")
+        PYPI_BOTO3_HASH=$(extract_hash "$PYPI_OUTPUT" "boto3")
+        PYPI_BOTOCORE_HASH=$(extract_hash "$PYPI_OUTPUT" "botocore")
+        BUILT_BOTO3_HASH=$(extract_hash "$BUILT_OUTPUT" "boto3")
+        BUILT_BOTOCORE_HASH=$(extract_hash "$BUILT_OUTPUT" "botocore")
 
         echo "PyPI boto3 hash: $PYPI_BOTO3_HASH"
         echo "Built boto3 hash: $BUILT_BOTO3_HASH"
@@ -105,14 +108,17 @@ jobs:
       run: echo "name=auto/update-submodules-$(date +%Y%m%d)" >> $GITHUB_OUTPUT
 
     - name: Update submodules
+      env:
+        BOTO3_TAG: ${{ needs.check_versions.outputs.boto3_tag }}
+        BOTOCORE_TAG: ${{ needs.check_versions.outputs.botocore_tag }}
       run: |
         cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
         git fetch --tags
-        git checkout ${{ needs.check_versions.outputs.boto3_tag }}
+        git checkout "$BOTO3_TAG"
 
         cd ../botocore-data
         git fetch --tags
-        git checkout ${{ needs.check_versions.outputs.botocore_tag }}
+        git checkout "$BOTOCORE_TAG"
 
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v8
