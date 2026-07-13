@@ -10,7 +10,7 @@ use serde::Deserialize;
 use std::{
     borrow::Cow,
     collections::HashMap,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
 };
 
 /// Operation rename configuration
@@ -143,6 +143,27 @@ pub(crate) fn load_service_configuration() -> Result<Arc<ServiceConfiguration>> 
     });
 
     Ok(config.clone())
+}
+
+/// The dash-free SDK-import-segment → Botocore-service-name map, built once.
+///
+/// [`ServiceConfiguration::build_sdk_import_service_map`] rebuilds this map from
+/// embedded data on every call; it is derived purely from the embedded service
+/// configuration and never changes, so it is cached here and shared by all
+/// callers (Go disambiguation, Java import extraction, Terraform service-hint
+/// resolution) rather than each holding its own `LazyLock` copy.
+///
+/// # Panics
+///
+/// Panics on first access if the embedded service configuration is missing or
+/// malformed — a corrupt binary, unrecoverable.
+pub(crate) fn sdk_import_service_map() -> &'static HashMap<String, String> {
+    static SDK_IMPORT_SERVICE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
+        load_service_configuration()
+            .expect("service-configuration.json must be present in embedded data")
+            .build_sdk_import_service_map()
+    });
+    &SDK_IMPORT_SERVICE_MAP
 }
 
 #[cfg(test)]

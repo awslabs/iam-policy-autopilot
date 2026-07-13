@@ -7,24 +7,10 @@
 use crate::extraction::go::types::GoImportInfo;
 use crate::extraction::sdk_model::{ServiceMethodRef, ServiceModelIndex, Shape};
 use crate::extraction::{Parameter, SdkMethodCall};
-use crate::service_configuration::load_service_configuration;
-use std::collections::{HashMap, HashSet};
-use std::sync::LazyLock;
+use crate::service_configuration::sdk_import_service_map;
+use std::collections::HashSet;
 
 const WITH_CONTEXT_SUFFIX: &str = "WithContext";
-
-/// Maps an AWS SDK for Go import package name (the dash-free Smithy name, e.g.
-/// `elasticsearchservice`) to its Botocore service id (e.g. `es`).
-///
-/// Built once from the embedded service configuration — the same map the Java
-/// import extractor and the Terraform service-hint resolution use. Used to put
-/// imported services into the same namespace as a method call's
-/// `possible_services` (Botocore ids) so import-based disambiguation matches.
-static SDK_IMPORT_SERVICE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    load_service_configuration()
-        .expect("service-configuration.json must be present in embedded data")
-        .build_sdk_import_service_map()
-});
 
 /// Method disambiguation engine for validating Go AWS SDK method calls.
 ///
@@ -334,7 +320,7 @@ impl<'a> GoMethodDisambiguator<'a> {
             .iter()
             .flat_map(|pkg| {
                 std::iter::once(pkg.as_str())
-                    .chain(SDK_IMPORT_SERVICE_MAP.get(pkg).map(String::as_str))
+                    .chain(sdk_import_service_map().get(pkg).map(String::as_str))
             })
             .collect();
 

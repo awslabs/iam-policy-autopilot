@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 use anyhow::{Context, Result};
 use log::info;
@@ -397,21 +398,28 @@ pub fn terraform_service_hint(go_sdk_import_package: &str) -> Option<String> {
     // A returned hint MUST be a member, or extraction rejects it. The
     // smithy→botocore map can yield names absent from this set (services with
     // no bundled data), so both resolution paths are validated against it.
-    let known_services = crate::embedded_data::BotocoreData::build_service_versions_map();
+    //
+    // Cached: `build_service_versions_map` iterates every embedded botocore
+    // service on each call, but the set is fixed embedded data and this runs
+    // once per service package across a model build. We only need membership,
+    // so cache the service-id set.
+    static KNOWN_SERVICES: LazyLock<HashSet<String>> = LazyLock::new(|| {
+        crate::embedded_data::BotocoreData::build_service_versions_map()
+            .into_keys()
+            .collect()
+    });
 
-    let config = crate::service_configuration::load_service_configuration().ok()?;
-    if let Some(service) = config
-        .build_sdk_import_service_map()
-        .get(go_sdk_import_package)
+    if let Some(service) =
+        crate::service_configuration::sdk_import_service_map().get(go_sdk_import_package)
     {
-        if known_services.contains_key(service) {
+        if KNOWN_SERVICES.contains(service) {
             return Some(service.clone());
         }
     }
     // Fallback: the import segment is already a valid Botocore service id
     // (e.g. `s3`, `ec2`, `events`) with no rename needed.
-    known_services
-        .contains_key(go_sdk_import_package)
+    KNOWN_SERVICES
+        .contains(go_sdk_import_package)
         .then(|| go_sdk_import_package.to_string())
 }
 
