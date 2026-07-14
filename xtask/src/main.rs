@@ -1,17 +1,110 @@
+use clap::{Parser, Subcommand};
 use regex::Regex;
+use std::path::PathBuf;
 use std::{fs, path::Path};
 
+mod build_terraform_model;
+mod extract_terraform_crud_map;
+mod utils;
+
+#[derive(Parser)]
+#[command(name = "xtask", about = "Repository maintenance tasks")]
+struct Cli {
+    #[command(subcommand)]
+    task: Task,
+}
+
+#[derive(Subcommand)]
+enum Task {
+    /// Regenerate tests/java/service_name_test_cases.txt
+    RegenerateServiceNames,
+
+    /// Extract the Terraform resource → CRUD-handler map from the provider.
+    ///
+    /// Runs the Go extractor against the terraform-provider-aws submodule and
+    /// writes `terraform-crud-map.json` (resource type → CRUD handler symbols).
+    /// Requires a full (non-sparse) provider checkout and Go on PATH.
+    ExtractTerraformCrudMap {
+        /// Root of the terraform-provider-aws checkout (the Go module root).
+        #[arg(long)]
+        terraform_provider_aws_root: PathBuf,
+
+        /// Where to write terraform-crud-map.json.
+        #[arg(long)]
+        output: PathBuf,
+    },
+
+    /// Build a single ExternalLibraryModel for the whole Terraform AWS provider.
+    ///
+    /// Reads the Terraform CRUD map (terraform-crud-map.json), runs model
+    /// generation per service package, and unions the results into one model
+    /// file (terraform-model.json).
+    BuildTerraformModel {
+        /// Path to the Terraform CRUD map (terraform-crud-map.json).
+        #[arg(long)]
+        crud_map: PathBuf,
+
+        /// Root of the terraform-provider-aws checkout (contains internal/service).
+        #[arg(long)]
+        terraform_provider_aws_root: PathBuf,
+
+        /// Where to write the model JSON.
+        #[arg(long)]
+        output: PathBuf,
+
+        /// Restrict to these packages (comma-separated), for iteration/debugging.
+        #[arg(long, value_delimiter = ',')]
+        only: Option<Vec<String>>,
+
+        /// Pretty-print the output JSON.
+        #[arg(long)]
+        pretty: bool,
+    },
+}
+
 fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    match args.get(1).map(String::as_str) {
-        Some("regenerate-service-names") => regenerate_service_names(),
-        _ => {
-            eprintln!("Usage: cargo xtask <task>");
-            eprintln!("Tasks:");
-            eprintln!(
-                "  regenerate-service-names  Regenerate tests/java/service_name_test_cases.txt"
-            );
-            std::process::exit(1);
+    let cli = Cli::parse();
+    match cli.task {
+        Task::RegenerateServiceNames => regenerate_service_names(),
+        Task::ExtractTerraformCrudMap {
+            terraform_provider_aws_root,
+            output,
+        } => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .init();
+            let opts = extract_terraform_crud_map::ExtractOptions {
+                terraform_provider_aws_root,
+                output,
+            };
+            if let Err(e) = extract_terraform_crud_map::run(opts) {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
+        }
+        Task::BuildTerraformModel {
+            crud_map,
+            terraform_provider_aws_root,
+            output,
+            only,
+            pretty,
+        } => {
+            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
+                .init();
+            let opts = build_terraform_model::BuildOptions {
+                crud_map,
+                terraform_provider_aws_root,
+                output,
+                only_packages: only,
+                pretty,
+            };
+            let runtime = tokio::runtime::Builder::new_multi_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build Tokio runtime");
+            if let Err(e) = runtime.block_on(build_terraform_model::run(opts)) {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
         }
     }
 }

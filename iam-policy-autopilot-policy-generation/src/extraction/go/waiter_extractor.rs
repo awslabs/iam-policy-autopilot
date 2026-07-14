@@ -4,6 +4,7 @@
 //! creating a waiter from a client, then calling Wait() on the waiter.
 
 use std::path::Path;
+use std::sync::LazyLock;
 
 use crate::extraction::go::utils;
 use crate::extraction::shared::extraction_utils::{
@@ -11,7 +12,16 @@ use crate::extraction::shared::extraction_utils::{
 };
 use crate::extraction::{AstWithSourceFile, Parameter, ParameterValue, SdkMethodCall};
 use crate::{Language, Location, ServiceModelIndex};
+use ast_grep_core::matcher::Pattern;
 use ast_grep_language::Go;
+
+/// Compiled once and reused across all files: building an ast-grep `Pattern`
+/// from its source string is expensive and was previously redone per file,
+/// dominating extraction time. `Pattern` is plain data (`Send + Sync`).
+static WAITER_CREATION_PATTERN: LazyLock<Pattern> =
+    LazyLock::new(|| Pattern::new("$VAR := $PACKAGE.$FUNCTION($$$ARGS)", Go));
+static WAIT_CALL_PATTERN: LazyLock<Pattern> =
+    LazyLock::new(|| Pattern::new("$WAITER.Wait($$$ARGS)", Go));
 
 /// Extractor for Go AWS SDK waiter patterns
 ///
@@ -89,9 +99,7 @@ impl<'a> GoWaiterExtractor<'a> {
         let mut waiters = Vec::new();
 
         // Pattern: $VAR := $PACKAGE.$FUNCTION($$$ARGS) where FUNCTION contains "New" and "Waiter"
-        let waiter_pattern = "$VAR := $PACKAGE.$FUNCTION($$$ARGS)";
-
-        for node_match in root.find_all(waiter_pattern) {
+        for node_match in root.find_all(&*WAITER_CREATION_PATTERN) {
             if let Some(waiter_info) =
                 self.parse_waiter_creation_call(&node_match, &ast.source_file.path)
             {
@@ -108,9 +116,7 @@ impl<'a> GoWaiterExtractor<'a> {
         let mut wait_calls = Vec::new();
 
         // Pattern: $WAITER.Wait($$$ARGS)
-        let wait_pattern = "$WAITER.Wait($$$ARGS)";
-
-        for node_match in root.find_all(wait_pattern) {
+        for node_match in root.find_all(&*WAIT_CALL_PATTERN) {
             if let Some(wait_info) = self.parse_wait_call(&node_match, &ast.source_file.path) {
                 wait_calls.push(wait_info);
             }
@@ -140,11 +146,8 @@ impl<'a> GoWaiterExtractor<'a> {
 
         // Extract client parameter from arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
-        let client_receiver = if let Some(first_arg) = args_nodes.first() {
-            first_arg.text().to_string()
-        } else {
-            return None; // Waiter creation should have at least one argument (the client)
-        };
+        // Waiter creation should have at least one argument (the client)
+        let client_receiver = args_nodes.first()?.text().to_string();
 
         // Extract waiter name from function name (remove "New" prefix and "Waiter" suffix)
         // e.g., "NewInstanceTerminatedWaiter" -> "InstanceTerminated"

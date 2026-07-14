@@ -1,0 +1,181 @@
+//! Integration tests for Terraform **plan-based** policy generation.
+//!
+//! These are intentionally separate from `terraform_integration.rs`, which
+//! tests resource binding for policies extracted from application *source
+//! code*. Plan-based generation has no application source files: it derives IAM
+//! actions from a `terraform show -json` plan via the embedded CRUD map +
+//! model. Keeping the two harnesses apart avoids overloading either fixture
+//! shape.
+//!
+//! The tests drive the public `generate_policies` API end to end (embedded
+//! artifacts included) and assert on the serialized policy JSON, since the
+//! `Statement` fields are crate-private.
+
+use std::collections::BTreeSet;
+use std::io::Write;
+
+use iam_policy_autopilot_policy_generation::api::generate_policies;
+use iam_policy_autopilot_policy_generation::api::model::{
+    AwsContext, ExtractSdkCallsConfig, GeneratePoliciesResult, GeneratePolicyConfig,
+};
+use rstest::rstest;
+use serde_json::Value;
+use tempfile::NamedTempFile;
+
+/// Write `contents` to a temp file and return it (kept alive by the caller).
+fn temp_json(contents: &str) -> NamedTempFile {
+    let mut file = NamedTempFile::new().expect("create temp file");
+    file.write_all(contents.as_bytes())
+        .expect("write temp file");
+    file
+}
+
+/// Build a plan-only config. Plans are passed as positional input files (no
+/// dedicated flag) and auto-detected by content; no ARN binding inputs are
+/// provided, so resources fall back to wildcards. Accepts one or more plans
+/// (multiple plans are unioned).
+fn plan_only_config(plan_paths: Vec<std::path::PathBuf>) -> GeneratePolicyConfig {
+    GeneratePolicyConfig {
+        extract_sdk_calls_config: ExtractSdkCallsConfig {
+            source_files: plan_paths,
+            language: None,
+            service_hints: None,
+        },
+        aws_context: AwsContext::new("us-east-1".to_string(), "123456789012".to_string()).unwrap(),
+        individual_policies: false,
+        minimize_policy_size: false,
+        disable_file_system_cache: false,
+        resource_cutoff: iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF,
+        explain_filters: None,
+        terraform_dir: None,
+        terraform_files: vec![],
+        tfstate_paths: vec![],
+        tfvars_files: vec![],
+        explain_resource_filters: None,
+    }
+}
+
+/// Collect every `Action` string across all generated policy statements.
+fn actions(result: &GeneratePoliciesResult) -> BTreeSet<String> {
+    let json = serde_json::to_value(&result.policies).expect("serialize policies");
+    let mut actions = BTreeSet::new();
+    collect_actions(&json, &mut actions);
+    actions
+}
+
+fn collect_actions(value: &Value, out: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(map) => {
+            if let Some(Value::Array(items)) = map.get("Action") {
+                for item in items {
+                    if let Value::String(s) = item {
+                        out.insert(s.clone());
+                    }
+                }
+            }
+            for v in map.values() {
+                collect_actions(v, out);
+            }
+        }
+        Value::Array(items) => {
+            for v in items {
+                collect_actions(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Build a single-resource `aws_accessanalyzer_analyzer` plan with the given
+/// planned actions.
+fn analyzer_plan(actions: &str) -> String {
+    format!(
+        r#"{{
+            "format_version": "1.2",
+            "resource_changes": [
+                {{
+                    "address": "aws_accessanalyzer_analyzer.example",
+                    "type": "aws_accessanalyzer_analyzer",
+                    "mode": "managed",
+                    "change": {{ "actions": {actions}, "after": {{ "analyzer_name": "example" }} }}
+                }}
+            ]
+        }}"#
+    )
+}
+
+/// A standalone SQS-queue create plan, for the multi-plan union case. SQS is
+/// chosen for a small, stable action set (5 actions) so the unioned set can be
+/// asserted exactly.
+fn sqs_plan() -> String {
+    r#"{
+        "format_version": "1.2",
+        "resource_changes": [
+            { "address": "aws_sqs_queue.q", "type": "aws_sqs_queue", "mode": "managed",
+              "change": { "actions": ["create"], "after": { "name": "q" } } }
+        ]
+    }"#
+    .to_string()
+}
+
+#[rstest]
+// Create exercises the Create + Read handlers → CreateAnalyzer + GetAnalyzer
+// (botocore id `accessanalyzer` → IAM prefix `access-analyzer`). aws_accessanalyzer_analyzer
+// is a tagged resource, so the transparent-tagging rule also contributes the
+// tag-write (TagResource/UntagResource via UpdateTags) and tag-read
+// (ListTagsForResource via ListTags) on Create. This is the same set the
+// provider's interceptor invokes around the Create handler.
+#[case::create(
+    vec![analyzer_plan(r#"["create"]"#)],
+    &[
+        "access-analyzer:CreateAnalyzer",
+        "access-analyzer:GetAnalyzer",
+        "access-analyzer:ListTagsForResource",
+        "access-analyzer:TagResource",
+        "access-analyzer:UntagResource",
+    ]
+)]
+// A no-op change still reads state back on apply → Read slot, which for a tagged
+// resource also reads tags (ListTagsForResource via the tag interceptor).
+#[case::no_op(
+    vec![analyzer_plan(r#"["no-op"]"#)],
+    &["access-analyzer:GetAnalyzer", "access-analyzer:ListTagsForResource"]
+)]
+// An empty plan touches nothing → no actions at all.
+#[case::empty(vec![r#"{ "format_version": "1.2", "resource_changes": [] }"#.to_string()], &[])]
+// Multiple plans are unioned: the policy is exactly the union of the analyzer
+// plan's actions and the SQS plan's actions (deduped).
+#[case::multiple_plans_unioned(
+    vec![analyzer_plan(r#"["create"]"#), sqs_plan()],
+    &[
+        "access-analyzer:CreateAnalyzer",
+        "access-analyzer:GetAnalyzer",
+        "access-analyzer:ListTagsForResource",
+        "access-analyzer:TagResource",
+        "access-analyzer:UntagResource",
+        "sqs:CreateQueue",
+        "sqs:GetQueueAttributes",
+        "sqs:ListQueueTags",
+        "sqs:TagQueue",
+        "sqs:UntagQueue",
+    ]
+)]
+#[tokio::test]
+async fn plan_emits_expected_actions(#[case] plans: Vec<String>, #[case] expected: &[&str]) {
+    // Hold the temp files for the duration; collect their paths.
+    let files: Vec<_> = plans.iter().map(|p| temp_json(p)).collect();
+    let paths = files.iter().map(|f| f.path().to_path_buf()).collect();
+    let config = plan_only_config(paths);
+
+    let result = generate_policies(&config).await.expect("generate policies");
+
+    // For the union case we assert the exact set too — it is the union of the
+    // per-plan action sets, deduped.
+    assert_eq!(
+        actions(&result),
+        expected
+            .iter()
+            .map(|s| s.to_string())
+            .collect::<BTreeSet<_>>()
+    );
+}

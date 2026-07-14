@@ -144,6 +144,12 @@ pub(crate) trait CallGraphBuilder: Send + Sync {
         source_files: &[PathBuf],
     ) -> Result<CallGraph, CallGraphError>;
 
+    /// Whether the underlying server/process is still alive and usable.
+    ///
+    /// Used by batch generation to fail fast before issuing a query against a
+    /// server that has died or been shut down.
+    fn is_running(&self) -> bool;
+
     /// Shut down any underlying server/process.
     async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError>;
 }

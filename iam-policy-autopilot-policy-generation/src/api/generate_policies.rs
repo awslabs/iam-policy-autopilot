@@ -1,22 +1,20 @@
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use log::{debug, info, trace};
 
 use crate::{
     api::{
-        common::process_source_files,
+        extract_sdk_calls::extract_sdk_calls,
         model::{GeneratePoliciesResult, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
         Explanation, Explanations,
     },
-    extraction::SdkMethodCall,
     policy_generation::merge::PolicyMergerConfig,
-    EnrichmentEngine, PolicyGenerationEngine,
+    EnrichmentEngine, ExtractedMethods, PolicyGenerationEngine,
 };
 
 /// Check if an action matches a pattern with wildcard support.
@@ -217,43 +215,18 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         None
     };
 
-    // --- Determine source files ---
-    let all_source_files: Vec<PathBuf> = config.extract_sdk_calls_config.source_files.clone();
-
-    if all_source_files.is_empty() {
-        info!("No source files found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
-    }
-
-    // Create the extractor
-    let extractor = crate::ExtractionEngine::new();
-
-    // Process source files to get extracted methods
-    let extracted_methods = process_source_files(
-        &extractor,
-        &all_source_files,
-        config.extract_sdk_calls_config.language.as_deref(),
-        config.extract_sdk_calls_config.service_hints.clone(),
-    )
-    .await
-    .context("Failed to process source files")?;
-
-    // Relies on the invariant that all source files must be of the same language, which we
-    // enforce in process_source_files
-    let sdk = extracted_methods
-        .metadata
-        .source_files
-        .first()
-        .map_or(crate::SdkType::Other, |f| f.language.sdk_type());
-
-    let extracted_methods = extracted_methods
-        .methods
-        .into_iter()
-        .collect::<Vec<SdkMethodCall>>();
+    // --- Determine SDK method calls ---
+    // Delegate to the shared extraction entry point, which classifies the inputs
+    // (application source vs. Terraform plan), rejects mixing, and resolves both
+    // kinds to the same `SdkMethodCall` currency plus the SDK dialect they belong
+    // to. ARN binding above still composes for free regardless of the input kind.
+    let ExtractedMethods {
+        methods: extracted_methods,
+        sdk,
+        ..
+    } = extract_sdk_calls(&config.extract_sdk_calls_config)
+        .await
+        .context("Failed to extract SDK calls from inputs")?;
 
     debug!(
         "Extracted {} methods, starting enrichment pipeline",

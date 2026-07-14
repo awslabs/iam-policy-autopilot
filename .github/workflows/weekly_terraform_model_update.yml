@@ -1,0 +1,118 @@
+name: Weekly Terraform Model Update
+
+# Bumps the terraform-provider-aws submodule to its latest tag, regenerates the
+# Terraform CRUD map and the Terraform external model, and opens a PR if either
+# the submodule pointer or the generated artifacts changed.
+#
+# Separate from weekly_submodule_update.yml (boto3/botocore) on purpose: this
+# pipeline needs Go + gopls and runs the heavier model generation.
+
+on:
+  schedule:
+    - cron: '0 2 * * 0'  # Sunday 02:00 UTC (offset from the botocore job)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Bump terraform-provider-aws submodule to latest tag
+        id: bump
+        working-directory: iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws
+        run: |
+          # The submodule is sparse-checked-out; the xtasks materialize the full
+          # tree themselves (and restore it), so no sparse change is needed here.
+          #
+          # Record the prior commit (to revert the bump if nothing changed) and
+          # the prior names_data.hcl hash. The submodule is a shallow,
+          # single-commit checkout, so we cannot diff across commits later —
+          # instead we hash the file content from the working tree before/after
+          # the bump (names_data.hcl is in the sparse set, so it is present).
+          PREV_COMMIT=$(git rev-parse HEAD)
+          PREV_NAMES_HASH=$(sha256sum names/data/names_data.hcl | awk '{print $1}')
+          git fetch --tags --force
+          LATEST_TAG=$(git describe --tags "$(git rev-list --tags --max-count=1)")
+          echo "Bumping terraform-provider-aws to $LATEST_TAG"
+          git checkout "$LATEST_TAG"
+          echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+          echo "prev_commit=$PREV_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "prev_names_hash=$PREV_NAMES_HASH" >> "$GITHUB_OUTPUT"
+
+      - name: Install Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.26'
+
+      - name: Install gopls
+        run: go install golang.org/x/tools/gopls@latest
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build xtask
+        run: cargo build -p xtask
+
+      - name: Extract Terraform CRUD map
+        run: |
+          ./target/debug/xtask extract-terraform-crud-map \
+            --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+            --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json
+
+      - name: Build Terraform model
+        run: |
+          # gopls is installed under $(go env GOPATH)/bin.
+          export PATH="$(go env GOPATH)/bin:$PATH"
+          ./target/debug/xtask build-terraform-model \
+            --crud-map iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json \
+            --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+            --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-model.json \
+            --pretty
+
+      - name: Revert submodule bump if nothing we consume changed
+        working-directory: iam-policy-autopilot-policy-generation/resources/config/terraform
+        run: |
+          # We consume three things from the provider: the two generated model
+          # JSONs and names_data.hcl (embedded directly via include_str!). Keep
+          # the bump (→ open a PR) if ANY of them changed; otherwise a provider
+          # tag bump is just noise — revert the pin so the tree is clean.
+          #
+          # JSONs: tracked files here, diff against HEAD. names_data.hcl: hash
+          # its current (post-bump) content and compare to the pre-bump hash
+          # recorded in the bump step (content-based, since the submodule is a
+          # shallow checkout and cannot be diffed across commits).
+          jsons_changed=false
+          names_changed=false
+          git diff --quiet -- terraform-crud-map.json terraform-model.json || jsons_changed=true
+          NEW_NAMES_HASH=$(sha256sum terraform-provider-aws/names/data/names_data.hcl | awk '{print $1}')
+          [ "$NEW_NAMES_HASH" = "${{ steps.bump.outputs.prev_names_hash }}" ] || names_changed=true
+
+          if [ "$jsons_changed" = false ] && [ "$names_changed" = false ]; then
+            echo "Nothing consumed changed — reverting submodule bump to ${{ steps.bump.outputs.prev_commit }}"
+            git -C terraform-provider-aws checkout "${{ steps.bump.outputs.prev_commit }}"
+          else
+            echo "Change detected (jsons=$jsons_changed names=$names_changed) — keeping the bump to ${{ steps.bump.outputs.tag }}"
+          fi
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v8
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          sign-commits: true
+          commit-message: "chore: update Terraform model to provider ${{ steps.bump.outputs.tag }}"
+          branch: auto/update-terraform-model
+          title: "chore: update Terraform model (provider ${{ steps.bump.outputs.tag }})"
+          body: |
+            Automated weekly regeneration of the Terraform model.
+
+            - **terraform-provider-aws** bumped to `${{ steps.bump.outputs.tag }}`
+            - `terraform-crud-map.json` re-extracted
+            - `terraform-model.json` rebuilt

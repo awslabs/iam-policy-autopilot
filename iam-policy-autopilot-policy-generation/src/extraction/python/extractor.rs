@@ -52,11 +52,7 @@ impl PythonExtractor {
             .map(|obj_node| obj_node.text().to_string());
 
         // Extract the method name
-        let method_name = if let Some(method_node) = env.get_match("METHOD") {
-            method_node.text()
-        } else {
-            return None;
-        };
+        let method_name = env.get_match("METHOD")?.text();
 
         // Extract arguments - get_multiple_matches returns Vec<Node> directly
         let args_nodes = env.get_multiple_matches("ARGS");

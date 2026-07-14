@@ -168,6 +168,12 @@ pub fn print_version_info(verbose: bool) -> anyhow::Result<()> {
                 .unwrap_or("None".to_string()),
             botocore_version_metadata.data_hash
         );
+        let terraform_model_version =
+            iam_policy_autopilot_policy_generation::api::get_terraform_model_version()?;
+        println!(
+            "terraform-provider-aws model version: {}",
+            terraform_model_version.unwrap_or_else(|| "None".to_string())
+        );
     }
     Ok(())
 }

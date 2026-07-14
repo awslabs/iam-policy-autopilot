@@ -335,6 +335,12 @@ pub mod output {
         /// Metadata about the extraction process
         /// INVARIANT: all source_files must have the same language
         pub metadata: ExtractionMetadata,
+        /// The SDK dialect the methods belong to, used to drive enrichment.
+        ///
+        /// Carried explicitly because it cannot always be inferred from
+        /// `metadata.source_files` — the Terraform plan path resolves to SDK
+        /// calls with no backing source files.
+        pub sdk: crate::SdkType,
     }
 
     /// Metadata about the extraction process
@@ -479,6 +485,7 @@ fn test_extracted_methods_serialization() {
     let extracted = ExtractedMethods {
         methods: vec![],
         metadata: ExtractionMetadata::new(vec![], vec![]),
+        sdk: crate::SdkType::Other,
     };
 
     let json = serde_json::to_string(&extracted).unwrap();
@@ -486,6 +493,7 @@ fn test_extracted_methods_serialization() {
     // Verify PascalCase field names
     assert!(json.contains("\"Methods\""));
     assert!(json.contains("\"Metadata\""));
+    assert!(json.contains("\"Sdk\""));
 }
 
 #[test]

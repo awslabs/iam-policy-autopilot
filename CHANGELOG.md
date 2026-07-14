@@ -1,6 +1,8 @@
 ## [Unreleased]
 
 ### Added
+
+- `generate-policies` can now generate an IAM policy directly from a Terraform plan (`terraform show -json`), mapping the plan's resource changes to the AWS SDK operations the Terraform AWS provider performs. Pass the plan JSON in place of source files.
 - Support for chained and nested boto3 sub-resource actions, including calls on a variable bound to a chain — e.g. `s3.Bucket("b").put_object(...)`, `s3.Bucket("b").Object("k").put(...)`, and `obj = s3.Bucket("b").Object("k"); obj.put(...)` now resolve to the underlying operation with identifiers injected from the chain
 
 ### Changed

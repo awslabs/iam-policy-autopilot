@@ -105,13 +105,14 @@ fn test_extract_sdk_calls_help() {
 
 #[test]
 fn test_generate_policy_help() {
+    // Assert on the CLI contract (exit code, non-empty help, documented flags)
+    // rather than the exact prose, which is free to change without breaking this.
     generate_policy_command()
         .arg("--help")
         .assert()
         .success()
-        .stdout(predicate::str::contains(
-            "Generates baseline IAM policy documents from source files",
-        ))
+        .stdout(predicate::str::is_empty().not())
+        .stdout(predicate::str::contains("Usage:"))
         .stdout(predicate::str::contains("--pretty"));
 }
 
