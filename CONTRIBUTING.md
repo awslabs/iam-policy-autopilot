@@ -75,6 +75,9 @@ cargo fmt --all
 
 # Run Clippy (warnings are treated as errors in CI)
 cargo clippy --workspace
+
+# Check for unused dependencies (install with `cargo install cargo-machete`)
+cargo machete
 ```
 
 **Python** (scripts in `iam-policy-autopilot-policy-generation/scripts/`)
