@@ -285,3 +285,39 @@ jobs:
         run: cargo dylint --all --workspace
         # Note: dylint automatically uses the nightly toolchain to build the lint library
         # (specified in iam-policy-autopilot-lints/rust-toolchain) and stable to check the workspace
+
+  coverage:
+    name: Code Coverage
+    needs: [changes]
+    if: needs.changes.outputs.rust == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --workspace --html --output-dir coverage-html
+
+      - name: Upload HTML coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage-html/
+          retention-days: 7
+
+      - name: Print coverage summary
+        run: cargo llvm-cov report
