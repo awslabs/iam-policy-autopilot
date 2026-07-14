@@ -36,6 +36,7 @@
 
 ### Fixed
 
+- Made output of `generate-policies` deterministic
 - `fix_access_denied` MCP tool now correctly generates the policy from the error message and applies it after confirmation
 - `fix_access_denied` MCP tool now fails when the client does not support elicitation
 - `fix_access_denied` MCP tool now correctly handles user decline/cancel during elicitation instead of returning an error
