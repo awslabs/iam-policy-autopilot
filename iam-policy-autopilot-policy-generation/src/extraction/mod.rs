@@ -43,7 +43,8 @@ pub mod core {
 
     use schemars::JsonSchema;
 
-    use crate::{Language, Location};
+    use crate::Language;
+    use crate::Location;
 
     use super::{Deserialize, Path, PathBuf, Serialize};
 
@@ -105,7 +106,8 @@ pub mod core {
         }
 
         /// Detect programming language from file extension.
-        pub(crate) fn detect_language(path: &Path) -> Option<Language> {
+        #[must_use]
+        pub fn detect_language(path: &Path) -> Option<Language> {
             let ext = path.extension()?.to_str()?.to_lowercase();
             Language::try_from_str(&ext).ok()
         }
@@ -378,12 +380,10 @@ pub mod output {
         /// Get current timestamp as ISO 8601 string
         fn current_timestamp() -> String {
             use std::time::{SystemTime, UNIX_EPOCH};
-
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .map(|duration| {
                     let secs = duration.as_secs();
-                    // Simple timestamp format - will be replaced with proper ISO 8601 when chrono is available
                     format!("{secs}")
                 })
                 .unwrap_or_else(|_| "0".to_string())

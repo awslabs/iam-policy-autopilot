@@ -7,7 +7,6 @@
 #![deny(unsafe_code)]
 #![warn(clippy::all)]
 #![allow(clippy::module_name_repetitions)]
-
 // Re-export the errors module for public use
 pub(crate) mod errors;
 
@@ -31,6 +30,7 @@ pub mod policy_generation;
 pub mod api;
 
 // LSP client for type information extraction
+#[cfg(not(target_arch = "wasm32"))]
 pub mod lsp;
 
 #[cfg(feature = "model-generation")]
@@ -51,6 +51,7 @@ pub use policy_generation::{
 // Re-export commonly used types for convenience
 pub(crate) use extraction::ServiceModelIndex;
 
+#[cfg(not(target_arch = "wasm32"))]
 pub use providers::FileSystemProvider;
 pub use providers::JsonProvider;
 use schemars::JsonSchema;
@@ -75,7 +76,9 @@ pub enum Language {
 }
 
 impl Language {
-    fn sdk_type(&self) -> SdkType {
+    /// Returns the SDK type for this language.
+    #[must_use]
+    pub fn sdk_type(&self) -> SdkType {
         match self {
             Self::Python => SdkType::Boto3,
             Self::Java => SdkType::JavaV2,
@@ -256,6 +259,7 @@ impl Location {
     ///
     /// Converts 0-based LSP positions to 1-based Location positions.
     /// Returns `None` if the URI cannot be converted to a file path.
+    #[cfg(not(target_arch = "wasm32"))]
     #[must_use]
     pub fn from_lsp(uri: &lsp_types::Url, range: &lsp_types::Range) -> Option<Self> {
         let file_path = uri.to_file_path().ok()?;

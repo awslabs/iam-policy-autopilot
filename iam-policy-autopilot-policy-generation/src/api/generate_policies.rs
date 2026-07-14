@@ -8,7 +8,7 @@ use log::{debug, info, trace};
 use crate::{
     api::{
         common::process_source_files,
-        model::{GeneratePoliciesResult, GeneratePolicyConfig},
+        model::{GeneratePoliciesResult, GeneratePoliciesResultBuilder, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
@@ -222,11 +222,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     if all_source_files.is_empty() {
         info!("No source files found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::empty());
     }
 
     // Create the extractor
@@ -263,11 +259,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Handle empty method lists gracefully
     if extracted_methods.is_empty() {
         info!("No methods found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-        });
+        return Ok(GeneratePoliciesResult::empty());
     }
 
     // Run the complete enrichment pipeline
@@ -344,16 +336,24 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .context("Failed to merge IAM policies")?;
     }
 
+    #[cfg(feature = "telemetry")]
     iam_policy_autopilot_common::telemetry::span::record_result_number(
         "num_policies_generated",
         final_policies.len(),
     );
 
-    Ok(GeneratePoliciesResult {
-        policies: final_policies,
-        explanations,
-        resource_binding_explanations: binding_explanations,
-    })
+    let mut builder = GeneratePoliciesResultBuilder::default();
+    builder.policies(final_policies.clone());
+    if let Some(explanations) = explanations {
+        builder.explanations(explanations);
+    }
+    if let Some(binding_explanations) = binding_explanations {
+        builder.resource_binding_explanations(binding_explanations);
+    }
+
+    Ok(builder
+        .build()
+        .expect("GeneratePoliciesResultBuilder missing required policies"))
 }
 
 #[cfg(test)]

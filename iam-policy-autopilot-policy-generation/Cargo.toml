@@ -14,31 +14,44 @@ crate-type = ["cdylib", "rlib"]
 
 # Universal dependencies (all compilation targets)
 [dependencies]
-iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
+iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common", optional = true }
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true
 regex.workspace = true
-ast-grep-config.workspace = true
-ast-grep-core.workspace = true
-ast-grep-language.workspace = true
 anyhow.workspace = true
 convert_case.workspace = true
-reqwest.workspace = true
-rust-embed.workspace = true
 schemars.workspace = true
 serde_json.workspace = true
 async-trait.workspace = true
 strsim.workspace = true
 derive-new.workspace = true
+derive_builder.workspace = true
+hcl-rs.workspace = true
+walkdir.workspace = true
+# Tree-sitter / ast-grep dependencies
+ast-grep-config.workspace = true
+ast-grep-core.workspace = true
+ast-grep-language.workspace = true
+
+# Native-only dependencies (not available on WASM)
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 async-lsp = { version = "0.2", features = ["tokio"] }
 lsp-types = "0.95"
 tower = "0.5"
 which = "6.0"
-tokio = { workspace = true, features = ["process", "io-util"] }
 tokio-util.workspace = true
-hcl-rs.workspace = true
-walkdir.workspace = true
+rust-embed.workspace = true
+reqwest.workspace = true
+tokio = { workspace = true, features = ["process", "io-util"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+rust-embed = { version = "8.11", features = ["include-exclude"] }
+# Workspace tokio includes fs/rt-multi-thread/signal which pull in mio's net features,
+# incompatible with wasm32. We only need the single-threaded runtime here.
+tokio = { version = "1.0", features = ["rt", "macros", "sync"] }
+getrandom = { version = "0.2", features = ["js"] }
+
 
 # Build dependencies
 [build-dependencies]
@@ -54,11 +67,15 @@ relative-path.workspace = true
 convert_case.workspace = true
 
 [features]
-default = []
+default = ["telemetry"]
+telemetry = ["iam-policy-autopilot-common"]
 integ-test = []
 model-generation = []
 # Development features
 dev = ["tokio/test-util"]
+# WASM target — disables filesystem caching, TTL expiry, and native-only subsystems.
+# Uses emscripten fetch instead of reqwest for HTTP.
+# Gating is now automatic via cfg(target_arch = "wasm32") — no feature flag needed.
 
 # Development dependencies
 [dev-dependencies]
