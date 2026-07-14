@@ -126,11 +126,8 @@ impl<'a> GoPaginatorExtractor<'a> {
 
         // Extract client parameter from arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
-        let client_receiver = if let Some(first_arg) = args_nodes.first() {
-            first_arg.text().to_string()
-        } else {
-            return None; // Paginator creation should have at least one argument (the client)
-        };
+        // Paginator creation should have at least one argument (the client)
+        let client_receiver = args_nodes.first()?.text().to_string();
 
         // Extract creation arguments (skip client, get input struct)
         let creation_arguments = if args_nodes.len() > 1 {
@@ -187,11 +184,7 @@ impl<'a> GoPaginatorExtractor<'a> {
 
         // Extract client parameter from creation arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
-        let client_receiver = if let Some(first_arg) = args_nodes.first() {
-            first_arg.text().to_string()
-        } else {
-            return None;
-        };
+        let client_receiver = args_nodes.first()?.text().to_string();
 
         // Extract creation arguments (skip client, get input struct)
         let creation_arguments = if args_nodes.len() > 1 {

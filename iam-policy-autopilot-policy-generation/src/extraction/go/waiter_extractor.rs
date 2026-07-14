@@ -146,11 +146,8 @@ impl<'a> GoWaiterExtractor<'a> {
 
         // Extract client parameter from arguments (first argument)
         let args_nodes = env.get_multiple_matches("ARGS");
-        let client_receiver = if let Some(first_arg) = args_nodes.first() {
-            first_arg.text().to_string()
-        } else {
-            return None; // Waiter creation should have at least one argument (the client)
-        };
+        // Waiter creation should have at least one argument (the client)
+        let client_receiver = args_nodes.first()?.text().to_string();
 
         // Extract waiter name from function name (remove "New" prefix and "Waiter" suffix)
         // e.g., "NewInstanceTerminatedWaiter" -> "InstanceTerminated"
