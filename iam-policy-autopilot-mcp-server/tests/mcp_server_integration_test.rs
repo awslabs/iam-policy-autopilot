@@ -14,9 +14,28 @@ use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, Duration};
 
+/// Resolve the `iam-policy-autopilot` CLI binary from the test executable's own
+/// location instead of hardcoding `../target/debug`. The integration test binary
+/// lives in `target/<profile>/deps/` (or `target/llvm-cov-target/<profile>/deps/`
+/// under `cargo llvm-cov`), and the CLI binary is built into the sibling
+/// `target/<profile>/` directory, so deriving the path keeps this working under
+/// coverage builds that use a different target dir.
+fn cli_binary_path() -> std::path::PathBuf {
+    let mut path = std::env::current_exe().expect("failed to locate test executable");
+    path.pop(); // drop the test binary file name -> .../deps
+    if path.ends_with("deps") {
+        path.pop(); // -> .../<profile>
+    }
+    path.push(format!(
+        "iam-policy-autopilot{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    path
+}
+
 async fn setup_stdio() -> RunningService<RoleClient, ()> {
     // Create MCP client using TokioChildProcess with debug binary
-    let mut command = Command::new("../target/debug/iam-policy-autopilot");
+    let mut command = Command::new(cli_binary_path());
     command.args(&["mcp-server"]);
 
     ().serve(
@@ -46,7 +65,7 @@ async fn setup_http_with_bind_address(
     bind_address: &str,
 ) -> (RunningService<RoleClient, InitializeRequestParams>, Child) {
     // Start HTTP server as a background process using debug binary
-    let mut command = Command::new("../target/debug/iam-policy-autopilot");
+    let mut command = Command::new(cli_binary_path());
     command
         .args(&[
             "mcp-server",
