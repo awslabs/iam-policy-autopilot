@@ -16,6 +16,25 @@ use serial_test::serial;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
+/// Resolve the `iam-policy-autopilot` CLI binary from the test executable's own
+/// location instead of hardcoding `../target/debug`. The integration test binary
+/// lives in `target/<profile>/deps/` (or `target/llvm-cov-target/<profile>/deps/`
+/// under `cargo llvm-cov`), and the CLI binary is built into the sibling
+/// `target/<profile>/` directory, so deriving the path keeps this working under
+/// coverage builds that use a different target dir.
+fn cli_binary_path() -> std::path::PathBuf {
+    let mut path = std::env::current_exe().expect("failed to locate test executable");
+    path.pop(); // drop the test binary file name -> .../deps
+    if path.ends_with("deps") {
+        path.pop(); // -> .../<profile>
+    }
+    path.push(format!(
+        "iam-policy-autopilot{}",
+        std::env::consts::EXE_SUFFIX
+    ));
+    path
+}
+
 /// A custom MCP client handler that captures `notifications/message` notifications.
 #[derive(Clone)]
 struct NotificationCapture {
@@ -57,7 +76,7 @@ async fn connect_mcp_client(
 ) -> (NotificationCapture, impl std::any::Any) {
     let capture = NotificationCapture::new();
 
-    let mut command = Command::new("../target/debug/iam-policy-autopilot");
+    let mut command = Command::new(cli_binary_path());
     command.args(["mcp-server"]);
     // Default: clear env var so config file choice takes effect
     command.env_remove("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY");

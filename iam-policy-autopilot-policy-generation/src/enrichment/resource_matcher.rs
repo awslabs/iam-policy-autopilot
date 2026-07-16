@@ -246,7 +246,7 @@ impl ResourceMatcher {
                     if let Some(operation_to_authorized_actions) =
                         &service_reference.operation_to_authorized_actions
                     {
-                        log::debug!("Looking up {}", &op.service_operation_name());
+                        log::debug!("Looking up {}", op.service_operation_name());
                         if let Some(operation_to_authorized_action) =
                             operation_to_authorized_actions.get(&op.service_operation_name())
                         {

@@ -151,10 +151,9 @@ rule:
             .map(|obj_node| obj_node.text().to_string());
 
         // Extract the method name
-        let method_name = if let Some(method_node) = env.get_match("METHOD") {
+        let method_name = {
+            let method_node = env.get_match("METHOD")?;
             method_node.text()
-        } else {
-            return None;
         };
 
         // Extract arguments - ARGS captures the entire argument_list node
@@ -278,7 +277,7 @@ rule:
         );
         log::debug!(
             "Node text (first 100 chars): {:?}",
-            &node.text().chars().take(100).collect::<String>()
+            node.text().chars().take(100).collect::<String>()
         );
 
         // Check if this node is directly a composite_literal
