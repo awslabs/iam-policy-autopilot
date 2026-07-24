@@ -355,8 +355,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         final_policies.len(),
     );
 
-    // Shape metrics for an anomaly baseline (threat model AV-3): counts only,
-    // no policy content
+    // Shape metrics for an anomaly baseline: counts only, no policy content
     let num_statements: usize = final_policies
         .iter()
         .map(|p| p.policy.statements.len())

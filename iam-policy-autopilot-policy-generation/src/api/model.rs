@@ -66,17 +66,32 @@ pub struct GeneratePoliciesResult {
     pub warnings: Vec<PolicyWarning>,
 }
 
+/// Machine-recognizable category of a [`PolicyWarning`].
+///
+/// Consumers should branch on this type (rather than parsing `message`) to
+/// construct their own user-facing messages, e.g., localized console UI
+/// strings built from the warning's `sid` and `actions` metadata.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[non_exhaustive]
+pub enum PolicyWarningType {
+    /// The statement's `Resource` fell back to the `"*"` wildcard because no
+    /// resource-specific ARN could be determined (no ARN patterns available,
+    /// an empty resource list, or the resource list was collapsed by the
+    /// resource cutoff).
+    WildcardResource,
+}
+
 /// Warning attached to a generated policy statement that needs customer review.
 ///
-/// Currently emitted when a statement's `Resource` falls back to the `"*"`
-/// wildcard because no resource-specific ARN could be determined (no ARN
-/// patterns in the Service Reference data, an empty resource list, or the
-/// resource list was collapsed by the resource cutoff). Surfacing these lets
-/// consumers (e.g., a console UI) call out "N statements could not be scoped
-/// to specific resources — review these."
+/// The `warning_type` identifies the warning programmatically; `message` is a
+/// convenience English rendering for CLI users. Consumers building their own
+/// UI should use `warning_type` plus the statement metadata (`policy_index`,
+/// `sid`, `actions`) instead of `message`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
+    /// Machine-recognizable warning category
+    pub warning_type: PolicyWarningType,
     /// Index of the policy in `policies` that contains the statement
     pub policy_index: usize,
     /// SID of the statement, when present. Merged statements have no SID;
@@ -85,7 +100,7 @@ pub struct PolicyWarning {
     pub sid: Option<String>,
     /// Actions of the flagged statement
     pub actions: Vec<String>,
-    /// Human-readable description of the warning
+    /// Human-readable description of the warning (English only)
     pub message: String,
 }
 
@@ -99,6 +114,7 @@ impl PolicyWarning {
             for statement in &policy_with_metadata.policy.statements {
                 if statement.resource.iter().any(|resource| resource == "*") {
                     warnings.push(Self {
+                        warning_type: PolicyWarningType::WildcardResource,
                         policy_index,
                         sid: statement.sid.clone(),
                         actions: statement.action.clone(),
@@ -263,6 +279,7 @@ mod tests {
     #[test]
     fn test_policy_warning_serialization() {
         let warning = PolicyWarning {
+            warning_type: PolicyWarningType::WildcardResource,
             policy_index: 0,
             sid: Some("AllowS3ListAllMyBuckets".to_string()),
             actions: vec!["s3:ListAllMyBuckets".to_string()],
@@ -270,6 +287,7 @@ mod tests {
         };
 
         let json = serde_json::to_value(&warning).unwrap();
+        assert_eq!(json["WarningType"], "WildcardResource");
         assert_eq!(json["PolicyIndex"], 0);
         assert_eq!(json["Sid"], "AllowS3ListAllMyBuckets");
         assert_eq!(json["Actions"][0], "s3:ListAllMyBuckets");

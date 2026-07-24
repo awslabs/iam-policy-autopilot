@@ -21,10 +21,10 @@ mod tests {
         }
     }
 
-    /// Security invariant (threat model AV-3): generated policies must NEVER
-    /// contain a wildcard in any Action entry — neither a bare `"*"` nor an
-    /// embedded wildcard like `"s3:*"` or `"dynamodb:Get*"`. Actions must
-    /// always be fully enumerated (e.g., `"s3:GetObject"`).
+    /// Security invariant: generated policies must NEVER contain a wildcard
+    /// in any Action entry — neither a bare `"*"` nor an embedded wildcard
+    /// like `"s3:*"` or `"dynamodb:Get*"`. Actions must always be fully
+    /// enumerated (e.g., `"s3:GetObject"`).
     ///
     /// Resource wildcards (`"*"` in Resource) are ALLOWED and intentionally
     /// out of scope here.
@@ -46,7 +46,7 @@ mod tests {
                     assert!(
                         !action.contains('*'),
                         "wildcard found in Action {action:?} of statement {:?} — \
-                         actions must be fully enumerated (threat model AV-3)",
+                         actions must be fully enumerated",
                         statement.sid
                     );
                     assert!(
@@ -195,8 +195,8 @@ mod tests {
         ]
     }
 
-    /// Regression test (threat model AV-3): a generation run over many SDK
-    /// calls across multiple services never emits a wildcard Action.
+    /// Regression test: a generation run over many SDK calls across multiple
+    /// services never emits a wildcard Action.
     #[test]
     fn test_actions_are_never_wildcards_multi_service_generation() {
         let engine = Engine::new("aws", "us-east-1", "123456789012");
@@ -209,11 +209,10 @@ mod tests {
         assert_result_has_no_wildcard_actions(&result);
     }
 
-    /// Regression test (threat model AV-3): the same run with policy merging
-    /// enabled — including cross-service merging (minimize_policy_size) —
-    /// never emits a wildcard Action. This guards the merge path in
-    /// merge.rs, where resource wildcard logic could conceivably be extended
-    /// to actions.
+    /// Regression test: the same run with policy merging enabled — including
+    /// cross-service merging (minimize_policy_size) — never emits a wildcard
+    /// Action. This guards the merge path in merge.rs, where resource
+    /// wildcard logic could conceivably be extended to actions.
     #[test]
     fn test_actions_are_never_wildcards_with_merging() {
         let sdk_call = create_test_sdk_call();
@@ -241,9 +240,9 @@ mod tests {
         }
     }
 
-    /// Regression test (threat model AV-3): actions with no resolvable ARN
-    /// produce Resource "*" fallbacks, and that resource wildcard must never
-    /// leak into the Action list.
+    /// Regression test: actions with no resolvable ARN produce Resource "*"
+    /// fallbacks, and that resource wildcard must never leak into the
+    /// Action list.
     #[test]
     fn test_resource_wildcard_fallback_does_not_leak_into_actions() {
         let engine = Engine::new("aws", "us-east-1", "123456789012");
@@ -284,7 +283,7 @@ mod tests {
         assert_result_has_no_wildcard_actions(&result);
 
         // Both wildcard-resource statements must be surfaced as warnings
-        // so consumers can call them out for review (threat model AV-3)
+        // so consumers can call them out for review
         assert_eq!(result.warnings.len(), 2);
         for warning in &result.warnings {
             assert_eq!(warning.policy_index, 0);
