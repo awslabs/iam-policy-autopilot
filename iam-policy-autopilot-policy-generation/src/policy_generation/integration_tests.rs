@@ -195,6 +195,154 @@ mod tests {
         ]
     }
 
+    /// End-to-end regression test: even when the analyzed code uses EVERY
+    /// action a service defines, the generated policy still enumerates each
+    /// action individually instead of collapsing to a service wildcard.
+    ///
+    /// Unlike the fixture-based tests below (which feed pre-enriched calls
+    /// directly into the generation engine), this test runs the real
+    /// enrichment pipeline against a mocked Service Reference endpoint whose
+    /// catalog for the service is exhaustive and small. Every catalog action
+    /// is exercised by an SDK call, so a hypothetical "all actions used →
+    /// emit service:*" optimization anywhere in enrichment, generation, or
+    /// merging would fail this test.
+    #[tokio::test]
+    async fn test_exhaustive_action_usage_never_collapses_to_service_wildcard() {
+        use std::collections::HashMap;
+        use std::sync::Arc;
+
+        use crate::enrichment::{
+            mock_remote_service_reference, ResourceMatcher, ServiceReferenceLoader,
+        };
+        use crate::service_configuration::ServiceConfiguration;
+        use crate::SdkType;
+
+        // The COMPLETE action catalog of the mocked service: (boto3 method,
+        // operation name, expected IAM action)
+        let catalog = [
+            ("get_object", "GetObject", "s3:GetObject"),
+            ("put_object", "PutObject", "s3:PutObject"),
+            ("delete_object", "DeleteObject", "s3:DeleteObject"),
+            ("list_bucket", "ListBucket", "s3:ListBucket"),
+            ("create_bucket", "CreateBucket", "s3:CreateBucket"),
+            ("delete_bucket", "DeleteBucket", "s3:DeleteBucket"),
+        ];
+
+        // Build a Service Reference document where `catalog` is the FULL set
+        // of actions the service supports
+        let actions_json: Vec<_> = catalog
+            .iter()
+            .map(|(_, operation, _)| {
+                serde_json::json!({
+                    "Name": operation,
+                    "Resources": [{ "Name": "bucket" }]
+                })
+            })
+            .collect();
+        let operations_json: Vec<_> = catalog
+            .iter()
+            .map(|(_, operation, _)| {
+                serde_json::json!({
+                    "Name": operation,
+                    "AuthorizedActions": [{ "Name": operation, "Service": "s3" }]
+                })
+            })
+            .collect();
+
+        let mock_server = wiremock::MockServer::start().await;
+        mock_remote_service_reference::mock_server_service_reference_response(
+            &mock_server,
+            "s3",
+            serde_json::json!({
+                "Name": "s3",
+                "Actions": actions_json,
+                "Resources": [
+                    {
+                        "Name": "bucket",
+                        "ARNFormats": ["arn:${Partition}:s3:::${BucketName}"]
+                    }
+                ],
+                "Operations": operations_json,
+            }),
+        )
+        .await;
+
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+
+        let matcher = ResourceMatcher::new(
+            Arc::new(ServiceConfiguration {
+                rename_services_operation_action_map: HashMap::new(),
+                rename_services_service_reference: HashMap::new(),
+                smithy_botocore_service_name_mapping: HashMap::new(),
+                resource_overrides: HashMap::new(),
+            }),
+            HashMap::new(),
+            SdkType::Boto3,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
+
+        // Use EVERY action in the catalog
+        let sdk_calls: Vec<SdkMethodCall> = catalog
+            .iter()
+            .map(|(method, _, _)| SdkMethodCall {
+                name: (*method).to_string(),
+                possible_services: vec!["s3".to_string()],
+                metadata: None,
+            })
+            .collect();
+
+        let mut enriched_calls = Vec::new();
+        for sdk_call in &sdk_calls {
+            enriched_calls.extend(matcher.enrich_method_call(sdk_call, &loader).await.unwrap());
+        }
+        assert_eq!(
+            enriched_calls.len(),
+            catalog.len(),
+            "every catalog action must be exercised by an enriched call"
+        );
+
+        // Generate and merge with both merger configurations
+        for allow_cross_service_merging in [false, true] {
+            let engine = Engine::with_merger_config(
+                "aws",
+                "us-east-1",
+                "123456789012",
+                PolicyMergerConfig {
+                    allow_cross_service_merging,
+                },
+            );
+
+            let result = engine.generate_policies(&enriched_calls).unwrap();
+            let merged = engine.merge_policies(&result.policies).unwrap();
+
+            assert_no_wildcard_actions(&merged);
+
+            // Every catalog action must appear verbatim in the merged output
+            let all_actions: Vec<&String> = merged
+                .iter()
+                .flat_map(|p| &p.policy.statements)
+                .flat_map(|s| &s.action)
+                .collect();
+            for (_, _, expected_action) in &catalog {
+                assert!(
+                    all_actions.iter().any(|a| a == expected_action),
+                    "action {expected_action} missing from merged output \
+                     (allow_cross_service_merging={allow_cross_service_merging}); \
+                     got: {all_actions:?}"
+                );
+            }
+            assert_eq!(
+                all_actions.len(),
+                catalog.len(),
+                "merged output must contain exactly the catalog actions, \
+                 no more and no fewer \
+                 (allow_cross_service_merging={allow_cross_service_merging})"
+            );
+        }
+    }
+
     /// Regression test: a generation run over many SDK calls across multiple
     /// services never emits a wildcard Action.
     #[test]
