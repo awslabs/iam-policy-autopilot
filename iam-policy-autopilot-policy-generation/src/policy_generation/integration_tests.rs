@@ -6,8 +6,11 @@
 #[cfg(test)]
 mod tests {
     use super::super::{Effect, Engine};
+    use crate::api::model::GeneratePoliciesResult;
     use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::errors::ExtractorError;
+    use crate::policy_generation::merge::PolicyMergerConfig;
+    use crate::policy_generation::PolicyWithMetadata;
     use crate::{Explanation, SdkMethodCall};
 
     fn create_test_sdk_call() -> SdkMethodCall {
@@ -16,6 +19,269 @@ mod tests {
             possible_services: vec!["s3".to_string()],
             metadata: None,
         }
+    }
+
+    /// Security invariant (threat model AV-3): generated policies must NEVER
+    /// contain a wildcard in any Action entry — neither a bare `"*"` nor an
+    /// embedded wildcard like `"s3:*"` or `"dynamodb:Get*"`. Actions must
+    /// always be fully enumerated (e.g., `"s3:GetObject"`).
+    ///
+    /// Resource wildcards (`"*"` in Resource) are ALLOWED and intentionally
+    /// out of scope here.
+    fn assert_no_wildcard_actions(policies: &[PolicyWithMetadata]) {
+        // service:OperationName — a lowercase service prefix followed by an
+        // alphanumeric operation name. No '*' can match anywhere.
+        let strict_action_pattern = regex::Regex::new(r"^[a-z0-9-]+:[A-Za-z0-9]+$")
+            .expect("static action pattern must compile");
+
+        let mut actions_checked = 0usize;
+        for policy_with_metadata in policies {
+            for statement in &policy_with_metadata.policy.statements {
+                assert!(
+                    !statement.action.is_empty(),
+                    "statement {:?} has an empty Action list",
+                    statement.sid
+                );
+                for action in &statement.action {
+                    assert!(
+                        !action.contains('*'),
+                        "wildcard found in Action {action:?} of statement {:?} — \
+                         actions must be fully enumerated (threat model AV-3)",
+                        statement.sid
+                    );
+                    assert!(
+                        strict_action_pattern.is_match(action),
+                        "Action {action:?} of statement {:?} does not match the strict \
+                         service:OperationName pattern",
+                        statement.sid
+                    );
+                    actions_checked += 1;
+                }
+            }
+        }
+        assert!(
+            actions_checked > 0,
+            "no actions were checked — the test input produced no statements"
+        );
+    }
+
+    /// Convenience wrapper for a full generation result.
+    fn assert_result_has_no_wildcard_actions(result: &GeneratePoliciesResult) {
+        assert_no_wildcard_actions(&result.policies);
+    }
+
+    /// Build an enriched call with a single action and standard ARN patterns.
+    fn enriched_call_with_actions<'a>(
+        service: &str,
+        method_name: &str,
+        actions: Vec<Action>,
+        sdk_call: &'a SdkMethodCall,
+    ) -> EnrichedSdkMethodCall<'a> {
+        EnrichedSdkMethodCall {
+            method_name: method_name.to_string(),
+            service: service.to_string(),
+            actions,
+            sdk_method_call: sdk_call,
+        }
+    }
+
+    /// Build a fixture spanning many SDK calls across multiple services,
+    /// covering ARN-pattern resources, multi-resource actions, and
+    /// wildcard-resource fallbacks (no ARN patterns).
+    fn multi_service_fixture(sdk_call: &SdkMethodCall) -> Vec<EnrichedSdkMethodCall<'_>> {
+        let arn_action = |name: &str, arn: &str| {
+            Action::new(
+                name.to_string(),
+                vec![Resource::new(
+                    "resource".to_string(),
+                    Some(vec![arn.to_string()]),
+                )],
+                vec![],
+                Explanation::default(),
+            )
+        };
+        // Action whose resource has no ARN patterns → Resource "*" fallback
+        let wildcard_resource_action = |name: &str| {
+            Action::new(
+                name.to_string(),
+                vec![Resource::new("*".to_string(), None)],
+                vec![],
+                Explanation::default(),
+            )
+        };
+
+        vec![
+            enriched_call_with_actions(
+                "s3",
+                "get_object",
+                vec![
+                    arn_action(
+                        "s3:GetObject",
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}",
+                    ),
+                    arn_action(
+                        "s3:GetObjectVersion",
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}",
+                    ),
+                ],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "s3",
+                "put_object",
+                vec![arn_action(
+                    "s3:PutObject",
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}",
+                )],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "s3",
+                "list_buckets",
+                vec![wildcard_resource_action("s3:ListAllMyBuckets")],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "dynamodb",
+                "get_item",
+                vec![arn_action(
+                    "dynamodb:GetItem",
+                    "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}",
+                )],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "dynamodb",
+                "put_item",
+                vec![arn_action(
+                    "dynamodb:PutItem",
+                    "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}",
+                )],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "kms",
+                "decrypt",
+                vec![arn_action(
+                    "kms:Decrypt",
+                    "arn:${Partition}:kms:${Region}:${Account}:key/${KeyId}",
+                )],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "ec2",
+                "describe_instances",
+                vec![wildcard_resource_action("ec2:DescribeInstances")],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "lambda",
+                "invoke",
+                vec![arn_action(
+                    "lambda:InvokeFunction",
+                    "arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}",
+                )],
+                sdk_call,
+            ),
+            enriched_call_with_actions(
+                "sqs",
+                "send_message",
+                vec![arn_action(
+                    "sqs:SendMessage",
+                    "arn:${Partition}:sqs:${Region}:${Account}:${QueueName}",
+                )],
+                sdk_call,
+            ),
+        ]
+    }
+
+    /// Regression test (threat model AV-3): a generation run over many SDK
+    /// calls across multiple services never emits a wildcard Action.
+    #[test]
+    fn test_actions_are_never_wildcards_multi_service_generation() {
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
+        let sdk_call = create_test_sdk_call();
+        let enriched_calls = multi_service_fixture(&sdk_call);
+
+        let result = engine.generate_policies(&enriched_calls).unwrap();
+
+        assert!(!result.policies.is_empty(), "fixture must produce policies");
+        assert_result_has_no_wildcard_actions(&result);
+    }
+
+    /// Regression test (threat model AV-3): the same run with policy merging
+    /// enabled — including cross-service merging (minimize_policy_size) —
+    /// never emits a wildcard Action. This guards the merge path in
+    /// merge.rs, where resource wildcard logic could conceivably be extended
+    /// to actions.
+    #[test]
+    fn test_actions_are_never_wildcards_with_merging() {
+        let sdk_call = create_test_sdk_call();
+
+        for allow_cross_service_merging in [false, true] {
+            let engine = Engine::with_merger_config(
+                "aws",
+                "us-east-1",
+                "123456789012",
+                PolicyMergerConfig {
+                    allow_cross_service_merging,
+                },
+            );
+            let enriched_calls = multi_service_fixture(&sdk_call);
+
+            let result = engine.generate_policies(&enriched_calls).unwrap();
+            let merged = engine.merge_policies(&result.policies).unwrap();
+
+            assert!(
+                !merged.is_empty(),
+                "merging must produce at least one policy \
+                 (allow_cross_service_merging={allow_cross_service_merging})"
+            );
+            assert_no_wildcard_actions(&merged);
+        }
+    }
+
+    /// Regression test (threat model AV-3): actions with no resolvable ARN
+    /// produce Resource "*" fallbacks, and that resource wildcard must never
+    /// leak into the Action list.
+    #[test]
+    fn test_resource_wildcard_fallback_does_not_leak_into_actions() {
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
+        let sdk_call = create_test_sdk_call();
+
+        let enriched_call = enriched_call_with_actions(
+            "s3",
+            "list_buckets",
+            vec![
+                // Resource with no ARN patterns → per-resource "*" fallback
+                Action::new(
+                    "s3:ListAllMyBuckets".to_string(),
+                    vec![Resource::new("*".to_string(), None)],
+                    vec![],
+                    Explanation::default(),
+                ),
+                // Action with an empty resource list → empty-list "*" fallback
+                Action::new(
+                    "s3:HeadBucket".to_string(),
+                    vec![],
+                    vec![],
+                    Explanation::default(),
+                ),
+            ],
+            &sdk_call,
+        );
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+
+        // Both fallback paths must produce a wildcard *resource*...
+        let policy = &result.policies[0].policy;
+        assert_eq!(policy.statements.len(), 2);
+        for statement in &policy.statements {
+            assert_eq!(statement.resource, vec!["*"]);
+        }
+
+        // ...while actions stay fully enumerated.
+        assert_result_has_no_wildcard_actions(&result);
     }
 
     #[test]
