@@ -68,9 +68,9 @@ pub struct GeneratePoliciesResult {
 
 /// Machine-recognizable category of a [`PolicyWarning`].
 ///
-/// Consumers should branch on this type (rather than parsing `message`) to
-/// construct their own user-facing messages, e.g., localized console UI
-/// strings built from the warning's `sid` and `actions` metadata.
+/// Callers should branch on this type (rather than parsing `message`) to
+/// construct their own messages from the warning's `sid` and `actions`
+/// metadata.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[non_exhaustive]
 pub enum PolicyWarningType {
@@ -81,12 +81,12 @@ pub enum PolicyWarningType {
     WildcardResource,
 }
 
-/// Warning attached to a generated policy statement that needs customer review.
+/// Warning attached to a generated policy statement that needs review.
 ///
 /// The `warning_type` identifies the warning programmatically; `message` is a
-/// convenience English rendering for CLI users. Consumers building their own
-/// UI should use `warning_type` plus the statement metadata (`policy_index`,
-/// `sid`, `actions`) instead of `message`.
+/// convenience English rendering for CLI users. Callers producing their own
+/// messages should use `warning_type` plus the statement metadata
+/// (`policy_index`, `sid`, `actions`) instead of `message`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
