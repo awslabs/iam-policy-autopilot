@@ -275,10 +275,15 @@ impl<'a> Engine<'a> {
         // Collect explanations
         let explanations = extract_explanations(enriched_calls);
 
+        // Flag statements that fell back to Resource "*" so consumers can
+        // surface them for review (threat model AV-3)
+        let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&policies);
+
         Ok(GeneratePoliciesResult {
             policies,
             explanations: Some(explanations),
             resource_binding_explanations: None,
+            warnings,
         })
     }
 }

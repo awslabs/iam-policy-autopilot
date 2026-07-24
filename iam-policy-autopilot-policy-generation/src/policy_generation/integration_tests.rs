@@ -282,6 +282,44 @@ mod tests {
 
         // ...while actions stay fully enumerated.
         assert_result_has_no_wildcard_actions(&result);
+
+        // Both wildcard-resource statements must be surfaced as warnings
+        // so consumers can call them out for review (threat model AV-3)
+        assert_eq!(result.warnings.len(), 2);
+        for warning in &result.warnings {
+            assert_eq!(warning.policy_index, 0);
+            assert!(warning.sid.is_some());
+        }
+        assert_eq!(result.warnings[0].actions, vec!["s3:ListAllMyBuckets"]);
+        assert_eq!(result.warnings[1].actions, vec!["s3:HeadBucket"]);
+    }
+
+    /// Statements fully scoped to specific ARNs must produce no warnings.
+    #[test]
+    fn test_scoped_statements_produce_no_warnings() {
+        let engine = Engine::new("aws", "us-east-1", "123456789012");
+        let sdk_call = create_test_sdk_call();
+
+        let enriched_call = enriched_call_with_actions(
+            "dynamodb",
+            "get_item",
+            vec![Action::new(
+                "dynamodb:GetItem".to_string(),
+                vec![Resource::new(
+                    "table".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:dynamodb:${Region}:${Account}:table/${TableName}"
+                            .to_string(),
+                    ]),
+                )],
+                vec![],
+                Explanation::default(),
+            )],
+            &sdk_call,
+        );
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert!(result.warnings.is_empty());
     }
 
     #[test]

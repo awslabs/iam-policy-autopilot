@@ -61,6 +61,57 @@ pub struct GeneratePoliciesResult {
     /// Explanations for where resource ARNs came from (Terraform bindings)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
+    /// Warnings about statements that could not be scoped to specific resources
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PolicyWarning>,
+}
+
+/// Warning attached to a generated policy statement that needs customer review.
+///
+/// Currently emitted when a statement's `Resource` falls back to the `"*"`
+/// wildcard because no resource-specific ARN could be determined (no ARN
+/// patterns in the Service Reference data, an empty resource list, or the
+/// resource list was collapsed by the resource cutoff). Surfacing these lets
+/// consumers (e.g., a console UI) call out "N statements could not be scoped
+/// to specific resources — review these."
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct PolicyWarning {
+    /// Index of the policy in `policies` that contains the statement
+    pub policy_index: usize,
+    /// SID of the statement, when present. Merged statements have no SID;
+    /// use `policy_index` and `actions` to locate them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sid: Option<String>,
+    /// Actions of the flagged statement
+    pub actions: Vec<String>,
+    /// Human-readable description of the warning
+    pub message: String,
+}
+
+impl PolicyWarning {
+    /// Scan generated policies for statements whose `Resource` contains the
+    /// `"*"` wildcard and produce one warning per flagged statement.
+    #[must_use]
+    pub fn wildcard_resource_warnings(policies: &[PolicyWithMetadata]) -> Vec<Self> {
+        let mut warnings = Vec::new();
+        for (policy_index, policy_with_metadata) in policies.iter().enumerate() {
+            for statement in &policy_with_metadata.policy.statements {
+                if statement.resource.iter().any(|resource| resource == "*") {
+                    warnings.push(Self {
+                        policy_index,
+                        sid: statement.sid.clone(),
+                        actions: statement.action.clone(),
+                        message: "Statement could not be scoped to specific resources and \
+                                  uses Resource \"*\". Review whether broad resource access \
+                                  is intended."
+                            .to_string(),
+                    });
+                }
+            }
+        }
+        warnings
+    }
 }
 
 /// Service hints for filtering SDK method calls
@@ -146,6 +197,91 @@ impl AwsContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::policy_generation::{IamPolicy, PolicyType, Statement};
+
+    fn policy_with_statements(statements: Vec<Statement>) -> PolicyWithMetadata {
+        let mut policy = IamPolicy::new();
+        for statement in statements {
+            policy.add_statement(statement);
+        }
+        PolicyWithMetadata {
+            policy,
+            policy_type: PolicyType::Identity,
+        }
+    }
+
+    #[test]
+    fn test_wildcard_resource_warnings_flags_wildcard_statements() {
+        let policies = vec![
+            policy_with_statements(vec![
+                Statement::allow(
+                    vec!["s3:GetObject".to_string()],
+                    vec!["arn:aws:s3:::my-bucket/*".to_string()],
+                ),
+                Statement::allow(
+                    vec!["s3:ListAllMyBuckets".to_string()],
+                    vec!["*".to_string()],
+                ),
+            ]),
+            policy_with_statements(vec![Statement::allow(
+                vec!["ec2:DescribeInstances".to_string()],
+                vec!["*".to_string()],
+            )]),
+        ];
+
+        let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
+
+        assert_eq!(warnings.len(), 2);
+        assert_eq!(warnings[0].policy_index, 0);
+        assert_eq!(warnings[0].actions, vec!["s3:ListAllMyBuckets"]);
+        assert_eq!(warnings[1].policy_index, 1);
+        assert_eq!(warnings[1].actions, vec!["ec2:DescribeInstances"]);
+    }
+
+    #[test]
+    fn test_wildcard_resource_warnings_empty_when_all_scoped() {
+        let policies = vec![policy_with_statements(vec![Statement::allow(
+            vec!["s3:GetObject".to_string()],
+            vec!["arn:aws:s3:::my-bucket/*".to_string()],
+        )])];
+
+        assert!(PolicyWarning::wildcard_resource_warnings(&policies).is_empty());
+    }
+
+    #[test]
+    fn test_wildcard_resource_warnings_arn_wildcards_not_flagged() {
+        // ARN-embedded wildcards (arn:aws:s3:::*/*) are scoped to a service
+        // and are not the bare "*" fallback this warning targets
+        let policies = vec![policy_with_statements(vec![Statement::allow(
+            vec!["s3:GetObject".to_string()],
+            vec!["arn:aws:s3:::*/*".to_string()],
+        )])];
+
+        assert!(PolicyWarning::wildcard_resource_warnings(&policies).is_empty());
+    }
+
+    #[test]
+    fn test_policy_warning_serialization() {
+        let warning = PolicyWarning {
+            policy_index: 0,
+            sid: Some("AllowS3ListAllMyBuckets".to_string()),
+            actions: vec!["s3:ListAllMyBuckets".to_string()],
+            message: "test message".to_string(),
+        };
+
+        let json = serde_json::to_value(&warning).unwrap();
+        assert_eq!(json["PolicyIndex"], 0);
+        assert_eq!(json["Sid"], "AllowS3ListAllMyBuckets");
+        assert_eq!(json["Actions"][0], "s3:ListAllMyBuckets");
+
+        // Sid is omitted when absent (merged statements)
+        let warning_no_sid = PolicyWarning {
+            sid: None,
+            ..warning
+        };
+        let json = serde_json::to_value(&warning_no_sid).unwrap();
+        assert!(json.get("Sid").is_none());
+    }
 
     #[test]
     fn test_aws_context_partition_derivation() {
