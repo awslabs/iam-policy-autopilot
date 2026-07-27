@@ -83,10 +83,12 @@ pub enum PolicyWarningType {
 
 /// Warning attached to a generated policy statement that needs review.
 ///
-/// The `warning_type` identifies the warning programmatically; `message` is a
-/// convenience English rendering for CLI users. Callers producing their own
-/// messages should use `warning_type` plus the statement metadata
-/// (`policy_index`, `sid`, `actions`) instead of `message`.
+/// The `warning_type` identifies the warning programmatically, and
+/// `policy_index` / `statement_index` locate the flagged statement in the
+/// result. Callers producing their own messages should branch on
+/// `warning_type` and read any details (actions, resources) from the
+/// statement itself; `message` is a convenience English rendering for
+/// CLI users.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
@@ -94,12 +96,8 @@ pub struct PolicyWarning {
     pub warning_type: PolicyWarningType,
     /// Index of the policy in `policies` that contains the statement
     pub policy_index: usize,
-    /// SID of the statement, when present. Merged statements have no SID;
-    /// use `policy_index` and `actions` to locate them.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sid: Option<String>,
-    /// Actions of the flagged statement
-    pub actions: Vec<String>,
+    /// Index of the flagged statement within that policy's statement list
+    pub statement_index: usize,
     /// Human-readable description of the warning (English only)
     pub message: String,
 }
@@ -111,13 +109,14 @@ impl PolicyWarning {
     pub fn wildcard_resource_warnings(policies: &[PolicyWithMetadata]) -> Vec<Self> {
         let mut warnings = Vec::new();
         for (policy_index, policy_with_metadata) in policies.iter().enumerate() {
-            for statement in &policy_with_metadata.policy.statements {
+            for (statement_index, statement) in
+                policy_with_metadata.policy.statements.iter().enumerate()
+            {
                 if statement.resource.iter().any(|resource| resource == "*") {
                     warnings.push(Self {
                         warning_type: PolicyWarningType::WildcardResource,
                         policy_index,
-                        sid: statement.sid.clone(),
-                        actions: statement.action.clone(),
+                        statement_index,
                         message: "Statement could not be scoped to specific resources and \
                                   uses Resource \"*\". Review whether broad resource access \
                                   is intended."
@@ -228,12 +227,11 @@ mod tests {
 
     /// Expected warning for a statement, matching the message produced by
     /// `wildcard_resource_warnings`.
-    fn wildcard_warning(policy_index: usize, actions: &[&str]) -> PolicyWarning {
+    fn wildcard_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
         PolicyWarning {
             warning_type: PolicyWarningType::WildcardResource,
             policy_index,
-            sid: None,
-            actions: actions.iter().map(|a| (*a).to_string()).collect(),
+            statement_index,
             message: "Statement could not be scoped to specific resources and \
                       uses Resource \"*\". Review whether broad resource access \
                       is intended."
@@ -264,10 +262,7 @@ mod tests {
                 vec!["*".to_string()],
             )]),
         ],
-        vec![
-            wildcard_warning(0, &["s3:ListAllMyBuckets"]),
-            wildcard_warning(1, &["ec2:DescribeInstances"]),
-        ]
+        vec![wildcard_warning(0, 1), wildcard_warning(1, 0)]
     )]
     // Fully scoped statements produce no warnings
     #[case::all_scoped(
@@ -301,24 +296,15 @@ mod tests {
         let warning = PolicyWarning {
             warning_type: PolicyWarningType::WildcardResource,
             policy_index: 0,
-            sid: Some("AllowS3ListAllMyBuckets".to_string()),
-            actions: vec!["s3:ListAllMyBuckets".to_string()],
+            statement_index: 1,
             message: "test message".to_string(),
         };
 
         let json = serde_json::to_value(&warning).unwrap();
         assert_eq!(json["WarningType"], "WildcardResource");
         assert_eq!(json["PolicyIndex"], 0);
-        assert_eq!(json["Sid"], "AllowS3ListAllMyBuckets");
-        assert_eq!(json["Actions"][0], "s3:ListAllMyBuckets");
-
-        // Sid is omitted when absent (merged statements)
-        let warning_no_sid = PolicyWarning {
-            sid: None,
-            ..warning
-        };
-        let json = serde_json::to_value(&warning_no_sid).unwrap();
-        assert!(json.get("Sid").is_none());
+        assert_eq!(json["StatementIndex"], 1);
+        assert_eq!(json["Message"], "test message");
     }
 
     #[test]

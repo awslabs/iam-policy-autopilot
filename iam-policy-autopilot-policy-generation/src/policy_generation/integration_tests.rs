@@ -414,12 +414,10 @@ mod tests {
         // Both wildcard-resource statements must be surfaced as warnings
         // so consumers can call them out for review
         assert_eq!(result.warnings.len(), 2);
-        for warning in &result.warnings {
+        for (index, warning) in result.warnings.iter().enumerate() {
             assert_eq!(warning.policy_index, 0);
-            assert!(warning.sid.is_some());
+            assert_eq!(warning.statement_index, index);
         }
-        assert_eq!(result.warnings[0].actions, vec!["s3:ListAllMyBuckets"]);
-        assert_eq!(result.warnings[1].actions, vec!["s3:HeadBucket"]);
     }
 
     /// Statements fully scoped to specific ARNs must produce no warnings.
