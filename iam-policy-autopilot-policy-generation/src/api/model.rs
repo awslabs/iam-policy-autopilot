@@ -87,7 +87,7 @@ pub enum PolicyWarningType {
 /// convenience English rendering for CLI users. Callers producing their own
 /// messages should use `warning_type` plus the statement metadata
 /// (`policy_index`, `sid`, `actions`) instead of `message`.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
     /// Machine-recognizable warning category
@@ -226,9 +226,29 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_wildcard_resource_warnings_flags_wildcard_statements() {
-        let policies = vec![
+    /// Expected warning for a statement, matching the message produced by
+    /// `wildcard_resource_warnings`.
+    fn wildcard_warning(policy_index: usize, actions: &[&str]) -> PolicyWarning {
+        PolicyWarning {
+            warning_type: PolicyWarningType::WildcardResource,
+            policy_index,
+            sid: None,
+            actions: actions.iter().map(|a| (*a).to_string()).collect(),
+            message: "Statement could not be scoped to specific resources and \
+                      uses Resource \"*\". Review whether broad resource access \
+                      is intended."
+                .to_string(),
+        }
+    }
+
+    /// Property: `wildcard_resource_warnings` flags exactly the statements
+    /// whose Resource list contains the bare `"*"` wildcard. Statements
+    /// scoped to specific ARNs, or to ARNs with embedded wildcards (e.g.,
+    /// `arn:aws:s3:::*/*`), are not flagged.
+    #[rstest::rstest]
+    // Bare "*" statements are flagged across policies, scoped ones are not
+    #[case::flags_bare_wildcards(
+        vec![
             policy_with_statements(vec![
                 Statement::allow(
                     vec!["s3:GetObject".to_string()],
@@ -243,37 +263,37 @@ mod tests {
                 vec!["ec2:DescribeInstances".to_string()],
                 vec!["*".to_string()],
             )]),
-        ];
-
-        let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
-
-        assert_eq!(warnings.len(), 2);
-        assert_eq!(warnings[0].policy_index, 0);
-        assert_eq!(warnings[0].actions, vec!["s3:ListAllMyBuckets"]);
-        assert_eq!(warnings[1].policy_index, 1);
-        assert_eq!(warnings[1].actions, vec!["ec2:DescribeInstances"]);
-    }
-
-    #[test]
-    fn test_wildcard_resource_warnings_empty_when_all_scoped() {
-        let policies = vec![policy_with_statements(vec![Statement::allow(
+        ],
+        vec![
+            wildcard_warning(0, &["s3:ListAllMyBuckets"]),
+            wildcard_warning(1, &["ec2:DescribeInstances"]),
+        ]
+    )]
+    // Fully scoped statements produce no warnings
+    #[case::all_scoped(
+        vec![policy_with_statements(vec![Statement::allow(
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::my-bucket/*".to_string()],
-        )])];
-
-        assert!(PolicyWarning::wildcard_resource_warnings(&policies).is_empty());
-    }
-
-    #[test]
-    fn test_wildcard_resource_warnings_arn_wildcards_not_flagged() {
-        // ARN-embedded wildcards (arn:aws:s3:::*/*) are scoped to a service
-        // and are not the bare "*" fallback this warning targets
-        let policies = vec![policy_with_statements(vec![Statement::allow(
+        )])],
+        vec![]
+    )]
+    // ARN-embedded wildcards are scoped to a service and are not the bare
+    // "*" fallback this warning targets
+    #[case::arn_wildcards_not_flagged(
+        vec![policy_with_statements(vec![Statement::allow(
             vec!["s3:GetObject".to_string()],
             vec!["arn:aws:s3:::*/*".to_string()],
-        )])];
-
-        assert!(PolicyWarning::wildcard_resource_warnings(&policies).is_empty());
+        )])],
+        vec![]
+    )]
+    fn test_wildcard_resource_warnings(
+        #[case] policies: Vec<PolicyWithMetadata>,
+        #[case] expected: Vec<PolicyWarning>,
+    ) {
+        assert_eq!(
+            PolicyWarning::wildcard_resource_warnings(&policies),
+            expected
+        );
     }
 
     #[test]

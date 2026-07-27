@@ -6,7 +6,6 @@
 #[cfg(test)]
 mod tests {
     use super::super::{Effect, Engine};
-    use crate::api::model::GeneratePoliciesResult;
     use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
     use crate::errors::ExtractorError;
     use crate::policy_generation::merge::PolicyMergerConfig;
@@ -63,11 +62,6 @@ mod tests {
             actions_checked > 0,
             "no actions were checked — the test input produced no statements"
         );
-    }
-
-    /// Convenience wrapper for a full generation result.
-    fn assert_result_has_no_wildcard_actions(result: &GeneratePoliciesResult) {
-        assert_no_wildcard_actions(&result.policies);
     }
 
     /// Build an enriched call with a single action and standard ARN patterns.
@@ -343,49 +337,36 @@ mod tests {
         }
     }
 
-    /// Regression test: a generation run over many SDK calls across multiple
-    /// services never emits a wildcard Action.
-    #[test]
-    fn test_actions_are_never_wildcards_multi_service_generation() {
-        let engine = Engine::new("aws", "us-east-1", "123456789012");
+    /// Property: a generation run over many SDK calls across multiple
+    /// services never emits a wildcard Action, with or without policy
+    /// merging (including cross-service merging via minimize_policy_size).
+    /// The merge cases guard the merge path in merge.rs, where resource
+    /// wildcard logic could conceivably be extended to actions.
+    #[rstest::rstest]
+    #[case::generation_only(None)]
+    #[case::merged(Some(false))]
+    #[case::merged_cross_service(Some(true))]
+    fn test_actions_are_never_wildcards(#[case] merging: Option<bool>) {
         let sdk_call = create_test_sdk_call();
+
+        let engine = Engine::with_merger_config(
+            "aws",
+            "us-east-1",
+            "123456789012",
+            PolicyMergerConfig {
+                allow_cross_service_merging: merging.unwrap_or_default(),
+            },
+        );
         let enriched_calls = multi_service_fixture(&sdk_call);
 
         let result = engine.generate_policies(&enriched_calls).unwrap();
+        let policies = match merging {
+            None => result.policies,
+            Some(_) => engine.merge_policies(&result.policies).unwrap(),
+        };
 
-        assert!(!result.policies.is_empty(), "fixture must produce policies");
-        assert_result_has_no_wildcard_actions(&result);
-    }
-
-    /// Regression test: the same run with policy merging enabled — including
-    /// cross-service merging (minimize_policy_size) — never emits a wildcard
-    /// Action. This guards the merge path in merge.rs, where resource
-    /// wildcard logic could conceivably be extended to actions.
-    #[test]
-    fn test_actions_are_never_wildcards_with_merging() {
-        let sdk_call = create_test_sdk_call();
-
-        for allow_cross_service_merging in [false, true] {
-            let engine = Engine::with_merger_config(
-                "aws",
-                "us-east-1",
-                "123456789012",
-                PolicyMergerConfig {
-                    allow_cross_service_merging,
-                },
-            );
-            let enriched_calls = multi_service_fixture(&sdk_call);
-
-            let result = engine.generate_policies(&enriched_calls).unwrap();
-            let merged = engine.merge_policies(&result.policies).unwrap();
-
-            assert!(
-                !merged.is_empty(),
-                "merging must produce at least one policy \
-                 (allow_cross_service_merging={allow_cross_service_merging})"
-            );
-            assert_no_wildcard_actions(&merged);
-        }
+        assert!(!policies.is_empty(), "fixture must produce policies");
+        assert_no_wildcard_actions(&policies);
     }
 
     /// Regression test: actions with no resolvable ARN produce Resource "*"
@@ -428,7 +409,7 @@ mod tests {
         }
 
         // ...while actions stay fully enumerated.
-        assert_result_has_no_wildcard_actions(&result);
+        assert_no_wildcard_actions(&result.policies);
 
         // Both wildcard-resource statements must be surfaced as warnings
         // so consumers can call them out for review
