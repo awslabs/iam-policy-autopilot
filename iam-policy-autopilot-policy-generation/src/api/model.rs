@@ -81,23 +81,36 @@ pub enum PolicyWarningType {
     WildcardResource,
 }
 
+/// Location of a statement within a generated policy result, expressed as
+/// index paths into the result rather than source line/col (which is the
+/// role of [`crate::Location`]).
+///
+/// The location is currently resolved to the statement level. If finer
+/// precision is needed later (e.g., a specific action or condition), add
+/// further optional index fields here so an existing consumer keeps working.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "PascalCase")]
+pub struct PolicyLocation {
+    /// Index of the policy in `policies`
+    pub policy_index: usize,
+    /// Index of the statement within that policy's statement list
+    pub statement_index: usize,
+}
+
 /// Warning attached to a generated policy statement that needs review.
 ///
 /// The `warning_type` identifies the warning programmatically, and
-/// `policy_index` / `statement_index` locate the flagged statement in the
-/// result. Callers producing their own messages should branch on
-/// `warning_type` and read any details (actions, resources) from the
-/// statement itself; `message` is a convenience English rendering for
-/// CLI users.
+/// `location` points at the flagged statement in the result. Callers
+/// producing their own messages should branch on `warning_type` and read
+/// any details (actions, resources) from the located statement itself;
+/// `message` is a convenience English rendering for CLI users.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
     /// Machine-recognizable warning category
     pub warning_type: PolicyWarningType,
-    /// Index of the policy in `policies` that contains the statement
-    pub policy_index: usize,
-    /// Index of the flagged statement within that policy's statement list
-    pub statement_index: usize,
+    /// Location of the flagged statement within the generated policies
+    pub location: PolicyLocation,
     /// Human-readable description of the warning (English only)
     pub message: String,
 }
@@ -115,8 +128,10 @@ impl PolicyWarning {
                 if statement.resource.iter().any(|resource| resource == "*") {
                     warnings.push(Self {
                         warning_type: PolicyWarningType::WildcardResource,
-                        policy_index,
-                        statement_index,
+                        location: PolicyLocation {
+                            policy_index,
+                            statement_index,
+                        },
                         message: "Statement could not be scoped to specific resources and \
                                   uses Resource \"*\". Review whether broad resource access \
                                   is intended."
@@ -230,8 +245,10 @@ mod tests {
     fn wildcard_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
         PolicyWarning {
             warning_type: PolicyWarningType::WildcardResource,
-            policy_index,
-            statement_index,
+            location: PolicyLocation {
+                policy_index,
+                statement_index,
+            },
             message: "Statement could not be scoped to specific resources and \
                       uses Resource \"*\". Review whether broad resource access \
                       is intended."
@@ -295,15 +312,17 @@ mod tests {
     fn test_policy_warning_serialization() {
         let warning = PolicyWarning {
             warning_type: PolicyWarningType::WildcardResource,
-            policy_index: 0,
-            statement_index: 1,
+            location: PolicyLocation {
+                policy_index: 0,
+                statement_index: 1,
+            },
             message: "test message".to_string(),
         };
 
         let json = serde_json::to_value(&warning).unwrap();
         assert_eq!(json["WarningType"], "WildcardResource");
-        assert_eq!(json["PolicyIndex"], 0);
-        assert_eq!(json["StatementIndex"], 1);
+        assert_eq!(json["Location"]["PolicyIndex"], 0);
+        assert_eq!(json["Location"]["StatementIndex"], 1);
         assert_eq!(json["Message"], "test message");
     }
 
