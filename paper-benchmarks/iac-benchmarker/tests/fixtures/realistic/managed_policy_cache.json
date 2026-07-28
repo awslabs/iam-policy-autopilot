@@ -1,0 +1,330 @@
+{
+  "fetched_at": 9999999999,
+  "policies": [
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+      "name": "AmazonS3ReadOnlyAccess",
+      "default_version_id": "v3",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:Get*",
+              "s3:List*",
+              "s3:Describe*",
+              "s3-object-lambda:Get*",
+              "s3-object-lambda:List*"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+      "name": "AmazonS3FullAccess",
+      "default_version_id": "v2",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:*",
+              "s3-object-lambda:*"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonDynamoDBReadOnlyAccess",
+      "name": "AmazonDynamoDBReadOnlyAccess",
+      "default_version_id": "v15",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "GeneralReadOnlyAccess",
+            "Action": [
+              "application-autoscaling:DescribeScalableTargets",
+              "application-autoscaling:DescribeScalingActivities",
+              "application-autoscaling:DescribeScalingPolicies",
+              "cloudwatch:DescribeAlarmHistory",
+              "cloudwatch:DescribeAlarms",
+              "cloudwatch:DescribeAlarmsForMetric",
+              "cloudwatch:GetMetricStatistics",
+              "cloudwatch:ListMetrics",
+              "cloudwatch:GetMetricData",
+              "datapipeline:DescribeObjects",
+              "datapipeline:DescribePipelines",
+              "datapipeline:GetPipelineDefinition",
+              "datapipeline:ListPipelines",
+              "datapipeline:QueryObjects",
+              "dynamodb:BatchGetItem",
+              "dynamodb:Describe*",
+              "dynamodb:List*",
+              "dynamodb:GetAbacStatus",
+              "dynamodb:GetItem",
+              "dynamodb:GetResourcePolicy",
+              "dynamodb:Query",
+              "dynamodb:Scan",
+              "dynamodb:PartiQLSelect",
+              "dax:Describe*",
+              "dax:List*",
+              "dax:GetItem",
+              "dax:BatchGetItem",
+              "dax:Query",
+              "dax:Scan",
+              "ec2:DescribeVpcs",
+              "ec2:DescribeSubnets",
+              "ec2:DescribeSecurityGroups",
+              "iam:GetRole",
+              "iam:ListRoles",
+              "kms:DescribeKey",
+              "kms:ListAliases",
+              "sns:ListSubscriptionsByTopic",
+              "sns:ListTopics",
+              "lambda:ListFunctions",
+              "lambda:ListEventSourceMappings",
+              "lambda:GetFunctionConfiguration",
+              "resource-groups:ListGroups",
+              "resource-groups:ListGroupResources",
+              "resource-groups:GetGroup",
+              "resource-groups:GetGroupQuery",
+              "tag:GetResources",
+              "kinesis:ListStreams",
+              "kinesis:DescribeStream",
+              "kinesis:DescribeStreamSummary"
+            ],
+            "Effect": "Allow",
+            "Resource": "*"
+          },
+          {
+            "Sid": "CCIAccess",
+            "Action": "cloudwatch:GetInsightRuleReport",
+            "Effect": "Allow",
+            "Resource": "arn:aws:cloudwatch:*:*:insight-rule/DynamoDBContributorInsights*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonDynamoDBFullAccess",
+      "name": "AmazonDynamoDBFullAccess",
+      "default_version_id": "v15",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Action": [
+              "dynamodb:*",
+              "dax:*",
+              "application-autoscaling:DeleteScalingPolicy",
+              "application-autoscaling:DeregisterScalableTarget",
+              "application-autoscaling:DescribeScalableTargets",
+              "application-autoscaling:DescribeScalingActivities",
+              "application-autoscaling:DescribeScalingPolicies",
+              "application-autoscaling:PutScalingPolicy",
+              "application-autoscaling:RegisterScalableTarget",
+              "cloudwatch:DeleteAlarms",
+              "cloudwatch:DescribeAlarmHistory",
+              "cloudwatch:DescribeAlarms",
+              "cloudwatch:DescribeAlarmsForMetric",
+              "cloudwatch:GetMetricStatistics",
+              "cloudwatch:ListMetrics",
+              "cloudwatch:PutMetricAlarm",
+              "cloudwatch:GetMetricData",
+              "datapipeline:ActivatePipeline",
+              "datapipeline:CreatePipeline",
+              "datapipeline:DeletePipeline",
+              "datapipeline:DescribeObjects",
+              "datapipeline:DescribePipelines",
+              "datapipeline:GetPipelineDefinition",
+              "datapipeline:ListPipelines",
+              "datapipeline:PutPipelineDefinition",
+              "datapipeline:QueryObjects",
+              "ec2:DescribeVpcs",
+              "ec2:DescribeSubnets",
+              "ec2:DescribeSecurityGroups",
+              "iam:GetRole",
+              "iam:ListRoles",
+              "kms:DescribeKey",
+              "kms:ListAliases",
+              "sns:CreateTopic",
+              "sns:DeleteTopic",
+              "sns:ListSubscriptions",
+              "sns:ListSubscriptionsByTopic",
+              "sns:ListTopics",
+              "sns:Subscribe",
+              "sns:Unsubscribe",
+              "sns:SetTopicAttributes",
+              "lambda:CreateFunction",
+              "lambda:ListFunctions",
+              "lambda:ListEventSourceMappings",
+              "lambda:CreateEventSourceMapping",
+              "lambda:DeleteEventSourceMapping",
+              "lambda:GetFunctionConfiguration",
+              "lambda:DeleteFunction",
+              "resource-groups:ListGroups",
+              "resource-groups:ListGroupResources",
+              "resource-groups:GetGroup",
+              "resource-groups:GetGroupQuery",
+              "resource-groups:DeleteGroup",
+              "resource-groups:CreateGroup",
+              "tag:GetResources",
+              "kinesis:ListStreams",
+              "kinesis:DescribeStream",
+              "kinesis:DescribeStreamSummary"
+            ],
+            "Effect": "Allow",
+            "Resource": "*"
+          },
+          {
+            "Action": "cloudwatch:GetInsightRuleReport",
+            "Effect": "Allow",
+            "Resource": "arn:aws:cloudwatch:*:*:insight-rule/DynamoDBContributorInsights*"
+          },
+          {
+            "Action": [
+              "iam:PassRole"
+            ],
+            "Effect": "Allow",
+            "Resource": "*",
+            "Condition": {
+              "StringLike": {
+                "iam:PassedToService": [
+                  "application-autoscaling.amazonaws.com",
+                  "application-autoscaling.amazonaws.com.cn",
+                  "dax.amazonaws.com"
+                ]
+              }
+            }
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "iam:CreateServiceLinkedRole"
+            ],
+            "Resource": "*",
+            "Condition": {
+              "StringEquals": {
+                "iam:AWSServiceName": [
+                  "replication.dynamodb.amazonaws.com",
+                  "dax.amazonaws.com",
+                  "dynamodb.application-autoscaling.amazonaws.com",
+                  "contributorinsights.dynamodb.amazonaws.com",
+                  "kinesisreplication.dynamodb.amazonaws.com"
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AWSLambdaExecute",
+      "name": "AWSLambdaExecute",
+      "default_version_id": "v1",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:*"
+            ],
+            "Resource": "arn:aws:logs:*:*:*"
+          },
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject",
+              "s3:PutObject"
+            ],
+            "Resource": "arn:aws:s3:::*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonSNSFullAccess",
+      "name": "AmazonSNSFullAccess",
+      "default_version_id": "v2",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Sid": "SNSFullAccess",
+            "Effect": "Allow",
+            "Action": "sns:*",
+            "Resource": "*"
+          },
+          {
+            "Sid": "SMSAccessViaSNS",
+            "Effect": "Allow",
+            "Action": [
+              "sms-voice:DescribeVerifiedDestinationNumbers",
+              "sms-voice:CreateVerifiedDestinationNumber",
+              "sms-voice:SendDestinationNumberVerificationCode",
+              "sms-voice:SendTextMessage",
+              "sms-voice:DeleteVerifiedDestinationNumber",
+              "sms-voice:VerifyDestinationNumber",
+              "sms-voice:DescribeAccountAttributes",
+              "sms-voice:DescribeSpendLimits",
+              "sms-voice:DescribePhoneNumbers",
+              "sms-voice:SetTextMessageSpendLimitOverride",
+              "sms-voice:DescribeOptedOutNumbers",
+              "sms-voice:DeleteOptedOutNumber"
+            ],
+            "Resource": "*",
+            "Condition": {
+              "StringEquals": {
+                "aws:CalledViaLast": "sns.amazonaws.com"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonSQSFullAccess",
+      "name": "AmazonSQSFullAccess",
+      "default_version_id": "v1",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Action": [
+              "sqs:*"
+            ],
+            "Effect": "Allow",
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+      "name": "AWSLambdaBasicExecutionRole",
+      "default_version_id": "v1",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "logs:CreateLogGroup",
+              "logs:CreateLogStream",
+              "logs:PutLogEvents"
+            ],
+            "Resource": "*"
+          }
+        ]
+      }
+    }
+  ]
+}

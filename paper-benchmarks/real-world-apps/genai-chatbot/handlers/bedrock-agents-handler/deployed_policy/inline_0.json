@@ -1,0 +1,60 @@
+{
+    "RoleName": "GenAIChatBotStack-BedrockAgentsInterfaceRequestHand-BN9KS1VP1NVP",
+    "PolicyName": "BedrockAgentsInterfaceRequestHandlerServiceRoleDefaultPolicy6C4B27E8",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "sqs:ChangeMessageVisibility",
+                    "sqs:DeleteMessage",
+                    "sqs:GetQueueAttributes",
+                    "sqs:GetQueueUrl",
+                    "sqs:ReceiveMessage"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:BatchWriteItem",
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                    "dynamodb:GetRecords",
+                    "dynamodb:GetShardIterator",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "s3:GetBucket*",
+                    "s3:GetObject*",
+                    "s3:List*"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "sns:Publish",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "bedrock-agentcore:InvokeAgentRuntime",
+                    "bedrock-agentcore:ListAgentRuntimes"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

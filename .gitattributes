@@ -17,3 +17,6 @@ integration-tests/projects/**/* linguist-vendored
 **/tests/**/*.go text eol=lf
 **/tests/**/*.ts text eol=lf
 **/tests/**/*.js text eol=lf
+
+# Vendored upstream dependency archive (aws-genai-llm-chatbot@50b6c6e)
+paper-benchmarks/real-world-apps/genai-chatbot-cdk-50b6c6e.tar.gz binary linguist-vendored

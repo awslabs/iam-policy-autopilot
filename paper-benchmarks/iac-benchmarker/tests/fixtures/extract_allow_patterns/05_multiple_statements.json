@@ -1,0 +1,24 @@
+{
+  "description": "multiple statements with overlapping services",
+  "policy_document": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:ListBucket"],
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": "s3:PutObject",
+        "Resource": "*"
+      }
+    ]
+  },
+  "expected_patterns": ["s3:GetObject", "s3:ListBucket", "dynamodb:GetItem", "dynamodb:PutItem", "s3:PutObject"]
+}

@@ -10,7 +10,7 @@ members = [
     "integration-tests/runner",
     "xtask"
 ]
-exclude = ["iam-policy-autopilot-lints"]
+exclude = ["iam-policy-autopilot-lints", "paper-benchmarks"]
 resolver = "2"
 
 [workspace.package]

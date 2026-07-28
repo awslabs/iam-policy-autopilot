@@ -1,0 +1,10 @@
+{
+  "handler_name": "fileImportBatchJob",
+  "description": "Fargate Batch job that processes uploaded files (PDF, text, etc.), generates embeddings, and stores them in Aurora pgvector or OpenSearch for RAG retrieval",
+  "runtime": "python3.11",
+  "entry_point": "handler/main.py",
+  "uses_shared_layer": true,
+  "aws_services": ["s3", "ssm", "secretsmanager", "dynamodb", "rds-db", "aoss", "states", "sagemaker", "bedrock"],
+  "cdk_source": "lib/rag-engines/data-import/file-import-batch-job.ts",
+  "notes": "Batch compute job (not Lambda). Very broad permission surface — reads files from S3, generates embeddings via Bedrock/SageMaker, stores vectors in Aurora or OpenSearch. Conditional service usage based on RAG engine config."
+}

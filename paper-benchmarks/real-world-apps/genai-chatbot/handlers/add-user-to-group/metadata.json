@@ -1,0 +1,10 @@
+{
+  "handler_name": "addFederatedUserToUserGroup",
+  "description": "Cognito pre-signup and post-confirmation trigger that assigns federated users to Cognito groups based on the custom:chatbot_role attribute",
+  "runtime": "python3.12",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": false,
+  "aws_services": ["cognito-idp"],
+  "cdk_source": "lib/authentication/index.ts",
+  "notes": "Only deployed when cognitoFederation.enabled is true. Uses boto3 cognito-idp client directly (AdminAddUserToGroup, AdminListGroupsForUser, AdminRemoveUserFromGroup)."
+}

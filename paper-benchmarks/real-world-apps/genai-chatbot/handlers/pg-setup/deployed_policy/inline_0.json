@@ -1,0 +1,17 @@
+{
+    "RoleName": "GenAIChatBotStack-RagEnginesAuroraPgVectorDatabaseS-E2pSpExhTVzP",
+    "PolicyName": "RagEnginesAuroraPgVectorDatabaseSetupFunctionServiceRoleDefaultPolicy526D1214",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "secretsmanager:DescribeSecret",
+                    "secretsmanager:GetSecretValue"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

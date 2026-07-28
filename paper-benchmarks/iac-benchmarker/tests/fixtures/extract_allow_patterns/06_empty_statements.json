@@ -1,0 +1,8 @@
+{
+  "description": "empty statement array yields empty patterns",
+  "policy_document": {
+    "Version": "2012-10-17",
+    "Statement": []
+  },
+  "expected_patterns": []
+}

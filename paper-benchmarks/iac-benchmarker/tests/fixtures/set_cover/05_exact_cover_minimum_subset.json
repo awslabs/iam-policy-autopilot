@@ -1,0 +1,36 @@
+{
+  "description": "exact cover: multiple policies available, only minimum subset needed",
+  "index": {
+    "policy_arn_to_allow_patterns": {
+      "arn:aws:iam::aws:policy/S3Full": ["s3:GetObject", "s3:PutObject"],
+      "arn:aws:iam::aws:policy/S3GetOnly": ["s3:GetObject"],
+      "arn:aws:iam::aws:policy/S3PutOnly": ["s3:PutObject"]
+    },
+    "policy_arn_to_name": {
+      "arn:aws:iam::aws:policy/S3Full": "S3Full",
+      "arn:aws:iam::aws:policy/S3GetOnly": "S3GetOnly",
+      "arn:aws:iam::aws:policy/S3PutOnly": "S3PutOnly"
+    },
+    "policy_arn_to_concrete_action_count": {
+      "arn:aws:iam::aws:policy/S3Full": 2,
+      "arn:aws:iam::aws:policy/S3GetOnly": 1,
+      "arn:aws:iam::aws:policy/S3PutOnly": 1
+    },
+    "service_prefix_to_policy_arns": {
+      "s3": [
+        "arn:aws:iam::aws:policy/S3Full",
+        "arn:aws:iam::aws:policy/S3GetOnly",
+        "arn:aws:iam::aws:policy/S3PutOnly"
+      ]
+    }
+  },
+  "candidates": [
+    "arn:aws:iam::aws:policy/S3Full",
+    "arn:aws:iam::aws:policy/S3GetOnly",
+    "arn:aws:iam::aws:policy/S3PutOnly"
+  ],
+  "required_actions": ["s3:GetObject", "s3:PutObject"],
+  "expected_selected_arns": ["arn:aws:iam::aws:policy/S3Full"],
+  "expected_covered_actions": ["s3:GetObject", "s3:PutObject"],
+  "expected_uncovered_actions": []
+}

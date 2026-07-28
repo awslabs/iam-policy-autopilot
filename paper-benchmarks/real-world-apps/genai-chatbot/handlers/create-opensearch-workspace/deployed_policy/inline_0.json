@@ -1,0 +1,36 @@
+{
+    "RoleName": "GenAIChatBotStack-RagEnginesOpenSearchVectorCreateO-QEUG8T2wPtix",
+    "PolicyName": "RagEnginesOpenSearchVectorCreateOpenSearchWorkspaceCreateOpenSearchWorkspaceFunctionServiceRoleDefaultPolicy8B8E4375",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:BatchWriteItem",
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                    "dynamodb:GetRecords",
+                    "dynamodb:GetShardIterator",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "aoss:APIAccessAll",
+                    "aoss:CreateIndex",
+                    "aoss:DescribeIndex"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

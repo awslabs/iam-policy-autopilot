@@ -1,0 +1,47 @@
+{
+  "description": "two policies for the same service prefix",
+  "policies": [
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+      "name": "AmazonS3ReadOnlyAccess",
+      "default_version_id": "v10",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:ListBucket"],
+            "Resource": "*"
+          }
+        ]
+      }
+    },
+    {
+      "arn": "arn:aws:iam::aws:policy/AmazonS3FullAccess",
+      "name": "AmazonS3FullAccess",
+      "default_version_id": "v2",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": "s3:*",
+            "Resource": "*"
+          }
+        ]
+      }
+    }
+  ],
+  "catalogue": {
+    "s3": ["GetObject", "PutObject", "ListBucket", "DeleteObject"]
+  },
+  "expected_service_prefixes": ["s3"],
+  "expected_policy_arns_for_s3": [
+    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess",
+    "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+  ],
+  "expected_concrete_action_count_for_arn": {
+    "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess": 2,
+    "arn:aws:iam::aws:policy/AmazonS3FullAccess": 4
+  }
+}

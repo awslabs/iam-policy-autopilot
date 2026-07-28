@@ -1,0 +1,10 @@
+{
+  "handler_name": "rssIngestor",
+  "description": "Processes individual RSS feed URLs, fetches content, and stores document metadata in DynamoDB for later crawling",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["ssm", "dynamodb"],
+  "cdk_source": "lib/rag-engines/data-import/rss-subscription.ts",
+  "notes": "Reads config from SSM Parameter Store. Read-write on documents table, read-only on workspaces table. Uses genai_core.documents and genai_core.workspaces."
+}

@@ -1,0 +1,14 @@
+{
+  "description": "NotAction statement must NOT appear in output",
+  "policy_document": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "NotAction": "iam:*",
+        "Resource": "*"
+      }
+    ]
+  },
+  "expected_patterns": []
+}

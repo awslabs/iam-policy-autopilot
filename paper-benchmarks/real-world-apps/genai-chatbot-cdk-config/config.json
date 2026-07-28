@@ -1,0 +1,48 @@
+{
+  "prefix": "",
+  "privateWebsite": false,
+  "certificate": "",
+  "cfGeoRestrictEnable": false,
+  "cfGeoRestrictList": [],
+  "bedrock": {
+    "enabled": true,
+    "region": "us-east-1"
+  },
+  "llms": {
+    "sagemaker": []
+  },
+  "rag": {
+    "enabled": true,
+    "engines": {
+      "aurora": {
+        "enabled": true
+      },
+      "opensearch": {
+        "enabled": true
+      },
+      "kendra": {
+        "enabled": true,
+        "createIndex": true,
+        "enterprise": false
+      },
+      "knowledgeBase": {
+        "enabled": false
+      }
+    },
+    "embeddingsModels": [
+      {
+        "provider": "bedrock",
+        "name": "amazon.titan-embed-text-v1",
+        "dimensions": 1536
+      },
+      {
+        "provider": "bedrock",
+        "name": "cohere.embed-multilingual-v3",
+        "dimensions": 1024,
+        "default": true
+      }
+    ],
+    "crossEncodingEnabled": false,
+    "crossEncoderModels": []
+  }
+}

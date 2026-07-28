@@ -1,0 +1,5 @@
+{
+  "pattern": "s3:Get*",
+  "text": "ec2:DescribeInstances",
+  "expected": false
+}

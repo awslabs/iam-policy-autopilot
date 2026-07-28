@@ -1,0 +1,14 @@
+{
+  "handler_name": "graphQLApiHandler",
+  "description": "Main AppSync GraphQL resolver handling all queries and mutations: sessions, workspaces, documents, models, RAG, user feedback, Kendra, Bedrock KB, roles, and applications",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": [
+    "dynamodb", "s3", "secretsmanager", "ssm", "states",
+    "lambda", "rds-db", "aoss", "kendra", "sagemaker",
+    "comprehend", "cognito-idp", "bedrock", "bedrock-agentcore"
+  ],
+  "cdk_source": "lib/chatbot-api/rest-api.ts",
+  "notes": "Most complex handler. Has 15+ route modules importing extensively from genai_core. Permissions are conditional on RAG engine configuration (Aurora, OpenSearch, Kendra, Bedrock KB). This is the hardest case for policy inference due to breadth of shared layer usage and conditional paths."
+}

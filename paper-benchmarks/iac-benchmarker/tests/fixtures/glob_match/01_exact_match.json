@@ -1,0 +1,5 @@
+{
+  "pattern": "s3:GetObject",
+  "text": "s3:GetObject",
+  "expected": true
+}

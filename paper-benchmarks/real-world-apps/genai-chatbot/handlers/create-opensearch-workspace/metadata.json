@@ -1,0 +1,10 @@
+{
+  "handler_name": "createOpenSearchWorkspace",
+  "description": "Step Functions task that creates a new OpenSearch Serverless workspace by creating indexes in the collection",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["dynamodb", "aoss"],
+  "cdk_source": "lib/rag-engines/opensearch-vector/create-opensearch-workspace.ts",
+  "notes": "Creates OpenSearch indexes via aoss:APIAccessAll. Writes workspace status to DynamoDB."
+}

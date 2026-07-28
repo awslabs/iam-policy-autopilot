@@ -1,0 +1,10 @@
+{
+  "handler_name": "batchCrawlRssPosts",
+  "description": "Scheduled EventBridge rule handler that finds queued RSS posts and starts website crawling Step Functions workflows for each",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["s3", "states", "ssm", "dynamodb"],
+  "cdk_source": "lib/rag-engines/data-import/rss-subscription.ts",
+  "notes": "Reads/writes processing bucket. Starts website crawling workflow. Read-write on documents and workspaces tables."
+}

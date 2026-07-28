@@ -1,0 +1,28 @@
+{
+    "RoleName": "GenAIChatBotStack-ChatBotApiRealtimeResolverslambda-3Vpfo4UzMXL0",
+    "PolicyName": "ChatBotApiRealtimeResolverslambdaresolverServiceRoleDefaultPolicy1EC0C731",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": "sns:Publish",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                    "dynamodb:GetRecords",
+                    "dynamodb:GetShardIterator",
+                    "dynamodb:Query",
+                    "dynamodb:Scan"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

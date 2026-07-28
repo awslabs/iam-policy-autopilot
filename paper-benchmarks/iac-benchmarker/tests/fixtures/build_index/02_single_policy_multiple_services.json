@@ -1,0 +1,34 @@
+{
+  "description": "single policy covering multiple services",
+  "policies": [
+    {
+      "arn": "arn:aws:iam::aws:policy/S3AndDynamoDBAccess",
+      "name": "S3AndDynamoDBAccess",
+      "default_version_id": "v1",
+      "document": {
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": ["s3:GetObject", "s3:PutObject"],
+            "Resource": "*"
+          },
+          {
+            "Effect": "Allow",
+            "Action": ["dynamodb:GetItem", "dynamodb:PutItem"],
+            "Resource": "*"
+          }
+        ]
+      }
+    }
+  ],
+  "catalogue": {
+    "s3": ["GetObject", "PutObject", "ListBucket"],
+    "dynamodb": ["GetItem", "PutItem", "DeleteItem", "Query"]
+  },
+  "expected_service_prefixes": ["s3", "dynamodb"],
+  "expected_policy_arns_for_s3": ["arn:aws:iam::aws:policy/S3AndDynamoDBAccess"],
+  "expected_concrete_action_count_for_arn": {
+    "arn:aws:iam::aws:policy/S3AndDynamoDBAccess": 4
+  }
+}

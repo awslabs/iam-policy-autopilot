@@ -1,0 +1,789 @@
+//! Script execution — assume role, run language scripts, and the per-language pipeline.
+
+use std::{
+    collections::HashMap,
+    fs,
+    path::Path,
+    process::{Command, Stdio},
+    time::Duration,
+};
+
+use aws_sdk_iam::Client as IamClient;
+use aws_sdk_sts::Client as StsClient;
+use chrono::Utc;
+use serde_json::Value;
+use tokio::time::sleep;
+use tracing::{debug, error, info, warn};
+
+use crate::autopilot::{analyze_sdk_calls, extract_sdk_calls, generate_policies_via_cargo};
+use crate::aws::{
+    get_caller_arn, stderr_indicates_transient_credential_error, verify_credentials,
+};
+use crate::helpers::{
+    build_safe_env, go_mod_tidy_if_needed, npm_install_if_needed, pip_venv_if_needed, redact_arn,
+    redact_json_account_ids, save_execution_log,
+};
+use crate::iam::{cleanup_execution_role, create_execution_role};
+use crate::types::{
+    ExecResult, ExecutionLog, LangConfig, LangSummary, RoleInfo, RunPolicies, SdkStats,
+};
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Maximum number of times to run a script before declaring failure.
+/// The first attempt is the normal run; subsequent attempts are retries
+/// triggered by transient IAM credential/policy propagation errors.
+const MAX_SCRIPT_ATTEMPTS: u32 = 3;
+
+/// Seconds to wait between script retry attempts.  Chosen to give IAM
+/// policy propagation enough time to complete (typically 10–20 s).
+const RETRY_WAIT_SECS: u64 = 10;
+
+// ---------------------------------------------------------------------------
+// Script execution with retry
+// ---------------------------------------------------------------------------
+
+/// Execute a language script with retry logic for transient IAM propagation
+/// errors.
+///
+/// Runs `execute_script` once, and if it fails, probes credentials and
+/// inspects stderr to decide whether to retry.  Retries up to
+/// [`MAX_SCRIPT_ATTEMPTS`] total attempts with [`RETRY_WAIT_SECS`] between
+/// them.
+///
+/// Detection strategy:
+///   (a) **Credential probe:** re-assume the role and call
+///       `sts:GetCallerIdentity`.  If the probe fails, the credentials are
+///       still propagating → retry.
+///   (b) **Stderr pattern matching:** even when the probe succeeds, the
+///       script's stderr may contain transient credential errors from other
+///       services (S3, Glue, etc.) → retry.
+///   (c) **Empty-stderr heuristic:** if stderr is empty on the first retry
+///       attempt, the failure is ambiguous (could be IAM policy propagation)
+///       → retry once.
+///
+/// Only if the probe succeeds AND stderr does NOT contain transient patterns
+/// AND stderr is non-empty (or it's not the first retry) do we conclude the
+/// failure is genuine.
+async fn execute_script_with_retry(
+    language: &str,
+    script_dir: &Path,
+    role_info: &RoleInfo,
+    region: &str,
+    sts: &StsClient,
+    lang_cfg: &LangConfig,
+) -> ExecResult {
+    let mut exec = execute_script(language, script_dir, role_info, region, sts, lang_cfg).await;
+
+    if !exec.success {
+        let session_name = format!("runner-{language}-probe");
+        for retry in 1..MAX_SCRIPT_ATTEMPTS {
+            let stderr_transient = stderr_indicates_transient_credential_error(&exec.stderr);
+
+            // Re-assume the role and verify the credentials from the runner.
+            let creds_ok = match sts
+                .assume_role()
+                .role_arn(&role_info.role_arn)
+                .role_session_name(&session_name)
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.credentials {
+                    Some(c) => {
+                        verify_credentials(
+                            &c.access_key_id,
+                            &c.secret_access_key,
+                            &c.session_token,
+                            region,
+                        )
+                        .await
+                    }
+                    None => false,
+                },
+                Err(_) => false,
+            };
+
+            if creds_ok && !stderr_transient {
+                // Credentials are valid AND stderr doesn't contain transient
+                // credential errors.  However, an empty stderr with a
+                // non-zero exit code on the FIRST retry attempt is ambiguous —
+                // the script may have failed due to IAM policy propagation
+                // delays that don't produce recognizable error patterns.
+                // Retry once in this case.
+                if retry == 1 && exec.stderr.trim().is_empty() {
+                    warn!(
+                        "[execute_script_with_retry] Script failed with empty stderr for {} — \
+                         retrying once in case of IAM policy propagation delay ...",
+                        language
+                    );
+                } else {
+                    info!(
+                        "[execute_script_with_retry] Credential probe succeeded for {} — \
+                         script failure is not a transient credential issue, skipping retry",
+                        language
+                    );
+                    break;
+                }
+            } else if stderr_transient {
+                warn!(
+                    "[execute_script_with_retry] Transient credential error detected in stderr \
+                     for {} (attempt {}/{}): stderr contains InvalidAccessKeyId/InvalidSecurityToken \
+                     — waiting {}s before retry ...",
+                    language,
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    RETRY_WAIT_SECS
+                );
+            } else {
+                warn!(
+                    "[execute_script_with_retry] Credential probe failed for {} (attempt {}/{}), \
+                     waiting {}s before retry ...",
+                    language,
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    RETRY_WAIT_SECS
+                );
+            }
+            sleep(Duration::from_secs(RETRY_WAIT_SECS)).await;
+            exec = execute_script(language, script_dir, role_info, region, sts, lang_cfg).await;
+            if exec.success {
+                info!(
+                    "[execute_script_with_retry] Retry {}/{} succeeded for {}",
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    language
+                );
+                break;
+            }
+        }
+    }
+
+    exec
+}
+
+// ---------------------------------------------------------------------------
+// Script execution
+// ---------------------------------------------------------------------------
+
+/// Assume *role_info.role_arn*, inject credentials, and run the language script.
+///
+/// The role assumption is retried with exponential back-off (up to 6 attempts,
+/// ~63 s total wait) to handle transient STS errors and IAM propagation delays
+/// for newly created roles.
+async fn execute_script(
+    language: &str,
+    script_dir: &Path,
+    role_info: &RoleInfo,
+    region: &str,
+    sts: &StsClient,
+    lang_cfg: &LangConfig,
+) -> ExecResult {
+    // Assume execution role with retry + exponential back-off.
+    // Newly created IAM roles may not be immediately assumable (IAM eventual
+    // consistency), and transient STS service errors can occur under load.
+    const MAX_ASSUME_ATTEMPTS: u32 = 6;
+    let session_name = format!("runner-{language}-session");
+
+    debug!(
+        "[execute_script] Assuming role {} for language {} (up to {} attempts) ...",
+        redact_arn(&role_info.role_arn),
+        language,
+        MAX_ASSUME_ATTEMPTS
+    );
+
+    let mut last_err_msg = String::new();
+    let mut creds_opt = None;
+
+    for attempt in 0..MAX_ASSUME_ATTEMPTS {
+        match sts
+            .assume_role()
+            .role_arn(&role_info.role_arn)
+            .role_session_name(&session_name)
+            .send()
+            .await
+        {
+            Ok(resp) => {
+                if let Some(c) = resp.credentials {
+                    if attempt > 0 {
+                        debug!(
+                            "[execute_script] sts:AssumeRole succeeded on attempt {}/{} for {} (language {})",
+                            attempt + 1, MAX_ASSUME_ATTEMPTS, redact_arn(&role_info.role_arn), language
+                        );
+                    }
+                    creds_opt = Some(c);
+                } else {
+                    last_err_msg =
+                        format!(
+                        "AssumeRole returned no credentials for role (language {}, attempt {}/{})",
+                        language, attempt + 1, MAX_ASSUME_ATTEMPTS
+                    );
+                    warn!("[execute_script] {}", last_err_msg);
+                    // No point retrying if the response itself has no credentials.
+                }
+                break;
+            }
+            Err(e) => {
+                let wait = 2u64.pow(attempt); // 1, 2, 4, 8, 16, 32 s
+                let detail = format!("{e:#}");
+                last_err_msg = format!(
+                    "sts:AssumeRole attempt {}/{} failed for role (language {}): {}",
+                    attempt + 1,
+                    MAX_ASSUME_ATTEMPTS,
+                    language,
+                    detail
+                );
+                if attempt + 1 < MAX_ASSUME_ATTEMPTS {
+                    warn!(
+                        "[execute_script] {} — retrying in {}s ...",
+                        last_err_msg, wait
+                    );
+                    sleep(Duration::from_secs(wait)).await;
+                } else {
+                    error!("[execute_script] {} — no retries remaining", last_err_msg);
+                }
+            }
+        }
+    }
+
+    let creds = if let Some(c) = creds_opt {
+        c
+    } else {
+        error!(
+            "[execute_script] Failed to assume execution role after {} attempts: {}",
+            MAX_ASSUME_ATTEMPTS, last_err_msg
+        );
+        return ExecResult {
+            returncode: -1,
+            stdout: String::new(),
+            stderr: format!(
+                "Failed to assume execution role after {MAX_ASSUME_ATTEMPTS} attempts: {last_err_msg}"
+            ),
+            success: false,
+        };
+    };
+
+    // ── Credential warm-up ──────────────────────────────────────────────────
+    // The AssumeRole call can succeed but the returned credentials may not
+    // yet be usable across all STS/service endpoints (IAM eventual
+    // consistency).  We verify the credentials with a lightweight
+    // GetCallerIdentity call before handing them to the child process.
+    {
+        const WARMUP_ATTEMPTS: u32 = 10;
+        const WARMUP_INTERVAL_SECS: u64 = 2;
+        let mut warmup_ok = false;
+        for attempt in 0..WARMUP_ATTEMPTS {
+            if verify_credentials(
+                &creds.access_key_id,
+                &creds.secret_access_key,
+                &creds.session_token,
+                region,
+            )
+            .await
+            {
+                if attempt > 0 {
+                    debug!(
+                        "[execute_script] Credential warm-up succeeded on attempt {}/{} for {} (language {})",
+                        attempt + 1, WARMUP_ATTEMPTS, redact_arn(&role_info.role_arn), language
+                    );
+                }
+                warmup_ok = true;
+                break;
+            } else if attempt + 1 < WARMUP_ATTEMPTS {
+                warn!(
+                    "[execute_script] Credential warm-up attempt {}/{} failed for language {} — retrying in {}s ...",
+                    attempt + 1, WARMUP_ATTEMPTS, language, WARMUP_INTERVAL_SECS
+                );
+                sleep(Duration::from_secs(WARMUP_INTERVAL_SECS)).await;
+            } else {
+                error!(
+                    "[execute_script] Credential warm-up failed after {} attempts for language {}",
+                    WARMUP_ATTEMPTS, language
+                );
+            }
+        }
+        if !warmup_ok {
+            return ExecResult {
+                returncode: -1,
+                stdout: String::new(),
+                stderr: format!(
+                    "Credential warm-up failed after {WARMUP_ATTEMPTS} attempts — assumed-role credentials are not yet usable"
+                ),
+                success: false,
+            };
+        }
+    }
+
+    // Build a minimal environment for the child process.
+    // Only pass through safe, non-sensitive variables plus the assumed-role credentials.
+    let mut aws_env: HashMap<String, String> = HashMap::new();
+    aws_env.insert("AWS_ACCESS_KEY_ID".into(), creds.access_key_id.clone());
+    aws_env.insert(
+        "AWS_SECRET_ACCESS_KEY".into(),
+        creds.secret_access_key.clone(),
+    );
+    aws_env.insert("AWS_SESSION_TOKEN".into(), creds.session_token.clone());
+    aws_env.insert("AWS_DEFAULT_REGION".into(), region.into());
+    aws_env.insert("AWS_REGION".into(), region.into());
+    let child_env = build_safe_env(&aws_env);
+
+    let argv = (lang_cfg.run_cmd)(script_dir);
+    info!("[RUN] {}: {}", language, argv.join(" "));
+
+    let output = Command::new(&argv[0])
+        .args(&argv[1..])
+        .current_dir(script_dir)
+        .env_clear()
+        .envs(child_env)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output();
+
+    match output {
+        Err(e) => ExecResult {
+            returncode: -1,
+            stdout: String::new(),
+            stderr: format!("Failed to spawn process: {e}"),
+            success: false,
+        },
+        Ok(out) => {
+            let rc = out.status.code().unwrap_or(-1);
+            ExecResult {
+                returncode: rc,
+                stdout: String::from_utf8_lossy(&out.stdout).into(),
+                stderr: String::from_utf8_lossy(&out.stderr).into(),
+                success: rc == 0,
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Per-language environment setup
+// ---------------------------------------------------------------------------
+
+/// Prepare the per-language build environment in `script_dir` before the script
+/// is executed:
+///   - **typescript**: `npm install` if `node_modules` is missing;
+///   - **go**: `go mod download` so `go.sum` is populated;
+///   - **python**: create `.venv` and pip-install `requirements.txt`.
+///
+/// This must run for **every** execution path (both the full [`run_language`]
+/// pipeline and the policy-only [`run_language_with_policies`] used by the
+/// benchmarks) — otherwise, e.g., the python runner would invoke a
+/// `.venv/bin/python3` that was never created and fail to spawn (exit code -1).
+///
+/// Records a `stages` entry per setup step. Returns `Err(message)` on failure.
+fn prepare_language_env(
+    language: &str,
+    script_dir: &Path,
+    stages: &mut HashMap<String, bool>,
+) -> Result<(), String> {
+    match language {
+        "typescript" => {
+            let empty_env: HashMap<String, String> = HashMap::new();
+            if !npm_install_if_needed(script_dir, &empty_env) {
+                stages.insert("npm_install".into(), false);
+                return Err("npm install failed in typescript dir".to_string());
+            }
+            stages.insert("npm_install".into(), true);
+        }
+        "go" => {
+            if !go_mod_tidy_if_needed(script_dir) {
+                stages.insert("go_mod_download".into(), false);
+                return Err("go mod download failed in go dir".to_string());
+            }
+            stages.insert("go_mod_download".into(), true);
+        }
+        "python" => {
+            if !pip_venv_if_needed(script_dir) {
+                stages.insert("pip_venv".into(), false);
+                return Err("pip venv setup failed in python dir".to_string());
+            }
+            stages.insert("pip_venv".into(), true);
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Per-language pipeline
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::too_many_arguments)]
+pub async fn run_language(
+    language: &str,
+    run_dir: &Path,
+    results_lang_dir: &Path,
+    region: &str,
+    account: &str,
+    cleanup_roles: bool,
+    verbose_logs: bool,
+    iam: &IamClient,
+    sts: &StsClient,
+    lang_cfg: &LangConfig,
+    caller_arn: &str,
+) -> LangSummary {
+    fs::create_dir_all(results_lang_dir).ok();
+
+    let script_dir = run_dir.join(language);
+    let script_file = script_dir.join(lang_cfg.script_file);
+    let start_time = Utc::now().to_rfc3339();
+
+    let mut summary = LangSummary {
+        language: language.to_string(),
+        script_path: script_file.to_string_lossy().into(),
+        success: false,
+        failure_reason: None,
+        stages: HashMap::new(),
+        sdk_stats: None,
+        start_time: start_time.clone(),
+        end_time: None,
+    };
+
+    println!("\n{}", "=".repeat(60));
+    println!("  Language: {}", language.to_uppercase());
+    println!("  Script:   {script_file:?}");
+    println!("{}", "=".repeat(60));
+
+    if !script_file.exists() {
+        let msg = format!("Script file not found: {script_file:?}");
+        error!("{}", msg);
+        summary.failure_reason = Some(msg.clone());
+        summary.stages.insert("script_found".into(), false);
+        save_execution_log(results_lang_dir, -1, "", &msg, false, None, None);
+        return summary;
+    }
+    summary.stages.insert("script_found".into(), true);
+
+    // ── Per-language environment setup (venv / node_modules / go.sum) ────────
+    if let Err(msg) = prepare_language_env(language, &script_dir, &mut summary.stages) {
+        error!("{}", msg);
+        summary.failure_reason = Some(msg.clone());
+        save_execution_log(results_lang_dir, -1, "", &msg, false, None, None);
+        return summary;
+    }
+
+    // ── Stage 1: Extract SDK calls ──────────────────────────────────────────
+    info!("Stage 1: Extracting SDK calls ...");
+    let sdk_calls_typed = extract_sdk_calls(&script_file);
+    let sdk_calls_val: Option<Value> = sdk_calls_typed
+        .as_deref()
+        .map(|calls| serde_json::to_value(calls).unwrap_or(Value::Null));
+    let sdk_analysis_val: Option<Value>;
+
+    if let Some(ref calls) = sdk_calls_typed {
+        let analysis = analyze_sdk_calls(calls);
+        info!(
+            "[OK] Extracted {} operations ({} single-service, {} multi-service)",
+            analysis["total_operations"],
+            analysis["single_service_operations"],
+            analysis["multiple_service_operations"],
+        );
+        let sdk_path = results_lang_dir.join("sdk_calls.json");
+        let _ = fs::write(
+            &sdk_path,
+            serde_json::to_string_pretty(calls).unwrap_or_default(),
+        );
+        info!("[saved] sdk_calls.json");
+        #[allow(clippy::cast_possible_truncation)]
+        {
+            summary.sdk_stats = Some(SdkStats {
+                total_operations: analysis["total_operations"].as_u64().unwrap_or(0) as usize,
+                single_service_operations: analysis["single_service_operations"]
+                    .as_u64()
+                    .unwrap_or(0) as usize,
+                multiple_service_operations: analysis["multiple_service_operations"]
+                    .as_u64()
+                    .unwrap_or(0) as usize,
+                total_additional_services: analysis["total_additional_services"]
+                    .as_u64()
+                    .unwrap_or(0) as usize,
+            });
+        }
+        sdk_analysis_val = Some(analysis);
+        summary.stages.insert("sdk_extraction".into(), true);
+    } else {
+        warn!("SDK extraction failed -- continuing with policy generation");
+        summary.stages.insert("sdk_extraction".into(), false);
+        sdk_analysis_val = None;
+    }
+
+    // ── Stage 2: Generate IAM policies ─────────────────────────────────────
+    info!("Stage 2: Generating IAM policies ...");
+    let policies = generate_policies_via_cargo(&script_file, region, account);
+
+    let policies = if let Some(p) = policies {
+        p
+    } else {
+        let msg = "iam-policy-autopilot policy generation failed".to_string();
+        error!("{}", msg);
+        summary.failure_reason = Some(msg.clone());
+        summary.stages.insert("policy_generation".into(), false);
+        save_execution_log(
+            results_lang_dir,
+            -1,
+            "",
+            &msg,
+            false,
+            sdk_calls_val.as_ref(),
+            sdk_analysis_val.as_ref(),
+        );
+        return summary;
+    };
+
+    summary.stages.insert("policy_generation".into(), true);
+    let total_stmts: usize = policies
+        .iter()
+        .map(|p| {
+            p.get("Statement")
+                .and_then(|s| s.as_array())
+                .map(std::vec::Vec::len)
+                .unwrap_or(0)
+        })
+        .sum();
+    info!(
+        "[OK] Generated {} policies with {} statements",
+        policies.len(),
+        total_stmts
+    );
+    let policy_path = results_lang_dir.join("policy.json");
+    let redacted_policies: Vec<Value> = policies
+        .iter()
+        .map(|p| redact_json_account_ids(p, account))
+        .collect();
+    let _ = fs::write(
+        &policy_path,
+        serde_json::to_string_pretty(&redacted_policies).unwrap_or_default(),
+    );
+    info!("[saved] policy.json");
+
+    // ── Stage 3: Create execution role ──────────────────────────────────────
+    info!("Stage 3: Creating execution role ...");
+    let role_suffix = format!(
+        "{}-{}",
+        run_dir.file_name().unwrap_or_default().to_string_lossy(),
+        language
+    );
+    let role_info = match create_execution_role(
+        iam,
+        RunPolicies::InlineDocuments(policies),
+        &role_suffix,
+        account,
+        caller_arn,
+    )
+    .await
+    {
+        Ok(r) => r,
+        Err(_e) => {
+            let msg = "IAM execution role creation failed.".to_string();
+            error!("{}", msg);
+            summary.failure_reason = Some(msg.clone());
+            summary.stages.insert("role_creation".into(), false);
+            save_execution_log(
+                results_lang_dir,
+                -1,
+                "",
+                &msg,
+                false,
+                sdk_calls_val.as_ref(),
+                sdk_analysis_val.as_ref(),
+            );
+            return summary;
+        }
+    };
+
+    summary.stages.insert("role_creation".into(), true);
+    info!("[OK] Created role: {}", role_info.role_name);
+
+    // ── Stage 4: Execute script (with retry for transient credential errors) ─
+    info!("Stage 4: Executing {} script ...", language);
+    let exec =
+        execute_script_with_retry(language, &script_dir, &role_info, region, sts, lang_cfg).await;
+
+    summary
+        .stages
+        .insert("script_execution".into(), exec.success);
+    if exec.success {
+        info!("[OK] Script succeeded");
+        summary.success = true;
+    } else {
+        let msg = format!("Script execution failed (exit code {})", exec.returncode);
+        error!("{}", msg);
+        summary.failure_reason = Some(msg);
+    }
+
+    // Build sdk_analysis without operations_breakdown for the execution log.
+    let sdk_analysis_compact = sdk_analysis_val.as_ref().map(|a| {
+        let mut m = a.as_object().cloned().unwrap_or_default();
+        m.remove("operations_breakdown");
+        Value::Object(m)
+    });
+
+    let exec_log = ExecutionLog {
+        returncode: exec.returncode,
+        stdout: if verbose_logs {
+            exec.stdout.clone()
+        } else {
+            String::new()
+        },
+        stderr: if verbose_logs {
+            exec.stderr.clone()
+        } else {
+            String::new()
+        },
+        success: exec.success,
+        sdk_calls: sdk_calls_val.clone(),
+        sdk_analysis: sdk_analysis_compact,
+        timestamp: Utc::now().to_rfc3339(),
+    };
+    let log_path = results_lang_dir.join("execution_log.json");
+    let _ = fs::write(
+        &log_path,
+        serde_json::to_string_pretty(&exec_log).unwrap_or_default(),
+    );
+    info!("[saved] execution_log.json");
+
+    // ── Stage 5: Cleanup execution role ─────────────────────────────────────
+    if cleanup_roles {
+        cleanup_execution_role(iam, &role_info).await;
+    }
+
+    summary.end_time = Some(Utc::now().to_rfc3339());
+    summary
+}
+
+// ---------------------------------------------------------------------------
+// run_language_with_policies
+// ---------------------------------------------------------------------------
+
+/// Run a single language script with an already-known set of policies
+/// ([`RunPolicies::InlineDocuments`] or [`RunPolicies::ManagedArns`]).
+///
+/// The trust policy is scoped to the runner's own identity, which is resolved
+/// internally via `sts:GetCallerIdentity` — callers do not pass a caller ARN.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_language_with_policies(
+    language: &str,
+    run_dir: &Path,
+    results_dir: &Path,
+    policies: RunPolicies,
+    region: &str,
+    account: &str,
+    keep_role: bool,
+    iam: &IamClient,
+    sts: &StsClient,
+    lang_cfg: &LangConfig,
+) -> LangSummary {
+    fs::create_dir_all(results_dir).ok();
+
+    let script_dir = run_dir.join(language);
+    let start_time = Utc::now().to_rfc3339();
+
+    let mut summary = LangSummary {
+        language: language.to_string(),
+        script_path: script_dir
+            .join(lang_cfg.script_file)
+            .to_string_lossy()
+            .into(),
+        success: false,
+        failure_reason: None,
+        stages: HashMap::new(),
+        sdk_stats: None,
+        start_time,
+        end_time: None,
+    };
+
+    // Resolve the caller's identity so the temporary role's trust policy is
+    // scoped to the runner only.
+    let caller_arn = match get_caller_arn(sts).await {
+        Ok(arn) => arn,
+        Err(e) => {
+            let msg = format!("sts:GetCallerIdentity failed: {e:#}");
+            error!("{}", msg);
+            summary.failure_reason = Some(msg.clone());
+            summary.stages.insert("role_creation".into(), false);
+            save_execution_log(results_dir, -1, "", &msg, false, None, None);
+            return summary;
+        }
+    };
+
+    // Step 1: Create execution role.
+    let role_suffix = format!(
+        "{}-{}",
+        run_dir.file_name().unwrap_or_default().to_string_lossy(),
+        language
+    );
+    let role_info =
+        match create_execution_role(iam, policies, &role_suffix, account, &caller_arn).await {
+            Ok(r) => r,
+            Err(_e) => {
+                let msg = "IAM execution role creation failed.".to_string();
+                error!("{}", msg);
+                summary.failure_reason = Some(msg.clone());
+                summary.stages.insert("role_creation".into(), false);
+                save_execution_log(results_dir, -1, "", &msg, false, None, None);
+                return summary;
+            }
+        };
+    summary.stages.insert("role_creation".into(), true);
+
+    // Step 2: Prepare the per-language build environment (venv / node_modules /
+    // go.sum). Without this the script may reference tooling that was never set
+    // up (e.g. python's .venv/bin/python3) and fail to spawn.
+    if let Err(msg) = prepare_language_env(language, &script_dir, &mut summary.stages) {
+        error!("{}", msg);
+        summary.failure_reason = Some(msg.clone());
+        save_execution_log(results_dir, -1, "", &msg, false, None, None);
+        // Clean up the role we just created unless the caller wants to keep it.
+        if !keep_role {
+            cleanup_execution_role(iam, &role_info).await;
+        }
+        return summary;
+    }
+
+    // Step 3: Execute script (with retry for transient credential errors).
+    let exec =
+        execute_script_with_retry(language, &script_dir, &role_info, region, sts, lang_cfg).await;
+
+    summary
+        .stages
+        .insert("script_execution".into(), exec.success);
+
+    if exec.success {
+        summary.success = true;
+    } else {
+        summary.failure_reason = Some(format!(
+            "Script execution failed (exit code {})",
+            exec.returncode
+        ));
+    }
+
+    // Step 4: Save execution log.
+    // stdout/stderr are omitted to avoid leaking sensitive information
+    // (account IDs, resource names, etc.) into committed result files.
+    let exec_log = ExecutionLog {
+        returncode: exec.returncode,
+        stdout: String::new(),
+        stderr: String::new(),
+        success: exec.success,
+        sdk_calls: None,
+        sdk_analysis: None,
+        timestamp: Utc::now().to_rfc3339(),
+    };
+    let log_path = results_dir.join("execution_log.json");
+    let _ = fs::write(
+        &log_path,
+        serde_json::to_string_pretty(&exec_log).unwrap_or_default(),
+    );
+
+    // Step 5: Cleanup role unless keep_role is set.
+    if !keep_role {
+        cleanup_execution_role(iam, &role_info).await;
+    }
+
+    summary.end_time = Some(Utc::now().to_rfc3339());
+    summary
+}

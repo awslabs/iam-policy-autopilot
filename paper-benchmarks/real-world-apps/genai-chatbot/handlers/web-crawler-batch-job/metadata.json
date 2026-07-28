@@ -1,0 +1,10 @@
+{
+  "handler_name": "webCrawlerBatchJob",
+  "description": "Fargate Batch job that crawls websites, extracts content, generates embeddings, and stores them in Aurora pgvector or OpenSearch for RAG retrieval",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["s3", "ssm", "secretsmanager", "dynamodb", "rds-db", "aoss", "states", "sagemaker", "bedrock"],
+  "cdk_source": "lib/rag-engines/data-import/web-crawler-batch-job.ts",
+  "notes": "Batch compute job (not Lambda). Nearly identical permission surface to file-import-batch-job. Crawls websites instead of processing uploaded files."
+}

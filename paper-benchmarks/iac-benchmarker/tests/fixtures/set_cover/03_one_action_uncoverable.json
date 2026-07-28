@@ -1,0 +1,22 @@
+{
+  "description": "one action uncoverable - not in any candidate policy",
+  "index": {
+    "policy_arn_to_allow_patterns": {
+      "arn:aws:iam::aws:policy/S3ReadOnly": ["s3:GetObject", "s3:ListBucket"]
+    },
+    "policy_arn_to_name": {
+      "arn:aws:iam::aws:policy/S3ReadOnly": "S3ReadOnly"
+    },
+    "policy_arn_to_concrete_action_count": {
+      "arn:aws:iam::aws:policy/S3ReadOnly": 2
+    },
+    "service_prefix_to_policy_arns": {
+      "s3": ["arn:aws:iam::aws:policy/S3ReadOnly"]
+    }
+  },
+  "candidates": ["arn:aws:iam::aws:policy/S3ReadOnly"],
+  "required_actions": ["s3:GetObject", "lambda:InvokeFunction"],
+  "expected_selected_arns": ["arn:aws:iam::aws:policy/S3ReadOnly"],
+  "expected_covered_actions": ["s3:GetObject"],
+  "expected_uncovered_actions": ["lambda:InvokeFunction"]
+}

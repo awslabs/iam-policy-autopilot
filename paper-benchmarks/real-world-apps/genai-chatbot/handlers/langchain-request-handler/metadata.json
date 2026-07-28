@@ -1,0 +1,13 @@
+{
+  "handler_name": "langchainRequestHandler",
+  "description": "SQS-triggered handler that processes LLM queries using LangChain adapters for Bedrock, SageMaker, and Bedrock Agents. Performs RAG retrieval, sends streaming responses via SNS",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": [
+    "dynamodb", "s3", "secretsmanager", "ssm", "sns", "kms",
+    "rds-db", "aoss", "kendra", "sagemaker", "bedrock", "comprehend"
+  ],
+  "cdk_source": "lib/model-interfaces/langchain/index.ts",
+  "notes": "Second most complex handler. Uses LangChain which wraps Bedrock calls indirectly. Has adapters for multiple model providers. CDK grants bedrock:* which is overpermissioned. Publishes to encrypted SNS topic. Reads from multiple RAG engines conditionally."
+}

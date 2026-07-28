@@ -1,0 +1,57 @@
+{
+    "RoleName": "GenAIChatBotStack-RagEnginesWorkspacesDeleteWorkspa-DtSisGIfPGM1",
+    "PolicyName": "RagEnginesWorkspacesDeleteWorkspaceDeleteWorkspaceFunctionServiceRoleDefaultPolicy2A165D0F",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": "rds-db:connect",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "aoss:APIAccessAll",
+                    "aoss:DeleteIndex",
+                    "aoss:DescribeIndex"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "s3:Abort*",
+                    "s3:DeleteObject*",
+                    "s3:GetBucket*",
+                    "s3:GetObject*",
+                    "s3:List*",
+                    "s3:PutObject",
+                    "s3:PutObjectLegalHold",
+                    "s3:PutObjectRetention",
+                    "s3:PutObjectTagging",
+                    "s3:PutObjectVersionTagging"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:BatchWriteItem",
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                    "dynamodb:GetRecords",
+                    "dynamodb:GetShardIterator",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

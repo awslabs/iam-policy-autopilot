@@ -1,0 +1,32 @@
+{
+  "description": "two policies needed - greedy picks the one covering more first",
+  "index": {
+    "policy_arn_to_allow_patterns": {
+      "arn:aws:iam::aws:policy/S3Full": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+      "arn:aws:iam::aws:policy/DynamoDBFull": ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    },
+    "policy_arn_to_name": {
+      "arn:aws:iam::aws:policy/S3Full": "S3Full",
+      "arn:aws:iam::aws:policy/DynamoDBFull": "DynamoDBFull"
+    },
+    "policy_arn_to_concrete_action_count": {
+      "arn:aws:iam::aws:policy/S3Full": 3,
+      "arn:aws:iam::aws:policy/DynamoDBFull": 3
+    },
+    "service_prefix_to_policy_arns": {
+      "s3": ["arn:aws:iam::aws:policy/S3Full"],
+      "dynamodb": ["arn:aws:iam::aws:policy/DynamoDBFull"]
+    }
+  },
+  "candidates": [
+    "arn:aws:iam::aws:policy/S3Full",
+    "arn:aws:iam::aws:policy/DynamoDBFull"
+  ],
+  "required_actions": ["s3:GetObject", "s3:PutObject", "dynamodb:GetItem", "dynamodb:PutItem"],
+  "expected_selected_arns": [
+    "arn:aws:iam::aws:policy/S3Full",
+    "arn:aws:iam::aws:policy/DynamoDBFull"
+  ],
+  "expected_covered_actions": ["s3:GetObject", "s3:PutObject", "dynamodb:GetItem", "dynamodb:PutItem"],
+  "expected_uncovered_actions": []
+}

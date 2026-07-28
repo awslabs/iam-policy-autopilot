@@ -1,0 +1,7 @@
+{
+  "description": "An action not in any managed policy remains uncovered",
+  "required_actions": ["s3:GetObject", "nonexistentsvc:DoThing"],
+  "expected_selected_policy_names": ["AmazonS3ReadOnlyAccess"],
+  "expected_covered_actions": ["s3:GetObject"],
+  "expected_uncovered_actions": ["nonexistentsvc:DoThing"]
+}

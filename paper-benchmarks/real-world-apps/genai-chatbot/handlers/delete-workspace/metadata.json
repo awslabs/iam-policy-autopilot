@@ -1,0 +1,10 @@
+{
+  "handler_name": "deleteWorkspace",
+  "description": "Step Functions task that deletes a RAG workspace and all its data across Aurora, OpenSearch, Kendra, or Bedrock KB engines",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["dynamodb", "s3", "rds-db", "aoss", "kendra"],
+  "cdk_source": "lib/rag-engines/workspaces/delete-workspace.ts",
+  "notes": "Heavy shared layer usage: genai_core.workspaces, genai_core.aurora.delete, genai_core.opensearch.delete, genai_core.kendra.delete, genai_core.bedrock_kb.delete. Conditional service usage depending on workspace engine type."
+}

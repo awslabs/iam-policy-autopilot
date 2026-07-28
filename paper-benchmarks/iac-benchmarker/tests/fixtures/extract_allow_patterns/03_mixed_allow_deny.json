@@ -1,0 +1,19 @@
+{
+  "description": "mixed Allow and Deny - Deny actions must NOT appear in output",
+  "policy_document": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Deny",
+        "Action": "s3:DeleteObject",
+        "Resource": "*"
+      },
+      {
+        "Effect": "Allow",
+        "Action": ["s3:GetObject", "s3:PutObject"],
+        "Resource": "*"
+      }
+    ]
+  },
+  "expected_patterns": ["s3:GetObject", "s3:PutObject"]
+}

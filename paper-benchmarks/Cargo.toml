@@ -1,0 +1,3 @@
+[workspace]
+members = ["runner", "iac-benchmarker", "realworld-evaluator"]
+resolver = "2"

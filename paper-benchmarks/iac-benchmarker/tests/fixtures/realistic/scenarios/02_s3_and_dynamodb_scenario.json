@@ -1,0 +1,7 @@
+{
+  "description": "S3 read + DynamoDB read requires two policies",
+  "required_actions": ["s3:GetObject", "s3:ListBucket", "dynamodb:GetItem", "dynamodb:Query"],
+  "expected_selected_policy_names": ["AmazonS3ReadOnlyAccess", "AmazonDynamoDBReadOnlyAccess"],
+  "expected_covered_actions": ["s3:GetObject", "s3:ListBucket", "dynamodb:GetItem", "dynamodb:Query"],
+  "expected_uncovered_actions": []
+}

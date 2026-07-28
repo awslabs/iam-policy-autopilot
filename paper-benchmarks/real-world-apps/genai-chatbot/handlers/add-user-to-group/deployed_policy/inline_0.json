@@ -1,0 +1,18 @@
+{
+    "RoleName": "GenAIChatBotStack-AuthenticationlambdaRoleAddUserTo-fNT3Tgb8euAJ",
+    "PolicyName": "AuthenticationAddUserToGroupPolicyE296C465",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "cognito-idp:AdminAddUserToGroup",
+                    "cognito-idp:AdminListGroupsForUser",
+                    "cognito-idp:AdminRemoveUserFromGroup"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

@@ -1,0 +1,18 @@
+{
+    "RoleName": "GenAIChatBotStack-AuthenticationlambdaRoleAddUserTo-fNT3Tgb8euAJ",
+    "PolicyName": "AuthenticationlambdaRoleAddUserToGroupDefaultPolicyA7F94062",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream",
+                    "logs:PutLogEvents"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

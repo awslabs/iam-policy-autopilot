@@ -1,0 +1,22 @@
+{
+  "description": "single policy covers all required actions",
+  "index": {
+    "policy_arn_to_allow_patterns": {
+      "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess": ["s3:Get*", "s3:List*"]
+    },
+    "policy_arn_to_name": {
+      "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess": "AmazonS3ReadOnlyAccess"
+    },
+    "policy_arn_to_concrete_action_count": {
+      "arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess": 12
+    },
+    "service_prefix_to_policy_arns": {
+      "s3": ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"]
+    }
+  },
+  "candidates": ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"],
+  "required_actions": ["s3:GetObject", "s3:ListBucket"],
+  "expected_selected_arns": ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"],
+  "expected_covered_actions": ["s3:GetObject", "s3:ListBucket"],
+  "expected_uncovered_actions": []
+}

@@ -1,0 +1,10 @@
+{
+  "handler_name": "uploadHandler",
+  "description": "Handles S3 upload events, copies files to processing bucket, updates document metadata in DynamoDB, and starts Step Functions file import workflow",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["s3", "dynamodb", "states", "secretsmanager", "ssm"],
+  "cdk_source": "lib/rag-engines/data-import/index.ts",
+  "notes": "Uses genai_core.documents and genai_core.workspaces from shared layer. Reads/writes to upload, processing, and Kendra S3 buckets. Starts file import Step Functions workflow."
+}

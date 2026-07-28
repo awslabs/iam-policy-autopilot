@@ -1,0 +1,10 @@
+{
+  "handler_name": "pgSetup",
+  "description": "Aurora PostgreSQL database setup function that creates pgvector extension and tables using credentials from Secrets Manager",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": false,
+  "aws_services": ["secretsmanager"],
+  "cdk_source": "lib/rag-engines/aurora-pgvector/index.ts",
+  "notes": "Reads database secret from Secrets Manager to connect to Aurora. The grantConnect CDK call also adds RDS IAM auth permissions."
+}

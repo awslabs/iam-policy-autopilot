@@ -1,0 +1,7 @@
+{
+  "description": "S3 read-only access requires AmazonS3ReadOnlyAccess",
+  "required_actions": ["s3:GetObject", "s3:ListBucket", "s3:GetBucketAcl"],
+  "expected_selected_policy_names": ["AmazonS3ReadOnlyAccess"],
+  "expected_covered_actions": ["s3:GetObject", "s3:ListBucket", "s3:GetBucketAcl"],
+  "expected_uncovered_actions": []
+}

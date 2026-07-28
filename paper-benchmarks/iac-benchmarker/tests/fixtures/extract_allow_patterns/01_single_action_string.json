@@ -1,0 +1,14 @@
+{
+  "description": "single action string in Allow statement",
+  "policy_document": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:GetObject",
+        "Resource": "*"
+      }
+    ]
+  },
+  "expected_patterns": ["s3:GetObject"]
+}

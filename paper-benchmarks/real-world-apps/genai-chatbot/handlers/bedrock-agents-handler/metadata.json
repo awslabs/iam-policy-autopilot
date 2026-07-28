@@ -1,0 +1,10 @@
+{
+  "handler_name": "bedrockAgentsRequestHandler",
+  "description": "SQS-triggered handler that processes queries using Bedrock AgentCore runtimes, reads session history from DynamoDB, publishes responses via SNS",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["dynamodb", "s3", "sns", "bedrock-agentcore"],
+  "cdk_source": "lib/model-interfaces/bedrock-agents/index.ts",
+  "notes": "Moderate complexity. Uses genai_core shared layer for sessions. S3 is read-only (chatbot files bucket). Bedrock AgentCore is a newer service."
+}

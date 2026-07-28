@@ -1,0 +1,10 @@
+{
+  "handler_name": "createAuroraWorkspace",
+  "description": "Step Functions task that creates a new Aurora pgvector workspace by creating database tables and indexes",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["rds-db", "dynamodb"],
+  "cdk_source": "lib/rag-engines/aurora-pgvector/create-aurora-workspace.ts",
+  "notes": "Connects to Aurora via IAM auth (rds-db:connect with ADMIN user). Writes workspace status to DynamoDB."
+}

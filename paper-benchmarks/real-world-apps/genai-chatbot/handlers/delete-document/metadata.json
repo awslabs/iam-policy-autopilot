@@ -1,0 +1,10 @@
+{
+  "handler_name": "deleteDocument",
+  "description": "Step Functions task that deletes a single document from a RAG workspace across Aurora, OpenSearch, or Kendra engines",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["dynamodb", "s3", "rds-db", "aoss", "kendra"],
+  "cdk_source": "lib/rag-engines/workspaces/delete-document.ts",
+  "notes": "Similar to delete-workspace but document-scoped. Uses genai_core.documents, genai_core.workspaces, and engine-specific delete modules."
+}

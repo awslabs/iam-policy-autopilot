@@ -1,0 +1,8 @@
+{
+  "api": {
+    "chatbot": {
+      "providerPlugin": "awscloudformation",
+      "service": "AppSync"
+    }
+  }
+}

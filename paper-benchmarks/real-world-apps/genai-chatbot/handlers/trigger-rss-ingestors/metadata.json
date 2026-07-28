@@ -1,0 +1,10 @@
+{
+  "handler_name": "triggerRssIngestors",
+  "description": "Scheduled EventBridge rule handler that reads RSS-type documents from DynamoDB and invokes the rss-ingestor Lambda for each one",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": true,
+  "aws_services": ["lambda", "ssm", "dynamodb"],
+  "cdk_source": "lib/rag-engines/data-import/rss-subscription.ts",
+  "notes": "Reads documents table (read-only). Invokes rss-ingestor function via lambda:InvokeFunction. Reads config from SSM."
+}

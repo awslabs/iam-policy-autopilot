@@ -1,0 +1,28 @@
+[package]
+name = "realworld-evaluator"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Evaluate iam-policy-autopilot against real-world deployed application policies"
+
+[[bin]]
+name = "realworld-evaluator"
+path = "src/main.rs"
+
+[dependencies]
+iac-runner            = { package = "benchmark-runner", path = "../runner" }
+iac-benchmarker       = { path = "../iac-benchmarker" }
+aws-config            = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-iam           = "1"
+aws-sdk-sts           = "1"
+aws-sdk-bedrockruntime = "1"
+aws-sdk-accessanalyzer = "1"
+tokio                 = { version = "1", features = ["full"] }
+clap                  = { version = "4", features = ["derive"] }
+serde                 = { version = "1", features = ["derive"] }
+serde_json            = "1"
+anyhow                = "1"
+tracing               = "0.1"
+tracing-subscriber    = { version = "0.3", features = ["env-filter"] }
+walkdir               = "2"
+regex                 = "1"

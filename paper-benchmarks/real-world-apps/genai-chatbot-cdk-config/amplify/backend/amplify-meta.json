@@ -1,0 +1,1 @@
+{"providers":{"awscloudformation":{"AuthRoleName":"amplify-chatbot-dev-authRole","UnauthRoleArn":"","AuthRoleArn":"","Region":"us-east-1","DeploymentBucketName":"","UnauthRoleName":"amplify-chatbot-dev-unauthRole","StackName":"","StackId":"","AmplifyAppId":""}},"api":{"chatbot":{"service":"AppSync","providerPlugin":"awscloudformation","output":{}}}}

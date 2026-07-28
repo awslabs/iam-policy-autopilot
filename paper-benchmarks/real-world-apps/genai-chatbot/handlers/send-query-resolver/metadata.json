@@ -1,0 +1,10 @@
+{
+  "handler_name": "sendQueryLambdaResolver",
+  "description": "AppSync resolver that receives user queries and publishes them to SNS for async processing by model interfaces",
+  "runtime": "python3.11",
+  "entry_point": "handler/index.py",
+  "uses_shared_layer": false,
+  "aws_services": ["sns", "kms", "dynamodb", "bedrock"],
+  "cdk_source": "lib/chatbot-api/appsync-ws.ts",
+  "notes": "Publishes to encrypted SNS topic (requires KMS). Reads from applications DynamoDB table. Bedrock agent permissions are conditional on config."
+}

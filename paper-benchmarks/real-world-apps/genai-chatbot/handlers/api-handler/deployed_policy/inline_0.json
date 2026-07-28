@@ -1,0 +1,116 @@
+{
+    "RoleName": "GenAIChatBotStack-ChatBotApiRestApiGraphQLApiHandle-m84mjhyTnJQE",
+    "PolicyName": "ChatBotApiRestApiGraphQLApiHandlerServiceRoleDefaultPolicy409D1897",
+    "PolicyDocument": {
+        "Version": "2012-10-17",
+        "Statement": [
+            {
+                "Action": [
+                    "dynamodb:BatchGetItem",
+                    "dynamodb:BatchWriteItem",
+                    "dynamodb:ConditionCheckItem",
+                    "dynamodb:DeleteItem",
+                    "dynamodb:DescribeTable",
+                    "dynamodb:GetItem",
+                    "dynamodb:GetRecords",
+                    "dynamodb:GetShardIterator",
+                    "dynamodb:PutItem",
+                    "dynamodb:Query",
+                    "dynamodb:Scan",
+                    "dynamodb:UpdateItem"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "lambda:InvokeFunction",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "rds-db:connect",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "states:StartExecution",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "aoss:APIAccessAll",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "s3:Abort*",
+                    "s3:DeleteObject*",
+                    "s3:GetBucket*",
+                    "s3:GetObject*",
+                    "s3:List*",
+                    "s3:PutObject",
+                    "s3:PutObjectLegalHold",
+                    "s3:PutObjectRetention",
+                    "s3:PutObjectTagging",
+                    "s3:PutObjectVersionTagging"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "kendra:BatchDeleteDocument",
+                    "kendra:BatchPutDocument",
+                    "kendra:DescribeDataSourceSyncJob",
+                    "kendra:DescribeIndex",
+                    "kendra:ListDataSourceSyncJobs",
+                    "kendra:ListDataSources",
+                    "kendra:Query",
+                    "kendra:Retrieve",
+                    "kendra:StartDataSourceSyncJob",
+                    "kendra:StopDataSourceSyncJob"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "bedrock-agentcore:ListAgentRuntimes",
+                    "bedrock:InvokeModel",
+                    "bedrock:InvokeModelWithResponseStream",
+                    "bedrock:ListCustomModels",
+                    "bedrock:ListFoundationModels",
+                    "bedrock:ListInferenceProfiles",
+                    "comprehend:DetectDominantLanguage",
+                    "comprehend:DetectSentiment"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": "cognito-idp:ListGroups",
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "secretsmanager:DescribeSecret",
+                    "secretsmanager:GetSecretValue"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            },
+            {
+                "Action": [
+                    "ssm:DescribeParameters",
+                    "ssm:GetParameter",
+                    "ssm:GetParameterHistory",
+                    "ssm:GetParameters"
+                ],
+                "Resource": "*",
+                "Effect": "Allow"
+            }
+        ]
+    }
+}

@@ -1,0 +1,50 @@
+[package]
+name = "iac-benchmarker"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Minimum managed-policy finder and over-permission analyser for the IaC benchmark suite"
+
+[lib]
+name = "iac_benchmarker"
+path = "src/lib.rs"
+
+[[bin]]
+name = "iac-benchmarker"
+path = "src/main.rs"
+
+[[bin]]
+name = "iac-paper-figures"
+path = "src/bin/paper_figures.rs"
+
+[[bin]]
+name = "iac-coverage-analyzer"
+path = "src/bin/coverage_analyzer.rs"
+
+[dependencies]
+iac-runner            = { package = "benchmark-runner", path = "../runner" }
+aws-config            = { version = "1", features = ["behavior-version-latest"] }
+aws-sdk-iam           = "1"
+aws-sdk-sts           = "1"
+aws-sdk-bedrockruntime = "1"
+aws-sdk-accessanalyzer = "1"
+reqwest               = { version = "0.12", features = ["json"] }
+sha2                  = "0.10"
+hex                   = "0.4"
+urlencoding           = "2"
+tokio                 = { version = "1", features = ["full"] }
+tokio-util            = "0.7"
+clap                  = { version = "4", features = ["derive", "env"] }
+serde                 = { version = "1", features = ["derive"] }
+serde_json            = "1"
+anyhow                = "1"
+chrono                = { version = "0.4", features = ["serde"] }
+tracing               = "0.1"
+tracing-appender      = "0.2"
+tracing-subscriber    = { version = "0.3", features = ["env-filter"] }
+highs = "1"
+
+[dev-dependencies]
+rstest     = "0.26"
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
