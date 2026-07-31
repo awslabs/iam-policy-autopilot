@@ -23,6 +23,9 @@ pub(crate) mod waiter_model;
 
 pub(crate) mod terraform;
 
+#[cfg(feature = "model-generation")]
+pub(crate) mod call_graph;
+
 // Re-export main types for convenience
 pub use engine::Engine;
 // Not part of the stable public API — exposed only for integration tests in tests/.

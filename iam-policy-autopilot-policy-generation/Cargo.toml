@@ -70,6 +70,7 @@ convert_case.workspace = true
 default = ["telemetry"]
 telemetry = ["iam-policy-autopilot-common"]
 integ-test = []
+model-generation = []
 # Development features
 dev = ["tokio/test-util"]
 # WASM target — disables filesystem caching, TTL expiry, and native-only subsystems.

@@ -241,6 +241,7 @@ mod tests {
             policies: vec![policy],
             explanations: None,
             resource_binding_explanations: None,
+            warnings: vec![],
         }));
         let result = generate_application_policies(input).await;
 
@@ -290,6 +291,7 @@ mod tests {
             policies: vec![],
             explanations: None,
             resource_binding_explanations: None,
+            warnings: vec![],
         }));
         let result = generate_application_policies(input).await;
 
@@ -365,6 +367,7 @@ mod tests {
             policies: vec![policy],
             explanations: None,
             resource_binding_explanations: None,
+            warnings: vec![],
         }));
         let result = generate_application_policies(input).await;
 

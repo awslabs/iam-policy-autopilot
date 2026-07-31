@@ -25,6 +25,9 @@ predicates = "3.1"
 tempfile = "3.27"
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", features=["integ-test"] }
 
+[features]
+model-generation = ["iam-policy-autopilot-policy-generation/model-generation"]
+
 [[bin]]
 name = "iam-policy-autopilot"
 path = "src/main.rs"

@@ -25,6 +25,141 @@ use crate::iam::{cleanup_execution_role, create_execution_role};
 use crate::types::{ExecResult, ExecutionLog, LangConfig, LangSummary, RoleInfo, SdkStats};
 
 // ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/// Maximum number of times to run a script before declaring failure.
+/// The first attempt is the normal run; subsequent attempts are retries
+/// triggered by transient IAM credential/policy propagation errors.
+const MAX_SCRIPT_ATTEMPTS: u32 = 3;
+
+/// Seconds to wait between script retry attempts.  Chosen to give IAM
+/// policy propagation enough time to complete (typically 10–20 s).
+const RETRY_WAIT_SECS: u64 = 10;
+
+// ---------------------------------------------------------------------------
+// Script execution with retry
+// ---------------------------------------------------------------------------
+
+/// Execute a language script with retry logic for transient IAM propagation
+/// errors.
+///
+/// Runs `execute_script` once, and if it fails, probes credentials and
+/// inspects stderr to decide whether to retry.  Retries up to
+/// [`MAX_SCRIPT_ATTEMPTS`] total attempts with [`RETRY_WAIT_SECS`] between
+/// them.
+///
+/// Detection strategy:
+///   (a) **Credential probe:** re-assume the role and call
+///       `sts:GetCallerIdentity`.  If the probe fails, the credentials are
+///       still propagating → retry.
+///   (b) **Stderr pattern matching:** even when the probe succeeds, the
+///       script's stderr may contain transient credential errors from other
+///       services (S3, Glue, etc.) → retry.
+///   (c) **Empty-stderr heuristic:** if stderr is empty on the first retry
+///       attempt, the failure is ambiguous (could be IAM policy propagation)
+///       → retry once.
+///
+/// Only if the probe succeeds AND stderr does NOT contain transient patterns
+/// AND stderr is non-empty (or it's not the first retry) do we conclude the
+/// failure is genuine.
+async fn execute_script_with_retry(
+    language: &str,
+    script_dir: &Path,
+    role_info: &RoleInfo,
+    region: &str,
+    sts: &StsClient,
+    lang_cfg: &LangConfig,
+) -> ExecResult {
+    let mut exec = execute_script(language, script_dir, role_info, region, sts, lang_cfg).await;
+
+    if !exec.success {
+        let session_name = format!("runner-{language}-probe");
+        for retry in 1..MAX_SCRIPT_ATTEMPTS {
+            let stderr_transient = stderr_indicates_transient_credential_error(&exec.stderr);
+
+            // Re-assume the role and verify the credentials from the runner.
+            let creds_ok = match sts
+                .assume_role()
+                .role_arn(&role_info.role_arn)
+                .role_session_name(&session_name)
+                .send()
+                .await
+            {
+                Ok(resp) => match resp.credentials {
+                    Some(c) => {
+                        verify_credentials(
+                            &c.access_key_id,
+                            &c.secret_access_key,
+                            &c.session_token,
+                            region,
+                        )
+                        .await
+                    }
+                    None => false,
+                },
+                Err(_) => false,
+            };
+
+            if creds_ok && !stderr_transient {
+                // Credentials are valid AND stderr doesn't contain transient
+                // credential errors.  However, an empty stderr with a
+                // non-zero exit code on the FIRST retry attempt is ambiguous —
+                // the script may have failed due to IAM policy propagation
+                // delays that don't produce recognizable error patterns.
+                // Retry once in this case.
+                if retry == 1 && exec.stderr.trim().is_empty() {
+                    warn!(
+                        "[execute_script_with_retry] Script failed with empty stderr for {} — \
+                         retrying once in case of IAM policy propagation delay ...",
+                        language
+                    );
+                } else {
+                    info!(
+                        "[execute_script_with_retry] Credential probe succeeded for {} — \
+                         script failure is not a transient credential issue, skipping retry",
+                        language
+                    );
+                    break;
+                }
+            } else if stderr_transient {
+                warn!(
+                    "[execute_script_with_retry] Transient credential error detected in stderr \
+                     for {} (attempt {}/{}): stderr contains InvalidAccessKeyId/InvalidSecurityToken \
+                     — waiting {}s before retry ...",
+                    language,
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    RETRY_WAIT_SECS
+                );
+            } else {
+                warn!(
+                    "[execute_script_with_retry] Credential probe failed for {} (attempt {}/{}), \
+                     waiting {}s before retry ...",
+                    language,
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    RETRY_WAIT_SECS
+                );
+            }
+            sleep(Duration::from_secs(RETRY_WAIT_SECS)).await;
+            exec = execute_script(language, script_dir, role_info, region, sts, lang_cfg).await;
+            if exec.success {
+                info!(
+                    "[execute_script_with_retry] Retry {}/{} succeeded for {}",
+                    retry + 1,
+                    MAX_SCRIPT_ATTEMPTS,
+                    language
+                );
+                break;
+            }
+        }
+    }
+
+    exec
+}
+
+// ---------------------------------------------------------------------------
 // Script execution
 // ---------------------------------------------------------------------------
 
@@ -435,9 +570,10 @@ pub async fn run_language(
     summary.stages.insert("role_creation".into(), true);
     info!("[OK] Created role: {}", role_info.role_name);
 
-    // ── Stage 4: Execute script ─────────────────────────────────────────────
+    // ── Stage 4: Execute script (with retry for transient credential errors) ─
     info!("Stage 4: Executing {} script ...", language);
-    let exec = execute_script(language, &script_dir, &role_info, region, sts, lang_cfg).await;
+    let exec =
+        execute_script_with_retry(language, &script_dir, &role_info, region, sts, lang_cfg).await;
 
     summary
         .stages
@@ -511,8 +647,6 @@ pub async fn run_language_with_policies(
     lang_cfg: &LangConfig,
     caller_arn: &str,
 ) -> LangSummary {
-    const MAX_SCRIPT_ATTEMPTS: u32 = 3;
-
     fs::create_dir_all(results_dir).ok();
 
     let script_dir = run_dir.join(language);
@@ -553,101 +687,8 @@ pub async fn run_language_with_policies(
     summary.stages.insert("role_creation".into(), true);
 
     // Step 2: Execute script (with retry for transient credential errors).
-    //
-    // Even with the credential warm-up in execute_script(), the child
-    // process may occasionally hit transient IAM propagation errors.
-    // We use a two-pronged detection strategy:
-    //
-    //   (a) **Credential probe:** re-assume the role and call
-    //       sts:GetCallerIdentity.  If the probe fails, the credentials
-    //       are still propagating → retry.
-    //
-    //   (b) **Stderr pattern matching:** even when the probe succeeds
-    //       (because sts:GetCallerIdentity doesn't require IAM auth and
-    //       always works against STS), the script's stderr may contain
-    //       transient credential errors like `InvalidAccessKeyId` or
-    //       `InvalidSecurityToken` from other services (S3, Glue, etc.)
-    //       that haven't received the credential propagation yet → retry.
-    //
-    // Only if *both* the probe succeeds AND stderr does NOT contain
-    // transient credential patterns do we conclude the failure is genuine.
-    let mut exec = execute_script(language, &script_dir, &role_info, region, sts, lang_cfg).await;
-
-    if !exec.success {
-        let session_name = format!("runner-{language}-probe");
-        for retry in 1..MAX_SCRIPT_ATTEMPTS {
-            // Check stderr for transient credential error patterns first.
-            // This catches cases where sts:GetCallerIdentity succeeds but
-            // other services (S3, Glue, DynamoDB) reject the credentials
-            // because they haven't propagated yet.
-            let stderr_transient = stderr_indicates_transient_credential_error(&exec.stderr);
-
-            // Re-assume the role and verify the credentials from the runner.
-            let creds_ok = match sts
-                .assume_role()
-                .role_arn(&role_info.role_arn)
-                .role_session_name(&session_name)
-                .send()
-                .await
-            {
-                Ok(resp) => match resp.credentials {
-                    Some(c) => {
-                        verify_credentials(
-                            &c.access_key_id,
-                            &c.secret_access_key,
-                            &c.session_token,
-                            region,
-                        )
-                        .await
-                    }
-                    None => false,
-                },
-                Err(_) => false,
-            };
-
-            if creds_ok && !stderr_transient {
-                // Credentials are valid AND stderr doesn't contain transient
-                // credential errors — the failure was a genuine application
-                // or permissions error, not a propagation issue.
-                info!(
-                    "[run_language_with_policies] Credential probe succeeded for {} — \
-                     script failure is not a transient credential issue, skipping retry",
-                    language
-                );
-                break;
-            }
-
-            // Either the probe failed OR stderr contains transient credential
-            // errors — wait and retry with fresh credentials.
-            if stderr_transient {
-                warn!(
-                    "[run_language_with_policies] Transient credential error detected in stderr \
-                     for {} (attempt {}/{}): stderr contains InvalidAccessKeyId/InvalidSecurityToken \
-                     — waiting 5s before retry ...",
-                    language, retry + 1, MAX_SCRIPT_ATTEMPTS
-                );
-            } else {
-                warn!(
-                    "[run_language_with_policies] Credential probe failed for {} (attempt {}/{}), \
-                     waiting 5s before retry ...",
-                    language,
-                    retry + 1,
-                    MAX_SCRIPT_ATTEMPTS
-                );
-            }
-            sleep(Duration::from_secs(5)).await;
-            exec = execute_script(language, &script_dir, &role_info, region, sts, lang_cfg).await;
-            if exec.success {
-                info!(
-                    "[run_language_with_policies] Retry {}/{} succeeded for {}",
-                    retry + 1,
-                    MAX_SCRIPT_ATTEMPTS,
-                    language
-                );
-                break;
-            }
-        }
-    }
+    let exec =
+        execute_script_with_retry(language, &script_dir, &role_info, region, sts, lang_cfg).await;
 
     summary
         .stages

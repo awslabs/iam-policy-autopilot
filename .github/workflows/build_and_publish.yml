@@ -107,13 +107,16 @@ jobs:
 
     - name: Test wheel installation and functionality
       shell: bash
+      env:
+        USE_QEMU: ${{ matrix.use-qemu }}
+        EXPECTED_VERSION: ${{ github.event.release.tag_name }}
       run: |
-        if [[ "${{ matrix.use-qemu }}" == "true" ]]; then
+        if [[ "$USE_QEMU" == "true" ]]; then
           # Test aarch64 wheel in Docker with QEMU
           docker run --rm --platform linux/arm64 \
             -v $(pwd)/wheels:/wheels \
             -v $(pwd)/iam-policy-autopilot-cli/tests/resources:/test-resources \
-            -e EXPECTED_VERSION='${{ github.event.release.tag_name }}' \
+            -e EXPECTED_VERSION="$EXPECTED_VERSION" \
             python:3.11-slim bash -c "
               set -e
               pip install /wheels/*.whl
@@ -161,7 +164,6 @@ jobs:
           fi
           echo '=== Verifying version matches release tag ==='
           VERSION=$(iam-policy-autopilot --version | awk '{print $2}')
-          EXPECTED_VERSION='${{ github.event.release.tag_name }}'
           echo "Binary version: $VERSION"
           echo "Expected version: $EXPECTED_VERSION"
           if [[ "$VERSION" != "$EXPECTED_VERSION" ]]; then
@@ -187,6 +189,8 @@ jobs:
 
     - name: Extract and package binaries
       shell: bash
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
       run: |
         mkdir -p binaries
         
@@ -224,7 +228,7 @@ jobs:
           
           # Package binary
           cd binaries
-          ARCHIVE_NAME="iam-policy-autopilot-${{ github.event.release.tag_name }}-${simple_target}"
+          ARCHIVE_NAME="iam-policy-autopilot-${RELEASE_TAG}-${simple_target}"
           
           if [[ "$binary_ext" == ".exe" ]]; then
             zip "${ARCHIVE_NAME}.zip" "${BINARY_NAME}"

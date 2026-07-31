@@ -197,8 +197,8 @@ pub(crate) async fn create_execution_role(
     };
 
     // Wait for role + policies to be fully available.
-    info!("[IAM] Waiting 10 s for role to be fully available ...");
-    sleep(Duration::from_secs(10)).await;
+    info!("[IAM] Waiting 15 s for role to be fully available ...");
+    sleep(Duration::from_secs(15)).await;
 
     Ok(RoleInfo {
         role_arn: format!("arn:aws:iam::{account}:role/{role_name}"),

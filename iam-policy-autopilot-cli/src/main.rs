@@ -472,6 +472,47 @@ Examples:\n  \
         explain_resources: Option<Vec<String>>,
     },
 
+    /// Generates an external library model from source code using call graph analysis
+    #[cfg(feature = "model-generation")]
+    #[command(
+        long_about = "Analyzes source code to build a call graph from specified entry points, \
+extracts AWS SDK calls reachable from those entry points, and outputs an external library model \
+JSON that maps each entry point to its required SDK operations.\n\n\
+Entry points are specified as file:line:column (1-based). Point to the start of a function \
+declaration. Example: --entry-point handler.go:14:1"
+    )]
+    #[telemetry(skip)]
+    GenerateModel {
+        /// Source files to analyze
+        #[arg(required = true, num_args = 1..)]
+        source_files: Vec<PathBuf>,
+
+        /// Entry points as file:line:column (1-based, pointing to function declaration).
+        /// If omitted, all exported functions are used as entry points.
+        #[arg(long = "entry-point", num_args = 1..)]
+        entry_points: Vec<String>,
+
+        /// Name for the generated library model
+        #[arg(long = "library-name", required = true)]
+        library_name: String,
+
+        /// Enable debug logging output to stderr
+        #[arg(hide = true, short = 'd', long = "debug")]
+        debug: bool,
+
+        /// Format JSON output with indentation for readability
+        #[arg(short = 'p', long = "pretty")]
+        pretty: bool,
+
+        /// Override programming language detection
+        #[arg(short = 'l', long = "language")]
+        language: Option<String>,
+
+        /// Filter extracted SDK calls to specific AWS services
+        #[arg(long = "service-hints", num_args = 1..)]
+        service_hints: Option<Vec<String>>,
+    },
+
     /// Start MCP server
     #[command(
         long_about = "Starts an MCP server that provides IAM policy generation \
@@ -681,6 +722,50 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
     Ok(())
 }
 
+#[cfg(feature = "model-generation")]
+async fn handle_generate_model(
+    source_files: Vec<PathBuf>,
+    entry_points: Vec<String>,
+    library_name: String,
+    language: Option<String>,
+    service_hints: Option<Vec<String>>,
+    pretty: bool,
+) -> Result<()> {
+    use iam_policy_autopilot_policy_generation::api::model::ServiceHints;
+    use iam_policy_autopilot_policy_generation::api::{generate_model, GenerateModelConfig};
+
+    info!("Running generate-model command");
+
+    for file in &source_files {
+        if !file.exists() {
+            anyhow::bail!("Source file does not exist: {}", file.display());
+        }
+    }
+
+    let config = GenerateModelConfig {
+        source_files,
+        language,
+        library_name,
+        entry_points,
+        service_hints: service_hints.map(|service_names| ServiceHints { service_names }),
+    };
+
+    let model = generate_model(&config).await?;
+
+    let json = if pretty {
+        serde_json::to_string_pretty(&model)?
+    } else {
+        serde_json::to_string(&model)?
+    };
+
+    print!("{json}");
+    if pretty {
+        println!();
+    }
+
+    Ok(())
+}
+
 fn show_telemetry_notice(cli: &Cli) {
     // --- Telemetry: show notice (before execution) ---
     // Skip CLI notice for variants annotated with #[telemetry(skip)] or #[telemetry(skip_notice)]:
@@ -819,6 +904,39 @@ async fn main() {
                 Err(e) => {
                     print_cli_command_error(e);
                     ExitCode::Duplicate // Exit code 1 for generate-policies errors
+                }
+            }
+        }
+
+        #[cfg(feature = "model-generation")]
+        Commands::GenerateModel {
+            source_files,
+            entry_points,
+            library_name,
+            debug: debug_flag,
+            pretty,
+            language,
+            service_hints,
+        } => {
+            if let Err(e) = init_logging(debug_flag) {
+                eprintln!("iam-policy-autopilot: Failed to initialize logging: {e}");
+                process::exit(1);
+            }
+
+            match handle_generate_model(
+                source_files,
+                entry_points,
+                library_name,
+                language,
+                service_hints,
+                pretty,
+            )
+            .await
+            {
+                Ok(()) => ExitCode::Success,
+                Err(e) => {
+                    print_cli_command_error(e);
+                    ExitCode::Error
                 }
             }
         }

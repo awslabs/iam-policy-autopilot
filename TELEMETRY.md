@@ -82,6 +82,9 @@ Telemetry records which commands and parameters are used, and whether the comman
 |-------|------|-------------|
 | `success` | boolean | Whether the command completed successfully |
 | `num_policies_generated` | number | Number of policies generated |
+| `num_statements_generated` | number | Total number of statements across generated policies |
+| `num_actions_generated` | number | Total number of actions across generated policy statements |
+| `num_wildcard_resource_statements` | number | Number of statements whose Resource fell back to the "*" wildcard |
 | `runtime_ms` | number | Pipeline execution time in milliseconds |
 | `detected_language` | string | Programming language detected from source files (e.g., "python", "go") |
 | `services_used` | string[] | AWS services found in the source code (e.g., ["s3", "dynamodb"]) |
