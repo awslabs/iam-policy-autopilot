@@ -31,9 +31,10 @@ jobs:
         with:
           version: 5.0.7
 
+      # Node 24+ needed for JSPI (--experimental-wasm-jspi) in the boundary test
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "24"
 
       - name: Build WASM + npm package
         run: ./iam-policy-autopilot-wasm/build.sh
@@ -46,6 +47,9 @@ jobs:
           test -f iam-policy-autopilot-wasm/npm/dist/index.d.ts
           echo "All artifacts present"
           ls -lh iam-policy-autopilot-wasm/npm/dist/
+
+      - name: WASM boundary test (load + invoke via npm artifact)
+        run: node --experimental-wasm-jspi --test iam-policy-autopilot-wasm/test/wasm-invoke.test.mjs
 
       - name: Upload npm package artifact
         uses: actions/upload-artifact@v4
