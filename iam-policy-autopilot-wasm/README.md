@@ -119,6 +119,35 @@ This runs three stages:
 2. `emcc` link → `dist/iam_policy_autopilot.{js,wasm}`
 3. Copy to `npm/dist/`, compile TypeScript wrapper
 
+### Testing the WASM Boundary
+
+`test/wasm-invoke.test.mjs` is an end-to-end smoke test for the boundary: it loads
+the built npm artifact, initializes the Emscripten module, invokes
+`generatePolicies()` over the C-string FFI, and asserts sane policy JSON comes back.
+It is intentionally shallow — pipeline logic is covered by the Rust unit tests.
+
+Run locally (requires a completed `./build.sh` first):
+
+```bash
+# From the repo root
+node --experimental-wasm-jspi --test iam-policy-autopilot-wasm/test/wasm-invoke.test.mjs
+```
+
+Requirements:
+
+- **Node 24+** with the `--experimental-wasm-jspi` flag — the module suspends on
+  service-reference fetches via JSPI (`WebAssembly.promising`/`Suspending`)
+- **Network access** to `https://servicereference.us-east-1.amazonaws.com` for
+  enrichment data
+- `npm/dist/` populated by `./build.sh` — the test serves it over a loopback HTTP
+  server because the wrapper fetches the glue JS and `.wasm` the same way a browser
+  would (Node's `fetch` doesn't support `file://` URLs)
+
+In CI, the test runs automatically as the `WASM boundary test` step of the
+[WASM Build workflow](../.github/workflows/wasm.yml), right after the artifact is
+built. It triggers on pushes and PRs touching the WASM crate, the policy-generation
+crate, or the workspace manifests.
+
 ### Project Structure
 
 ```
@@ -131,6 +160,7 @@ iam-policy-autopilot-wasm/
 │   ├── package.json
 │   ├── src/index.ts    # TypeScript wrapper (generatePolicies API)
 │   └── dist/           # Build output (gitignored)
+├── test/               # WASM boundary test (node --test, see Testing section)
 ├── index.html          # Standalone test page (dev only)
 └── serve.sh            # Dev server for index.html
 ```
