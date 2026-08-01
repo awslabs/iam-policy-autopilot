@@ -288,6 +288,7 @@ impl TerraformResourceResolver {
                     service: call.service.clone(),
                     actions: new_actions,
                     sdk_method_call: call.sdk_method_call,
+                    service_reference_modified: call.service_reference_modified,
                 }
             })
             .collect()
@@ -1050,6 +1051,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         }];
 
         let mut resource_map = ResolvedResourceMap::new();

@@ -279,6 +279,11 @@ pub struct EnrichedSdkMethodCall<'a> {
     pub(crate) actions: Vec<Action>,
     /// The initial SDK method call
     pub(crate) sdk_method_call: &'a SdkMethodCall,
+    /// Epoch-second `modified` timestamp from the service reference index for
+    /// [`Self::service`], when available. Captured at enrichment time so policy
+    /// generation can report which service-reference version informed each call.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) service_reference_modified: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, JsonSchema)]

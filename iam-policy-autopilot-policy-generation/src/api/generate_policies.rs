@@ -227,6 +227,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             explanations: None,
             resource_binding_explanations: None,
             warnings: vec![],
+            service_reference_modified: BTreeMap::new(),
         });
     }
 
@@ -269,6 +270,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             explanations: None,
             resource_binding_explanations: None,
             warnings: vec![],
+            service_reference_modified: BTreeMap::new(),
         });
     }
 
@@ -350,6 +352,12 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // policy indices and statements match what the caller receives
     let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&final_policies);
 
+    // Service-reference modified timestamps were captured at enrichment time
+    // (on each EnrichedSdkMethodCall) and aggregated in the policy engine —
+    // same pattern as explanations. Merging policies does not change which
+    // services informed enrichment, so no recompute is needed.
+    let service_reference_modified = result.service_reference_modified;
+
     iam_policy_autopilot_common::telemetry::span::record_result_number(
         "num_policies_generated",
         final_policies.len(),
@@ -383,6 +391,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         explanations,
         resource_binding_explanations: binding_explanations,
         warnings,
+        service_reference_modified,
     })
 }
 

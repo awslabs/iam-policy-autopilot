@@ -5,6 +5,7 @@
 - Support for chained and nested boto3 sub-resource actions, including calls on a variable bound to a chain — e.g. `s3.Bucket("b").put_object(...)`, `s3.Bucket("b").Object("k").put(...)`, and `obj = s3.Bucket("b").Object("k"); obj.put(...)` now resolve to the underlying operation with identifiers injected from the chain
 - `Warnings` field in the `generate-policies` output flagging statements whose `Resource` fell back to the `"*"` wildcard (no ARN patterns available, an empty resource list, or the resource list was collapsed by the resource cutoff). Each warning carries a machine-recognizable `WarningType` plus policy and statement indices locating the flagged statement, so callers can construct their own review messages
 - New telemetry result metrics for generation runs: `num_statements_generated`, `num_actions_generated`, and `num_wildcard_resource_statements` (counts only, no policy content). See [TELEMETRY.md](TELEMETRY.md)
+- `ServiceReferenceModified` field in the `generate-policies` output with per-service epoch-second `modified` timestamps from the service reference index for services contributing to the generated policy, for auditability (#260)
 
 ### Changed
 

@@ -275,6 +275,10 @@ impl<'a> Engine<'a> {
         // Collect explanations
         let explanations = extract_explanations(enriched_calls);
 
+        // Collect service-reference modified timestamps captured during enrichment
+        let service_reference_modified =
+            extract_service_reference_modified(enriched_calls);
+
         // Flag statements that fell back to Resource "*" so consumers can
         // surface them for review
         let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
@@ -284,6 +288,7 @@ impl<'a> Engine<'a> {
             explanations: Some(explanations),
             resource_binding_explanations: None,
             warnings,
+            service_reference_modified,
         })
     }
 }
@@ -304,6 +309,23 @@ fn extract_explanations(enriched_calls: &[EnrichedSdkMethodCall<'_>]) -> Explana
     }
 
     Explanations::new(explanations)
+}
+
+/// Build the audit map of service → index `modified` from enrichment-time data.
+///
+/// Same shape as explanations: derive from [`EnrichedSdkMethodCall`] rather than
+/// re-scanning final policies, so timestamps reflect the service references that
+/// actually informed enrichment.
+fn extract_service_reference_modified(
+    enriched_calls: &[EnrichedSdkMethodCall<'_>],
+) -> BTreeMap<String, u64> {
+    let mut map = BTreeMap::new();
+    for call in enriched_calls {
+        if let Some(modified) = call.service_reference_modified {
+            map.entry(call.service.clone()).or_insert(modified);
+        }
+    }
+    map
 }
 
 #[cfg(test)]
@@ -343,6 +365,36 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_policy_includes_service_reference_modified_from_enriched_calls() {
+        let engine = create_test_engine();
+        let sdk_call = create_test_sdk_call();
+
+        let enriched_call = EnrichedSdkMethodCall {
+            method_name: "get_object".to_string(),
+            service: "s3".to_string(),
+            actions: vec![Action::new(
+                "s3:GetObject".to_string(),
+                vec![Resource::new(
+                    "object".to_string(),
+                    Some(vec![
+                        "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                    ]),
+                )],
+                vec![],
+                Explanation::default(),
+            )],
+            sdk_method_call: &sdk_call,
+            service_reference_modified: Some(1_700_000_042),
+        };
+
+        let result = engine.generate_policies(&[enriched_call]).unwrap();
+        assert_eq!(
+            result.service_reference_modified.get("s3"),
+            Some(&1_700_000_042)
+        );
+    }
+
+    #[test]
     fn test_generate_policy_single_action() {
         let engine = create_test_engine();
         let sdk_call = create_test_sdk_call();
@@ -362,6 +414,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -411,6 +464,7 @@ mod tests {
                 ),
             ],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -445,6 +499,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -481,6 +536,7 @@ mod tests {
                 )
             ],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -507,6 +563,7 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let action = Action::new(
@@ -542,6 +599,7 @@ mod tests {
             service: "s3".to_string(),
             actions: vec![],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]);
@@ -952,6 +1010,7 @@ mod tests {
                 },
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -1007,6 +1066,7 @@ mod tests {
                 },
             )],
             sdk_method_call: &sdk_call1,
+            service_reference_modified: None,
         };
 
         let enriched_call2 = EnrichedSdkMethodCall {
@@ -1030,6 +1090,7 @@ mod tests {
                 },
             )],
             sdk_method_call: &sdk_call2,
+            service_reference_modified: None,
         };
 
         let result = engine
@@ -1104,6 +1165,7 @@ mod tests {
                 },
             )],
             sdk_method_call: sdk_call,
+            service_reference_modified: None,
         };
 
         let enriched_call1 = make_call(&sdk_call1, metadata_a);
@@ -1180,6 +1242,7 @@ mod tests {
                 ),
             ],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -1254,6 +1317,7 @@ mod tests {
                 },
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
