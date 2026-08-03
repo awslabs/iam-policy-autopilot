@@ -6,6 +6,7 @@ use crate::{
     enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
 use anyhow::{anyhow, Result};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 /// Configuration for generate_policies API
@@ -64,6 +65,12 @@ pub struct GeneratePoliciesResult {
     /// Warnings about statements that could not be scoped to specific resources
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub warnings: Vec<PolicyWarning>,
+    /// Epoch-second `modified` timestamps from the service reference index
+    /// (https://servicereference.us-east-1.amazonaws.com/) for each service that
+    /// contributes actions to the generated policies. Enables auditability of
+    /// which service-reference versions informed the result.
+    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    pub service_reference_modified: BTreeMap<String, u64>,
 }
 
 /// Machine-recognizable category of a [`PolicyWarning`].
@@ -324,6 +331,28 @@ mod tests {
         assert_eq!(json["Location"]["PolicyIndex"], 0);
         assert_eq!(json["Location"]["StatementIndex"], 1);
         assert_eq!(json["Message"], "test message");
+    }
+
+    #[test]
+    fn test_service_reference_modified_serialization() {
+        let mut service_reference_modified = BTreeMap::new();
+        service_reference_modified.insert("s3".to_string(), 1_700_000_001);
+        service_reference_modified.insert("ec2".to_string(), 1_700_000_002);
+
+        let result = GeneratePoliciesResult {
+            policies: vec![],
+            explanations: None,
+            resource_binding_explanations: None,
+            warnings: vec![],
+            service_reference_modified,
+        };
+
+        let json = serde_json::to_value(&result).unwrap();
+        assert_eq!(json["ServiceReferenceModified"]["s3"], 1_700_000_001_u64);
+        assert_eq!(json["ServiceReferenceModified"]["ec2"], 1_700_000_002_u64);
+        // Empty maps/options are omitted
+        assert!(json.get("Warnings").is_none());
+        assert!(json.get("Explanations").is_none());
     }
 
     #[test]

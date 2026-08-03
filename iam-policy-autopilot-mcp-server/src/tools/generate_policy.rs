@@ -242,6 +242,7 @@ mod tests {
             explanations: None,
             resource_binding_explanations: None,
             warnings: vec![],
+            service_reference_modified: Default::default(),
         }));
         let result = generate_application_policies(input).await;
 
@@ -292,6 +293,7 @@ mod tests {
             explanations: None,
             resource_binding_explanations: None,
             warnings: vec![],
+            service_reference_modified: Default::default(),
         }));
         let result = generate_application_policies(input).await;
 
@@ -368,6 +370,7 @@ mod tests {
             explanations: None,
             resource_binding_explanations: None,
             warnings: vec![],
+            service_reference_modified: Default::default(),
         }));
         let result = generate_application_policies(input).await;
 

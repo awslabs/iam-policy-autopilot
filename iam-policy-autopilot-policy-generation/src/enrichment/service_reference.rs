@@ -264,21 +264,33 @@ where
         .collect())
 }
 
+/// A single entry in the service reference index.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ServiceReferenceEntry {
+    /// URL to fetch the full service reference document
+    pub(crate) url: Url,
+    /// Epoch-second timestamp when this service's reference was last modified
+    pub(crate) modified: u64,
+}
+
 /// represents the top level mapping returned by service reference
 /// to resolve the url for target service
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
-    pub(crate) service_reference_mapping: HashMap<String, Url>,
+    pub(crate) service_reference_mapping: HashMap<String, ServiceReferenceEntry>,
 }
 
 fn deserialize_service_reference_mapping(
     value: Value,
-) -> crate::errors::Result<HashMap<String, Url>> {
+) -> crate::errors::Result<HashMap<String, ServiceReferenceEntry>> {
     #[derive(Deserialize)]
     struct ServiceEntry {
         service: String,
         url: String,
+        /// Defaults to 0 for index entries that predate the `modified` field.
+        #[serde(default)]
+        modified: u64,
     }
 
     let entries: Vec<ServiceEntry> = serde_json::from_value(value)?;
@@ -294,7 +306,13 @@ fn deserialize_service_reference_mapping(
                 e,
             )
         })?;
-        map.insert(entry.service, url);
+        map.insert(
+            entry.service,
+            ServiceReferenceEntry {
+                url,
+                modified: entry.modified,
+            },
+        );
     }
     Ok(map)
 }
@@ -509,13 +527,13 @@ impl RemoteServiceReferenceLoader {
         }
 
         let mapping = self.get_or_init_mapping().await?;
-        let service_url = mapping.service_reference_mapping.get(service_name);
+        let service_entry = mapping.service_reference_mapping.get(service_name);
 
-        match service_url {
-            Some(service_url) => {
+        match service_entry {
+            Some(service_entry) => {
                 let service_reference_content = self
                     .client
-                    .get(service_url.as_ref())
+                    .get(service_entry.url.as_ref())
                     .send()
                     .await
                     .map_err(|e| {
@@ -558,6 +576,46 @@ impl RemoteServiceReferenceLoader {
             }
             None => Ok(None),
         }
+    }
+
+    /// Returns the epoch-second `modified` timestamp from the service reference
+    /// index for a single service, when present.
+    ///
+    /// Best-effort: if the index cannot be loaded or the service is unknown,
+    /// returns `None` and (on index failure) logs a warning.
+    pub(crate) async fn modified_for_service(&self, service_name: &str) -> Option<u64> {
+        let mapping = match self.get_or_init_mapping().await {
+            Ok(mapping) => mapping,
+            Err(e) => {
+                log::warn!("Could not load service reference index for modified timestamps: {e}");
+                return None;
+            }
+        };
+        mapping
+            .service_reference_mapping
+            .get(service_name)
+            .map(|entry| entry.modified)
+    }
+
+    /// Returns epoch-second `modified` timestamps from the service reference
+    /// index for the given service names. Unknown services are omitted.
+    ///
+    /// Best-effort: if the index cannot be loaded, returns an empty map and
+    /// logs a warning rather than failing policy generation.
+    pub(crate) async fn modified_for_services(
+        &self,
+        service_names: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> std::collections::BTreeMap<String, u64> {
+        use std::collections::BTreeMap;
+
+        let mut result = BTreeMap::new();
+        for service in service_names {
+            let service = service.as_ref();
+            if let Some(modified) = self.modified_for_service(service).await {
+                result.insert(service.to_string(), modified);
+            }
+        }
+        result
     }
 }
 
@@ -680,8 +738,8 @@ mod tests {
     #[tokio::test]
     async fn test_deserialize_service_reference_mapping() {
         let json = serde_json::json!([
-            {"service": "s3", "url": "https://example.com/s3.json"},
-            {"service": "ec2", "url": "https://example.com/ec2.json"}
+            {"service": "s3", "url": "https://example.com/s3.json", "modified": 1700000001},
+            {"service": "ec2", "url": "https://example.com/ec2.json", "modified": 1700000002}
         ]);
 
         let result = deserialize_service_reference_mapping(json);
@@ -691,8 +749,20 @@ mod tests {
         assert_eq!(mapping.len(), 2);
         assert!(mapping.contains_key("s3"));
         assert!(mapping.contains_key("ec2"));
-        assert_eq!(mapping["s3"].as_str(), "https://example.com/s3.json");
-        assert_eq!(mapping["ec2"].as_str(), "https://example.com/ec2.json");
+        assert_eq!(mapping["s3"].url.as_str(), "https://example.com/s3.json");
+        assert_eq!(mapping["ec2"].url.as_str(), "https://example.com/ec2.json");
+        assert_eq!(mapping["s3"].modified, 1700000001);
+        assert_eq!(mapping["ec2"].modified, 1700000002);
+    }
+
+    #[tokio::test]
+    async fn test_deserialize_service_reference_mapping_missing_modified_defaults_to_zero() {
+        let json = serde_json::json!([
+            {"service": "s3", "url": "https://example.com/s3.json"}
+        ]);
+
+        let mapping = deserialize_service_reference_mapping(json).unwrap();
+        assert_eq!(mapping["s3"].modified, 0);
     }
 
     #[tokio::test]
@@ -730,6 +800,42 @@ mod tests {
             cache_path.ends_with("IAMPolicyAutopilot/s3.json")
                 || cache_path.ends_with("IAMAutoPilot\\s3.json")
         );
+    }
+
+    #[tokio::test]
+    async fn test_modified_for_services() {
+        let mock_server = wiremock::MockServer::start().await;
+        let mock_server_url = mock_server.uri();
+
+        wiremock::Mock::given(wiremock::matchers::method("GET"))
+            .and(wiremock::matchers::path("/"))
+            .respond_with(
+                wiremock::ResponseTemplate::new(200).set_body_json(serde_json::json!([
+                    {
+                        "service": "s3",
+                        "url": format!("{mock_server_url}/s3.json"),
+                        "modified": 1_700_000_001_u64
+                    },
+                    {
+                        "service": "ec2",
+                        "url": format!("{mock_server_url}/ec2.json"),
+                        "modified": 1_700_000_002_u64
+                    }
+                ])),
+            )
+            .mount(&mock_server)
+            .await;
+
+        let loader = RemoteServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+
+        let modified = loader
+            .modified_for_services(["s3", "ec2", "nonexistent"])
+            .await;
+        assert_eq!(modified.get("s3"), Some(&1_700_000_001));
+        assert_eq!(modified.get("ec2"), Some(&1_700_000_002));
+        assert!(!modified.contains_key("nonexistent"));
     }
 
     #[tokio::test]

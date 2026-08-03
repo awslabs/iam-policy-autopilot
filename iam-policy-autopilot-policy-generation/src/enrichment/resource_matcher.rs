@@ -315,11 +315,19 @@ impl ResourceMatcher {
             return Ok(None);
         }
 
+        // Capture index `modified` while we still know which service reference
+        // document informed this enrichment (audit trail for #260).
+        let service_reference_modified = service_reference_loader
+            .modified_for_service(original_service_name)
+            .await
+            .filter(|&m| m != 0);
+
         Ok(Some(EnrichedSdkMethodCall {
             method_name: parsed_call.name.clone(),
             service: original_service_name.to_string(),
             actions: enriched_actions,
             sdk_method_call: parsed_call,
+            service_reference_modified,
         }))
     }
 

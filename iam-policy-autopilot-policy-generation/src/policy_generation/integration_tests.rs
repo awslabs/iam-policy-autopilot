@@ -76,6 +76,7 @@ mod tests {
             service: service.to_string(),
             actions,
             sdk_method_call: sdk_call,
+            service_reference_modified: None,
         }
     }
 
@@ -483,6 +484,7 @@ mod tests {
                 ),
             ],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         // Generate policies
@@ -543,6 +545,7 @@ mod tests {
                     Explanation::default(),
                 )],
                 sdk_method_call: &sdk_call1,
+                service_reference_modified: None,
             },
             EnrichedSdkMethodCall {
                 method_name: "put_object".to_string(),
@@ -559,6 +562,7 @@ mod tests {
                     Explanation::default(),
                 )],
                 sdk_method_call: &sdk_call2,
+                service_reference_modified: None,
             },
         ];
 
@@ -611,6 +615,7 @@ mod tests {
                 )
             ],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -647,6 +652,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
@@ -683,6 +689,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         // Should fail due to empty placeholder
@@ -711,6 +718,7 @@ mod tests {
                 Explanation::default(),
             )],
             sdk_method_call: &sdk_call,
+            service_reference_modified: None,
         };
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
