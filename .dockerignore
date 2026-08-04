@@ -1,0 +1,46 @@
+# Build artifacts (rebuilt inside the container)
+target/
+paper-benchmarks/target/
+
+# Extracted real-world app (the tarball is copied and extracted in the image)
+paper-benchmarks/real-world-apps/genai-chatbot-cdk/
+
+# Git history and submodule checkouts (build.sh fetches submodules fresh over
+# HTTPS at their pinned commits, so the host's checkouts must not be copied in —
+# they contain .git references to .git/modules/ which won't exist in the image)
+.git/
+iam-policy-autopilot-policy-generation/resources/config/sdks/boto3/
+iam-policy-autopilot-policy-generation/resources/config/sdks/botocore-data/
+iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2/
+iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws/
+
+# GitHub workflows and editor metadata
+.github/
+.vscode/
+*.swp
+
+# Node/Python intermediates
+**/node_modules/
+**/__pycache__/
+**/.venv/
+**/cdk.out/
+
+# Benchmark results
+paper-benchmarks/results/
+paper-benchmarks/benchmarker_results/
+paper-benchmarks/real-world-apps/realworld_results/
+
+# Local deploy state from the benchmark projects. These are gitignored, but
+# Docker doesn't read .gitignore, so they must be listed again here or the
+# COPY of integration-tests/projects/ bakes them into the published image.
+# config.json and cdk.context.json hold the deploying account's ID, resource
+# ARNs, and VPC/subnet IDs; deploy.sh regenerates both at CDK deploy time.
+integration-tests/projects/**/config.json
+integration-tests/projects/**/cdk/cdk.context.json
+
+# Per-language build output under the benchmark projects (the root `target/`
+# rule above is not recursive, so it misses these).
+integration-tests/projects/**/target/
+integration-tests/projects/**/package-lock.json
+integration-tests/projects/**/go/script
+integration-tests/projects/**/go/run_*

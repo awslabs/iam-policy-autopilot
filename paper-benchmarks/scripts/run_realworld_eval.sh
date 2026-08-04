@@ -53,7 +53,7 @@ BENCH_DIR="$(dirname "$SCRIPT_DIR")"
 REPO_ROOT="$(dirname "$BENCH_DIR")"
 
 RWA_DIR="$BENCH_DIR/real-world-apps"
-EVALUATOR="$BENCH_DIR/target/release/realworld-evaluator"
+EVALUATOR="${EVALUATOR:-$BENCH_DIR/target/release/realworld-evaluator}"
 AUTOPILOT_BIN="${AUTOPILOT_BIN:-$REPO_ROOT/target/release/iam-policy-autopilot}"
 MODE="${MODE:-all}"
 RESULTS_DIR="${RESULTS_DIR:-$RWA_DIR/realworld_results}"
