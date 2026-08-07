@@ -106,7 +106,6 @@ mod tests {
     use crate::extraction::SdkMethodCallMetadata;
     use crate::Location;
     use language_conventions::GoConventions;
-    use std::path::PathBuf;
 
     fn sdk_call_in(
         graph: &CallGraph,
