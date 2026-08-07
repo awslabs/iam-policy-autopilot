@@ -240,6 +240,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             policies: vec![],
             explanations: None,
             resource_binding_explanations: None,
+            warnings: vec![],
         });
     }
 
@@ -317,15 +318,43 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .context("Failed to merge IAM policies")?;
     }
 
+    // Recompute warnings against the final (possibly merged) policies so
+    // policy indices and statements match what the caller receives
+    let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&final_policies);
+
     iam_policy_autopilot_common::telemetry::span::record_result_number(
         "num_policies_generated",
         final_policies.len(),
+    );
+
+    // Shape metrics for an anomaly baseline: counts only, no policy content
+    let num_statements: usize = final_policies
+        .iter()
+        .map(|p| p.policy.statements.len())
+        .sum();
+    let num_actions: usize = final_policies
+        .iter()
+        .flat_map(|p| &p.policy.statements)
+        .map(|s| s.action.len())
+        .sum();
+    iam_policy_autopilot_common::telemetry::span::record_result_number(
+        "num_statements_generated",
+        num_statements,
+    );
+    iam_policy_autopilot_common::telemetry::span::record_result_number(
+        "num_actions_generated",
+        num_actions,
+    );
+    iam_policy_autopilot_common::telemetry::span::record_result_number(
+        "num_wildcard_resource_statements",
+        warnings.len(),
     );
 
     Ok(GeneratePoliciesResult {
         policies: final_policies,
         explanations,
         resource_binding_explanations: binding_explanations,
+        warnings,
     })
 }
 

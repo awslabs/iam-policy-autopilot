@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use super::merge::{PolicyMerger, PolicyMergerConfig};
 use super::utils::{ArnParser, ConditionValueProcessor};
 use super::{IamPolicy, Statement};
-use crate::api::model::GeneratePoliciesResult;
+use crate::api::model::{GeneratePoliciesResult, PolicyWarning};
 use crate::enrichment::{Action, Condition, EnrichedSdkMethodCall, Explanations};
 use crate::errors::{ExtractorError, Result};
 use crate::policy_generation::{PolicyType, PolicyWithMetadata};
@@ -275,10 +275,15 @@ impl<'a> Engine<'a> {
         // Collect explanations
         let explanations = extract_explanations(enriched_calls);
 
+        // Flag statements that fell back to Resource "*" so consumers can
+        // surface them for review
+        let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
+
         Ok(GeneratePoliciesResult {
             policies,
             explanations: Some(explanations),
             resource_binding_explanations: None,
+            warnings,
         })
     }
 }
