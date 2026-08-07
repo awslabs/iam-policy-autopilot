@@ -192,7 +192,14 @@ mod tests {
     #[test]
     fn embedded_model_parses_and_resolves_known_handler() {
         let index = ModelIndex::load().unwrap();
-        assert_eq!(index.version(), Some("v6.34.0"));
+        // Assert the shape, not the exact tag: the model is regenerated whenever
+        // the provider submodule is bumped, so pinning the version here would
+        // fail on every bump.
+        let version = index.version().expect("embedded model records a version");
+        assert!(
+            version.starts_with('v') && version[1..].starts_with(|c: char| c.is_ascii_digit()),
+            "unexpected provider version format: {version}"
+        );
         let key = CallPatternKey {
             module_path: "accessanalyzer".to_string(),
             class_name: None,

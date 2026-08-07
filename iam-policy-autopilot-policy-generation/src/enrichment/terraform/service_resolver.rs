@@ -577,7 +577,9 @@ mod tests {
     #[case("aws_api_gateway_rest_api", "apigateway", "rest_api")]
     #[case("aws_dx_connection", "directconnect", "connection")]
     #[case("aws_cloudwatch_event_rule", "events", "rule")]
-    #[case("aws_elb", "elb", "elb")]
+    // Classic ELB's ARN namespace (and IAM prefix) is `elasticloadbalancing`,
+    // not the provider package name `elb`.
+    #[case("aws_elb", "elasticloadbalancing", "elb")]
     // Regex fallback matches
     #[case("aws_cloudwatch_metric_alarm", "cloudwatch", "metric_alarm")]
     #[case("aws_cloudwatch_log_group", "logs", "group")]
