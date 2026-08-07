@@ -22,6 +22,7 @@ bindings = "bin"
 # not maintained Python code).
 exclude = [
     "iam-policy-autopilot-policy-generation/resources/config/sdks",
+    "iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws",
     "iam-policy-autopilot-policy-generation/tests/resources",
     "iam-policy-autopilot-cli/tests/resources",
     "iam-policy-autopilot-mcp-server/tests/test_data",
