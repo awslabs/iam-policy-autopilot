@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.34.0",
+  "version": "v6.58.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -849,6 +849,66 @@
     },
     {
       "module_path": "amp",
+      "class_name": "anomalyDetectorResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "CreateAnomalyDetector"
+        },
+        {
+          "service": "amp",
+          "operation": "DescribeAnomalyDetector"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "anomalyDetectorResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DeleteAnomalyDetector"
+        },
+        {
+          "service": "amp",
+          "operation": "DescribeAnomalyDetector"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "anomalyDetectorResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DescribeAnomalyDetector"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "anomalyDetectorResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DescribeAnomalyDetector"
+        },
+        {
+          "service": "amp",
+          "operation": "PutAnomalyDetector"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
       "class_name": "queryLoggingConfigurationResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -964,6 +1024,66 @@
         {
           "service": "amp",
           "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "scraperLoggingConfigurationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DescribeScraperLoggingConfiguration"
+        },
+        {
+          "service": "amp",
+          "operation": "UpdateScraperLoggingConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "scraperLoggingConfigurationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DeleteScraperLoggingConfiguration"
+        },
+        {
+          "service": "amp",
+          "operation": "DescribeScraperLoggingConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "scraperLoggingConfigurationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DescribeScraperLoggingConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "amp",
+      "class_name": "scraperLoggingConfigurationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "amp",
+          "operation": "DescribeScraperLoggingConfiguration"
+        },
+        {
+          "service": "amp",
+          "operation": "UpdateScraperLoggingConfiguration"
         }
       ]
     },
@@ -2328,6 +2448,10 @@
         {
           "service": "apigateway",
           "operation": "DeleteRestApi"
+        },
+        {
+          "service": "apigateway",
+          "operation": "GetRestApi"
         }
       ]
     },
@@ -6936,6 +7060,118 @@
       ]
     },
     {
+      "module_path": "arczonalshift",
+      "class_name": "autoshiftObserverNotificationStatusResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateAutoshiftObserverNotificationStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "autoshiftObserverNotificationStatusResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateAutoshiftObserverNotificationStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "autoshiftObserverNotificationStatusResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "GetAutoshiftObserverNotificationStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "autoshiftObserverNotificationStatusResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateAutoshiftObserverNotificationStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "resourceZonalAutoshiftConfiguration",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "CreatePracticeRunConfiguration"
+        },
+        {
+          "service": "arc-zonal-shift",
+          "operation": "DeletePracticeRunConfiguration"
+        },
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateZonalAutoshiftConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "resourceZonalAutoshiftConfiguration",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "DeletePracticeRunConfiguration"
+        },
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateZonalAutoshiftConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "resourceZonalAutoshiftConfiguration",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "GetManagedResource"
+        }
+      ]
+    },
+    {
+      "module_path": "arczonalshift",
+      "class_name": "resourceZonalAutoshiftConfiguration",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdatePracticeRunConfiguration"
+        },
+        {
+          "service": "arc-zonal-shift",
+          "operation": "UpdateZonalAutoshiftConfiguration"
+        }
+      ]
+    },
+    {
       "module_path": "athena",
       "class_name": null,
       "function_name": "resourceDataCatalogCreate",
@@ -9369,6 +9605,94 @@
     },
     {
       "module_path": "bedrock",
+      "class_name": "evaluationJobResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "CreateEvaluationJob"
+        },
+        {
+          "service": "bedrock",
+          "operation": "GetEvaluationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "evaluationJobResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetEvaluationJob"
+        },
+        {
+          "service": "bedrock",
+          "operation": "StopEvaluationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "evaluationJobResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetEvaluationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "foundationModelAgreementResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "CreateFoundationModelAgreement"
+        },
+        {
+          "service": "bedrock",
+          "operation": "GetFoundationModelAvailability"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "foundationModelAgreementResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "DeleteFoundationModelAgreement"
+        },
+        {
+          "service": "bedrock",
+          "operation": "GetFoundationModelAvailability"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "foundationModelAgreementResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetFoundationModelAvailability"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
       "class_name": "guardrailResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -9628,6 +9952,34 @@
         {
           "service": "bedrock",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "useCaseForModelAccessResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetUseCaseForModelAccess"
+        },
+        {
+          "service": "bedrock",
+          "operation": "PutUseCaseForModelAccess"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "useCaseForModelAccessResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetUseCaseForModelAccess"
         }
       ]
     },
@@ -10035,6 +10387,10 @@
       "sdk_operations": [
         {
           "service": "bedrock-agent",
+          "operation": "GetDataSource"
+        },
+        {
+          "service": "bedrock-agent",
           "operation": "UpdateDataSource"
         }
       ]
@@ -10393,6 +10749,50 @@
     },
     {
       "module_path": "bedrockagentcore",
+      "class_name": "browserProfileResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateBrowserProfile"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetBrowserProfile"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "browserProfileResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteBrowserProfile"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetBrowserProfile"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "browserProfileResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetBrowserProfile"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
       "class_name": "browserResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -10481,6 +10881,66 @@
     },
     {
       "module_path": "bedrockagentcore",
+      "class_name": "evaluatorResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateEvaluator"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetEvaluator"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "evaluatorResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteEvaluator"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetEvaluator"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "evaluatorResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetEvaluator"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "evaluatorResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetEvaluator"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdateEvaluator"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
       "class_name": "gatewayResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -10507,7 +10967,19 @@
         },
         {
           "service": "bedrock-agentcore-control",
+          "operation": "DeleteGatewayTarget"
+        },
+        {
+          "service": "bedrock-agentcore-control",
           "operation": "GetGateway"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetGatewayTarget"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "ListGatewayTargets"
         }
       ]
     },
@@ -10601,6 +11073,66 @@
     },
     {
       "module_path": "bedrockagentcore",
+      "class_name": "harnessResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetHarness"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "harnessResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetHarness"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "harnessResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetHarness"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "harnessResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdateHarness"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
       "class_name": "memoryResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -10649,6 +11181,10 @@
       "function_name": "Update",
       "call_type": "instance_method",
       "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetMemory"
+        },
         {
           "service": "bedrock-agentcore-control",
           "operation": "UpdateMemory"
@@ -10713,6 +11249,246 @@
     },
     {
       "module_path": "bedrockagentcore",
+      "class_name": "onlineEvaluationConfigResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateOnlineEvaluationConfig"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetOnlineEvaluationConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "onlineEvaluationConfigResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteOnlineEvaluationConfig"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetOnlineEvaluationConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "onlineEvaluationConfigResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetOnlineEvaluationConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "onlineEvaluationConfigResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetOnlineEvaluationConfig"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdateOnlineEvaluationConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyEngineResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreatePolicyEngine"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicyEngine"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyEngineResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeletePolicyEngine"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicyEngine"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyEngineResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicyEngine"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyEngineResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicyEngine"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdatePolicyEngine"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreatePolicy"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeletePolicy"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "policyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetPolicy"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdatePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "registryResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateRegistry"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "registryResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteRegistry"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "registryResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "registryResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetRegistry"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdateRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
       "class_name": "resourceMemoryStrategy",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -10763,7 +11539,59 @@
       "sdk_operations": [
         {
           "service": "bedrock-agentcore-control",
+          "operation": "GetMemory"
+        },
+        {
+          "service": "bedrock-agentcore-control",
           "operation": "UpdateMemory"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "PutResourcePolicy"
         }
       ]
     },
@@ -14231,14 +15059,6 @@
         },
         {
           "service": "cloudfront",
-          "operation": "TagResource"
-        },
-        {
-          "service": "cloudfront",
-          "operation": "UntagResource"
-        },
-        {
-          "service": "cloudfront",
           "operation": "UpdateDistribution"
         }
       ]
@@ -15309,10 +16129,70 @@
     },
     {
       "module_path": "cloudwatch",
+      "class_name": "alarmMuteRuleResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetAlarmMuteRule"
+        },
+        {
+          "service": "cloudwatch",
+          "operation": "PutAlarmMuteRule"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "alarmMuteRuleResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "DeleteAlarmMuteRule"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "alarmMuteRuleResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetAlarmMuteRule"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "alarmMuteRuleResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetAlarmMuteRule"
+        },
+        {
+          "service": "cloudwatch",
+          "operation": "PutAlarmMuteRule"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
       "class_name": "contributorInsightRuleResource",
       "function_name": "Create",
       "call_type": "instance_method",
       "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "DisableInsightRules"
+        },
         {
           "service": "cloudwatch",
           "operation": "EnableInsightRules"
@@ -15360,6 +16240,10 @@
         {
           "service": "cloudwatch",
           "operation": "EnableInsightRules"
+        },
+        {
+          "service": "cloudwatch",
+          "operation": "PutInsightRule"
         }
       ]
     },
@@ -15372,6 +16256,10 @@
         {
           "service": "cloudwatch",
           "operation": "DisableInsightRules"
+        },
+        {
+          "service": "cloudwatch",
+          "operation": "EnableInsightRules"
         },
         {
           "service": "cloudwatch",
@@ -15392,10 +16280,6 @@
         {
           "service": "cloudwatch",
           "operation": "DeleteInsightRules"
-        },
-        {
-          "service": "cloudwatch",
-          "operation": "ListManagedInsightRules"
         }
       ]
     },
@@ -15423,11 +16307,51 @@
         },
         {
           "service": "cloudwatch",
-          "operation": "ListManagedInsightRules"
+          "operation": "EnableInsightRules"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "otelEnrichmentResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetOTelEnrichment"
         },
         {
           "service": "cloudwatch",
-          "operation": "PutManagedInsightRules"
+          "operation": "StartOTelEnrichment"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "otelEnrichmentResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetOTelEnrichment"
+        },
+        {
+          "service": "cloudwatch",
+          "operation": "StopOTelEnrichment"
+        }
+      ]
+    },
+    {
+      "module_path": "cloudwatch",
+      "class_name": "otelEnrichmentResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "cloudwatch",
+          "operation": "GetOTelEnrichment"
         }
       ]
     },
@@ -25939,7 +26863,15 @@
         },
         {
           "service": "ds",
+          "operation": "DescribeDirectoryDataAccess"
+        },
+        {
+          "service": "ds",
           "operation": "DescribeDomainControllers"
+        },
+        {
+          "service": "ds",
+          "operation": "EnableDirectoryDataAccess"
         },
         {
           "service": "ds",
@@ -25976,6 +26908,10 @@
         {
           "service": "ds",
           "operation": "DescribeDirectories"
+        },
+        {
+          "service": "ds",
+          "operation": "DescribeDirectoryDataAccess"
         }
       ]
     },
@@ -25991,11 +26927,23 @@
         },
         {
           "service": "ds",
+          "operation": "DescribeDirectoryDataAccess"
+        },
+        {
+          "service": "ds",
           "operation": "DescribeDomainControllers"
         },
         {
           "service": "ds",
+          "operation": "DisableDirectoryDataAccess"
+        },
+        {
+          "service": "ds",
           "operation": "DisableSso"
+        },
+        {
+          "service": "ds",
+          "operation": "EnableDirectoryDataAccess"
         },
         {
           "service": "ds",
@@ -26703,6 +27651,10 @@
         },
         {
           "service": "dynamodb",
+          "operation": "RestoreTableFromBackup"
+        },
+        {
+          "service": "dynamodb",
           "operation": "RestoreTableToPointInTime"
         },
         {
@@ -26783,6 +27735,10 @@
       "sdk_operations": [
         {
           "service": "dynamodb",
+          "operation": "DescribeTable"
+        },
+        {
+          "service": "dynamodb",
           "operation": "GetItem"
         },
         {
@@ -26811,6 +27767,10 @@
       "sdk_operations": [
         {
           "service": "dynamodb",
+          "operation": "DescribeTable"
+        },
+        {
+          "service": "dynamodb",
           "operation": "GetItem"
         }
       ]
@@ -26824,6 +27784,10 @@
         {
           "service": "dynamodb",
           "operation": "DeleteItem"
+        },
+        {
+          "service": "dynamodb",
+          "operation": "DescribeTable"
         },
         {
           "service": "dynamodb",
@@ -27616,6 +28580,10 @@
         {
           "service": "ec2",
           "operation": "DescribeClientVpnEndpoints"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeTransitGatewayAttachments"
         }
       ]
     },
@@ -28015,7 +28983,23 @@
         },
         {
           "service": "ec2",
+          "operation": "DescribeVpcEndpoints"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
           "operation": "DetachNetworkInterface"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetIpamPoolAllocations"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyVpcEndpoint"
         }
       ]
     },
@@ -28091,7 +29075,23 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteSecurityGroup"
+        },
+        {
+          "service": "ec2",
           "operation": "DeleteVpc"
+        },
+        {
+          "service": "ec2",
+          "operation": "DeleteVpcEndpoints"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeSecurityGroups"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcEndpoints"
         },
         {
           "service": "ec2",
@@ -28858,6 +29858,18 @@
     {
       "module_path": "ec2",
       "class_name": null,
+      "function_name": "resourceIPAMPoolCIDRAllocationUpdate",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "GetIpamPoolAllocations"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": null,
       "function_name": "resourceIPAMPoolCIDRCreate",
       "call_type": "function",
       "sdk_operations": [
@@ -28924,10 +29936,6 @@
         {
           "service": "ec2",
           "operation": "DescribeIpamScopes"
-        },
-        {
-          "service": "ec2",
-          "operation": "DescribeVpcs"
         },
         {
           "service": "ec2",
@@ -31719,7 +32727,23 @@
         },
         {
           "service": "ec2",
+          "operation": "DescribeVpcEndpoints"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcs"
+        },
+        {
+          "service": "ec2",
           "operation": "DetachNetworkInterface"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetIpamPoolAllocations"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyVpcEndpoint"
         }
       ]
     },
@@ -33415,7 +34439,23 @@
       "sdk_operations": [
         {
           "service": "ec2",
+          "operation": "DeleteSecurityGroup"
+        },
+        {
+          "service": "ec2",
           "operation": "DeleteVpc"
+        },
+        {
+          "service": "ec2",
+          "operation": "DeleteVpcEndpoints"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeSecurityGroups"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVpcEndpoints"
         },
         {
           "service": "ec2",
@@ -35109,6 +36149,66 @@
     },
     {
       "module_path": "ec2",
+      "class_name": "ebsVolumeCopyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CopyVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "ebsVolumeCopyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteVolume"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "ebsVolumeCopyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "ebsVolumeCopyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeVolumes"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyVolume"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
       "class_name": "eipDomainNameResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -35261,6 +36361,94 @@
     },
     {
       "module_path": "ec2",
+      "class_name": "localGatewayRouteTableResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CreateLocalGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTables"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "localGatewayRouteTableResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteLocalGatewayRouteTable"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTables"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "localGatewayRouteTableResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTables"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "localGatewayRouteTableVirtualInterfaceGroupAssociationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CreateLocalGatewayRouteTableVirtualInterfaceGroupAssociation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTableVirtualInterfaceGroupAssociations"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "localGatewayRouteTableVirtualInterfaceGroupAssociationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteLocalGatewayRouteTableVirtualInterfaceGroupAssociation"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTableVirtualInterfaceGroupAssociations"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "localGatewayRouteTableVirtualInterfaceGroupAssociationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeLocalGatewayRouteTableVirtualInterfaceGroupAssociations"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
       "class_name": "natGatewayEIPAssociationResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -35300,6 +36488,46 @@
         {
           "service": "ec2",
           "operation": "DescribeNatGateways"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "networkInsightsAccessScopeResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CreateNetworkInsightsAccessScope"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "networkInsightsAccessScopeResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteNetworkInsightsAccessScope"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "networkInsightsAccessScopeResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeNetworkInsightsAccessScopes"
+        },
+        {
+          "service": "ec2",
+          "operation": "GetNetworkInsightsAccessScopeContent"
         }
       ]
     },
@@ -35752,6 +36980,102 @@
         {
           "service": "ec2",
           "operation": "ModifyTransitGateway"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyEntryResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CreateTransitGatewayMeteringPolicyEntry"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyEntryResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteTransitGatewayMeteringPolicyEntry"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyEntryResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "GetTransitGatewayMeteringPolicyEntries"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "CreateTransitGatewayMeteringPolicy"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeTransitGatewayMeteringPolicies"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DeleteTransitGatewayMeteringPolicy"
+        },
+        {
+          "service": "ec2",
+          "operation": "DescribeTransitGatewayMeteringPolicies"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeTransitGatewayMeteringPolicies"
+        }
+      ]
+    },
+    {
+      "module_path": "ec2",
+      "class_name": "transitGatewayMeteringPolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ec2",
+          "operation": "DescribeTransitGatewayMeteringPolicies"
+        },
+        {
+          "service": "ec2",
+          "operation": "ModifyTransitGatewayMeteringPolicy"
         }
       ]
     },
@@ -37344,6 +38668,134 @@
         {
           "service": "ecs",
           "operation": "UpdateTaskSet"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "CreateDaemon"
+        },
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemon"
+        },
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemonRevisions"
+        },
+        {
+          "service": "ecs",
+          "operation": "TagResource"
+        },
+        {
+          "service": "ecs",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DeleteDaemon"
+        },
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemon"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemon"
+        },
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemonRevisions"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemon"
+        },
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemonRevisions"
+        },
+        {
+          "service": "ecs",
+          "operation": "UpdateDaemon"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonTaskDefinitionResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemonTaskDefinition"
+        },
+        {
+          "service": "ecs",
+          "operation": "RegisterDaemonTaskDefinition"
+        },
+        {
+          "service": "ecs",
+          "operation": "TagResource"
+        },
+        {
+          "service": "ecs",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonTaskDefinitionResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DeleteDaemonTaskDefinition"
+        }
+      ]
+    },
+    {
+      "module_path": "ecs",
+      "class_name": "daemonTaskDefinitionResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "ecs",
+          "operation": "DescribeDaemonTaskDefinition"
         }
       ]
     },
@@ -45937,6 +47389,74 @@
     },
     {
       "module_path": "glue",
+      "class_name": "catalogResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "glue",
+          "operation": "CreateCatalog"
+        },
+        {
+          "service": "glue",
+          "operation": "GetCatalog"
+        }
+      ]
+    },
+    {
+      "module_path": "glue",
+      "class_name": "catalogResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "glue",
+          "operation": "DeleteCatalog"
+        }
+      ]
+    },
+    {
+      "module_path": "glue",
+      "class_name": "catalogResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "glue",
+          "operation": "GetCatalog"
+        },
+        {
+          "service": "glue",
+          "operation": "GetTags"
+        }
+      ]
+    },
+    {
+      "module_path": "glue",
+      "class_name": "catalogResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "glue",
+          "operation": "GetCatalog"
+        },
+        {
+          "service": "glue",
+          "operation": "TagResource"
+        },
+        {
+          "service": "glue",
+          "operation": "UntagResource"
+        },
+        {
+          "service": "glue",
+          "operation": "UpdateCatalog"
+        }
+      ]
+    },
+    {
+      "module_path": "glue",
       "class_name": "catalogTableOptimizerResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -52352,6 +53872,66 @@
       ]
     },
     {
+      "module_path": "kafka",
+      "class_name": "topicResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "CreateTopic"
+        },
+        {
+          "service": "kafka",
+          "operation": "DescribeTopic"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "topicResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DeleteTopic"
+        },
+        {
+          "service": "kafka",
+          "operation": "DescribeTopic"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "topicResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DescribeTopic"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "topicResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DescribeTopic"
+        },
+        {
+          "service": "kafka",
+          "operation": "UpdateTopic"
+        }
+      ]
+    },
+    {
       "module_path": "kafkaconnect",
       "class_name": null,
       "function_name": "resourceConnectorCreate",
@@ -53240,6 +54820,50 @@
         {
           "service": "kinesis",
           "operation": "UpdateStreamMode"
+        },
+        {
+          "service": "kinesis",
+          "operation": "UpdateStreamWarmThroughput"
+        }
+      ]
+    },
+    {
+      "module_path": "kinesis",
+      "class_name": "accountSettingsResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kinesis",
+          "operation": "DescribeAccountSettings"
+        },
+        {
+          "service": "kinesis",
+          "operation": "UpdateAccountSettings"
+        }
+      ]
+    },
+    {
+      "module_path": "kinesis",
+      "class_name": "accountSettingsResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kinesis",
+          "operation": "DescribeAccountSettings"
+        }
+      ]
+    },
+    {
+      "module_path": "kinesis",
+      "class_name": "accountSettingsResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kinesis",
+          "operation": "UpdateAccountSettings"
         }
       ]
     },
@@ -55611,6 +57235,10 @@
       "sdk_operations": [
         {
           "service": "lambda",
+          "operation": "GetAlias"
+        },
+        {
+          "service": "lambda",
           "operation": "GetProvisionedConcurrencyConfig"
         },
         {
@@ -55649,6 +57277,10 @@
       "function_name": "resourceProvisionedConcurrencyConfigUpdate",
       "call_type": "function",
       "sdk_operations": [
+        {
+          "service": "lambda",
+          "operation": "GetAlias"
+        },
         {
           "service": "lambda",
           "operation": "GetProvisionedConcurrencyConfig"
@@ -55704,6 +57336,62 @@
         {
           "service": "lambda",
           "operation": "PutFunctionRecursionConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "lambda",
+      "class_name": "functionScalingConfigResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda",
+          "operation": "GetFunctionScalingConfig"
+        },
+        {
+          "service": "lambda",
+          "operation": "PutFunctionScalingConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "lambda",
+      "class_name": "functionScalingConfigResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda",
+          "operation": "PutFunctionScalingConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "lambda",
+      "class_name": "functionScalingConfigResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda",
+          "operation": "GetFunctionScalingConfig"
+        }
+      ]
+    },
+    {
+      "module_path": "lambda",
+      "class_name": "functionScalingConfigResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda",
+          "operation": "GetFunctionScalingConfig"
+        },
+        {
+          "service": "lambda",
+          "operation": "PutFunctionScalingConfig"
         }
       ]
     },
@@ -59097,6 +60785,46 @@
     },
     {
       "module_path": "logs",
+      "class_name": "s3TableIntegrationSourceResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "AssociateSourceToS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "s3TableIntegrationSourceResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "DisassociateSourceFromS3TableIntegration"
+        },
+        {
+          "service": "logs",
+          "operation": "ListSourcesForS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "s3TableIntegrationSourceResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "ListSourcesForS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -59120,6 +60848,54 @@
         {
           "service": "logs",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "storageTierPolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "PutStorageTierPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "storageTierPolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "PutStorageTierPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "storageTierPolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "GetStorageTierPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "logs",
+      "class_name": "storageTierPolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "logs",
+          "operation": "PutStorageTierPolicy"
         }
       ]
     },
@@ -59916,6 +61692,146 @@
         {
           "service": "macie2",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ruleSetResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateRuleSet"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetRuleSet"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ruleSetResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteRuleSet"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ruleSetResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetRuleSet"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ruleSetResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetRuleSet"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateRuleSet"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "TagResource"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "trafficPolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateTrafficPolicy"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetTrafficPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "trafficPolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteTrafficPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "trafficPolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetTrafficPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "trafficPolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetTrafficPolicy"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateTrafficPolicy"
         }
       ]
     },
@@ -61131,7 +63047,19 @@
         },
         {
           "service": "mq",
+          "operation": "DescribeSharedResources"
+        },
+        {
+          "service": "mq",
           "operation": "DescribeUser"
+        },
+        {
+          "service": "mq",
+          "operation": "RebootBroker"
+        },
+        {
+          "service": "mq",
+          "operation": "UpdateBroker"
         }
       ]
     },
@@ -61163,6 +63091,10 @@
         },
         {
           "service": "mq",
+          "operation": "DescribeSharedResources"
+        },
+        {
+          "service": "mq",
           "operation": "DescribeUser"
         }
       ]
@@ -61184,6 +63116,10 @@
         {
           "service": "mq",
           "operation": "DescribeBroker"
+        },
+        {
+          "service": "mq",
+          "operation": "DescribeSharedResources"
         },
         {
           "service": "mq",
@@ -61220,6 +63156,18 @@
         {
           "service": "mq",
           "operation": "UpdateConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "mq",
+      "class_name": null,
+      "function_name": "resourceConfigurationDelete",
+      "call_type": "function",
+      "sdk_operations": [
+        {
+          "service": "mq",
+          "operation": "DeleteConfiguration"
         }
       ]
     },
@@ -63524,6 +65472,14 @@
         {
           "service": "networkmanager",
           "operation": "ListAttachmentRoutingPolicyAssociations"
+        },
+        {
+          "service": "networkmanager",
+          "operation": "PutAttachmentRoutingPolicyLabel"
+        },
+        {
+          "service": "networkmanager",
+          "operation": "RemoveAttachmentRoutingPolicyLabel"
         }
       ]
     },
@@ -64861,6 +66817,50 @@
     },
     {
       "module_path": "observabilityadmin",
+      "class_name": "s3TableIntegrationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "CreateS3TableIntegration"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "s3TableIntegrationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "DeleteS3TableIntegration"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "s3TableIntegrationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetS3TableIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -64884,6 +66884,202 @@
         {
           "service": "observabilityadmin",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryEvaluationForOrganizationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "StartTelemetryEvaluationForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryEvaluationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "StartTelemetryEvaluation"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryPipelineResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "CreateTelemetryPipeline"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryPipeline"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryPipelineResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "DeleteTelemetryPipeline"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryPipeline"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryPipelineResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryPipeline"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryPipelineResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryPipeline"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "UpdateTelemetryPipeline"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleForOrganizationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "CreateTelemetryRuleForOrganization"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRuleForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleForOrganizationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "DeleteTelemetryRuleForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleForOrganizationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRuleForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleForOrganizationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRuleForOrganization"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "UpdateTelemetryRuleForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "CreateTelemetryRule"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRule"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "DeleteTelemetryRule"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRule"
+        }
+      ]
+    },
+    {
+      "module_path": "observabilityadmin",
+      "class_name": "telemetryRuleResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "observabilityadmin",
+          "operation": "GetTelemetryRule"
+        },
+        {
+          "service": "observabilityadmin",
+          "operation": "UpdateTelemetryRule"
         }
       ]
     },
@@ -65004,6 +67200,10 @@
         {
           "service": "odb",
           "operation": "GetCloudVmCluster"
+        },
+        {
+          "service": "odb",
+          "operation": "ListTagsForResource"
         }
       ]
     },
@@ -65032,6 +67232,10 @@
         {
           "service": "odb",
           "operation": "GetCloudVmCluster"
+        },
+        {
+          "service": "odb",
+          "operation": "ListTagsForResource"
         }
       ]
     },
@@ -65136,6 +67340,22 @@
         {
           "service": "odb",
           "operation": "GetOdbPeeringConnection"
+        }
+      ]
+    },
+    {
+      "module_path": "odb",
+      "class_name": "resourceNetworkPeeringConnection",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "odb",
+          "operation": "GetOdbPeeringConnection"
+        },
+        {
+          "service": "odb",
+          "operation": "UpdateOdbPeeringConnection"
         }
       ]
     },
@@ -65772,6 +67992,54 @@
         {
           "service": "opensearchserverless",
           "operation": "UpdateAccessPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "opensearchserverless",
+      "class_name": "collectionGroupResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "opensearchserverless",
+          "operation": "CreateCollectionGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "opensearchserverless",
+      "class_name": "collectionGroupResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "opensearchserverless",
+          "operation": "DeleteCollectionGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "opensearchserverless",
+      "class_name": "collectionGroupResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "opensearchserverless",
+          "operation": "BatchGetCollectionGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "opensearchserverless",
+      "class_name": "collectionGroupResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "opensearchserverless",
+          "operation": "UpdateCollectionGroup"
         }
       ]
     },
@@ -66553,6 +68821,46 @@
     },
     {
       "module_path": "organizations",
+      "class_name": "awsServiceAccessResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "organizations",
+          "operation": "EnableAWSServiceAccess"
+        },
+        {
+          "service": "organizations",
+          "operation": "ListAWSServiceAccessForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "organizations",
+      "class_name": "awsServiceAccessResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "organizations",
+          "operation": "DisableAWSServiceAccess"
+        }
+      ]
+    },
+    {
+      "module_path": "organizations",
+      "class_name": "awsServiceAccessResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "organizations",
+          "operation": "ListAWSServiceAccessForOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "organizations",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -66576,6 +68884,50 @@
         {
           "service": "organizations",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "pipelineEndpointResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "CreatePipelineEndpoint"
+        },
+        {
+          "service": "osis",
+          "operation": "ListPipelineEndpoints"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "pipelineEndpointResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "DeletePipelineEndpoint"
+        },
+        {
+          "service": "osis",
+          "operation": "ListPipelineEndpoints"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "pipelineEndpointResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "ListPipelineEndpoints"
         }
       ]
     },
@@ -66641,6 +68993,54 @@
     },
     {
       "module_path": "osis",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "DeleteResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "GetResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "osis",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "osis",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -66664,6 +69064,50 @@
         {
           "service": "osis",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "outposts",
+      "class_name": "capacityTaskResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "outposts",
+          "operation": "GetCapacityTask"
+        },
+        {
+          "service": "outposts",
+          "operation": "StartCapacityTask"
+        }
+      ]
+    },
+    {
+      "module_path": "outposts",
+      "class_name": "capacityTaskResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "outposts",
+          "operation": "CancelCapacityTask"
+        },
+        {
+          "service": "outposts",
+          "operation": "GetCapacityTask"
+        }
+      ]
+    },
+    {
+      "module_path": "outposts",
+      "class_name": "capacityTaskResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "outposts",
+          "operation": "GetCapacityTask"
         }
       ]
     },
@@ -67421,6 +69865,58 @@
     },
     {
       "module_path": "pinpointsmsvoicev2",
+      "class_name": "eventDestinationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "CreateEventDestination"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "UpdateEventDestination"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "eventDestinationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DeleteEventDestination"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "eventDestinationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeConfigurationSets"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "eventDestinationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "UpdateEventDestination"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
       "class_name": "optOutListResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -67487,6 +69983,10 @@
         },
         {
           "service": "pinpoint-sms-voice-v2",
+          "operation": "DisassociateOriginationIdentity"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
           "operation": "ReleasePhoneNumber"
         }
       ]
@@ -67516,6 +70016,110 @@
         {
           "service": "pinpoint-sms-voice-v2",
           "operation": "UpdatePhoneNumber"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "poolResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "AssociateOriginationIdentity"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "CreatePool"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePhoneNumbers"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePools"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeSenderIds"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "ListPoolOriginationIdentities"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "UpdatePool"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "poolResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DeletePool"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePools"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "poolResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePools"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "ListPoolOriginationIdentities"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "poolResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "AssociateOriginationIdentity"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePhoneNumbers"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribePools"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeSenderIds"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DisassociateOriginationIdentity"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "ListPoolOriginationIdentities"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "UpdatePool"
         }
       ]
     },
@@ -71365,6 +73969,22 @@
     },
     {
       "module_path": "rds",
+      "class_name": "integrationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "rds",
+          "operation": "DescribeIntegrations"
+        },
+        {
+          "service": "rds",
+          "operation": "ModifyIntegration"
+        }
+      ]
+    },
+    {
+      "module_path": "rds",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -72709,6 +75329,54 @@
     },
     {
       "module_path": "redshift",
+      "class_name": "namespaceRegistrationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "redshift",
+          "operation": "DescribeClusters"
+        },
+        {
+          "service": "redshift",
+          "operation": "DescribeDataShares"
+        },
+        {
+          "service": "redshift",
+          "operation": "RegisterNamespace"
+        }
+      ]
+    },
+    {
+      "module_path": "redshift",
+      "class_name": "namespaceRegistrationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "redshift",
+          "operation": "DeregisterNamespace"
+        }
+      ]
+    },
+    {
+      "module_path": "redshift",
+      "class_name": "namespaceRegistrationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "redshift",
+          "operation": "DescribeClusters"
+        },
+        {
+          "service": "redshift",
+          "operation": "DescribeDataShares"
+        }
+      ]
+    },
+    {
+      "module_path": "redshift",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -73479,6 +76147,82 @@
         },
         {
           "service": "resiliencehub",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "policyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreatePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "policyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeletePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "policyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "GetPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "policyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdatePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "TagResource"
+        },
+        {
+          "service": "resiliencehubv2",
           "operation": "UntagResource"
         }
       ]
@@ -76516,6 +79260,10 @@
         {
           "service": "route53resolver",
           "operation": "GetResolverRule"
+        },
+        {
+          "service": "route53resolver",
+          "operation": "ListTagsForResource"
         }
       ]
     },
@@ -76544,6 +79292,10 @@
         {
           "service": "route53resolver",
           "operation": "GetResolverRule"
+        },
+        {
+          "service": "route53resolver",
+          "operation": "ListTagsForResource"
         }
       ]
     },
@@ -76556,6 +79308,10 @@
         {
           "service": "route53resolver",
           "operation": "GetResolverRule"
+        },
+        {
+          "service": "route53resolver",
+          "operation": "ListTagsForResource"
         },
         {
           "service": "route53resolver",
@@ -79533,6 +82289,50 @@
     },
     {
       "module_path": "s3control",
+      "class_name": "multiRegionAccessPointRoutesResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3control",
+          "operation": "GetMultiRegionAccessPointRoutes"
+        },
+        {
+          "service": "s3control",
+          "operation": "SubmitMultiRegionAccessPointRoutes"
+        }
+      ]
+    },
+    {
+      "module_path": "s3control",
+      "class_name": "multiRegionAccessPointRoutesResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3control",
+          "operation": "GetMultiRegionAccessPointRoutes"
+        }
+      ]
+    },
+    {
+      "module_path": "s3control",
+      "class_name": "multiRegionAccessPointRoutesResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3control",
+          "operation": "GetMultiRegionAccessPointRoutes"
+        },
+        {
+          "service": "s3control",
+          "operation": "SubmitMultiRegionAccessPointRoutes"
+        }
+      ]
+    },
+    {
+      "module_path": "s3control",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -79556,6 +82356,290 @@
         {
           "service": "s3control",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "accessPointResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "CreateAccessPoint"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetAccessPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "accessPointResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "DeleteAccessPoint"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetAccessPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "accessPointResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetAccessPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemPolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "PutFileSystemPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemPolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "DeleteFileSystemPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemPolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetFileSystemPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemPolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "PutFileSystemPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "CreateFileSystem"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetFileSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "DeleteFileSystem"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetFileSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "fileSystemResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetFileSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "mountTargetResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "CreateMountTarget"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetMountTarget"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "mountTargetResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "DeleteMountTarget"
+        },
+        {
+          "service": "s3files",
+          "operation": "GetMountTarget"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "mountTargetResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetMountTarget"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "mountTargetResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetMountTarget"
+        },
+        {
+          "service": "s3files",
+          "operation": "UpdateMountTarget"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "TagResource"
+        },
+        {
+          "service": "s3files",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "synchronizationConfigurationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetSynchronizationConfiguration"
+        },
+        {
+          "service": "s3files",
+          "operation": "PutSynchronizationConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "synchronizationConfigurationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetFileSystem"
+        },
+        {
+          "service": "s3files",
+          "operation": "PutSynchronizationConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "synchronizationConfigurationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetSynchronizationConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "s3files",
+      "class_name": "synchronizationConfigurationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "s3files",
+          "operation": "GetSynchronizationConfiguration"
+        },
+        {
+          "service": "s3files",
+          "operation": "PutSynchronizationConfiguration"
         }
       ]
     },
@@ -81921,6 +85005,158 @@
     },
     {
       "module_path": "sagemaker",
+      "class_name": "algorithmResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "CreateAlgorithm"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeAlgorithm"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "algorithmResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DeleteAlgorithm"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeAlgorithm"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "algorithmResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeAlgorithm"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hubContentReferenceResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "CreateHubContentReference"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHubContent"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hubContentReferenceResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DeleteHubContentReference"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHubContent"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hubContentReferenceResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHubContent"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hubContentReferenceResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHubContent"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "UpdateHubContentReference"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hyperParameterTuningJobResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "CreateHyperParameterTuningJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHyperParameterTuningJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hyperParameterTuningJobResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DeleteHyperParameterTuningJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHyperParameterTuningJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "StopHyperParameterTuningJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "hyperParameterTuningJobResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeHyperParameterTuningJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
       "class_name": "labelingJobResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -81956,6 +85192,66 @@
         {
           "service": "sagemaker",
           "operation": "DescribeLabelingJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "mlflowAppResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "CreateMlflowApp"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeMlflowApp"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "mlflowAppResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DeleteMlflowApp"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeMlflowApp"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "mlflowAppResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeMlflowApp"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "mlflowAppResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeMlflowApp"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "UpdateMlflowApp"
         }
       ]
     },
@@ -82036,6 +85332,78 @@
         {
           "service": "sagemaker",
           "operation": "UpdateModelCard"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "resourceTrainingJob",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "CreateTrainingJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeTrainingJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "resourceTrainingJob",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DeleteModelPackage"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DeleteTrainingJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "DescribeTrainingJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "ListModelPackages"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "StopTrainingJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "resourceTrainingJob",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeTrainingJob"
+        }
+      ]
+    },
+    {
+      "module_path": "sagemaker",
+      "class_name": "resourceTrainingJob",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sagemaker",
+          "operation": "DescribeTrainingJob"
+        },
+        {
+          "service": "sagemaker",
+          "operation": "UpdateTrainingJob"
         }
       ]
     },
@@ -83517,6 +86885,90 @@
     },
     {
       "module_path": "securityhub",
+      "class_name": "accountV2Resource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "EnableSecurityHubV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "accountV2Resource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DisableSecurityHubV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "accountV2Resource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DescribeSecurityHubV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "aggregatorV2Resource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "CreateAggregatorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "aggregatorV2Resource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DeleteAggregatorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "aggregatorV2Resource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "GetAggregatorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "aggregatorV2Resource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "UpdateAggregatorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
       "class_name": "automationRuleResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -83564,6 +87016,110 @@
         {
           "service": "securityhub",
           "operation": "BatchUpdateAutomationRules"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "automationRuleV2Resource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "CreateAutomationRuleV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "automationRuleV2Resource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DeleteAutomationRuleV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "automationRuleV2Resource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "GetAutomationRuleV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "automationRuleV2Resource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "UpdateAutomationRuleV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "connectorV2Resource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "CreateConnectorV2"
+        },
+        {
+          "service": "securityhub",
+          "operation": "GetConnectorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "connectorV2Resource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DeleteConnectorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "connectorV2Resource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "GetConnectorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "connectorV2Resource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "GetConnectorV2"
+        },
+        {
+          "service": "securityhub",
+          "operation": "UpdateConnectorV2"
         }
       ]
     },
@@ -85276,6 +88832,54 @@
         {
           "service": "service-quotas",
           "operation": "RequestServiceQuotaIncrease"
+        }
+      ]
+    },
+    {
+      "module_path": "servicequotas",
+      "class_name": "autoManagementResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "service-quotas",
+          "operation": "StartAutoManagement"
+        }
+      ]
+    },
+    {
+      "module_path": "servicequotas",
+      "class_name": "autoManagementResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "service-quotas",
+          "operation": "StopAutoManagement"
+        }
+      ]
+    },
+    {
+      "module_path": "servicequotas",
+      "class_name": "autoManagementResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "service-quotas",
+          "operation": "GetAutoManagementConfiguration"
+        }
+      ]
+    },
+    {
+      "module_path": "servicequotas",
+      "class_name": "autoManagementResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "service-quotas",
+          "operation": "UpdateAutoManagement"
         }
       ]
     },
@@ -89897,6 +93501,50 @@
     },
     {
       "module_path": "ssoadmin",
+      "class_name": "regionResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sso-admin",
+          "operation": "AddRegion"
+        },
+        {
+          "service": "sso-admin",
+          "operation": "DescribeRegion"
+        }
+      ]
+    },
+    {
+      "module_path": "ssoadmin",
+      "class_name": "regionResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sso-admin",
+          "operation": "DescribeRegion"
+        },
+        {
+          "service": "sso-admin",
+          "operation": "RemoveRegion"
+        }
+      ]
+    },
+    {
+      "module_path": "ssoadmin",
+      "class_name": "regionResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sso-admin",
+          "operation": "DescribeRegion"
+        }
+      ]
+    },
+    {
+      "module_path": "ssoadmin",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -92292,6 +95940,54 @@
         {
           "service": "transfer",
           "operation": "UpdateWebApp"
+        }
+      ]
+    },
+    {
+      "module_path": "uxc",
+      "class_name": "accountCustomizationsResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "uxc",
+          "operation": "UpdateAccountCustomizations"
+        }
+      ]
+    },
+    {
+      "module_path": "uxc",
+      "class_name": "accountCustomizationsResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "uxc",
+          "operation": "UpdateAccountCustomizations"
+        }
+      ]
+    },
+    {
+      "module_path": "uxc",
+      "class_name": "accountCustomizationsResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "uxc",
+          "operation": "GetAccountCustomizations"
+        }
+      ]
+    },
+    {
+      "module_path": "uxc",
+      "class_name": "accountCustomizationsResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "uxc",
+          "operation": "UpdateAccountCustomizations"
         }
       ]
     },
@@ -95725,6 +99421,66 @@
     },
     {
       "module_path": "wafv2",
+      "class_name": "resourceWebACLRule",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "wafv2",
+          "operation": "GetWebACL"
+        },
+        {
+          "service": "wafv2",
+          "operation": "UpdateWebACL"
+        }
+      ]
+    },
+    {
+      "module_path": "wafv2",
+      "class_name": "resourceWebACLRule",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "wafv2",
+          "operation": "GetWebACL"
+        },
+        {
+          "service": "wafv2",
+          "operation": "UpdateWebACL"
+        }
+      ]
+    },
+    {
+      "module_path": "wafv2",
+      "class_name": "resourceWebACLRule",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "wafv2",
+          "operation": "GetWebACL"
+        }
+      ]
+    },
+    {
+      "module_path": "wafv2",
+      "class_name": "resourceWebACLRule",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "wafv2",
+          "operation": "GetWebACL"
+        },
+        {
+          "service": "wafv2",
+          "operation": "UpdateWebACL"
+        }
+      ]
+    },
+    {
+      "module_path": "wafv2",
       "class_name": "resourceWebACLRuleGroupAssociation",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -95808,6 +99564,298 @@
         {
           "service": "wafv2",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "defaultDomainResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "UpdateDefaultMailDomain"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "defaultDomainResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "ListMailDomains"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "defaultDomainResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "UpdateDefaultMailDomain"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "domainResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "GetMailDomain"
+        },
+        {
+          "service": "workmail",
+          "operation": "RegisterMailDomain"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "domainResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DeregisterMailDomain"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "domainResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "GetMailDomain"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "groupResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "CreateGroup"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeGroup"
+        },
+        {
+          "service": "workmail",
+          "operation": "RegisterToWorkMail"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "groupResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DeleteGroup"
+        },
+        {
+          "service": "workmail",
+          "operation": "DeregisterFromWorkMail"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "groupResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DescribeGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "groupResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DescribeGroup"
+        },
+        {
+          "service": "workmail",
+          "operation": "UpdateGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "organizationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "CreateOrganization"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "organizationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DeleteOrganization"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "organizationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DescribeOrganization"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "TagResource"
+        },
+        {
+          "service": "workmail",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "userResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "CreateUser"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeUser"
+        },
+        {
+          "service": "workmail",
+          "operation": "RegisterToWorkMail"
+        },
+        {
+          "service": "workmail",
+          "operation": "UpdateUser"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "userResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DeleteUser"
+        },
+        {
+          "service": "workmail",
+          "operation": "DeregisterFromWorkMail"
+        },
+        {
+          "service": "workmail",
+          "operation": "DescribeUser"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "userResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DescribeUser"
+        }
+      ]
+    },
+    {
+      "module_path": "workmail",
+      "class_name": "userResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workmail",
+          "operation": "DescribeUser"
+        },
+        {
+          "service": "workmail",
+          "operation": "ResetPassword"
+        },
+        {
+          "service": "workmail",
+          "operation": "UpdateUser"
         }
       ]
     },
@@ -96084,6 +100132,66 @@
         {
           "service": "workspaces",
           "operation": "DescribeConnectionAliases"
+        }
+      ]
+    },
+    {
+      "module_path": "workspaces",
+      "class_name": "resourcePool",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workspaces",
+          "operation": "CreateWorkspacesPool"
+        },
+        {
+          "service": "workspaces",
+          "operation": "DescribeWorkspacesPools"
+        }
+      ]
+    },
+    {
+      "module_path": "workspaces",
+      "class_name": "resourcePool",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workspaces",
+          "operation": "DescribeWorkspacesPools"
+        },
+        {
+          "service": "workspaces",
+          "operation": "TerminateWorkspacesPool"
+        }
+      ]
+    },
+    {
+      "module_path": "workspaces",
+      "class_name": "resourcePool",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workspaces",
+          "operation": "DescribeWorkspacesPools"
+        }
+      ]
+    },
+    {
+      "module_path": "workspaces",
+      "class_name": "resourcePool",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "workspaces",
+          "operation": "DescribeWorkspacesPools"
+        },
+        {
+          "service": "workspaces",
+          "operation": "UpdateWorkspacesPool"
         }
       ]
     },
@@ -97129,10 +101237,50 @@
     },
     {
       "module_path": "xray",
+      "class_name": "indexingRuleResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "UpdateIndexingRule"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
+      "class_name": "indexingRuleResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "GetIndexingRules"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
+      "class_name": "indexingRuleResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "UpdateIndexingRule"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
       "class_name": "resourcePolicyResource",
       "function_name": "Create",
       "call_type": "instance_method",
       "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "ListResourcePolicies"
+        },
         {
           "service": "xray",
           "operation": "PutResourcePolicy"
@@ -97169,6 +101317,22 @@
     },
     {
       "module_path": "xray",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "ListResourcePolicies"
+        },
+        {
+          "service": "xray",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -97192,6 +101356,50 @@
         {
           "service": "xray",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
+      "class_name": "traceSegmentDestinationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "GetTraceSegmentDestination"
+        },
+        {
+          "service": "xray",
+          "operation": "UpdateTraceSegmentDestination"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
+      "class_name": "traceSegmentDestinationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "GetTraceSegmentDestination"
+        }
+      ]
+    },
+    {
+      "module_path": "xray",
+      "class_name": "traceSegmentDestinationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "xray",
+          "operation": "GetTraceSegmentDestination"
+        },
+        {
+          "service": "xray",
+          "operation": "UpdateTraceSegmentDestination"
         }
       ]
     }
