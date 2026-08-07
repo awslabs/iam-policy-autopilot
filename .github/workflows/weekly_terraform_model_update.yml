@@ -79,6 +79,10 @@ jobs:
 
       - name: Revert submodule bump if nothing we consume changed
         working-directory: iam-policy-autopilot-policy-generation/resources/config/terraform
+        env:
+          PREV_NAMES_HASH: ${{ steps.bump.outputs.prev_names_hash }}
+          PREV_COMMIT: ${{ steps.bump.outputs.prev_commit }}
+          BUMP_TAG: ${{ steps.bump.outputs.tag }}
         run: |
           # We consume three things from the provider: the two generated model
           # JSONs and names_data.hcl (embedded directly via include_str!). Keep
@@ -93,13 +97,13 @@ jobs:
           names_changed=false
           git diff --quiet -- terraform-crud-map.json terraform-model.json || jsons_changed=true
           NEW_NAMES_HASH=$(sha256sum terraform-provider-aws/names/data/names_data.hcl | awk '{print $1}')
-          [ "$NEW_NAMES_HASH" = "${{ steps.bump.outputs.prev_names_hash }}" ] || names_changed=true
+          [ "$NEW_NAMES_HASH" = "$PREV_NAMES_HASH" ] || names_changed=true
 
           if [ "$jsons_changed" = false ] && [ "$names_changed" = false ]; then
-            echo "Nothing consumed changed — reverting submodule bump to ${{ steps.bump.outputs.prev_commit }}"
-            git -C terraform-provider-aws checkout "${{ steps.bump.outputs.prev_commit }}"
+            echo "Nothing consumed changed — reverting submodule bump to $PREV_COMMIT"
+            git -C terraform-provider-aws checkout "$PREV_COMMIT"
           else
-            echo "Change detected (jsons=$jsons_changed names=$names_changed) — keeping the bump to ${{ steps.bump.outputs.tag }}"
+            echo "Change detected (jsons=$jsons_changed names=$names_changed) — keeping the bump to $BUMP_TAG"
           fi
 
       - name: Create Pull Request

@@ -7,7 +7,7 @@ or AWS. Both are embedded into the binary at build time (`rust-embed`) and
 consumed by `src/extraction/terraform/plan_to_calls/`.
 
 They are regenerated from the pinned `terraform-provider-aws` submodule in this
-directory (currently `b53a72bc2e0`, tag `v6.34.0`) — see **Regeneration** below.
+directory — see **Regeneration** below.
 
 ## `terraform-crud-map.json`
 
@@ -85,7 +85,7 @@ invokes. Built by tracing each entry-point symbol's call graph (gopls).
 ```
 
 - `sdk_operations[].service` is the **dashed botocore service id** (e.g.
-  `chime-sdk-voice`), the same currency the source-code extractors emit; the
+  `chime-sdk-voice`), the same name the source-code extractors emit; the
   enrichment layer maps it to the IAM prefix.
 - The `ListTags`/`UpdateTags` patterns are stored **once per service** and
   referenced by every tagged resource via the CRUD map's `tags` block — no
@@ -138,4 +138,3 @@ submodule for the run and restores it afterward.
   resourceTypes' tag ops too (a superset — never causes AccessDenied, just
   slightly broad). The `tags.resource_type` field is recorded to enable precise
   arm-scoping later.
-- See also the in-repo design doc `docs/design/terraform-plan-to-policy.md`.
