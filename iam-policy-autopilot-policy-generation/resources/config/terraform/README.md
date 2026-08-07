@@ -12,8 +12,7 @@ directory — see **Regeneration** below.
 ## `terraform-crud-map.json`
 
 `resource_type` → its CRUD handler symbols, plus optional tagging entry points.
-One array entry per managed resource (~1615 resources — both SDKv2 and Plugin
-Framework; ~786 are tag-managed).
+One array entry per managed resource.
 
 ```jsonc
 {
