@@ -1,6 +1,145 @@
 # Artifact: IAM Policy Autopilot — Paper Benchmarks
 
-## Notes on Cost and Safety
+## Quick Start
+
+This section details how to quickly try out the tool without an AWS account.
+
+### Setup
+
+#### Option 0: Docker Image (No Installation Required)
+
+Load the pre-built Docker image included with this artifact:
+
+```bash
+docker load < ipa-paper-benchmarks-image.tar.gz
+```
+
+#### Option 1: Using uv
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) from Astral.
+
+Then run IAM Policy Autopilot using `uvx iam-policy-autopilot`.
+
+#### Option 2: Using pip
+
+Install [pip](https://pip.pypa.io/en/stable/installation/).
+
+```bash
+pip install iam-policy-autopilot
+```
+
+Then run IAM Policy Autopilot using just `iam-policy-autopilot`.
+
+#### Option 3: Direct installation (MacOS/Linux only)
+
+To install the latest release directly, run the following script to download and install as a system utility.
+
+```bash
+curl -sSL https://github.com/awslabs/iam-policy-autopilot/raw/refs/heads/main/install.sh | sudo sh
+```
+
+This will install the latest release directly to `/usr/local/bin/iam-policy-autopilot`.
+
+### Example
+
+Create a sample Python file that calls AWS SDKs and generate an IAM policy
+that would allow executing this script without permission denied errors.
+
+**Docker (Option 0):**
+
+```bash
+cat > /tmp/example.py << 'EOF'
+import boto3
+
+s3 = boto3.client("s3")
+s3.put_object(Bucket="my-bucket", Key="hello.txt", Body=b"hello world")
+s3.get_object(Bucket="my-bucket", Key="hello.txt")
+EOF
+
+docker run --rm -v /tmp/example.py:/app/example.py:ro ipa-paper-benchmarks \
+  -c "iam-policy-autopilot generate-policies /app/example.py --pretty --explain 's3:GetObject'"
+```
+
+You can mount any file(s) to analyze into the container using -v.
+
+> **Apple Silicon** The image is built for linux/amd64. On Apple
+> Silicon Macs, add `--platform linux/amd64` to all `docker run` commands so
+> Docker routes execution through Rosetta:
+>
+> ```bash
+> docker run --platform linux/amd64 --rm ...
+> ```
+> Note that this might be much slower (and is untested)
+
+**Native (Options 1–3):**
+
+```bash
+cat > /tmp/example.py << 'EOF'
+import boto3
+
+s3 = boto3.client("s3")
+s3.put_object(Bucket="my-bucket", Key="hello.txt", Body=b"hello world")
+s3.get_object(Bucket="my-bucket", Key="hello.txt")
+EOF
+
+iam-policy-autopilot generate-policies /tmp/example.py --pretty --explain "s3:GetObject"
+```
+or use `uvx iam-policy-autopilot` if you are using `uv`.
+
+**Example output** (abbreviated):
+
+```json
+{
+  "Policies": [
+    {
+      "Policy": {
+        "Id": "IamPolicyAutopilot",
+        "Version": "2012-10-17",
+        "Statement": [
+          {
+            "Effect": "Allow",
+            "Action": [
+              "s3:GetObject", "s3:GetObjectLegalHold", "s3:GetObjectRetention",
+              "s3:GetObjectTagging", "s3:GetObjectVersion",
+              "s3:PutObject", "s3:PutObjectAcl", "s3:PutObjectLegalHold",
+              "s3:PutObjectRetention", "s3:PutObjectTagging"
+            ],
+            "Resource": ["arn:*:s3:*:*:accesspoint/*/object/*", "arn:*:s3:::*/*"]
+          }
+        ]
+      },
+      "PolicyType": "Identity"
+    }
+  ],
+  "Explanations": {
+    "ExplanationForAction": {
+      "s3:GetObject": [
+        {
+          "Operations": [
+            {
+              "Service": "s3",
+              "Name": "GetObject",
+              "Source": {
+                "Expr": "s3.get_object(Bucket=\"my-bucket\", Key=\"hello.txt\")",
+                "Location": "/tmp/example.py:5.1-5.51"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## Replicating the Paper's Results
+
+This section details how to reproduce the paper's results. This requires an AWS
+account.
+
+### Notes on Cost and Safety
 
 - Run all benchmarks in a **non-production** AWS account.
 - The **synthetic IaC benchmark** deploys short-lived CDK stacks and creates
@@ -13,9 +152,9 @@
 - The **LLM experiments** (both benchmarks, when run without `--skip-llm`) incur
   AWS Bedrock invocation charges.
 
-## Getting Started
+### Getting Started
 
-### Artifact Description
+#### Artifact Description
 
 This artifact accompanies the paper's experimental evaluation of IAM Policy
 Autopilot (IPA). The artifact contains:
@@ -30,7 +169,7 @@ Autopilot (IPA). The artifact contains:
    AWS application (aws-genai-llm-chatbot)
 4. **Reproduction scripts** — automated pipelines for all experiments
 
-### Installation
+#### Installation
 
 **Load pre-built image**
 
@@ -38,12 +177,12 @@ Autopilot (IPA). The artifact contains:
 docker load < ipa-paper-benchmarks-image.tar.gz
 ```
 
-### Smoke Test
+#### Smoke Test
 
 **Prerequisites:** AWS credentials configured in `~/.aws/` with IAM and
 CloudFormation permissions in us-east-1. See REQUIREMENTS.md for details.
 
-#### Synthetic IaC benchmark
+##### Synthetic IaC benchmark
 
 Run a single synthetic benchmark (run_001) with LLM and iamfast experiments
 disabled:
@@ -78,7 +217,7 @@ docker run --rm \
 ==========================================================================================
 ```
 
-#### Real-world benchmark
+##### Real-world benchmark
 
 Run IPA on a single handler from the real-world application (static comparison
 against committed ground truth — no deployment required):
@@ -101,11 +240,11 @@ Avg CDK overpermission ratio: 1.35x
 
 ---
 
-## Step-by-Step Reproduction Instructions
+### Step-by-Step Reproduction Instructions
 
-### Synthetic IaC Benchmark
+#### Synthetic IaC Benchmark
 
-#### Without LLM experiments (no Bedrock access required)
+##### Without LLM experiments (no Bedrock access required)
 
 Runs all 10 benchmark applications with IPA policy generation in all 4
 languages and managed-policy set-cover analysis:
@@ -122,7 +261,7 @@ docker run --rm \
 
 Results are written to `./results/` on the host.
 
-#### With LLM experiments (requires Bedrock access)
+##### With LLM experiments (requires Bedrock access)
 
 A full run of all 10 applications including repeated LLM experiments takes
 about 10 hours:
@@ -137,7 +276,7 @@ docker run --rm \
   -c "./scripts/run_iac_benchmark.sh"
 ```
 
-#### Generating Figures
+##### Generating Figures
 
 Generate the paper's LaTeX tables and plots from an aggregate report:
 
@@ -148,13 +287,13 @@ docker run --rm \
   -c "./scripts/make_figures.sh results/aggregate/aggregate_report.json results/figures"
 ```
 
-### Real-World Benchmark
+#### Real-World Benchmark
 
 The real-world benchmark evaluates IPA on `aws-samples/aws-genai-llm-chatbot`,
 a production-style multi-LLM RAG chatbot. A full run including repeated LLM
 experiments takes about 10 hours.
 
-#### Without deployment (static comparison only)
+##### Without deployment (static comparison only)
 
 Generates IPA policies and compares them against the committed CDK-deployed
 ground truth. Does not require deploying the application:
@@ -178,10 +317,10 @@ docker run --rm \
   -c "MODE=ipa ./scripts/run_realworld_eval.sh --only api-handler"
 ```
 
-#### With deployment and live validation
+##### With deployment and live validation
 
-**Warning:** This deploys managed services 
-that incur AWS charges. Destroy the stack when finished (step 3).
+**Warning:** This deploys managed services that incur AWS charges. Destroy the
+stack when finished (step 3).
 
 The CDK deploy must run **on the host** (not inside the container) because CDK's
 asset bundling uses Docker volume mounts that require host filesystem access.
@@ -206,7 +345,7 @@ cd realworld-deploy/genai-chatbot-cdk && npx cdk destroy
 
 ---
 
-## Artifact Code Layout
+### Artifact Code Layout
 
 ```
 paper-benchmarks/
@@ -228,9 +367,9 @@ paper-benchmarks/
 └── integration-tests/projects/run_001..run_010  # (in /opt/ in the image)
 ```
 
-## Benchmark Methodology
+### Benchmark Methodology
 
-### IaC benchmark (`iac-benchmarker/`)
+#### IaC benchmark (`iac-benchmarker/`)
 
 Given a directory of "runs" (each a small application with a CDK stack,
 per-language data-plane scripts, and a `minimal_policy.json` ground truth), the
@@ -254,7 +393,7 @@ CLI flags, and figure outputs.
 **Inputs:** the paper's 10 synthetic benchmarks live in
 `/opt/integration-tests/projects/run_001 … run_010` inside the image.
 
-### Real-world benchmark (`real-world-apps/`)
+#### Real-world benchmark (`real-world-apps/`)
 
 Evaluates IPA on `aws-samples/aws-genai-llm-chatbot`, a production-style
 multi-LLM RAG chatbot. For each handler it compares IPA's generated policy against
@@ -264,7 +403,7 @@ policy by swapping it onto the handler's role and running targeted scenarios.
 The full methodology, handler inventory, results, and deployment/build fixes are
 documented in [`real-world-apps/EVALUATION.md`](real-world-apps/EVALUATION.md).
 
-#### Ground-truth policies
+##### Ground-truth policies
 
 The evaluator compares each generated policy against the handler's
 **CDK-deployed** IAM policy. These developer-authored policies live under
@@ -283,7 +422,7 @@ attached policies straight off the deployed roles via the IAM API. This is
 optional — the committed, wildcarded files are sufficient to reproduce the
 paper's action counts.
 
-## CLI Help
+### CLI Help
 
 For a full list of flags and options:
 

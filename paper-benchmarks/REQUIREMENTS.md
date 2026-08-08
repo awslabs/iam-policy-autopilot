@@ -1,5 +1,12 @@
 # Requirements
 
+The Quick Start path described in the README.md can be run on any architecture
+or operating system. Software dependencies are minimal (and will be obvious)
+from the description.
+
+The following describes the requirements for replicating the results from the
+paper, which are stricter.
+
 ## Architecture
 
 - **x86_64 (amd64)** — the Docker image is built for linux/amd64.
@@ -18,12 +25,13 @@
 
 - **CPU:** any modern x86_64 processor
 - **RAM:** ~8 GB minimum
-- **Storage:** ~3 GB (800 MB compressed artifact + 2.15 GB uncompressed Docker image after loading)
+- **Storage:** ~3 GB (800 MB compressed artifact + 2.15 GB uncompressed Docker image
+  after loading)
 
 ## Network
 
-- **Outbound HTTPS** to AWS APIs (IAM, STS, CloudFormation, S3, Bedrock, etc.)
-  during benchmark execution. No inbound connections required.
+Network access is required to call AWS APIs and for IAM Policy Autopilot to
+communicate with the service reference endpoing at runtime.
 
 ## AWS Account
 
