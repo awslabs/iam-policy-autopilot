@@ -113,6 +113,50 @@ impl GitSubmoduleMetadata {
 
         Ok(sha2_context.finish())
     }
+
+    /// Build metadata for the Terraform provider. Commit and tag are read from
+    /// the submodule (same as boto3/botocore); the data hash covers every
+    /// artifact we embed and consume: the CRUD map, the model, and
+    /// names_data.hcl.
+    fn new_terraform(provider_git_path: &Path, data_files: &[&Path]) -> Self {
+        let repository = Repository::open(provider_git_path)
+            .unwrap_or_else(|_| panic!("Failed to open repository at path {provider_git_path:?}"));
+        Self {
+            git_commit_hash: get_repository_commit(&repository).unwrap_or_else(|_| {
+                panic!("Failed to get repository commit at path {provider_git_path:?}")
+            }),
+            git_tag: get_repository_tag(&repository).unwrap_or_else(|_| {
+                panic!("Failed to get repository tag at path {provider_git_path:?}")
+            }),
+            data_hash: format!(
+                "{:?}",
+                Self::sha2sum_files(data_files)
+                    .unwrap_or_else(|e| panic!("Failed to compute Terraform data hash: {e}"))
+            ),
+        }
+    }
+
+    /// Deterministic SHA-256 over a fixed set of files, keyed by file name so
+    /// the result is stable regardless of the input order.
+    fn sha2sum_files(paths: &[&Path]) -> Result<Digest, Box<dyn std::error::Error>> {
+        let mut hash_table: BTreeMap<String, Digest> = BTreeMap::new();
+        for path in paths {
+            let name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .ok_or("path has no file name")?
+                .to_string();
+            let mut ctx = Context::new(&SHA256);
+            ctx.update(&fs::read(path)?);
+            hash_table.insert(name, ctx.finish());
+        }
+        let mut ctx = Context::new(&SHA256);
+        for (name, digest) in hash_table {
+            ctx.update(name.as_bytes());
+            ctx.update(digest.as_ref());
+        }
+        Ok(ctx.finish())
+    }
 }
 
 /// Expected SHA-256 of CodegenNamingUtils.java with CRLF normalized to LF:
@@ -165,6 +209,8 @@ fn main() {
          utils/src/main/java/software/amazon/awssdk/utils/internal/CodegenNamingUtils.java"
     );
     println!("cargo:rerun-if-changed=resources/config/terraform/terraform-provider-aws/names/data/names_data.hcl");
+    println!("cargo:rerun-if-changed=resources/config/terraform/terraform-crud-map.json");
+    println!("cargo:rerun-if-changed=resources/config/terraform/terraform-model.json");
 
     // Rstest's `#[files(...)]` macro evaluates its glob at compile time, so a
     // freshly added test fixture is invisible until cargo decides to rebuild
@@ -319,6 +365,24 @@ fn main() {
         botocore_info_json,
     )
     .expect("Failed to write botocore version metadata");
+
+    let terraform_root = Path::new("resources/config/terraform");
+    let terraform_info = GitSubmoduleMetadata::new_terraform(
+        &terraform_root.join("terraform-provider-aws"),
+        &[
+            &terraform_root.join("terraform-crud-map.json"),
+            &terraform_root.join("terraform-model.json"),
+            &terraform_root.join("terraform-provider-aws/names/data/names_data.hcl"),
+        ],
+    );
+
+    let terraform_info_json = serde_json::to_string(&terraform_info)
+        .expect("Failed to serialize terraform version metadata");
+    fs::write(
+        workspace_submodule_version_embed_dir.join("terraform_version.json"),
+        terraform_info_json,
+    )
+    .expect("Failed to write terraform version metadata");
 }
 
 fn process_botocore_data(

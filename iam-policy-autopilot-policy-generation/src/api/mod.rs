@@ -19,7 +19,7 @@ pub use generate_model::{
 };
 pub use generate_policies::generate_policies;
 pub use get_submodule_version::{
-    get_boto3_version_info, get_botocore_version_info, get_terraform_model_version,
+    get_boto3_version_info, get_botocore_version_info, get_terraform_version_info,
 };
 pub(crate) mod common;
 pub(crate) mod input_kind;

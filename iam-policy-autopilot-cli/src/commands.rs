@@ -150,29 +150,12 @@ async fn fix_access_denied_with_service(
 pub fn print_version_info(verbose: bool) -> anyhow::Result<()> {
     println!("iam-policy-autopilot {}", crate_version!());
     if verbose {
-        let boto3_version_metadata =
-            iam_policy_autopilot_policy_generation::api::get_boto3_version_info()?;
-        let botocore_version_metadata =
-            iam_policy_autopilot_policy_generation::api::get_botocore_version_info()?;
+        use iam_policy_autopilot_policy_generation::api;
+        println!("boto3 version: {}", api::get_boto3_version_info()?);
+        println!("botocore version: {}", api::get_botocore_version_info()?);
         println!(
-            "boto3 version: commit_id={}, commit_tag={}, data_hash={}",
-            boto3_version_metadata.git_commit_hash,
-            boto3_version_metadata.git_tag.unwrap_or("None".to_string()),
-            boto3_version_metadata.data_hash
-        );
-        println!(
-            "botocore version: commit_id={}, commit_tag={}, data_hash={}",
-            botocore_version_metadata.git_commit_hash,
-            botocore_version_metadata
-                .git_tag
-                .unwrap_or("None".to_string()),
-            botocore_version_metadata.data_hash
-        );
-        let terraform_model_version =
-            iam_policy_autopilot_policy_generation::api::get_terraform_model_version()?;
-        println!(
-            "terraform-provider-aws model version: {}",
-            terraform_model_version.unwrap_or_else(|| "None".to_string())
+            "terraform-provider-aws version: {}",
+            api::get_terraform_version_info()?
         );
     }
     Ok(())

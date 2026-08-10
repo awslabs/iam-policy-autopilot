@@ -1,5 +1,18 @@
 name: Weekly Submodule Update Check
 
+# Weekly refresh of every vendored upstream we consume, in one PR:
+#
+#   * boto3 / botocore-data — SDK data embedded at compile time.
+#   * terraform-provider-aws — source for the generated Terraform CRUD map and
+#     Terraform external model, regenerated here via xtask (needs Go + gopls).
+#
+# All three embed a content data_hash into the binary, surfaced by
+# `--version --verbose`. We bump every submodule to its latest tag, build once,
+# and compare the built hashes against the published PyPI wheel. If any changed,
+# we open a single PR pinning the bumps (and the regenerated Terraform
+# artifacts). The Terraform model is regenerated before the build so the same
+# build that produces the compared hashes also embeds the new artifacts.
+
 on:
   schedule:
     - cron: '0 0 * * 0'  # Sunday at midnight UTC
@@ -16,6 +29,7 @@ jobs:
       built_output: ${{ steps.built.outputs.output }}
       boto3_tag: ${{ steps.submodules.outputs.boto3_tag }}
       botocore_tag: ${{ steps.submodules.outputs.botocore_tag }}
+      terraform_tag: ${{ steps.submodules.outputs.terraform_tag }}
     steps:
     - name: Get PyPI version output
       id: pypi
@@ -50,8 +64,39 @@ jobs:
         git checkout $BOTOCORE_TAG
         echo "botocore_tag=$BOTOCORE_TAG" >> $GITHUB_OUTPUT
 
+        cd ../../terraform/terraform-provider-aws
+        git fetch --tags --force
+        TERRAFORM_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+        echo "Updating terraform-provider-aws to $TERRAFORM_TAG"
+        git checkout $TERRAFORM_TAG
+        echo "terraform_tag=$TERRAFORM_TAG" >> $GITHUB_OUTPUT
+
+    - name: Install Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26'
+
+    - name: Install gopls
+      run: go install golang.org/x/tools/gopls@latest
+
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
+
+    - name: Build xtask
+      run: cargo build -p xtask
+
+    - name: Regenerate Terraform artifacts
+      run: |
+        # gopls is installed under $(go env GOPATH)/bin.
+        export PATH="$(go env GOPATH)/bin:$PATH"
+        ./target/debug/xtask extract-terraform-crud-map \
+          --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+          --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json
+        ./target/debug/xtask build-terraform-model \
+          --crud-map iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json \
+          --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+          --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-model.json \
+          --pretty
 
     - name: Build from source
       run: cargo build --release --workspace
@@ -72,23 +117,18 @@ jobs:
         PYPI_OUTPUT: ${{ steps.pypi.outputs.output }}
         BUILT_OUTPUT: ${{ steps.built.outputs.output }}
       run: |
-        extract_hash() { echo "$1" | grep "$2" | sed 's/.*data_hash=\([^ ]*\).*/\1/'; }
-        
-        PYPI_BOTO3_HASH=$(extract_hash "$PYPI_OUTPUT" "boto3")
-        PYPI_BOTOCORE_HASH=$(extract_hash "$PYPI_OUTPUT" "botocore")
-        BUILT_BOTO3_HASH=$(extract_hash "$BUILT_OUTPUT" "boto3")
-        BUILT_BOTOCORE_HASH=$(extract_hash "$BUILT_OUTPUT" "botocore")
+        extract_hash() { echo "$1" | grep "^$2 version:" | sed 's/.*data_hash=\([^ ]*\).*/\1/'; }
 
-        echo "PyPI boto3 hash: $PYPI_BOTO3_HASH"
-        echo "Built boto3 hash: $BUILT_BOTO3_HASH"
-        echo "PyPI botocore hash: $PYPI_BOTOCORE_HASH"
-        echo "Built botocore hash: $BUILT_BOTOCORE_HASH"
-
-        if [[ "$PYPI_BOTO3_HASH" != "$BUILT_BOTO3_HASH" ]] || [[ "$PYPI_BOTOCORE_HASH" != "$BUILT_BOTOCORE_HASH" ]]; then
-          echo "has_diff=true" >> $GITHUB_OUTPUT
-        else
-          echo "has_diff=false" >> $GITHUB_OUTPUT
-        fi
+        for name in boto3 botocore terraform-provider-aws; do
+          pypi=$(extract_hash "$PYPI_OUTPUT" "$name")
+          built=$(extract_hash "$BUILT_OUTPUT" "$name")
+          echo "$name: PyPI=$pypi built=$built"
+          if [[ "$pypi" != "$built" ]]; then
+            echo "has_diff=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+        done
+        echo "has_diff=false" >> $GITHUB_OUTPUT
 
   create_pr:
     needs: check_versions
@@ -111,6 +151,7 @@ jobs:
       env:
         BOTO3_TAG: ${{ needs.check_versions.outputs.boto3_tag }}
         BOTOCORE_TAG: ${{ needs.check_versions.outputs.botocore_tag }}
+        TERRAFORM_TAG: ${{ needs.check_versions.outputs.terraform_tag }}
       run: |
         cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
         git fetch --tags
@@ -120,14 +161,44 @@ jobs:
         git fetch --tags
         git checkout "$BOTOCORE_TAG"
 
+        cd ../../terraform/terraform-provider-aws
+        git fetch --tags --force
+        git checkout "$TERRAFORM_TAG"
+
+    - name: Install Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26'
+
+    - name: Install gopls
+      run: go install golang.org/x/tools/gopls@latest
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Build xtask
+      run: cargo build -p xtask
+
+    - name: Regenerate Terraform artifacts
+      run: |
+        export PATH="$(go env GOPATH)/bin:$PATH"
+        ./target/debug/xtask extract-terraform-crud-map \
+          --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+          --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json
+        ./target/debug/xtask build-terraform-model \
+          --crud-map iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json \
+          --terraform-provider-aws-root iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-provider-aws \
+          --output iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-model.json \
+          --pretty
+
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v8
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        sign-commits: true  
-        commit-message: "chore: update boto3/botocore submodules to latest tags"
+        sign-commits: true
+        commit-message: "chore: update submodules to latest tags"
         branch: ${{ steps.branch.outputs.name }}
-        title: "chore: update boto3/botocore submodules"
+        title: "chore: update submodules"
         body: |
           Automated submodule update detected version differences:
 
@@ -140,4 +211,3 @@ jobs:
           ```
           ${{ needs.check_versions.outputs.built_output }}
           ```
-

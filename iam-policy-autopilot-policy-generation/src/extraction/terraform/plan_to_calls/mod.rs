@@ -65,14 +65,6 @@ pub(crate) fn plan_to_sdk_calls(
     Ok((mapped, resources))
 }
 
-/// The terraform-provider-aws version tag the embedded model was built against
-/// (e.g. `v6.34.0`), for surfacing in `--version --verbose`.
-pub(crate) fn model_version() -> Result<Option<String>> {
-    Ok(model_index::ModelIndex::load()?
-        .version()
-        .map(str::to_string))
-}
-
 /// The library name recorded in the embedded `terraform-model.json`.
 pub(crate) const TERRAFORM_LIBRARY_NAME: &str = "terraform-provider-aws";
 
@@ -80,7 +72,7 @@ pub(crate) const TERRAFORM_LIBRARY_NAME: &str = "terraform-provider-aws";
 ///
 /// Both files are committed under `resources/config/terraform/` and regenerated
 /// weekly from the terraform-provider-aws submodule (see
-/// `.github/workflows/weekly_terraform_model_update.yml`). They are embedded at
+/// `.github/workflows/weekly_submodule_update.yml`). They are embedded at
 /// compile time following the same `rust-embed` pattern used for the external
 /// library models and botocore data.
 #[derive(RustEmbed)]

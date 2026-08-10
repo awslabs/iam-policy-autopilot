@@ -107,8 +107,8 @@ For each resource change in a `terraform show -json` plan, the mapper
 ## Regeneration
 
 Both files regenerate from the submodule via `xtask` (the weekly GitHub action
-`.github/workflows/weekly_terraform_model_update.yml` does this and PRs the diff
-only when an artifact or `names_data.hcl` changes). To run manually (needs Go +
+`.github/workflows/weekly_submodule_update.yml` does this and PRs the diff only
+when the embedded provider `data_hash` changes). To run manually (needs Go +
 gopls on PATH; the model build takes ~15 min):
 
 ```bash

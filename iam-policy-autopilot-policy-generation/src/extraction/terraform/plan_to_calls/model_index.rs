@@ -18,10 +18,9 @@ use crate::Language;
 
 use super::{TerraformArtifacts, TERRAFORM_LIBRARY_NAME};
 
-/// Lookup of handler join key → SDK operations, plus the model's version tag.
+/// Lookup of handler join key → SDK operations.
 pub(crate) struct ModelIndex {
     by_handler: HashMap<CallPatternKey, Vec<SdkOperationMapping>>,
-    version: Option<String>,
 }
 
 impl ModelIndex {
@@ -63,20 +62,12 @@ impl ModelIndex {
                 .extend(pattern.sdk_operations);
         }
 
-        Ok(Self {
-            by_handler,
-            version: model.version,
-        })
+        Ok(Self { by_handler })
     }
 
     /// SDK operations invoked by the handler with this join key, if modeled.
     pub(crate) fn operations(&self, key: &CallPatternKey) -> Option<&[SdkOperationMapping]> {
         self.by_handler.get(key).map(Vec::as_slice)
-    }
-
-    /// The provider version tag the model was built against (e.g. `v6.34.0`).
-    pub(crate) fn version(&self) -> Option<&str> {
-        self.version.as_deref()
     }
 
     /// Every handler join key present in the model.
@@ -176,12 +167,6 @@ mod tests {
         assert_eq!(index.operations(&key), None);
     }
 
-    #[test]
-    fn exposes_version() {
-        let index = ModelIndex::from_slice(SAMPLE.as_bytes()).unwrap();
-        assert_eq!(index.version(), Some("v6.34.0"));
-    }
-
     #[rstest]
     #[case(r#"{"library_name":"wrong","language":"go","call_patterns":[]}"#)]
     #[case(r#"{"library_name":"terraform-provider-aws","language":"python","call_patterns":[]}"#)]
@@ -192,14 +177,6 @@ mod tests {
     #[test]
     fn embedded_model_parses_and_resolves_known_handler() {
         let index = ModelIndex::load().unwrap();
-        // Assert the shape, not the exact tag: the model is regenerated whenever
-        // the provider submodule is bumped, so pinning the version here would
-        // fail on every bump.
-        let version = index.version().expect("embedded model records a version");
-        assert!(
-            version.starts_with('v') && version[1..].starts_with(|c: char| c.is_ascii_digit()),
-            "unexpected provider version format: {version}"
-        );
         let key = CallPatternKey {
             module_path: "accessanalyzer".to_string(),
             class_name: None,
