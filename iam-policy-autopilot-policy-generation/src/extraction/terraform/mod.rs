@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use crate::Location;
 
 pub mod hcl_parser;
+pub(crate) mod plan_to_calls;
 pub mod state_parser;
 
 /// Terraform AWS provider resource type prefix. Used to filter resources

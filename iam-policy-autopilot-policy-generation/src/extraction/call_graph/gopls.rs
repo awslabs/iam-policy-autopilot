@@ -21,7 +21,7 @@ impl GoplsCallGraphBuilder {
             open_document_timeout: Duration::from_secs(30),
             request_timeout: Duration::from_secs(30),
             shutdown_timeout: Duration::from_secs(5),
-            idle_timeout: Duration::from_secs(300),
+            idle_timeout: Duration::from_mins(5),
             // gopls is slow to announce indexing on a cold module cache; give the
             // first progress token generous headroom before assuming there is none.
             progress_startup_grace: Duration::from_secs(10),
@@ -178,6 +178,10 @@ impl CallGraphBuilder for GoplsCallGraphBuilder {
         }
 
         Ok(CallGraph::new(nodes, edges))
+    }
+
+    fn is_running(&self) -> bool {
+        self.client.is_alive()
     }
 
     async fn shutdown(self: Box<Self>) -> Result<(), CallGraphError> {

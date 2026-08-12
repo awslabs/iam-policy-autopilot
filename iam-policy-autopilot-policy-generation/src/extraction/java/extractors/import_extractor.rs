@@ -4,38 +4,15 @@
 //! (e.g. S3TransferManager, S3Presigner, DynamoDbEnhancedClient) by delegating to
 //! [`classify_utility_import`].
 
-use std::collections::HashMap;
-use std::sync::LazyLock;
-
 use ast_grep_language::Java;
 
 use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utility_import_extractor::classify_utility_import;
 use crate::extraction::java::extractors::utils::JavaNodeMatch;
 use crate::extraction::java::types::{ExtractionResult, Import, UtilityImport};
-use crate::service_configuration::load_service_configuration;
+use crate::service_configuration::sdk_import_service_map;
 use crate::Location;
 use crate::SourceFile;
-
-/// Lookup map from **dash-free Java import segment** to **Botocore service name**.
-///
-/// The Java SDK derives its package segment from the Smithy service name by removing all
-/// dashes (e.g. Smithy `"cloudwatch-logs"` → Java import segment `"cloudwatchlogs"`).
-/// This static is built once from [`SmithyBotocoreServiceNameMapping`] via
-/// [`ServiceConfiguration::build_java_import_service_map`] and used by
-/// [`extract_service_from_import`] to normalise extracted service names.
-///
-/// # Panics
-///
-/// Panics on first access if the embedded service-configuration JSON is missing or
-/// malformed — both conditions indicate a corrupt binary and are unrecoverable.
-///
-/// [`SmithyBotocoreServiceNameMapping`]: crate::service_configuration::ServiceConfiguration
-static JAVA_IMPORT_SERVICE_MAP: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
-    load_service_configuration()
-        .expect("service-configuration.json must be present in embedded data")
-        .build_java_import_service_map()
-});
 
 /// Extracts all `import` declarations from a Java source file.
 ///
@@ -124,9 +101,9 @@ has:
 /// Extract the AWS service name from an import path, normalised to the Botocore name.
 ///
 /// Looks for the `services.<name>` segment in the dotted path, then applies the
-/// [`JAVA_IMPORT_SERVICE_MAP`] to translate the Java SDK package segment (which has all
-/// dashes removed from the Smithy name) to the canonical Botocore service name used by
-/// the rest of the pipeline.
+/// shared [`sdk_import_service_map`] to translate the Java SDK package segment (which
+/// has all dashes removed from the Smithy name) to the canonical Botocore service name
+/// used by the rest of the pipeline.
 ///
 /// # Examples
 /// - `"software.amazon.awssdk.services.s3.S3Client"` → `Some("s3")`
@@ -142,7 +119,7 @@ fn extract_service_from_import(import_path: &str) -> Option<String> {
 
     // Translate the Java SDK package segment to the Botocore service name when a mapping
     // exists; otherwise use the segment as-is (it already matches the Botocore name).
-    let botocore_name = JAVA_IMPORT_SERVICE_MAP
+    let botocore_name = sdk_import_service_map()
         .get(&segment)
         .cloned()
         .unwrap_or(segment);

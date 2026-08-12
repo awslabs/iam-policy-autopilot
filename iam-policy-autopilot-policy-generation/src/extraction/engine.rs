@@ -91,6 +91,7 @@ impl Engine {
             return Ok(ExtractedMethods {
                 methods: method_calls,
                 metadata,
+                sdk: language.sdk_type(),
             });
         }
 
@@ -142,6 +143,7 @@ impl Engine {
         Ok(ExtractedMethods {
             methods: method_calls,
             metadata,
+            sdk: language.sdk_type(),
         })
     }
 

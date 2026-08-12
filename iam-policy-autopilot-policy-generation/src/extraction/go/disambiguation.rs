@@ -7,6 +7,7 @@
 use crate::extraction::go::types::GoImportInfo;
 use crate::extraction::sdk_model::{ServiceMethodRef, ServiceModelIndex, Shape};
 use crate::extraction::{Parameter, SdkMethodCall};
+use crate::service_configuration::sdk_import_service_map;
 use std::collections::HashSet;
 
 const WITH_CONTEXT_SUFFIX: &str = "WithContext";
@@ -306,10 +307,27 @@ impl<'a> GoMethodDisambiguator<'a> {
             return possible_services.to_vec();
         }
 
+        // `possible_services` are dashed Botocore service ids (e.g. `es`), but
+        // `imported_services` are AWS SDK for Go package names (the dash-free
+        // Smithy name, e.g. `elasticsearchservice`). Translate each import to
+        // its Botocore id so the two namespaces match; otherwise services whose
+        // Go pkg differs from the id (es, application-autoscaling, …) never
+        // match and the filter uselessly returns the full ambiguous list.
+        //
+        // Keep the original name too, so identity cases (s3, ec2) and any
+        // service missing from the map still match.
+        let imported_ids: HashSet<&str> = imported_services
+            .iter()
+            .flat_map(|pkg| {
+                std::iter::once(pkg.as_str())
+                    .chain(sdk_import_service_map().get(pkg).map(String::as_str))
+            })
+            .collect();
+
         // Filter possible services to only those that are imported
         let filtered: Vec<String> = possible_services
             .iter()
-            .filter(|service| imported_services.contains(service))
+            .filter(|service| imported_ids.contains(service.as_str()))
             .cloned()
             .collect();
 
@@ -332,6 +350,7 @@ mod tests {
     };
     use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
     use crate::Location;
+    use rstest::rstest;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
@@ -1027,5 +1046,48 @@ mod tests {
         assert_eq!(result.len(), 1, "CreateQueue should not be filtered out");
         assert_eq!(result[0].possible_services, vec!["sqs"]);
         assert_eq!(result[0].name, "CreateQueue");
+    }
+
+    /// Import-based disambiguation must compare in the Botocore-id namespace.
+    /// A method call's `possible_services` are Botocore ids (e.g. `es`), but an
+    /// import yields the AWS SDK for Go package name (e.g. `elasticsearchservice`).
+    /// The filter translates the import to its Botocore id before matching, so a
+    /// service whose Go pkg differs from its id still disambiguates.
+    ///
+    /// `elasticsearchservice` → `es`: the provider imports
+    /// `aws-sdk-go-v2/service/elasticsearchservice`, and the Botocore service is
+    /// `es` (serviceId "Elasticsearch Service", endpointPrefix `es`).
+    /// `opensearch` → `opensearch`: Go pkg already equals the Botocore id.
+    #[rstest]
+    // Go pkg name differs from the Botocore id — translation is required.
+    #[case("elasticsearchservice", &["es", "opensearch"], &["es"])]
+    // Go pkg name already equals the Botocore id (identity).
+    #[case("opensearch", &["opensearch", "es"], &["opensearch"])]
+    // Imported service isn't among the candidates — keep all (avoid false negatives).
+    #[case("dynamodb", &["es", "opensearch"], &["es", "opensearch"])]
+    fn test_import_filter_translates_go_pkg_to_botocore_id(
+        #[case] go_pkg: &str,
+        #[case] possible: &[&str],
+        #[case] expected: &[&str],
+    ) {
+        use crate::extraction::go::types::{GoImportInfo, ImportInfo};
+
+        let service_index = create_test_service_index();
+        let disambiguator = GoMethodDisambiguator::new(&service_index);
+
+        let mut import_info = GoImportInfo::new();
+        import_info.add_import(ImportInfo::new(
+            format!("github.com/aws/aws-sdk-go-v2/service/{go_pkg}"),
+            go_pkg.to_string(),
+            5,
+        ));
+
+        let possible: Vec<String> = possible.iter().map(|s| s.to_string()).collect();
+        let expected: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+
+        assert_eq!(
+            disambiguator.filter_services_by_imports(&possible, &import_info),
+            expected,
+        );
     }
 }

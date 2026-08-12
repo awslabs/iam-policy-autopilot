@@ -459,6 +459,18 @@ impl GitSubmoduleVersionInfo {
             )
         })
     }
+    pub(crate) fn get_terraform_version_info() -> Result<GitSubmoduleMetadata> {
+        let terraform_file = GitSubmoduleVersionInfoRaw::get("terraform_version.json")
+            .expect("terraform version metadata file not found");
+
+        serde_json::from_slice(&terraform_file.data).map_err(|e| {
+            ExtractorError::sdk_processing_with_source(
+                "reading terraform_version.json",
+                "Failed to parse terraform_version metadata file",
+                e,
+            )
+        })
+    }
 }
 
 #[cfg(test)]
@@ -679,6 +691,12 @@ mod tests {
     #[test]
     fn test_get_botocore_version_info_happy_path() {
         let result = GitSubmoduleVersionInfo::get_botocore_version_info();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_get_terraform_version_info_happy_path() {
+        let result = GitSubmoduleVersionInfo::get_terraform_version_info();
         assert!(result.is_ok());
     }
 }

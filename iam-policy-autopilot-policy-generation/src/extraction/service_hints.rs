@@ -353,6 +353,7 @@ mod tests {
                 },
             ],
             metadata: ExtractionMetadata::new(vec![], vec![]),
+            sdk: crate::SdkType::Other,
         };
 
         processor.filter(&mut results);
@@ -510,6 +511,7 @@ mod tests {
                 },
             ],
             metadata: ExtractionMetadata::new(vec![], vec![]),
+            sdk: crate::SdkType::Other,
         };
 
         processor.filter(&mut results);

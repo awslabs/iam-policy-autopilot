@@ -91,6 +91,11 @@ fn deduplicate_operations(calls: &[SdkMethodCall]) -> Vec<SdkOperationMapping> {
         }
     }
 
+    // Sort for deterministic output: SDK calls are collected in call-graph
+    // traversal order, which is not stable across runs, so an unsorted list
+    // makes regenerated models differ only by ordering.
+    ops.sort();
+
     ops
 }
 
@@ -101,7 +106,6 @@ mod tests {
     use crate::extraction::SdkMethodCallMetadata;
     use crate::Location;
     use language_conventions::GoConventions;
-    use std::path::PathBuf;
 
     fn sdk_call_in(
         graph: &CallGraph,

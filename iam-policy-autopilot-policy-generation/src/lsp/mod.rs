@@ -375,6 +375,16 @@ impl<C: LspServerConfig> LspClient<C> {
         Ok(())
     }
 
+    /// Whether the server is still alive: its protocol main loop has neither
+    /// finished (server stream closed / process exited) nor been torn down by
+    /// `shutdown` (which takes the handle). This is a cheap, non-mutating check
+    /// suitable for a fail-fast guard before issuing a request.
+    pub fn is_alive(&self) -> bool {
+        self.mainloop_handle
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+    }
+
     /// Wait until the server has finished all active work-done progress tokens.
     ///
     /// Servers like gopls send `window/workDoneProgress/create` + `$/progress`
