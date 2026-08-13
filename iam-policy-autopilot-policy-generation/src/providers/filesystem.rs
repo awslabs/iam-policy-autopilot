@@ -1,41 +1,44 @@
 //! Filesystem provider implementation using `tokio::fs`
 
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
-use tokio::fs;
 
-#[cfg(not(target_arch = "wasm32"))]
 use crate::errors::{ExtractorError, Result};
 
-/// Native filesystem provider using `tokio::fs` for async file operations.
+/// Filesystem provider for async file operations.
 ///
-/// Not available on WASM targets — use in-memory APIs instead.
-/// This implementation provides robust file system operations with proper error
-/// handling, Unicode support, and glob pattern matching for file listing.
+/// On native targets this uses `tokio::fs` for non-blocking I/O. On WASM
+/// targets (emscripten) it uses `std::fs` against the emscripten virtual
+/// filesystem, since tokio's `fs` feature is unavailable on wasm32; reads
+/// there are in-memory and effectively instant, so blocking is not a concern
+/// on the single-threaded WASM runtime.
 ///
 /// # Thread Safety
 /// This provider is `Send + Sync` and can be safely shared across threads.
 ///
 /// # Performance Considerations
-/// - Uses `tokio::fs` for non-blocking I/O operations
+/// - Uses `tokio::fs` for non-blocking I/O operations on native targets
 /// - Efficient directory traversal with early termination on errors
 /// - Pattern compilation is cached when possible
 /// - Large directories are processed incrementally
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug, Clone)]
 pub struct FileSystemProvider;
 
-#[cfg(not(target_arch = "wasm32"))]
 impl FileSystemProvider {
     /// Read the entire contents of a file as a UTF-8 string.
     ///
-    /// This method uses tokio::fs::read_to_string for efficient async I/O
-    /// and provides detailed error context including the operation and file path.
+    /// Provides detailed error context including the operation and file path.
     pub async fn read_file(path: impl AsRef<Path>) -> Result<String> {
-        fs::read_to_string(path.as_ref())
-            .await
-            .map_err(|e| ExtractorError::file_system("read", path.as_ref(), e))
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            tokio::fs::read_to_string(path.as_ref())
+                .await
+                .map_err(|e| ExtractorError::file_system("read", path.as_ref(), e))
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            std::fs::read_to_string(path.as_ref())
+                .map_err(|e| ExtractorError::file_system("read", path.as_ref(), e))
+        }
     }
 }
 

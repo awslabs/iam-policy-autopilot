@@ -51,7 +51,6 @@ pub use policy_generation::{
 // Re-export commonly used types for convenience
 pub(crate) use extraction::ServiceModelIndex;
 
-#[cfg(not(target_arch = "wasm32"))]
 pub use providers::FileSystemProvider;
 pub use providers::JsonProvider;
 use schemars::JsonSchema;

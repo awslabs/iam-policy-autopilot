@@ -13,10 +13,10 @@ pub(crate) mod json;
 // Platform-abstracted concurrent task execution
 pub(crate) mod concurrency;
 
-// These type aliases are remnants of supporting compilation to wasm.
-// We can use these eventually for conditional compilation again.
 /// Type alias for the filesystem provider implementation.
-#[cfg(not(target_arch = "wasm32"))]
+///
+/// Available on all targets: native uses `tokio::fs`, WASM uses `std::fs`
+/// against the emscripten virtual filesystem (see `filesystem.rs`).
 pub type FileSystemProvider = filesystem::FileSystemProvider;
 
 /// Type alias for the JSON provider implementation.
