@@ -200,7 +200,8 @@ mod tests {
 
     use super::*;
     use iam_policy_autopilot_policy_generation::{
-        api::model::GeneratePoliciesResult, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
+        api::model::GeneratePoliciesResult, Explanations, IamPolicy, PolicyType,
+        PolicyWithMetadata, Statement,
     };
 
     use anyhow::anyhow;
@@ -239,7 +240,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
-            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
+            explanations: Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
@@ -289,7 +290,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![],
-            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
+            explanations: Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
@@ -365,7 +366,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
-            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
+            explanations: Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
