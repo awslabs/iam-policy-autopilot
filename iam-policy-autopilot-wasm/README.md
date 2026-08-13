@@ -1,7 +1,8 @@
 # iam-policy-autopilot-wasm
 
-WebAssembly build of IAM Policy Autopilot. Generates least-privilege IAM policies from
-source code entirely in the browser — source code never leaves the client.
+WebAssembly build of IAM Policy Autopilot. Generates IAM policies scoped to the AWS
+SDK calls found in your source code, entirely in the browser — source code never
+leaves the client.
 
 ## For Consumers
 

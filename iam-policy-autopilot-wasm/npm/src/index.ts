@@ -1,7 +1,7 @@
 /**
  * IAM Policy Autopilot — Browser WASM Package
  *
- * Generates least-privilege IAM policies from source code entirely in the browser.
+ * Generates IAM policies scoped to the AWS SDK calls in source code, entirely in the browser.
  * Uses the full Rust extraction + enrichment + generation pipeline compiled to
  * WebAssembly via Emscripten with JSPI for async service reference fetches.
  *
