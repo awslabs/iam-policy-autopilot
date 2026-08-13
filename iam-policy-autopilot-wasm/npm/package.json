@@ -1,7 +1,11 @@
 {
-  "name": "iam-policy-autopilot-wasm",
+  "name": "@aws/iam-policy-autopilot",
   "version": "0.2.3",
   "description": "Browser-ready WebAssembly build of IAM Policy Autopilot — generates least-privilege IAM policies from source code. Requires JSPI support (Chrome/Edge 137+, Firefox 153+, Safari 27+). Not yet optimized for production use (large binary).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awslabs/iam-policy-autopilot"
+  },
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

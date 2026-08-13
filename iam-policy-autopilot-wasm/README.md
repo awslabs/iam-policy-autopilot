@@ -8,13 +8,13 @@ source code entirely in the browser — source code never leaves the client.
 ### Installation
 
 ```bash
-npm install iam-policy-autopilot-wasm
+npm install @aws/iam-policy-autopilot
 ```
 
 ### Usage
 
 ```typescript
-import { generatePolicies, checkBrowserSupport } from "iam-policy-autopilot-wasm";
+import { generatePolicies, checkBrowserSupport } from "@aws/iam-policy-autopilot";
 
 // Verify browser compatibility
 const support = checkBrowserSupport();
@@ -40,11 +40,11 @@ The package includes two large files that must be served as static assets:
 - `iam_policy_autopilot.js` (~59KB) — Emscripten glue
 - `iam_policy_autopilot.wasm` (~55MB uncompressed, ~8MB gzipped)
 
-Copy these from `node_modules/iam-policy-autopilot-wasm/dist/` to your static assets
+Copy these from `node_modules/@aws/iam-policy-autopilot/dist/` to your static assets
 directory (e.g. `public/` in Vite). Then tell the module where to find them:
 
 ```typescript
-import { init } from "iam-policy-autopilot-wasm";
+import { init } from "@aws/iam-policy-autopilot";
 
 await init({
   locateFile: (filename) => `/static/wasm/${filename}`,

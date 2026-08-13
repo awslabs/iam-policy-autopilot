@@ -7,7 +7,7 @@
  *
  * @example
  * ```ts
- * import { generatePolicies } from 'iam-policy-autopilot-wasm';
+ * import { generatePolicies } from '@aws/iam-policy-autopilot';
  *
  * const result = await generatePolicies({
  *   files: [{ filename: 'handler.py', content: sourceCode }],
