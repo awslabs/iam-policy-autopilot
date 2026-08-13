@@ -9,6 +9,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::extraction::terraform::ChangeSide;
 use crate::Location;
 
 pub mod resource_binder;
@@ -32,6 +33,10 @@ pub struct ResourceBindingExplanation {
     pub resource_name: String,
     /// Location of the resource definition
     pub location: Location,
+    /// Plan-diff side this ARN came from (a replace emits `Before` + `After`);
+    /// `None` for `.tf`-derived bindings.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub change_side: Option<ChangeSide>,
 }
 
 /// Whether the ARN came from Terraform configuration parsing or from a terraform.tfstate file.

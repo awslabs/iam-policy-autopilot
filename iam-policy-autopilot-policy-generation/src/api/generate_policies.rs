@@ -2,17 +2,19 @@ use anyhow::{Context, Result};
 use std::collections::BTreeMap;
 use std::time::Instant;
 
-use log::{debug, info, trace};
+use log::{debug, info, trace, warn};
 
 use crate::{
     api::{
         extract_sdk_calls::extract_sdk_calls,
+        input_kind::{classify_inputs, ClassifiedInputs, IacFormat},
         model::{GeneratePoliciesResult, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
         Explanation, Explanations,
     },
+    extraction::terraform::plan_to_calls::{self, PlannedResource},
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, ExtractedMethods, PolicyGenerationEngine,
 };
@@ -164,6 +166,26 @@ fn filter_explanations(
     }
 }
 
+/// Extract the resources to bind ARNs against when the action-source inputs are
+/// Terraform plan(s).
+///
+/// Returns `Some(resources)` when the inputs are Terraform plan(s) (possibly an
+/// empty vec — the caller distinguishes "plan input" from "source input" by the
+/// `Option`, not the count), and `None` for application source. Classification
+/// or parse errors resolve to `None`/empty: [`extract_sdk_calls`] performs the
+/// authoritative parse and reports any real error with full context.
+fn extract_plan_resources(source_files: &[std::path::PathBuf]) -> Option<Vec<PlannedResource>> {
+    match classify_inputs(source_files) {
+        Ok(ClassifiedInputs::Iac(IacFormat::TerraformPlan, plan_paths)) => Some(
+            plan_to_calls::read_planned_resources(&plan_paths).unwrap_or_else(|e| {
+                debug!("Could not read Terraform plan resources for ARN binding: {e}");
+                Vec::new()
+            }),
+        ),
+        _ => None,
+    }
+}
+
 /// Generate policies for source files, with optional Terraform resource binding.
 ///
 /// When `config.terraform_dir` is set, the pipeline additionally:
@@ -182,37 +204,54 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         EnrichmentEngine::new(config.disable_file_system_cache, config.resource_cutoff)?;
 
     // --- Optional Terraform resolution ---
-    let has_terraform_inputs = config.terraform_dir.is_some()
-        || !config.terraform_files.is_empty()
-        || !config.tfstate_paths.is_empty();
+    // ARN binding is sourced from whichever Terraform inputs are present:
+    //   * a Terraform **plan** → derive resources from the plan
+    //     itself. We take the plan is the authoritative binding
+    //     source. Explicit --tf-dir / --tf-files / --tfvars / --tfstate are
+    //     ignored.
+    //   * otherwise (application source input) → the existing HCL/state path,
+    //     driven by --tf-dir / --tf-files / --tfstate / --tfvars.
+    let has_hcl_inputs = config.terraform_dir.is_some() || !config.terraform_files.is_empty();
 
-    let terraform_resolver = if has_terraform_inputs {
-        if let Some(ref terraform_dir) = config.terraform_dir {
-            debug!("Terraform directory provided: {}", terraform_dir.display());
-        }
-        if !config.terraform_files.is_empty() {
-            debug!(
-                "{} individual Terraform files provided",
-                config.terraform_files.len()
+    let terraform_resolver = if let Some(planned) =
+        extract_plan_resources(&config.extract_sdk_calls_config.source_files)
+    {
+        // Plan input: bind ARNs from the plan itself.
+        if has_hcl_inputs || !config.tfvars_files.is_empty() || !config.tfstate_paths.is_empty() {
+            warn!(
+                "Ignoring --tf-dir/--tf-files/--tfvars/--tfstate for a Terraform plan input: \
+                 the plan already reflects resolved attributes and refreshed state, and is \
+                 used directly for ARN binding."
             );
         }
-        if !config.tfstate_paths.is_empty() {
-            debug!("{} tfstate files provided", config.tfstate_paths.len());
-        }
         let loader = enrichment_engine.service_reference_loader();
-        let resolver = TerraformResourceResolver::new(
-            config.terraform_dir.as_deref(),
-            &config.terraform_files,
-            &config.tfstate_paths,
-            &config.tfvars_files,
-            loader,
-        )
-        .await
-        .context("Failed to resolve Terraform resources")?;
-        debug!("Resolved {} resource groups from Terraform", resolver.len());
+        let resolver = TerraformResourceResolver::from_plan(&planned, loader)
+            .await
+            .context("Failed to resolve Terraform resources from plan")?;
+        debug!(
+            "Resolved {} resource groups from Terraform plan",
+            resolver.len()
+        );
         Some(resolver)
     } else {
-        None
+        // Application source input: bind from .tf/.tfstate when provided.
+        let has_terraform_inputs = has_hcl_inputs || !config.tfstate_paths.is_empty();
+        if has_terraform_inputs {
+            let loader = enrichment_engine.service_reference_loader();
+            let resolver = TerraformResourceResolver::new(
+                config.terraform_dir.as_deref(),
+                &config.terraform_files,
+                &config.tfstate_paths,
+                &config.tfvars_files,
+                loader,
+            )
+            .await
+            .context("Failed to resolve Terraform resources")?;
+            debug!("Resolved {} resource groups from Terraform", resolver.len());
+            Some(resolver)
+        } else {
+            None
+        }
     };
 
     // --- Determine SDK method calls ---
@@ -558,6 +597,7 @@ mod tests {
                 resource_type: "aws_test".to_string(),
                 resource_name: "test".to_string(),
                 location: crate::Location::new(std::path::PathBuf::from("main.tf"), (1, 1), (1, 1)),
+                change_side: None,
             })
             .collect()
     }

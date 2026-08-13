@@ -147,6 +147,8 @@ fn extract_resource_block(
         local_name: local_name.to_string(),
         attributes,
         location,
+        // Parsed from `.tf` config — no plan-diff context.
+        change_side: None,
     })
 }
 

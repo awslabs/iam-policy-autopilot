@@ -10,14 +10,17 @@
 //! the user runs `terraform show -json plan.tfplan > plan.json` and passes the
 //! JSON.
 
-use std::collections::BTreeSet;
-use std::path::Path;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::extraction::terraform::AWS_RESOURCE_PREFIX;
+use crate::extraction::terraform::{
+    AttributeValue, ChangeSide, TerraformResource, AWS_RESOURCE_PREFIX,
+};
+use crate::Location;
 
 use super::crud_map::CrudSlot;
 
@@ -45,11 +48,29 @@ struct RawResourceChange {
 struct RawChange {
     #[serde(default)]
     actions: Vec<String>,
+    /// Pre-change (currently deployed) attribute values. `null` for a create.
+    /// For a delete this is the only place the concrete identity lives (`after`
+    /// is `null`); for a replace it is the *old* identity being destroyed.
+    #[serde(default)]
+    before: Value,
     /// Planned post-apply attribute values. `null` keys (e.g. `name` when a
     /// `name_prefix` is used and the final name is known-after-apply) are
     /// preserved so the mapper can detect the `name_prefix` ARN-scoping case.
+    /// `null` for a delete.
     #[serde(default)]
     after: Value,
+}
+
+/// One concrete resource identity resolved from a plan change: which side of the
+/// diff it came from, plus the known (non-null, string) attribute values the
+/// resource binder turns into a scoped ARN.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PlannedIdentity {
+    /// The change side this identity was read from (`after` for create/update,
+    /// `before` for delete, and both for a replace).
+    pub(crate) side: ChangeSide,
+    /// Known, resolved top-level string attributes (e.g. `{"name": "my-table"}`).
+    pub(crate) attributes: BTreeMap<String, String>,
 }
 
 /// A single managed-resource change extracted from the plan.
@@ -66,6 +87,15 @@ pub(crate) struct PlannedResource {
     /// prefix-glob ARN scoping (§5.1); not yet consumed — ARN binding currently
     /// comes from `.tf`/`.tfstate` via the existing resource binder.
     pub(crate) name_prefix: Option<String>,
+    /// Concrete resource identities resolved from the plan's `before`/`after`
+    /// attributes, which the resource binder turns into scoped ARNs.
+    ///
+    /// Usually one identity. A **replace** (`create`+`delete`) contributes two
+    /// — the new (`After`) and old (`Before`) identities — because the apply
+    /// creates one ARN and deletes the other; both belong in the policy.
+    pub(crate) identities: Vec<PlannedIdentity>,
+    /// The plan file this resource was read from.
+    pub(crate) source_plan: PathBuf,
 }
 
 /// Parse the CRUD slots a Terraform `actions` array implies.
@@ -98,6 +128,106 @@ fn slots_for_actions(actions: &[String]) -> BTreeSet<CrudSlot> {
         }
     }
     slots
+}
+
+impl PlannedResource {
+    /// Represent this planned resource's concrete identities as parsed
+    /// HCL-style resources, so the shared resource binder can derive ARNs from
+    /// their resolved attributes exactly as it does for `.tf`-sourced resources.
+    ///
+    /// Emits one [`TerraformResource`] per identity (see [`Self::identities`]),
+    /// each tagged with the [`ChangeSide`] it came from.
+    pub(crate) fn to_terraform_resources(&self) -> Vec<TerraformResource> {
+        let local_name = local_name_from_address(&self.address);
+        self.identities
+            .iter()
+            .map(|identity| {
+                let attributes = identity
+                    .attributes
+                    .iter()
+                    .map(|(k, v)| (k.clone(), AttributeValue::Literal(v.clone())))
+                    .collect();
+                TerraformResource {
+                    resource_type: self.resource_type.clone(),
+                    local_name: local_name.clone(),
+                    attributes,
+                    location: Location::new(self.source_plan.clone(), (0, 0), (0, 0)),
+                    change_side: Some(identity.side),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Derive a resource's local name from its plan address (the last dotted
+/// segment, with any `[index]`/`["key"]` suffix stripped). E.g.
+/// `aws_s3_bucket.data` → `data`
+fn local_name_from_address(address: &str) -> String {
+    let last = address.rsplit('.').next().unwrap_or(address);
+    match last.split_once('[') {
+        Some((name, _)) => name.to_string(),
+        None => last.to_string(),
+    }
+}
+
+/// Collect the resolved, non-null, top-level string attributes from a plan
+/// `before`/`after` object.
+fn known_string_attributes(value: &Value) -> BTreeMap<String, String> {
+    let mut attrs = BTreeMap::new();
+    if let Some(obj) = value.as_object() {
+        for (key, val) in obj {
+            if let Value::String(s) = val {
+                attrs.insert(key.clone(), s.clone());
+            }
+        }
+    }
+    attrs
+}
+
+/// Resolve a change's concrete identities from its `before`/`after` values.
+///
+/// - create → `After`
+/// - delete → `Before` (`after` is null)
+/// - update → `After` (identity is stable in place)
+/// - replace (`create`+`delete`) → both `After` (new) and `Before` (old) —
+///   the apply creates one ARN and deletes the other
+///
+/// Identities with no known attributes (all values known-after-apply) are
+/// dropped so those resources fall back to wildcard ARNs, as is a `Before` whose
+/// attributes duplicate the `After` (an in-place replace that didn't rename).
+fn resolve_identities(
+    slots: &BTreeSet<CrudSlot>,
+    before: &Value,
+    after: &Value,
+) -> Vec<PlannedIdentity> {
+    let after_known = known_string_attributes(after);
+    let before_known = known_string_attributes(before);
+    let is_replace = slots.contains(&CrudSlot::Create) && slots.contains(&CrudSlot::Delete);
+
+    let candidates = if is_replace {
+        vec![
+            (ChangeSide::After, after_known),
+            (ChangeSide::Before, before_known),
+        ]
+    } else if !after_known.is_empty() {
+        vec![(ChangeSide::After, after_known)]
+    } else {
+        vec![(ChangeSide::Before, before_known)]
+    };
+
+    let mut identities: Vec<PlannedIdentity> = Vec::new();
+    for (side, attributes) in candidates {
+        if attributes.is_empty() {
+            continue;
+        }
+        // Skip a Before whose attributes exactly match an already-kept identity
+        // (a replace that didn't change the naming attributes → one ARN).
+        if identities.iter().any(|id| id.attributes == attributes) {
+            continue;
+        }
+        identities.push(PlannedIdentity { side, attributes });
+    }
+    identities
 }
 
 /// Extract a `name_prefix` attribute from the planned `after` object, if the
@@ -140,10 +270,13 @@ pub(crate) fn file_looks_like_plan(path: &Path) -> bool {
     std::fs::read(path).is_ok_and(|bytes| looks_like_plan(&bytes))
 }
 
-/// Parse a plan document from raw `terraform show -json` bytes.
-fn from_slice(bytes: &[u8]) -> Result<Vec<PlannedResource>> {
+/// Read and parse a `terraform show -json` plan file from disk. Each resource
+/// records `path` as its `source_plan` for use as the binding's source location.
+pub(crate) fn read_plan(path: &Path) -> Result<Vec<PlannedResource>> {
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("Failed to read Terraform plan JSON at {}", path.display()))?;
     let doc: PlanDocument =
-        serde_json::from_slice(bytes).context("Failed to parse terraform plan JSON")?;
+        serde_json::from_slice(&bytes).context("Failed to parse terraform plan JSON")?;
 
     let resources = doc
         .resource_changes
@@ -151,22 +284,21 @@ fn from_slice(bytes: &[u8]) -> Result<Vec<PlannedResource>> {
         // Only managed AWS resources participate in IAM action derivation.
         .filter(|rc| rc.mode.as_deref() != Some("data"))
         .filter(|rc| rc.type_.starts_with(AWS_RESOURCE_PREFIX))
-        .map(|rc| PlannedResource {
-            address: rc.address,
-            resource_type: rc.type_,
-            slots: slots_for_actions(&rc.change.actions),
-            name_prefix: extract_name_prefix(&rc.change.after),
+        .map(|rc| {
+            let slots = slots_for_actions(&rc.change.actions);
+            let identities = resolve_identities(&slots, &rc.change.before, &rc.change.after);
+            PlannedResource {
+                address: rc.address,
+                resource_type: rc.type_,
+                slots,
+                name_prefix: extract_name_prefix(&rc.change.after),
+                identities,
+                source_plan: path.to_path_buf(),
+            }
         })
         .collect();
 
     Ok(resources)
-}
-
-/// Read and parse a `terraform show -json` plan file from disk.
-pub(crate) fn read_plan(path: &Path) -> Result<Vec<PlannedResource>> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("Failed to read Terraform plan JSON at {}", path.display()))?;
-    from_slice(&bytes)
 }
 
 #[cfg(test)]
@@ -194,6 +326,16 @@ mod tests {
         assert_eq!(slots_for_actions(&actions), slots(expected));
     }
 
+    /// Write `json` to a temp file and return the handle (kept alive by the
+    /// caller). `read_plan` needs a real file; `.path()` is the recorded
+    /// `source_plan`.
+    fn write_plan(json: &str) -> tempfile::NamedTempFile {
+        use std::io::Write as _;
+        let mut file = tempfile::NamedTempFile::new().expect("create temp plan");
+        file.write_all(json.as_bytes()).expect("write temp plan");
+        file
+    }
+
     #[test]
     fn parses_managed_resource_change() {
         let json = r#"{
@@ -206,7 +348,8 @@ mod tests {
                 }
             ]
         }"#;
-        let resources = from_slice(json.as_bytes()).unwrap();
+        let plan = write_plan(json);
+        let resources = read_plan(plan.path()).unwrap();
         assert_eq!(
             resources,
             vec![PlannedResource {
@@ -214,6 +357,8 @@ mod tests {
                 resource_type: "aws_s3_bucket".to_string(),
                 slots: slots(&[CrudSlot::Read, CrudSlot::Create]),
                 name_prefix: None,
+                identities: vec![ident(ChangeSide::After, &[("name", "my-bucket")])],
+                source_plan: plan.path().to_path_buf(),
             }]
         );
     }
@@ -230,7 +375,8 @@ mod tests {
                   "change": { "actions": ["create"], "after": {} } }
             ]
         }"#;
-        let resources = from_slice(json.as_bytes()).unwrap();
+        let plan = write_plan(json);
+        let resources = read_plan(plan.path()).unwrap();
         let types: Vec<&str> = resources.iter().map(|r| r.resource_type.as_str()).collect();
         assert_eq!(types, vec!["aws_s3_bucket"]);
     }
@@ -251,8 +397,113 @@ mod tests {
 
     #[test]
     fn empty_plan_yields_no_resources() {
-        let resources = from_slice(br#"{ "resource_changes": [] }"#).unwrap();
+        let plan = write_plan(r#"{ "resource_changes": [] }"#);
+        let resources = read_plan(plan.path()).unwrap();
         assert_eq!(resources, vec![]);
+    }
+
+    /// Build a `BTreeMap` of attributes from `(key, value)` pairs.
+    fn btm(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
+    }
+
+    /// Build a `PlannedIdentity` for the given side from `(key, value)` pairs.
+    fn ident(side: ChangeSide, pairs: &[(&str, &str)]) -> PlannedIdentity {
+        PlannedIdentity {
+            side,
+            attributes: btm(pairs),
+        }
+    }
+
+    #[rstest]
+    // create: known values come from `after`.
+    #[case(&["create"], serde_json::json!(null), serde_json::json!({"name": "a"}), vec![ident(ChangeSide::After, &[("name", "a")])])]
+    // delete: `after` is null; the concrete identity is in `before`.
+    #[case(&["delete"], serde_json::json!({"name": "a"}), serde_json::json!(null), vec![ident(ChangeSide::Before, &[("name", "a")])])]
+    // update in place: identity is stable; `after` is used.
+    #[case(&["update"], serde_json::json!({"name": "a"}), serde_json::json!({"name": "a"}), vec![ident(ChangeSide::After, &[("name", "a")])])]
+    // replace with rename: BOTH the new (after) and old (before) identities, after first.
+    #[case(&["delete", "create"], serde_json::json!({"name": "old"}), serde_json::json!({"name": "new"}),
+        vec![ident(ChangeSide::After, &[("name", "new")]), ident(ChangeSide::Before, &[("name", "old")])])]
+    // replace, name unchanged: the two identities collapse to the After one.
+    #[case(&["create", "delete"], serde_json::json!({"name": "a"}), serde_json::json!({"name": "a"}), vec![ident(ChangeSide::After, &[("name", "a")])])]
+    // create with a known-after-apply name: no known attributes → no identity (wildcard fallback).
+    #[case(&["create"], serde_json::json!(null), serde_json::json!({}), Vec::new())]
+    fn resolve_identities_by_action_set(
+        #[case] actions: &[&str],
+        #[case] before: Value,
+        #[case] after: Value,
+        #[case] expected: Vec<PlannedIdentity>,
+    ) {
+        let actions: Vec<String> = actions.iter().map(|s| s.to_string()).collect();
+        let slots = slots_for_actions(&actions);
+        assert_eq!(resolve_identities(&slots, &before, &after), expected);
+    }
+
+    #[test]
+    fn known_string_attributes_keeps_only_scalar_strings() {
+        let value = serde_json::json!({
+            "name": "my-table",
+            "read_capacity": 5,            // number → skipped
+            "tags": { "env": "prod" },     // nested object → skipped
+            "attribute": [{ "name": "id" }] // array → skipped
+        });
+        assert_eq!(
+            known_string_attributes(&value),
+            btm(&[("name", "my-table")])
+        );
+    }
+
+    #[test]
+    fn to_terraform_resources_tags_each_identity_with_its_side() {
+        // A replace-with-rename resource: two identities → two TerraformResources
+        // that share the real local name but carry distinct change sides, so the
+        // binder keeps them apart (and only state-matches the Before one) while
+        // both contribute an ARN.
+        let planned = PlannedResource {
+            address: "aws_dynamodb_table.app".to_string(),
+            resource_type: "aws_dynamodb_table".to_string(),
+            slots: slots(&[CrudSlot::Read, CrudSlot::Create, CrudSlot::Delete]),
+            name_prefix: None,
+            identities: vec![
+                ident(ChangeSide::After, &[("name", "new")]),
+                ident(ChangeSide::Before, &[("name", "old")]),
+            ],
+            source_plan: PathBuf::from("plan.json"),
+        };
+        let resources = planned.to_terraform_resources();
+        assert_eq!(resources.len(), 2);
+        assert_eq!(resources[0].resource_type, "aws_dynamodb_table");
+        assert_eq!(resources[0].local_name, "app");
+        assert_eq!(resources[0].change_side, Some(ChangeSide::After));
+        // Location points at the source plan file.
+        assert_eq!(resources[0].location.file_path, PathBuf::from("plan.json"));
+        assert_eq!(
+            resources[0].attributes.get("name"),
+            Some(&AttributeValue::Literal("new".to_string()))
+        );
+        // Same real local name — the side, not a munged name, keeps it distinct.
+        assert_eq!(resources[1].local_name, "app");
+        assert_eq!(resources[1].change_side, Some(ChangeSide::Before));
+        assert_eq!(
+            resources[1].attributes.get("name"),
+            Some(&AttributeValue::Literal("old".to_string()))
+        );
+    }
+
+    #[rstest]
+    #[case("aws_s3_bucket.data", "data")]
+    #[case("module.m.aws_sqs_queue.jobs", "jobs")]
+    #[case("aws_dynamodb_table.app[0]", "app")]
+    #[case("aws_instance.web[\"a\"]", "web")]
+    fn local_name_from_address_strips_module_and_index(
+        #[case] address: &str,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(local_name_from_address(address), expected);
     }
 
     #[rstest]

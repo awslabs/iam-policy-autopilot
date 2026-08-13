@@ -56,13 +56,25 @@ pub(crate) fn plan_to_sdk_calls(
     let crud_map = crud_map::CrudMap::load()?;
     let model = model_index::ModelIndex::load()?;
 
+    let resources = read_planned_resources(plan_paths)?;
+
+    let mapped = mapper::map_plan(&resources, &crud_map, &model);
+    Ok((mapped, resources))
+}
+
+/// Read and union the managed resources from one or more `terraform show -json`
+/// plan files, without mapping them to SDK calls.
+///
+/// Used by the policy pipeline to derive resource ARNs directly from the plan
+/// (its `before`/`after` values are already resolved by Terraform), so scoping
+/// works with no `--tf-dir`/`--tf-files`. `plan_to_sdk_calls` uses the same
+/// reader for the action-derivation side.
+pub(crate) fn read_planned_resources(plan_paths: &[PathBuf]) -> Result<Vec<PlannedResource>> {
     let mut resources = Vec::new();
     for plan_path in plan_paths {
         resources.extend(plan_reader::read_plan(plan_path)?);
     }
-
-    let mapped = mapper::map_plan(&resources, &crud_map, &model);
-    Ok((mapped, resources))
+    Ok(resources)
 }
 
 /// The library name recorded in the embedded `terraform-model.json`.
