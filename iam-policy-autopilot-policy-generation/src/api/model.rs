@@ -53,14 +53,15 @@ pub struct GeneratePolicyConfig {
 /// Result of policy generation including policies, action mappings, and explanations
 #[derive(Debug, Clone, Serialize, Builder)]
 #[serde(rename_all = "PascalCase")]
-#[builder(setter(into, strip_option))]
+#[builder(setter(into))]
 pub struct GeneratePoliciesResult {
     /// Generated IAM policies
     pub policies: Vec<PolicyWithMetadata>,
-    /// Explanations for why actions were added (if requested)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[builder(default, setter(strip_option))]
-    pub explanations: Option<Explanations>,
+    /// Explanations for why actions were added. Empty unless explanations
+    /// were requested and at least one action matched the filters.
+    #[serde(skip_serializing_if = "Explanations::is_empty")]
+    #[builder(default)]
+    pub explanations: Explanations,
     /// Explanations for where resource ARNs came from (Terraform bindings)
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]

@@ -141,12 +141,7 @@ fn filter_resource_explanations(
 }
 
 /// Filter explanations to only include actions matching the given patterns.
-fn filter_explanations(
-    explanations: Option<Explanations>,
-    filters: &[String],
-) -> Option<Explanations> {
-    let explanations = explanations?;
-
+fn filter_explanations(explanations: Explanations, filters: &[String]) -> Explanations {
     let filtered_map: BTreeMap<String, Explanation> = explanations
         .explanation_for_action
         .into_iter()
@@ -157,11 +152,7 @@ fn filter_explanations(
         })
         .collect();
 
-    if filtered_map.is_empty() {
-        None
-    } else {
-        Some(Explanations::new(filtered_map))
-    }
+    Explanations::new(filtered_map)
 }
 
 /// Generate policies for source files, with optional Terraform resource binding.
@@ -304,7 +295,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Generate explanations only if explain_filters is provided
     let explanations = match &config.explain_filters {
         Some(filters) => filter_explanations(result.explanations, filters),
-        None => None,
+        None => Explanations::default(),
     };
 
     if !config.individual_policies {
@@ -351,9 +342,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     let mut builder = GeneratePoliciesResultBuilder::default();
     builder.policies(final_policies);
     builder.warnings(warnings);
-    if let Some(explanations) = explanations {
-        builder.explanations(explanations);
-    }
+    builder.explanations(explanations);
     if let Some(binding_explanations) = binding_explanations {
         builder.resource_binding_explanations(binding_explanations);
     }
@@ -428,11 +417,10 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("s3:PutObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         let result = filter_explanations(explanations, &["*".to_string()]);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().explanation_for_action.len(), 2);
+        assert_eq!(result.explanation_for_action.len(), 2);
     }
 
     #[test]
@@ -442,12 +430,10 @@ mod tests {
         map.insert("s3:GetObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
         map.insert("dynamodb:GetItem".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to only s3 actions
         let result = filter_explanations(explanations, &["s3:*".to_string()]);
-        assert!(result.is_some());
-        let result = result.unwrap();
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result.explanation_for_action.contains_key("s3:GetObject"));
@@ -459,15 +445,13 @@ mod tests {
         map.insert("s3:PutObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
         map.insert("dynamodb:GetItem".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to s3 and dynamodb actions
         let result = filter_explanations(
             explanations,
             &["s3:*".to_string(), "dynamodb:*".to_string()],
         );
-        assert!(result.is_some());
-        let result = result.unwrap();
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result
@@ -479,17 +463,17 @@ mod tests {
     fn test_filter_explanations_no_matches() {
         let mut map = BTreeMap::new();
         map.insert("s3:PutObject".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to ec2 actions (no matches)
         let result = filter_explanations(explanations, &["ec2:*".to_string()]);
-        assert!(result.is_none());
+        assert!(result.is_empty());
     }
 
     #[test]
-    fn test_filter_explanations_none_input() {
-        let result = filter_explanations(None, &["s3:*".to_string()]);
-        assert!(result.is_none());
+    fn test_filter_explanations_empty_input() {
+        let result = filter_explanations(Explanations::default(), &["s3:*".to_string()]);
+        assert!(result.is_empty());
     }
 
     // -----------------------------------------------------------------------

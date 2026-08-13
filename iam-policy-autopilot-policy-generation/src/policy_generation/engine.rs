@@ -962,8 +962,8 @@ mod tests {
         // Verify explanations were collected
         if let Some(explanation) = result
             .explanations
-            .as_ref()
-            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
+            .explanation_for_action
+            .get("s3:GetObject")
         {
             assert_eq!(explanation.reasons.len(), 1);
             assert_eq!(explanation.reasons[0].operations.len(), 1);
@@ -1039,8 +1039,8 @@ mod tests {
         // Verify explanations were grouped by action with deduplicated reasons
         if let Some(explanation) = result
             .explanations
-            .as_ref()
-            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
+            .explanation_for_action
+            .get("s3:GetObject")
         {
             assert_eq!(
                 explanation.reasons.len(),
@@ -1115,8 +1115,8 @@ mod tests {
 
         let explanation = result
             .explanations
-            .as_ref()
-            .and_then(|explanations| explanations.explanation_for_action.get("s3:GetObject"))
+            .explanation_for_action
+            .get("s3:GetObject")
             .expect("Must have an explanation for s3:GetObject");
         assert_eq!(
             explanation.reasons.len(),
@@ -1185,21 +1185,11 @@ mod tests {
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
         // Verify explanations include FAS expansion
-        assert_eq!(
-            result
-                .explanations
-                .as_ref()
-                .unwrap()
-                .explanation_for_action
-                .len(),
-            2
-        );
+        assert_eq!(result.explanations.explanation_for_action.len(), 2);
 
         // Check the FAS-expanded action
         let kms_explanation = result
             .explanations
-            .as_ref()
-            .unwrap()
             .explanation_for_action
             .get("kms:Decrypt")
             .expect("Should have kms:Decrypt explanation");
@@ -1258,14 +1248,6 @@ mod tests {
 
         let result = engine.generate_policies(&[enriched_call]).unwrap();
 
-        assert_eq!(
-            result
-                .explanations
-                .as_ref()
-                .unwrap()
-                .explanation_for_action
-                .len(),
-            1
-        );
+        assert_eq!(result.explanations.explanation_for_action.len(), 1);
     }
 }

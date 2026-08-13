@@ -239,7 +239,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
-            explanations: None,
+            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
@@ -289,7 +289,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![],
-            explanations: None,
+            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
@@ -365,7 +365,7 @@ mod tests {
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
             policies: vec![policy],
-            explanations: None,
+            explanations: iam_policy_autopilot_policy_generation::Explanations::default(),
             resource_binding_explanations: None,
             warnings: vec![],
         }));
