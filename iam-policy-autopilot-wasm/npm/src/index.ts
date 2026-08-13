@@ -92,7 +92,7 @@ export function checkBrowserSupport(): { supported: boolean; missing: string[] }
     missing.push('WebAssembly');
   } else {
     if (typeof (WebAssembly as any).promising !== 'function') {
-      missing.push('WebAssembly.promising (JSPI) — requires Chrome/Edge 137+, Firefox 153+, or a browser with JSPI support');
+      missing.push('WebAssembly.promising (JSPI) — requires Chrome/Edge 137+, Firefox 153+, Safari 27+, or a browser with JSPI support');
     }
     if (typeof (WebAssembly as any).Suspending !== 'function') {
       missing.push('WebAssembly.Suspending (JSPI)');

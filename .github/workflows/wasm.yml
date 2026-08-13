@@ -31,7 +31,8 @@ jobs:
         with:
           version: 5.0.7
 
-      # Node 24+ needed for JSPI (--experimental-wasm-jspi) in the boundary test
+      # Node 24 needs --experimental-wasm-jspi for the boundary test.
+      # Node 26+ enables JSPI by default; drop the flag when bumping node-version.
       - uses: actions/setup-node@v4
         with:
           node-version: "24"

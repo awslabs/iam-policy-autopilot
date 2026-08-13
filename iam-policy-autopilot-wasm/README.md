@@ -53,9 +53,16 @@ await init({
 
 ### Browser Requirements
 
-- **Chrome 131+** or Chromium-based browser (Edge, Brave, Arc, etc.)
-- JSPI (JavaScript Promise Integration) must be available
-- Firefox and Safari are **not supported** (no JSPI implementation)
+JSPI (JavaScript Promise Integration) must be available. JSPI is a phase-4
+WebAssembly proposal shipped in all three major engines:
+
+- **Chrome/Edge 137+** and other Chromium-based browsers (Brave, Arc, Opera 121+, etc.)
+- **Firefox 153+**
+- **Safari 27+** (Safari 26.x and earlier are not supported; verify iOS Safari
+  availability before relying on it)
+
+Use `checkBrowserSupport()` for runtime feature detection rather than
+user-agent sniffing.
 
 ### CSP Requirements
 
@@ -136,7 +143,9 @@ node --experimental-wasm-jspi --test iam-policy-autopilot-wasm/test/wasm-invoke.
 Requirements:
 
 - **Node 24+** with the `--experimental-wasm-jspi` flag — the module suspends on
-  service-reference fetches via JSPI (`WebAssembly.promising`/`Suspending`)
+  service-reference fetches via JSPI (`WebAssembly.promising`/`Suspending`).
+  Node 26+ enables JSPI by default, so the flag can be dropped once CI and local
+  tooling move to Node 26
 - **Network access** to `https://servicereference.us-east-1.amazonaws.com` for
   enrichment data
 - `npm/dist/` populated by `./build.sh` — the test serves it over a loopback HTTP
