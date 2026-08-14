@@ -31,9 +31,9 @@ fn temp_json(contents: &str) -> NamedTempFile {
 }
 
 /// Build a plan-only config. Plans are passed as positional input files (no
-/// dedicated flag) and auto-detected by content; no ARN binding inputs are
-/// provided, so resources fall back to wildcards. Accepts one or more plans
-/// (multiple plans are unioned).
+/// dedicated flag) and auto-detected by content. No `.tf`/state binding inputs
+/// are provided — ARN scoping (when it happens) is derived from the plan itself.
+/// Accepts one or more plans (multiple plans are unioned).
 fn plan_only_config(plan_paths: Vec<std::path::PathBuf>) -> GeneratePolicyConfig {
     GeneratePolicyConfig {
         extract_sdk_calls_config: ExtractSdkCallsConfig {
@@ -80,6 +80,45 @@ fn collect_actions(value: &Value, out: &mut BTreeSet<String>) {
         Value::Array(items) => {
             for v in items {
                 collect_actions(v, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collect every `Resource` ARN string across all generated policy statements.
+fn resources(result: &GeneratePoliciesResult) -> BTreeSet<String> {
+    let json = serde_json::to_value(&result.policies).expect("serialize policies");
+    let mut out = BTreeSet::new();
+    collect_field(&json, "Resource", &mut out);
+    out
+}
+
+/// Recursively collect string values found under `key` (a scalar or an array of
+/// scalars) anywhere in the JSON.
+fn collect_field(value: &Value, key: &str, out: &mut BTreeSet<String>) {
+    match value {
+        Value::Object(map) => {
+            match map.get(key) {
+                Some(Value::String(s)) => {
+                    out.insert(s.clone());
+                }
+                Some(Value::Array(items)) => {
+                    for item in items {
+                        if let Value::String(s) = item {
+                            out.insert(s.clone());
+                        }
+                    }
+                }
+                _ => {}
+            }
+            for v in map.values() {
+                collect_field(v, key, out);
+            }
+        }
+        Value::Array(items) => {
+            for v in items {
+                collect_field(v, key, out);
             }
         }
         _ => {}
@@ -177,5 +216,59 @@ async fn plan_emits_expected_actions(#[case] plans: Vec<String>, #[case] expecte
             .iter()
             .map(|s| s.to_string())
             .collect::<BTreeSet<_>>()
+    );
+}
+
+/// A rename-**replace** of a DynamoDB table: the resource is destroyed under its
+/// old name (`before`) and recreated under a new one (`after`), the classic case
+/// where `before` and `after` are different identities.
+fn dynamodb_replace_plan(old_name: &str, new_name: &str) -> String {
+    format!(
+        r#"{{
+            "format_version": "1.2",
+            "resource_changes": [
+                {{
+                    "address": "aws_dynamodb_table.app",
+                    "type": "aws_dynamodb_table",
+                    "mode": "managed",
+                    "change": {{
+                        "actions": ["delete", "create"],
+                        "before": {{ "name": "{old_name}" }},
+                        "after": {{ "name": "{new_name}" }}
+                    }}
+                }}
+            ]
+        }}"#
+    )
+}
+
+/// Plan-derived ARN scoping for a replace: the policy must be scoped to BOTH the
+/// old (`before`) and new (`after`) table ARNs — the apply deletes one and
+/// creates the other — with neither left as a wildcard. Binding is derived from
+/// the plan alone (no `--tf-dir`/`--tf-files`/`--tfstate`).
+#[tokio::test]
+async fn plan_replace_scopes_both_before_and_after_arns() {
+    let plan = dynamodb_replace_plan("ipa-tf-test-replace-old", "ipa-tf-test-replace-new");
+    let file = temp_json(&plan);
+    let config = plan_only_config(vec![file.path().to_path_buf()]);
+
+    let result = generate_policies(&config).await.expect("generate policies");
+    let res = resources(&result);
+
+    let old_arn = "arn:aws:dynamodb:us-east-1:123456789012:table/ipa-tf-test-replace-old";
+    let new_arn = "arn:aws:dynamodb:us-east-1:123456789012:table/ipa-tf-test-replace-new";
+
+    assert!(
+        res.contains(old_arn),
+        "old (before) table ARN must be scoped into the policy, got: {res:#?}"
+    );
+    assert!(
+        res.contains(new_arn),
+        "new (after) table ARN must be scoped into the policy, got: {res:#?}"
+    );
+    // Scoped, not wildcarded: the bare table wildcard must not appear.
+    assert!(
+        !res.contains("arn:aws:dynamodb:us-east-1:123456789012:table/*"),
+        "dynamodb table ARNs should be concrete, not a wildcard, got: {res:#?}"
     );
 }

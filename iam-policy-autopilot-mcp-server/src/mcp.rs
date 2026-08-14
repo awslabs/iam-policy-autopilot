@@ -51,8 +51,9 @@ impl IamAutoPilotMcpServer {
         Use this tool whenever the user mentions: writing policies, creating policies, generating policies, IAM permissions, \
         AWS permissions, access controls, policy creation, policy generation, or needs IAM policies for any purpose. \
         \
-        This tool analyzes source code files (Python, JavaScript, TypeScript, Go, Java, etc.) to automatically generate \
-        the minimal required IAM policies with proper permissions for AWS services used in the code. \
+        This tool analyzes application source code files (Python, JavaScript, TypeScript, Go, Java, etc.) or Terraform \
+        plans in JSON form produced by `terraform show -json` to automatically generate tightly scoped IAM policies \
+        for AWS services used in the code or changed by the plan. \
         \
         **WHEN TO USE THIS TOOL:** \
         - User asks to write, create, or generate IAM policies \
@@ -60,13 +61,15 @@ impl IamAutoPilotMcpServer {
         - User mentions needing AWS permissions or access controls \
         - User is working with infrastructure as code and needs policies \
         - User has source code that uses AWS services and needs corresponding IAM policies \
+        - User has a Terraform plan and needs permissions to apply its resource changes \
         - User asks about policy generation, policy creation, or IAM permissions \
         - ANY discussion about writing or creating AWS policies should trigger this tool \
         \
         **INSTRUCTIONS:** \
         1. Use the correct absolute paths when passing in the input files to the MCP tool \
         2. Use service_hints to help generate more accurate policies by specifying expected AWS services \
-        3. You MUST include ALL relevant source files that interact with AWS services to generate accurate policies \
+        3a. For application code, you MUST include ALL relevant source files that interact with AWS services \
+        3b. For Terraform, provide the plan in JSON form produced by `terraform show -json` \
         4. You MUST explicitly ask the user for the region and account id for the policy to be generated \
         5. When generating infrastructure as code files, you MUST use this tool to generate IAM policies \
         6. After getting output from this tool, you MUST explicitly ask the user to review the policy before proceeding \
@@ -169,16 +172,19 @@ impl ServerHandler for IamAutoPilotMcpServer {
             - Writing policies, creating policies, generating policies \
             - IAM permissions, AWS permissions, access controls \
             - Policy creation, policy generation, policy writing \
-            - Need policies for source code or infrastructure \
+            - Need policies for source code, Terraform plans, or infrastructure \
             - Any discussion about AWS IAM policies \
             \
             **Key capabilities:** \
             1. Generate IAM policies from source code analysis (Python, JavaScript, TypeScript, Go, Java) \
-            2. Create minimal required permissions for AWS services used in code \
-            3. Debug and fix AccessDenied issues with targeted policy generation \
-            4. Apply policy fixes directly to AWS accounts \
+            2. Generate IAM policies from Terraform plan JSON \
+            3. Create tightly scoped permissions for AWS services used in code or changed by a Terraform plan \
+            4. Debug and fix AccessDenied issues with targeted policy generation \
+            5. Apply policy fixes directly to AWS accounts \
             \
-            **CRITICAL: When generating policies, you MUST include ALL relevant source files that interact with AWS services.** \
+            **CRITICAL INPUT REQUIREMENTS:** \
+            - Application code: You MUST include ALL relevant source files that interact with AWS services \
+            - Terraform: Provide the plan JSON produced by `terraform show -json` \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
             This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.")

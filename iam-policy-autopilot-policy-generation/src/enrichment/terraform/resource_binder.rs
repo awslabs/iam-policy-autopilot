@@ -26,6 +26,7 @@ use crate::enrichment::ServiceReferenceLoader;
 use crate::enrichment::{Action, EnrichedSdkMethodCall, Resource};
 use crate::Location;
 
+use crate::extraction::terraform::plan_to_calls::PlannedResource;
 use crate::extraction::terraform::state_parser::TerraformStateResources;
 use crate::extraction::terraform::variable_resolver::VariableContext;
 use crate::extraction::terraform::{AttributeValue, TerraformResource, TerraformResources};
@@ -190,7 +191,7 @@ impl TerraformResourceResolver {
 
         // Step 4: Resolve all resources
         let resources = resolve_terraform_resources(
-            &tf_result,
+            tf_result.values(),
             &state_resources,
             &VariableContext::default(),
             loader,
@@ -205,6 +206,30 @@ impl TerraformResourceResolver {
         Ok(Self {
             resources,
             warnings: tf_result.take_warnings(),
+        })
+    }
+
+    /// Build a resolver from a Terraform **plan** instead of `.tf` files.
+    pub(crate) async fn from_plan(
+        planned: &[PlannedResource],
+        loader: &ServiceReferenceLoader,
+    ) -> Result<Self> {
+        let plan_resources: Vec<TerraformResource> = planned
+            .iter()
+            .flat_map(PlannedResource::to_terraform_resources)
+            .collect();
+
+        let resources = resolve_terraform_resources(
+            plan_resources.iter(),
+            &TerraformStateResources::default(),
+            &VariableContext::default(),
+            loader,
+        )
+        .await;
+
+        Ok(Self {
+            resources,
+            warnings: Vec::new(),
         })
     }
 
@@ -523,6 +548,7 @@ impl TerraformResourceResolver {
                         resource_type: resolved.resource.resource_type.clone(),
                         resource_name: resolved.resource.local_name.clone(),
                         location,
+                        change_side: resolved.resource.change_side,
                     });
                     continue;
                 }
@@ -537,6 +563,7 @@ impl TerraformResourceResolver {
                             resource_type: resolved.resource.resource_type.clone(),
                             resource_name: resolved.resource.local_name.clone(),
                             location: resource_location.clone(),
+                            change_side: resolved.resource.change_side,
                         });
                     }
                 }
@@ -551,15 +578,17 @@ impl TerraformResourceResolver {
 // Resource resolution (internal)
 // ---------------------------------------------------------------------------
 
-/// Build a `ResolvedResourceMap` from parsed HCL resources, enriched with
+/// Build a `ResolvedResourceMap` from parsed resources, enriched with
 /// state data, variable resolution, and SDF ARN patterns.
 ///
 /// Keyed by `(service_name, resource_type)` for direct lookup during
-/// policy generation.
+/// policy generation. Accepts a flat iterator (not the `(type, local_name)`
+/// map) so plan-derived replaces — whose two identities share a local name —
+/// both flow through; their `ChangeSide` keeps them distinct.
 ///
 /// Resources that don't map to a service in names_data.hcl are excluded.
-async fn resolve_terraform_resources(
-    terraform_resources: &TerraformResources,
+async fn resolve_terraform_resources<'a>(
+    terraform_resources: impl IntoIterator<Item = &'a TerraformResource>,
     state_resources: &TerraformStateResources,
     var_ctx: &VariableContext,
     loader: &ServiceReferenceLoader,
@@ -567,7 +596,7 @@ async fn resolve_terraform_resources(
     let resolver = super::service_resolver::TerraformServiceAndResourceResolver::global();
     let mut results = ResolvedResourceMap::new();
 
-    for resource in terraform_resources.values() {
+    for resource in terraform_resources {
         let mut resolved_res = ResolvedTerraformResource::from_parsed(resource.clone());
         let tf_key = (resource.resource_type.clone(), resource.local_name.clone());
 
@@ -577,7 +606,8 @@ async fn resolve_terraform_resources(
         resolved_res.service_name = Some(service.clone());
         resolved_res.resource_type = Some(resource_type.clone());
 
-        // Priority 1: Use state-derived ARN if available (exact deployed ARN)
+        // Priority 1: Use a state-derived ARN if one exists (the exact deployed
+        // ARN from a `--tfstate` file).
         let has_state_arn = if let Some(resources) = state_resources.get(&tf_key.0, &tf_key.1) {
             if let Some(resource) = resources.iter().find(|s| s.arn.is_some()) {
                 resolved_res.state_arn.clone_from(&resource.arn);
@@ -786,6 +816,7 @@ mod tests {
             local_name: name.to_string(),
             attributes: HashMap::from([(attr_key.to_string(), attr_val)]),
             location: Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)),
+            change_side: None,
         }
     }
 
@@ -830,6 +861,7 @@ mod tests {
                 local_name: local_name.to_string(),
                 attributes: HashMap::new(),
                 location: Location::new(PathBuf::from("main.tf"), (10, 1), (10, 1)),
+                change_side: None,
             },
             service_name: Some(service.to_string()),
             resource_type: Some(suffix.to_string()),
@@ -901,13 +933,9 @@ mod tests {
     ) {
         let state = make_state_resources(state_entries);
         let loader = ServiceReferenceLoader::empty_loader_for_tests().unwrap();
-        let resolved = resolve_terraform_resources(
-            &vec_to_terraform_resources(hcl),
-            &state,
-            &empty_var_ctx(),
-            &loader,
-        )
-        .await;
+        let tf = vec_to_terraform_resources(hcl);
+        let resolved =
+            resolve_terraform_resources(tf.values(), &state, &empty_var_ctx(), &loader).await;
 
         match expected_key {
             None => assert!(resolved.is_empty(), "expected empty resolved map"),

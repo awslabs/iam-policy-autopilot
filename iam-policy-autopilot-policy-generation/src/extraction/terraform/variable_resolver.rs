@@ -420,6 +420,7 @@ mod tests {
             local_name: "b".to_string(),
             attributes: HashMap::from([(input_attr_key.to_string(), input_attr_value)]),
             location: crate::Location::new(std::path::PathBuf::from("main.tf"), (1, 1), (1, 1)),
+            change_side: None,
         };
         let mut result = TerraformResources::default();
         result.insert(resource);

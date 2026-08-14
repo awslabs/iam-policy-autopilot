@@ -425,7 +425,8 @@ Examples:\n  \
             long_help = "Directory containing Terraform .tf files. When provided, the tool parses \
 Terraform resources to discover AWS infrastructure and generates more precise IAM policies by \
 using concrete resource names in ARNs, when possible. .tf files discovered in the Terraform \
-directory are combined with any files specified via --tf-files."
+directory are combined with any files specified via --tf-files. Ignored when generating policies \
+from a Terraform plan."
         )]
         #[telemetry(presence)]
         tf_dir: Option<PathBuf>,
@@ -437,7 +438,8 @@ directory are combined with any files specified via --tf-files."
             long_help = "One or more individual Terraform .tf files to parse for AWS resource definitions. \
 When provided, the tool parses Terraform resources to discover AWS infrastructure and generates \
 more precise IAM policies by using concrete resource names in ARNs, when possible. These files \
-are combined with any directory specified via --tf-dir."
+are combined with any directory specified via --tf-dir. Ignored when generating policies from a Terraform \
+plan."
         )]
         #[telemetry(presence)]
         tf_files: Vec<PathBuf>,
@@ -451,7 +453,7 @@ provided, these files are used to resolve variable references in resource defini
 more precise IAM policies by using concrete resource names in ARNs. These files take precedence \
 over auto-discovered terraform.tfvars and *.auto.tfvars files from the Terraform directory. \
 Applied in order (later files override earlier ones). This is equivalent to Terraform's \
--var-file= CLI flag."
+-var-file= CLI flag. Ignored when generating policies from a Terraform plan."
         )]
         #[telemetry(presence)]
         tfvars: Vec<PathBuf>,
@@ -463,7 +465,7 @@ Applied in order (later files override earlier ones). This is equivalent to Terr
             long_help = "One or more terraform.tfstate files containing deployed resource state. \
 When provided, the tool uses actual deployed resource ARNs to generate more precise IAM policies. \
 State-derived ARNs take precedence over those derived from .tf files. Can be used with --tf-dir, \
---tf-files, or independently."
+--tf-files, or independently. Ignored when generating policies from a Terraform plan."
         )]
         #[telemetry(presence)]
         tfstate: Vec<PathBuf>,

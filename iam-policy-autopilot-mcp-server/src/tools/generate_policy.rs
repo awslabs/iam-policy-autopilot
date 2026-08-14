@@ -22,10 +22,14 @@ mod api {
     iam_policy_autopilot_common::telemetry::TelemetryEventDerive,
 )]
 #[serde(rename_all = "PascalCase")]
-#[schemars(description = "Input for generating IAM policies from source code.")]
+#[schemars(
+    description = "Input for generating IAM policies from application source code or Terraform plans in JSON form."
+)]
 #[telemetry(command = "mcp-tool-generate-policies")]
 pub struct GeneratePoliciesInput {
-    #[schemars(description = "Absolute paths to source files to generate IAM Policies for")]
+    #[schemars(
+        description = "Absolute paths to either application source files or Terraform plan JSON files produced by `terraform show -json`."
+    )]
     #[telemetry(count)]
     pub source_files: Vec<String>,
 

@@ -8,11 +8,31 @@
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 use crate::Location;
 
 pub mod hcl_parser;
 pub(crate) mod plan_to_calls;
 pub mod state_parser;
+
+/// Which side of a Terraform plan diff a resource identity was resolved from.
+///
+/// A create/update binds the planned (`After`) identity; a delete binds the
+/// currently-deployed (`Before`) identity; a **replace** binds both. Resources
+/// parsed from `.tf` config have no diff context and carry no side (`None`).
+///
+/// This drives two things during binding: state ARNs (from `--tfstate`) are only
+/// matched against the `Before`/`None` identities — never the `After` side of a
+/// replace, which is a brand-new resource absent from the current state — and it
+/// labels each binding in `--explain-resources` output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChangeSide {
+    /// The pre-change, currently-deployed identity (a delete, or the old side of a replace).
+    Before,
+    /// The planned post-change identity (a create/update, or the new side of a replace).
+    After,
+}
 
 /// Terraform AWS provider resource type prefix. Used to filter resources
 /// from multi-provider configurations — only types starting with this
@@ -61,6 +81,10 @@ pub(crate) struct TerraformResource {
     pub attributes: HashMap<String, AttributeValue>,
     /// Location of the resource block definition in the source `.tf` file
     pub location: Location,
+    /// Which side of a plan diff this identity came from, when sourced from a
+    /// Terraform plan. `None` for resources parsed from `.tf` config (no diff
+    /// context). Drives state-ARN matching and `--explain-resources` labeling.
+    pub change_side: Option<ChangeSide>,
 }
 
 /// A collection of parsed Terraform resource blocks with associated warnings.
@@ -181,6 +205,7 @@ mod tests {
                 AttributeValue::Literal("my-app-data".to_string()),
             )]),
             location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
+            change_side: None,
         };
         assert_eq!(resource.resource_type, "aws_s3_bucket");
         assert_eq!(resource.local_name, "data_bucket");
@@ -205,6 +230,7 @@ mod tests {
             local_name: "b".to_string(),
             attributes: HashMap::new(),
             location: Location::new(PathBuf::from("main.tf"), (1, 1), (1, 1)),
+            change_side: None,
         };
         result.insert(resource);
         assert_eq!(result.len(), 1);

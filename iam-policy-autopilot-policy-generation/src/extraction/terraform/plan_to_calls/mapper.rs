@@ -125,6 +125,7 @@ mod tests {
     use super::*;
     use crate::extraction::terraform::plan_to_calls::crud_map::CrudSlot;
     use std::collections::BTreeSet;
+    use std::path::PathBuf;
 
     const PFX: &str = "github.com/hashicorp/terraform-provider-aws/internal/service/";
 
@@ -176,6 +177,8 @@ mod tests {
             resource_type: "aws_accessanalyzer_analyzer".to_string(),
             slots: slots.iter().copied().collect::<BTreeSet<_>>(),
             name_prefix: None,
+            identities: Vec::new(),
+            source_plan: PathBuf::new(),
         }
     }
 
@@ -248,6 +251,8 @@ mod tests {
             resource_type: "aws_unmodeled_thing".to_string(),
             slots: [CrudSlot::Read, CrudSlot::Create].into_iter().collect(),
             name_prefix: None,
+            identities: Vec::new(),
+            source_plan: PathBuf::new(),
         };
         let mapped = map_plan(&[unknown], &crud_map, &model);
         assert_eq!(mapped.calls, Vec::new());
@@ -267,6 +272,8 @@ mod tests {
             resource_type: "aws_accessanalyzer_analyzer".to_string(),
             slots: [CrudSlot::Read, CrudSlot::Create].into_iter().collect(),
             name_prefix: None,
+            identities: Vec::new(),
+            source_plan: PathBuf::new(),
         };
         let mapped = map_plan(&[r], &crud_map, &model);
         assert_eq!(mapped.calls, Vec::new());
@@ -321,6 +328,8 @@ mod tests {
             resource_type: "aws_bucket_like".to_string(),
             slots: slots.iter().copied().collect::<BTreeSet<_>>(),
             name_prefix: None,
+            identities: Vec::new(),
+            source_plan: PathBuf::new(),
         }
     }
 
