@@ -11,6 +11,7 @@
 
 - An unrecognized method on a known boto3 resource no longer expands to every action of that resource. Such calls now contribute no permissions instead of over-approximating
 - Generated policy statements are now sorted globally by service before being assigned to policies, so statements for the same service stay together (within size limits), producing deterministic, review-friendly output and stable diffs. Note: when cross-service action merging is enabled (`--minimize-policy-size` / `allow_cross_service_merging = true`), statements are grouped by shared resource rather than by service, so a single service's actions may be merged into a statement keyed on another service and the "same service stays together" grouping does not hold. This is expected for that option, which exists to produce more compact policies; the sort remains deterministic. (#153)
+- Changed the MCP tool descriptions to include Terraform plan support. Also removed mentions of "minimal", which was misleading.
 
 ### Fixed
 
