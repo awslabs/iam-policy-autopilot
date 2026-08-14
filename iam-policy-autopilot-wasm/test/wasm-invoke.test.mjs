@@ -5,9 +5,10 @@
 // unit tests. This only validates packaging, module init, and the C-string FFI
 // round trip.
 //
-// Requires: dist/ built by ../build.sh, Node >= 24 run with
-// --experimental-wasm-jspi (the module suspends on service-reference fetches
-// via JSPI), and network access to the public AWS Service Reference endpoint.
+// Requires: dist/ built by ../build.sh, Node >= 26 (JSPI on by default; on
+// Node 24 pass --experimental-wasm-jspi — the module suspends on
+// service-reference fetches via JSPI), and network access to the public AWS
+// Service Reference endpoint.
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { createServer } from "node:http";

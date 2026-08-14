@@ -137,16 +137,18 @@ It is intentionally shallow — pipeline logic is covered by the Rust unit tests
 Run locally (requires a completed `./build.sh` first):
 
 ```bash
-# From the repo root
+# From the repo root (Node 26+)
+node --test iam-policy-autopilot-wasm/test/wasm-invoke.test.mjs
+
+# On Node 24, JSPI is still behind a flag:
 node --experimental-wasm-jspi --test iam-policy-autopilot-wasm/test/wasm-invoke.test.mjs
 ```
 
 Requirements:
 
-- **Node 24+** with the `--experimental-wasm-jspi` flag — the module suspends on
-  service-reference fetches via JSPI (`WebAssembly.promising`/`Suspending`).
-  Node 26+ enables JSPI by default, so the flag can be dropped once CI and local
-  tooling move to Node 26
+- **Node 26+** — the module suspends on service-reference fetches via JSPI
+  (`WebAssembly.promising`/`Suspending`), which Node 26 enables by default.
+  Node 24 also works but needs the `--experimental-wasm-jspi` flag
 - **Network access** to `https://servicereference.us-east-1.amazonaws.com` for
   enrichment data
 - `npm/dist/` populated by `./build.sh` — the test serves it over a loopback HTTP
