@@ -140,19 +140,26 @@ fn filter_resource_explanations(
         .collect()
 }
 
-/// Filter explanations to only include actions matching the given patterns.
-fn filter_explanations(explanations: Explanations, filters: &[String]) -> Explanations {
-    let filtered_map: BTreeMap<String, Explanation> = explanations
-        .explanation_for_action
-        .into_iter()
-        .filter(|(action, _)| {
-            filters
-                .iter()
-                .any(|pattern| action_matches_pattern(action, pattern))
-        })
-        .collect();
+impl Explanations {
+    /// Filter explanations to only include actions matching the given patterns.
+    ///
+    /// This inherent impl lives here (not in `enrichment/mod.rs`) because filter
+    /// patterns are an API-layer concern: `action_matches_pattern` interprets
+    /// user-provided `--explain` CLI globs, which the enrichment layer should
+    /// not know about.
+    fn filter(self, filters: &[String]) -> Self {
+        let filtered_map: BTreeMap<String, Explanation> = self
+            .explanation_for_action
+            .into_iter()
+            .filter(|(action, _)| {
+                filters
+                    .iter()
+                    .any(|pattern| action_matches_pattern(action, pattern))
+            })
+            .collect();
 
-    Explanations::new(filtered_map)
+        Self::new(filtered_map)
+    }
 }
 
 /// Generate policies for source files, with optional Terraform resource binding.
@@ -294,7 +301,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     // Generate explanations only if explain_filters is provided
     let explanations = match &config.explain_filters {
-        Some(filters) => filter_explanations(result.explanations, filters),
+        Some(filters) => result.explanations.filter(filters),
         None => Explanations::default(),
     };
 
@@ -419,7 +426,7 @@ mod tests {
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
         let explanations = Explanations::new(map);
 
-        let result = filter_explanations(explanations, &["*".to_string()]);
+        let result = explanations.filter(&["*".to_string()]);
         assert_eq!(result.explanation_for_action.len(), 2);
     }
 
@@ -433,7 +440,7 @@ mod tests {
         let explanations = Explanations::new(map);
 
         // Filter to only s3 actions
-        let result = filter_explanations(explanations, &["s3:*".to_string()]);
+        let result = explanations.filter(&["s3:*".to_string()]);
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result.explanation_for_action.contains_key("s3:GetObject"));
@@ -448,10 +455,7 @@ mod tests {
         let explanations = Explanations::new(map);
 
         // Filter to s3 and dynamodb actions
-        let result = filter_explanations(
-            explanations,
-            &["s3:*".to_string(), "dynamodb:*".to_string()],
-        );
+        let result = explanations.filter(&["s3:*".to_string(), "dynamodb:*".to_string()]);
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result
@@ -466,13 +470,13 @@ mod tests {
         let explanations = Explanations::new(map);
 
         // Filter to ec2 actions (no matches)
-        let result = filter_explanations(explanations, &["ec2:*".to_string()]);
+        let result = explanations.filter(&["ec2:*".to_string()]);
         assert!(result.is_empty());
     }
 
     #[test]
     fn test_filter_explanations_empty_input() {
-        let result = filter_explanations(Explanations::default(), &["s3:*".to_string()]);
+        let result = Explanations::default().filter(&["s3:*".to_string()]);
         assert!(result.is_empty());
     }
 
