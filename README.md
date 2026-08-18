@@ -3,7 +3,7 @@
 
 # IAM Policy Autopilot
 
-An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports policy generation for applications built in Python, Go, TypeScript, JavaScript, and Java — see [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation).
+An open source Model Context Protocol (MCP) server and command-line tool that helps your AI coding assistants quickly create baseline IAM policies that you can refine as your application evolves, so you can build faster. IAM Policy Autopilot analyzes your application code locally to generate identity-based policies for application roles, enabling faster IAM policy creation and reducing access troubleshooting time. IAM Policy Autopilot supports policy generation for applications built in Python, Go, TypeScript, JavaScript, and Java, and can also generate policies from a Terraform plan file in JSON format — see [Supported Languages and SDKs for policy generation](#supported-languages-and-sdks-for-policy-generation).
 
 We want to hear from you. Ask questions or share ideas in [Discussions](https://github.com/awslabs/iam-policy-autopilot/discussions), report bugs through [Issues](https://github.com/awslabs/iam-policy-autopilot/issues), or contribute directly with a [Pull Request](https://github.com/awslabs/iam-policy-autopilot/pulls). 
 
@@ -84,6 +84,8 @@ This significantly reduces unnecessary permissions and generates more targeted p
 | JavaScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
 | TypeScript | [AWS SDK for JavaScript v3](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/) |
 | Python | [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html), [Botocore](https://botocore.amazonaws.com/v1/documentation/api/latest/index.html) |
+
+You can also generate policies from a [Terraform plan](https://developer.hashicorp.com/terraform/cli/commands/plan) file in JSON format, mapping the plan's resource changes to the actions the Terraform AWS provider performs — see [CLI Usage](#cli-usage). Native `.tf` configuration files are not yet supported as a direct input.
 
 ## Getting Started
 
