@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.58.0",
+  "version": "v6.60.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -11013,6 +11013,66 @@
     },
     {
       "module_path": "bedrockagentcore",
+      "class_name": "gatewayRuleResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "CreateGatewayRule"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetGatewayRule"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "gatewayRuleResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "DeleteGatewayRule"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetGatewayRule"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "gatewayRuleResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetGatewayRule"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
+      "class_name": "gatewayRuleResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetGatewayRule"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "UpdateGatewayRule"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrockagentcore",
       "class_name": "gatewayTargetResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -11084,6 +11144,10 @@
         {
           "service": "bedrock-agentcore-control",
           "operation": "GetHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetMemory"
         }
       ]
     },
@@ -11112,6 +11176,10 @@
         {
           "service": "bedrock-agentcore-control",
           "operation": "GetHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetMemory"
         }
       ]
     },
@@ -11124,6 +11192,10 @@
         {
           "service": "bedrock-agentcore-control",
           "operation": "GetHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetMemory"
         },
         {
           "service": "bedrock-agentcore-control",
@@ -61697,6 +61769,66 @@
     },
     {
       "module_path": "mailmanager",
+      "class_name": "ingressPointResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateIngressPoint"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetIngressPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ingressPointResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteIngressPoint"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetIngressPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ingressPointResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetIngressPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "ingressPointResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetIngressPoint"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateIngressPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
       "class_name": "ruleSetResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -64021,6 +64153,50 @@
     },
     {
       "module_path": "neptunegraph",
+      "class_name": "resourcePrivateGraphEndpoint",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "neptune-graph",
+          "operation": "CreatePrivateGraphEndpoint"
+        },
+        {
+          "service": "neptune-graph",
+          "operation": "GetPrivateGraphEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "neptunegraph",
+      "class_name": "resourcePrivateGraphEndpoint",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "neptune-graph",
+          "operation": "DeletePrivateGraphEndpoint"
+        },
+        {
+          "service": "neptune-graph",
+          "operation": "GetPrivateGraphEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "neptunegraph",
+      "class_name": "resourcePrivateGraphEndpoint",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "neptune-graph",
+          "operation": "GetPrivateGraphEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "neptunegraph",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -64368,6 +64544,66 @@
         {
           "service": "network-firewall",
           "operation": "UpdateRuleGroup"
+        }
+      ]
+    },
+    {
+      "module_path": "networkfirewall",
+      "class_name": "containerAssociationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "network-firewall",
+          "operation": "CreateContainerAssociation"
+        },
+        {
+          "service": "network-firewall",
+          "operation": "DescribeContainerAssociation"
+        }
+      ]
+    },
+    {
+      "module_path": "networkfirewall",
+      "class_name": "containerAssociationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "network-firewall",
+          "operation": "DeleteContainerAssociation"
+        },
+        {
+          "service": "network-firewall",
+          "operation": "DescribeContainerAssociation"
+        }
+      ]
+    },
+    {
+      "module_path": "networkfirewall",
+      "class_name": "containerAssociationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "network-firewall",
+          "operation": "DescribeContainerAssociation"
+        }
+      ]
+    },
+    {
+      "module_path": "networkfirewall",
+      "class_name": "containerAssociationResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "network-firewall",
+          "operation": "DescribeContainerAssociation"
+        },
+        {
+          "service": "network-firewall",
+          "operation": "UpdateContainerAssociation"
         }
       ]
     },
@@ -70120,6 +70356,114 @@
         {
           "service": "pinpoint-sms-voice-v2",
           "operation": "UpdatePool"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "GetResourcePolicy"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DeleteResourcePolicy"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "GetResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "GetResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "resourcePolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "GetResourcePolicy"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "PutResourcePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "senderIDResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "RequestSenderId"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "senderIDResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "ReleaseSenderId"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "senderIDResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeSenderIds"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "senderIDResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "UpdateSenderId"
         }
       ]
     },
@@ -76153,6 +76497,42 @@
     },
     {
       "module_path": "resiliencehubv2",
+      "class_name": "inputSourceResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateInputSource"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "inputSourceResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteInputSource"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "inputSourceResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "ListInputSources"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
       "class_name": "policyResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -76224,6 +76604,102 @@
         {
           "service": "resiliencehubv2",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateService"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteService"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "GetService"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdateService"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "systemResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "systemResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "systemResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "GetSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "systemResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdateSystem"
         }
       ]
     },
