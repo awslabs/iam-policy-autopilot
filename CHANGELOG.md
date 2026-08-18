@@ -1,5 +1,7 @@
 ## [Unreleased]
 
+## [0.3.0] - 2026-08-18
+
 ### Added
 
 - `generate-policies` can now generate an IAM policy directly from a Terraform plan (`terraform show -json`), mapping the plan's resource changes to the AWS SDK operations the Terraform AWS provider performs. Pass the plan JSON in place of source files.
