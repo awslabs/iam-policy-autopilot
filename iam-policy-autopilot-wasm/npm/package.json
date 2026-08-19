@@ -1,0 +1,38 @@
+{
+  "name": "@aws/iam-policy-autopilot",
+  "version": "0.2.3",
+  "description": "Browser-ready WebAssembly build of IAM Policy Autopilot — generates IAM policies scoped to the AWS SDK calls in your source code. Requires JSPI support (Chrome/Edge 137+, Firefox 153+, Safari 27+).",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/awslabs/iam-policy-autopilot"
+  },
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "browserslist": [
+    "chrome >= 137",
+    "firefox >= 153",
+    "edge >= 137"
+  ],
+  "keywords": [
+    "iam",
+    "aws",
+    "policy",
+    "wasm",
+    "webassembly"
+  ],
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}

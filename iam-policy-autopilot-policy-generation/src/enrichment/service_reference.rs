@@ -3,25 +3,25 @@
 //! This module provides functionality to load AWS service definition files
 //! from the filesystem with exact service name matching and caching for
 //! performance optimization.
+//!
+//! The [`ServiceCache`] provides in-memory TTL-based caching on all platforms.
+//! On native builds, an additional filesystem cache layer persists entries to disk.
 
+use crate::enrichment::http_client::{self, HttpGet};
 use crate::enrichment::Context;
 use crate::errors::ExtractorError;
 use crate::providers::JsonProvider;
-use reqwest::{Client, Url};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value;
-use std::{
-    collections::HashMap,
-    path::PathBuf,
-    time::{Duration, SystemTime},
-};
+use std::collections::HashMap;
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
+use std::time::{Duration, SystemTime};
+#[cfg(not(target_arch = "wasm32"))]
 use tokio::fs;
 use tokio::sync::{OnceCell, RwLock};
 
 type OperationName = String;
-const IAM_POLICY_AUTOPILOT: &str = "IAMPolicyAutopilot";
-// Cache files for 5 minutes.
-// We can allow cache duration override in future.
 const DEFAULT_CACHE_DURATION_IN_SECONDS: u64 = 300;
 /// Service Reference data structure
 ///
@@ -269,12 +269,12 @@ where
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ServiceReferenceMapping {
     // represents the top level service reference mapping
-    pub(crate) service_reference_mapping: HashMap<String, Url>,
+    pub(crate) service_reference_mapping: HashMap<String, String>,
 }
 
 fn deserialize_service_reference_mapping(
     value: Value,
-) -> crate::errors::Result<HashMap<String, Url>> {
+) -> crate::errors::Result<HashMap<String, String>> {
     #[derive(Deserialize)]
     struct ServiceEntry {
         service: String,
@@ -284,17 +284,27 @@ fn deserialize_service_reference_mapping(
     let entries: Vec<ServiceEntry> = serde_json::from_value(value)?;
     let mut map = HashMap::new();
     for entry in entries {
-        let url = Url::parse(&entry.url).map_err(|e| {
-            ExtractorError::service_reference_parse_error_with_source(
+        if entry.url.is_empty() {
+            return Err(ExtractorError::service_reference_parse_error_with_source(
                 &entry.service,
                 format!(
-                    "Failed to parse URL '{}' in service reference mapping",
-                    entry.url
+                    "Empty URL in service reference mapping for '{}'",
+                    entry.service
                 ),
-                e,
-            )
-        })?;
-        map.insert(entry.service, url);
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "empty URL"),
+            ));
+        }
+        if !entry.url.starts_with("http://") && !entry.url.starts_with("https://") {
+            return Err(ExtractorError::service_reference_parse_error_with_source(
+                &entry.service,
+                format!(
+                    "Invalid URL '{}' in service reference mapping for '{}' (must start with http:// or https://)",
+                    entry.url, entry.service
+                ),
+                std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid URL scheme"),
+            ));
+        }
+        map.insert(entry.service, entry.url);
     }
     Ok(map)
 }
@@ -307,11 +317,60 @@ fn deserialize_service_reference_mapping(
 #[derive(Debug)]
 
 pub(crate) struct RemoteServiceReferenceLoader {
-    client: Client,
+    #[cfg(not(target_arch = "wasm32"))]
+    client: http_client::ReqwestHttpClient,
+    #[cfg(target_arch = "wasm32")]
+    client: http_client::EmscriptenHttpClient,
     service_reference_mapping: OnceCell<ServiceReferenceMapping>,
-    service_cache: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
+    cache: ServiceCache,
     mapping_url: String,
+    #[cfg_attr(target_arch = "wasm32", allow(dead_code))]
     disable_file_system_cache: bool,
+}
+
+// ---------------------------------------------------------------------------
+// ServiceCache — platform-specific caching strategy
+// ---------------------------------------------------------------------------
+
+/// Abstraction over the in-memory service reference cache.
+///
+/// Stores entries with a timestamp for TTL expiry on all platforms.
+/// On WASM, entries rarely expire within a session but the TTL logic
+/// is retained for simplicity and consistency with native.
+#[derive(Debug)]
+struct ServiceCache {
+    inner: RwLock<HashMap<String, (ServiceReference, SystemTime)>>,
+}
+
+impl ServiceCache {
+    fn new() -> Self {
+        Self {
+            inner: RwLock::new(HashMap::new()),
+        }
+    }
+
+    /// Returns a cached entry if it exists and has not expired.
+    async fn get(&self, service_name: &str) -> Option<ServiceReference> {
+        let guard = self.inner.read().await;
+        let result = guard.get(service_name).and_then(|(cached, timestamp)| {
+            let elapsed = SystemTime::now().duration_since(*timestamp).ok()?;
+            if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
+                Some(cached.clone())
+            } else {
+                None
+            }
+        });
+        drop(guard);
+        result
+    }
+
+    /// Insert or update a cache entry.
+    async fn insert(&self, service_name: String, service_ref: ServiceReference) {
+        self.inner
+            .write()
+            .await
+            .insert(service_name, (service_ref, SystemTime::now()));
+    }
 }
 
 const DEFAULT_MAPPING_URL: &str = "https://servicereference.us-east-1.amazonaws.com";
@@ -322,9 +381,9 @@ impl RemoteServiceReferenceLoader {
         let mapping_url =
             std::env::var(MAPPING_URL_ENV_VAR).unwrap_or_else(|_| DEFAULT_MAPPING_URL.to_string());
         Ok(Self {
-            client: Self::create_client()?,
+            client: Self::create_platform_client()?,
             service_reference_mapping: OnceCell::new(),
-            service_cache: RwLock::new(HashMap::new()),
+            cache: ServiceCache::new(),
             mapping_url,
             disable_file_system_cache,
         })
@@ -336,9 +395,9 @@ impl RemoteServiceReferenceLoader {
 
     pub(crate) fn empty_loader_for_tests() -> crate::errors::Result<Self> {
         let loader = Self {
-            client: Self::create_client()?,
+            client: Self::create_platform_client()?,
             service_reference_mapping: OnceCell::new(),
-            service_cache: RwLock::new(HashMap::new()),
+            cache: ServiceCache::new(),
             mapping_url: String::new(),
             disable_file_system_cache: true,
         };
@@ -361,43 +420,22 @@ impl RemoteServiceReferenceLoader {
         self
     }
 
+    /// Create the platform-appropriate HTTP client at compile time.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn create_platform_client() -> crate::errors::Result<http_client::ReqwestHttpClient> {
+        http_client::ReqwestHttpClient::new()
+    }
+
+    /// Create the platform-appropriate HTTP client at compile time.
+    #[cfg(target_arch = "wasm32")]
+    fn create_platform_client() -> crate::errors::Result<http_client::EmscriptenHttpClient> {
+        http_client::EmscriptenHttpClient::new()
+    }
+
     async fn get_or_init_mapping(&self) -> crate::errors::Result<&ServiceReferenceMapping> {
         self.service_reference_mapping
             .get_or_try_init(|| async {
-                let json_text = self
-                    .client
-                    .get(&self.mapping_url)
-                    .send()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to connect to the service reference endpoint at '{}'. \
-                             Verify that this URL is reachable from your network \
-                             (e.g. not blocked by a firewall or VPN). \
-                             If you need to route through a proxy, \
-                             set the HTTPS_PROXY environment variable \
-                             (see https://docs.rs/reqwest/latest/reqwest/#proxies)",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .error_for_status()
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Service reference endpoint at '{}' returned an error status",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| ExtractorError::Network {
-                        message: format!(
-                            "Failed to read response body from service reference endpoint at '{}'",
-                            self.mapping_url
-                        ),
-                        source: Some(Box::new(e)),
-                    })?;
+                let json_text = self.client.get_text(&self.mapping_url).await?;
 
                 let json_value: serde_json::Value =
                     serde_json::from_str(&json_text).map_err(|e| {
@@ -423,42 +461,22 @@ impl RemoteServiceReferenceLoader {
             .await
     }
 
-    fn create_client() -> crate::errors::Result<Client> {
-        let user_agent_suffix = if cfg!(feature = "integ-test") {
-            "-integration-test"
-        } else {
-            ""
-        };
-
-        let user_agent = format!(
-            "{}{}/{}",
-            IAM_POLICY_AUTOPILOT,
-            user_agent_suffix,
-            env!("CARGO_PKG_VERSION")
-        );
-        Client::builder()
-            .user_agent(user_agent)
-            .build()
-            .map_err(|e| ExtractorError::Configuration {
-                message: "Failed to initialize the HTTP client for the service reference endpoint"
-                    .to_string(),
-                source: Some(Box::new(e)),
-            })
-    }
-
+    #[cfg(not(target_arch = "wasm32"))]
     fn get_cache_dir() -> PathBuf {
         // not using tempfile crate
         // instead, using the std to resolve temp dir and then manage the file itself
         // file deletion is delegated to the OS.
-        let cache_dir = std::env::temp_dir().join(IAM_POLICY_AUTOPILOT);
+        let cache_dir = std::env::temp_dir().join("IAMPolicyAutopilot");
         let _ = std::fs::create_dir_all(&cache_dir);
         cache_dir
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     fn get_cache_path(service_name: &str) -> PathBuf {
         Self::get_cache_dir().join(format!("{service_name}.json"))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     async fn is_cache_valid(path: &PathBuf) -> bool {
         if let Ok(metadata) = fs::metadata(path).await {
             if let Ok(modified) = metadata.modified() {
@@ -486,24 +504,24 @@ impl RemoteServiceReferenceLoader {
         &self,
         service_name: &str,
     ) -> crate::errors::Result<Option<ServiceReference>> {
-        if let Some((cached, timestamp)) = self.service_cache.read().await.get(service_name) {
-            if let Ok(elapsed) = SystemTime::now().duration_since(*timestamp) {
-                if elapsed < Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS) {
-                    return Ok(Some(cached.clone()));
-                }
-            }
+        // Check in-memory cache
+        if let Some(cached) = self.cache.get(service_name).await {
+            return Ok(Some(cached));
         }
 
-        // check temp file
-        let cache_path = Self::get_cache_path(service_name);
-        if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
-            if let Ok(content) = fs::read_to_string(&cache_path).await {
-                if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await {
-                    self.service_cache.write().await.insert(
-                        service_name.to_string(),
-                        (service_ref.clone(), SystemTime::now()),
-                    );
-                    return Ok(Some(service_ref));
+        // Filesystem cache — not available on WASM
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let cache_path = Self::get_cache_path(service_name);
+            if !self.disable_file_system_cache && Self::is_cache_valid(&cache_path).await {
+                if let Ok(content) = fs::read_to_string(&cache_path).await {
+                    if let Ok(service_ref) = JsonProvider::parse::<ServiceReference>(&content).await
+                    {
+                        self.cache
+                            .insert(service_name.to_string(), service_ref.clone())
+                            .await;
+                        return Ok(Some(service_ref));
+                    }
                 }
             }
         }
@@ -513,24 +531,11 @@ impl RemoteServiceReferenceLoader {
 
         match service_url {
             Some(service_url) => {
-                let service_reference_content = self
-                    .client
-                    .get(service_url.as_ref())
-                    .send()
-                    .await
-                    .map_err(|e| {
+                let service_reference_content =
+                    self.client.get_text(service_url).await.map_err(|e| {
                         ExtractorError::service_reference_parse_error_with_source(
                             service_name,
                             "Failed to fetch service reference data".to_string(),
-                            e,
-                        )
-                    })?
-                    .text()
-                    .await
-                    .map_err(|e| {
-                        ExtractorError::service_reference_parse_error_with_source(
-                            service_name,
-                            "Failed to read service reference response".to_string(),
                             e,
                         )
                     })?;
@@ -546,15 +551,16 @@ impl RemoteServiceReferenceLoader {
                             e,
                         )
                     })?;
-                // persist content into the temp file as well
+                // Persist to filesystem cache (native only)
+                #[cfg(not(target_arch = "wasm32"))]
                 if !self.disable_file_system_cache {
+                    let cache_path = Self::get_cache_path(service_name);
                     let _ = fs::write(&cache_path, &service_reference_content).await;
                 }
-                self.service_cache.write().await.insert(
-                    service_name.to_string(),
-                    (service_ref.clone(), SystemTime::now()),
-                );
-                Ok(Option::Some(service_ref))
+                self.cache
+                    .insert(service_name.to_string(), service_ref.clone())
+                    .await;
+                Ok(Some(service_ref))
             }
             None => Ok(None),
         }
@@ -572,12 +578,12 @@ mod tests {
         assert!(loader.is_ok());
 
         let loader = loader.unwrap();
-        assert!(loader.service_cache.read().await.is_empty());
+        assert!(loader.cache.inner.read().await.is_empty());
     }
 
     #[tokio::test]
     async fn test_create_client() {
-        let client = RemoteServiceReferenceLoader::create_client();
+        let client = crate::enrichment::http_client::create_http_client();
         assert!(client.is_ok());
     }
 
@@ -607,15 +613,16 @@ mod tests {
         }
 
         // Verify cache is populated
-        let cached = loader.service_cache.read().await.get("s3").cloned();
+        let cached = loader.cache.get("s3").await;
         assert!(cached.is_some());
-        assert_eq!(cached.unwrap().0.service_name, "s3");
+        assert_eq!(cached.unwrap().service_name, "s3");
 
         // Verify cache is unique
-        assert_eq!(loader.service_cache.read().await.len(), 1);
+        assert_eq!(loader.cache.inner.read().await.len(), 1);
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_memory_cache_expiry() {
         let (_mock_server, loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -627,7 +634,7 @@ mod tests {
         // Manually expire the cache by setting old timestamp
         let expired_time =
             SystemTime::now() - Duration::from_secs(DEFAULT_CACHE_DURATION_IN_SECONDS + 1);
-        if let Some(entry) = loader.service_cache.write().await.get_mut("s3") {
+        if let Some(entry) = loader.cache.inner.write().await.get_mut("s3") {
             entry.1 = expired_time;
         }
 
@@ -636,10 +643,11 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify cache has fresh timestamp
-        let cached = loader.service_cache.read().await.get("s3").cloned();
+        let guard = loader.cache.inner.read().await;
+        let cached = guard.get("s3");
         assert!(cached.is_some());
         let (_, timestamp) = cached.unwrap();
-        let elapsed = SystemTime::now().duration_since(timestamp).unwrap();
+        let elapsed = SystemTime::now().duration_since(*timestamp).unwrap();
         assert!(elapsed < Duration::from_secs(10));
     }
 
@@ -717,6 +725,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_get_cache_dir() {
         let cache_dir = RemoteServiceReferenceLoader::get_cache_dir();
         assert!(cache_dir.ends_with("IAMPolicyAutopilot"));
@@ -724,6 +733,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_get_cache_path() {
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("s3");
         assert!(
@@ -733,12 +743,14 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_is_cache_valid_nonexistent() {
         let path = PathBuf::from("/nonexistent/path/file.json");
         assert!(!RemoteServiceReferenceLoader::is_cache_valid(&path).await);
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_is_cache_valid_fresh() {
         let cache_path = RemoteServiceReferenceLoader::get_cache_path("test_fresh");
         let _ = fs::write(&cache_path, "test content").await;
@@ -748,6 +760,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg(not(target_arch = "wasm32"))]
     async fn test_filesystem_cache() {
         let (_mock_server, mut loader) =
             mock_remote_service_reference::setup_mock_server_with_loader().await;
@@ -977,7 +990,7 @@ mod tests {
 
         let err = result.unwrap_err().to_string();
         assert!(
-            err.contains("Failed to connect to the service reference endpoint"),
+            err.contains("Failed to connect to"),
             "Error should contain connection failure guidance, got: {err}"
         );
         assert!(

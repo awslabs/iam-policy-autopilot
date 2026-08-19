@@ -8,7 +8,8 @@ members = [
     "iam-policy-autopilot-access-denied",
     "iam-policy-autopilot-cli",
     "integration-tests/runner",
-    "xtask"
+    "xtask",
+    "iam-policy-autopilot-wasm"
 ]
 exclude = ["iam-policy-autopilot-lints"]
 resolver = "2"
@@ -34,6 +35,7 @@ schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.11", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.13.3", features = ["rustls"], default-features = false }
 derive-new = "0.7.0"
+derive_builder = "0.20"
 
 # Native async runtime and parallel processing
 tokio = { version = "1.52", features = ["fs", "rt", "rt-multi-thread", "macros", "signal"] }
@@ -86,7 +88,10 @@ strsim = "0.11"
 
 # Additional workspace configuration
 [workspace.lints.rust]
-unsafe_code = "forbid"
+# deny (not forbid): the policy-generation crate contains cfg(wasm32)-gated unsafe FFI
+# for the Emscripten HTTP bridge, and the wasm crate has unsafe FFI exports. forbid
+# cannot be overridden by #[allow] in source, so deny is the strongest level that works.
+unsafe_code = "deny"
 dead_code = "deny"
 
 [workspace.lints.clippy]

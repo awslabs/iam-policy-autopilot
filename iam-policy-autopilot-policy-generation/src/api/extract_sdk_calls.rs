@@ -32,6 +32,7 @@ pub async fn extract_sdk_calls(config: &ExtractSdkCallsConfig) -> Result<Extract
             // path uses for the detected language (recorded in
             // `process_source_files`). A Terraform plan has no source language;
             // `"terraform_plan"` marks the run as plan-derived on that dimension.
+            #[cfg(feature = "telemetry")]
             iam_policy_autopilot_common::telemetry::span::record_result_str(
                 "detected_language",
                 "terraform_plan",

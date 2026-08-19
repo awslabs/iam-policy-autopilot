@@ -1,0 +1,22 @@
+[package]
+name = "iam-policy-autopilot-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "WebAssembly build of IAM Policy Autopilot with full extraction support."
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", default-features = false }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+# Workspace tokio includes fs/rt-multi-thread/signal which pull in mio's net features,
+# incompatible with wasm32. We only need the single-threaded runtime here.
+tokio = { version = "1.0", features = ["rt", "macros"] }
+
+[lints.rust]
+unsafe_code = "allow"

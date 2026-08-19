@@ -25,6 +25,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub(crate) mod engine;
+pub(crate) mod http_client;
 pub(crate) mod operation_fas_map;
 pub(crate) mod resource_matcher;
 pub mod service_reference;
@@ -212,7 +213,7 @@ impl Serialize for OperationSource {
 
 /// Explanations for why actions have been included in a policy, with documentation for
 /// concepts leading to inclusion (such as FAS expansion)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Default)]
 #[serde(rename_all = "PascalCase")]
 pub struct Explanations {
     /// Explanation for inclusion of an action
@@ -243,6 +244,12 @@ impl Explanations {
             explanation_for_action: explanations,
             documentation,
         }
+    }
+
+    /// Returns `true` if no explanations were collected.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.explanation_for_action.is_empty()
     }
 }
 

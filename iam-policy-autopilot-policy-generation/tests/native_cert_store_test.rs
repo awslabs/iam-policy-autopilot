@@ -262,7 +262,7 @@ async fn test_native_cert_store_fails_with_wrong_ca() {
     let url = format!("https://localhost:{}", addr.port());
     let expected_error = format!(
         "Error: Enrichment failed for method 'get_object' (service 's3'): \
-         Network error: Failed to connect to the service reference endpoint at '{url}'. \
+         Network error: Failed to connect to '{url}'. \
          Verify that this URL is reachable from your network \
          (e.g. not blocked by a firewall or VPN). \
          If you need to route through a proxy, \

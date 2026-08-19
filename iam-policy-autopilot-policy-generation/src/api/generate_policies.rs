@@ -8,7 +8,7 @@ use crate::{
     api::{
         extract_sdk_calls::extract_sdk_calls,
         input_kind::{classify_inputs, ClassifiedInputs, IacFormat},
-        model::{GeneratePoliciesResult, GeneratePolicyConfig},
+        model::{GeneratePoliciesResult, GeneratePoliciesResultBuilder, GeneratePolicyConfig},
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
@@ -142,27 +142,25 @@ fn filter_resource_explanations(
         .collect()
 }
 
-/// Filter explanations to only include actions matching the given patterns.
-fn filter_explanations(
-    explanations: Option<Explanations>,
-    filters: &[String],
-) -> Option<Explanations> {
-    let explanations = explanations?;
+impl Explanations {
+    /// Filter explanations to only include actions matching the given patterns.
+    ///
+    /// This inherent impl lives here (not in `enrichment/mod.rs`) because filter
+    /// patterns are an API-layer concern: `action_matches_pattern` interprets
+    /// user-provided `--explain` CLI globs, which the enrichment layer should
+    /// not know about.
+    fn filter(self, filters: &[String]) -> Self {
+        let filtered_map: BTreeMap<String, Explanation> = self
+            .explanation_for_action
+            .into_iter()
+            .filter(|(action, _)| {
+                filters
+                    .iter()
+                    .any(|pattern| action_matches_pattern(action, pattern))
+            })
+            .collect();
 
-    let filtered_map: BTreeMap<String, Explanation> = explanations
-        .explanation_for_action
-        .into_iter()
-        .filter(|(action, _)| {
-            filters
-                .iter()
-                .any(|pattern| action_matches_pattern(action, pattern))
-        })
-        .collect();
-
-    if filtered_map.is_empty() {
-        None
-    } else {
-        Some(Explanations::new(filtered_map))
+        Self::new(filtered_map)
     }
 }
 
@@ -275,12 +273,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Handle empty method lists gracefully
     if extracted_methods.is_empty() {
         info!("No methods found to process, returning empty policy list");
-        return Ok(GeneratePoliciesResult {
-            policies: vec![],
-            explanations: None,
-            resource_binding_explanations: None,
-            warnings: vec![],
-        });
+        return Ok(GeneratePoliciesResult::empty());
     }
 
     // Run the complete enrichment pipeline
@@ -347,8 +340,8 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     // Generate explanations only if explain_filters is provided
     let explanations = match &config.explain_filters {
-        Some(filters) => filter_explanations(result.explanations, filters),
-        None => None,
+        Some(filters) => result.explanations.filter(filters),
+        None => Explanations::default(),
     };
 
     if !config.individual_policies {
@@ -361,40 +354,48 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // policy indices and statements match what the caller receives
     let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&final_policies);
 
-    iam_policy_autopilot_common::telemetry::span::record_result_number(
-        "num_policies_generated",
-        final_policies.len(),
-    );
+    #[cfg(feature = "telemetry")]
+    {
+        iam_policy_autopilot_common::telemetry::span::record_result_number(
+            "num_policies_generated",
+            final_policies.len(),
+        );
 
-    // Shape metrics for an anomaly baseline: counts only, no policy content
-    let num_statements: usize = final_policies
-        .iter()
-        .map(|p| p.policy.statements.len())
-        .sum();
-    let num_actions: usize = final_policies
-        .iter()
-        .flat_map(|p| &p.policy.statements)
-        .map(|s| s.action.len())
-        .sum();
-    iam_policy_autopilot_common::telemetry::span::record_result_number(
-        "num_statements_generated",
-        num_statements,
-    );
-    iam_policy_autopilot_common::telemetry::span::record_result_number(
-        "num_actions_generated",
-        num_actions,
-    );
-    iam_policy_autopilot_common::telemetry::span::record_result_number(
-        "num_wildcard_resource_statements",
-        warnings.len(),
-    );
+        // Shape metrics for an anomaly baseline: counts only, no policy content
+        let num_statements: usize = final_policies
+            .iter()
+            .map(|p| p.policy.statements.len())
+            .sum();
+        let num_actions: usize = final_policies
+            .iter()
+            .flat_map(|p| &p.policy.statements)
+            .map(|s| s.action.len())
+            .sum();
+        iam_policy_autopilot_common::telemetry::span::record_result_number(
+            "num_statements_generated",
+            num_statements,
+        );
+        iam_policy_autopilot_common::telemetry::span::record_result_number(
+            "num_actions_generated",
+            num_actions,
+        );
+        iam_policy_autopilot_common::telemetry::span::record_result_number(
+            "num_wildcard_resource_statements",
+            warnings.len(),
+        );
+    }
 
-    Ok(GeneratePoliciesResult {
-        policies: final_policies,
-        explanations,
-        resource_binding_explanations: binding_explanations,
-        warnings,
-    })
+    let mut builder = GeneratePoliciesResultBuilder::default();
+    builder.policies(final_policies);
+    builder.warnings(warnings);
+    builder.explanations(explanations);
+    if let Some(binding_explanations) = binding_explanations {
+        builder.resource_binding_explanations(binding_explanations);
+    }
+
+    Ok(builder
+        .build()
+        .expect("GeneratePoliciesResultBuilder missing required policies"))
 }
 
 #[cfg(test)]
@@ -462,11 +463,10 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("s3:PutObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
-        let result = filter_explanations(explanations, &["*".to_string()]);
-        assert!(result.is_some());
-        assert_eq!(result.unwrap().explanation_for_action.len(), 2);
+        let result = explanations.filter(&["*".to_string()]);
+        assert_eq!(result.explanation_for_action.len(), 2);
     }
 
     #[test]
@@ -476,12 +476,10 @@ mod tests {
         map.insert("s3:GetObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
         map.insert("dynamodb:GetItem".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to only s3 actions
-        let result = filter_explanations(explanations, &["s3:*".to_string()]);
-        assert!(result.is_some());
-        let result = result.unwrap();
+        let result = explanations.filter(&["s3:*".to_string()]);
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result.explanation_for_action.contains_key("s3:GetObject"));
@@ -493,15 +491,10 @@ mod tests {
         map.insert("s3:PutObject".to_string(), Explanation::default());
         map.insert("ec2:DescribeInstances".to_string(), Explanation::default());
         map.insert("dynamodb:GetItem".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to s3 and dynamodb actions
-        let result = filter_explanations(
-            explanations,
-            &["s3:*".to_string(), "dynamodb:*".to_string()],
-        );
-        assert!(result.is_some());
-        let result = result.unwrap();
+        let result = explanations.filter(&["s3:*".to_string(), "dynamodb:*".to_string()]);
         assert_eq!(result.explanation_for_action.len(), 2);
         assert!(result.explanation_for_action.contains_key("s3:PutObject"));
         assert!(result
@@ -513,17 +506,17 @@ mod tests {
     fn test_filter_explanations_no_matches() {
         let mut map = BTreeMap::new();
         map.insert("s3:PutObject".to_string(), Explanation::default());
-        let explanations = Some(Explanations::new(map));
+        let explanations = Explanations::new(map);
 
         // Filter to ec2 actions (no matches)
-        let result = filter_explanations(explanations, &["ec2:*".to_string()]);
-        assert!(result.is_none());
+        let result = explanations.filter(&["ec2:*".to_string()]);
+        assert!(result.is_empty());
     }
 
     #[test]
-    fn test_filter_explanations_none_input() {
-        let result = filter_explanations(None, &["s3:*".to_string()]);
-        assert!(result.is_none());
+    fn test_filter_explanations_empty_input() {
+        let result = Explanations::default().filter(&["s3:*".to_string()]);
+        assert!(result.is_empty());
     }
 
     // -----------------------------------------------------------------------

@@ -1,9 +1,10 @@
 //! Defined model for API
+use derive_builder::Builder;
 use serde::{Deserialize, Serialize};
 
+use crate::enrichment::terraform::ResourceBindingExplanation;
 use crate::{
-    embedded_data::BotocoreData, enrichment::terraform::ResourceBindingExplanation,
-    enrichment::Explanations, policy_generation::PolicyWithMetadata,
+    embedded_data::BotocoreData, enrichment::Explanations, policy_generation::PolicyWithMetadata,
 };
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
@@ -50,19 +51,24 @@ pub struct GeneratePolicyConfig {
 }
 
 /// Result of policy generation including policies, action mappings, and explanations
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Builder)]
 #[serde(rename_all = "PascalCase")]
+#[builder(setter(into))]
 pub struct GeneratePoliciesResult {
     /// Generated IAM policies
     pub policies: Vec<PolicyWithMetadata>,
-    /// Explanations for why actions were added (if requested)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub explanations: Option<Explanations>,
+    /// Explanations for why actions were added. Empty unless explanations
+    /// were requested and at least one action matched the filters.
+    #[serde(skip_serializing_if = "Explanations::is_empty")]
+    #[builder(default)]
+    pub explanations: Explanations,
     /// Explanations for where resource ARNs came from (Terraform bindings)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[builder(default, setter(strip_option))]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
     /// Warnings about statements that could not be scoped to specific resources
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[builder(default)]
     pub warnings: Vec<PolicyWarning>,
 }
 
@@ -141,6 +147,17 @@ impl PolicyWarning {
             }
         }
         warnings
+    }
+}
+
+impl GeneratePoliciesResult {
+    /// Create an empty result with no policies or explanations.
+    #[must_use]
+    pub fn empty() -> Self {
+        GeneratePoliciesResultBuilder::default()
+            .policies(vec![])
+            .build()
+            .expect("GeneratePoliciesResultBuilder missing required policies")
     }
 }
 
