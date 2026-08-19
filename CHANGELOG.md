@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Fixed
+
+- AWS profiles configured with `aws login` now work with credential-dependent commands such as `--upload-policies` and `fix-access-denied`. (#276)
+
 ## [0.3.0] - 2026-08-18
 
 ### Added

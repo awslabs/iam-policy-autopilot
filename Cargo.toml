@@ -80,7 +80,7 @@ url = "2.5"
 percent-encoding = "2.3"
 aws-sdk-iam = "1.108.1"
 aws-sdk-sts = "1.103.0"
-aws-config = "1.8.16"
+aws-config = { version = "1.8.16", features = ["credentials-login"] }
 sha2 = "0.11"
 base64 = "0.22"
 convert_case = "0.8"

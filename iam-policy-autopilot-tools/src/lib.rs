@@ -316,7 +316,38 @@ impl PolicyUploader {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aws_config::profile::ProfileFileCredentialsProvider;
+    use aws_runtime::env_config::file::{EnvConfigFileKind, EnvConfigFiles};
+    use aws_sdk_iam::config::ProvideCredentials;
     use iam_policy_autopilot_policy_generation::{IamPolicy, Statement};
+
+    #[tokio::test]
+    async fn test_aws_login_profile_provider_is_enabled() {
+        let profile_files = EnvConfigFiles::builder()
+            .with_contents(
+                EnvConfigFileKind::Config,
+                "[profile login-test]\nlogin_session = arn:aws:iam::000000000000:user/login-test",
+            )
+            .build();
+        let provider = ProfileFileCredentialsProvider::builder()
+            .profile_name("login-test")
+            .profile_files(profile_files)
+            .build();
+
+        // This synthetic session has no cached token, so resolution must fail after the
+        // login provider is selected. Without `credentials-login`, it fails earlier and
+        // names the missing feature in the source chain, which Debug includes.
+        let error = provider
+            .provide_credentials()
+            .await
+            .expect_err("the synthetic login session has no cached token");
+        let error_chain = format!("{error:?}");
+
+        assert!(
+            !error_chain.contains("credentials-login"),
+            "login profiles should be supported, but credential resolution failed with: {error_chain}"
+        );
+    }
 
     #[test]
     fn test_generate_policy_name_default() {

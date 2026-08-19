@@ -19,9 +19,13 @@ serde_json.workspace = true
 regex.workspace = true
 
 # AWS SDK dependencies
-aws-config = "1.8.16"
+aws-config = { workspace = true }
 aws-sdk-iam = "1.108.1"
 aws-smithy-runtime-api = "1.12.0"
+
+[dev-dependencies]
+aws-runtime = "1.7.3"
+tokio = { workspace = true }
 
 # Documentation configuration
 [package.metadata.docs.rs]
