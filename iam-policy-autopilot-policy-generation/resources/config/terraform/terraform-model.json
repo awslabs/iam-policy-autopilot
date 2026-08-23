@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.60.0",
+  "version": "v6.61.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -27436,6 +27436,66 @@
         {
           "service": "dsql",
           "operation": "GetCluster"
+        }
+      ]
+    },
+    {
+      "module_path": "dsql",
+      "class_name": "clusterPolicyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dsql",
+          "operation": "GetClusterPolicy"
+        },
+        {
+          "service": "dsql",
+          "operation": "PutClusterPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "dsql",
+      "class_name": "clusterPolicyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dsql",
+          "operation": "DeleteClusterPolicy"
+        },
+        {
+          "service": "dsql",
+          "operation": "GetClusterPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "dsql",
+      "class_name": "clusterPolicyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dsql",
+          "operation": "GetClusterPolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "dsql",
+      "class_name": "clusterPolicyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dsql",
+          "operation": "GetClusterPolicy"
+        },
+        {
+          "service": "dsql",
+          "operation": "PutClusterPolicy"
         }
       ]
     },
@@ -57604,6 +57664,154 @@
       ]
     },
     {
+      "module_path": "lambdacore",
+      "class_name": "networkConnectorResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-core",
+          "operation": "CreateNetworkConnector"
+        },
+        {
+          "service": "lambda-core",
+          "operation": "GetNetworkConnector"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdacore",
+      "class_name": "networkConnectorResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-core",
+          "operation": "DeleteNetworkConnector"
+        },
+        {
+          "service": "lambda-core",
+          "operation": "GetNetworkConnector"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdacore",
+      "class_name": "networkConnectorResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-core",
+          "operation": "GetNetworkConnector"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdacore",
+      "class_name": "networkConnectorResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-core",
+          "operation": "GetNetworkConnector"
+        },
+        {
+          "service": "lambda-core",
+          "operation": "UpdateNetworkConnector"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "imageResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "CreateMicrovmImage"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovmImage"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "imageResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "DeleteMicrovmImage"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovmImage"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "imageResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovmImage"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "imageResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovmImage"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "UpdateMicrovmImage"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "ListTags"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "TagResource"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
       "module_path": "lexmodels",
       "class_name": null,
       "function_name": "resourceBotAliasCreate",
@@ -61824,6 +62032,62 @@
         {
           "service": "mailmanager",
           "operation": "UpdateIngressPoint"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "relayResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateRelay"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetRelay"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "relayResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteRelay"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "relayResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetRelay"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "relayResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetRelay"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateRelay"
         }
       ]
     },
@@ -67316,6 +67580,62 @@
         {
           "service": "observabilityadmin",
           "operation": "UpdateTelemetryRule"
+        }
+      ]
+    },
+    {
+      "module_path": "odb",
+      "class_name": "resourceAssociateDisassociateIAMRole",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "odb",
+          "operation": "AssociateIamRoleToResource"
+        },
+        {
+          "service": "odb",
+          "operation": "GetCloudAutonomousVmCluster"
+        },
+        {
+          "service": "odb",
+          "operation": "GetCloudVmCluster"
+        }
+      ]
+    },
+    {
+      "module_path": "odb",
+      "class_name": "resourceAssociateDisassociateIAMRole",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "odb",
+          "operation": "DisassociateIamRoleFromResource"
+        },
+        {
+          "service": "odb",
+          "operation": "GetCloudAutonomousVmCluster"
+        },
+        {
+          "service": "odb",
+          "operation": "GetCloudVmCluster"
+        }
+      ]
+    },
+    {
+      "module_path": "odb",
+      "class_name": "resourceAssociateDisassociateIAMRole",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "odb",
+          "operation": "GetCloudAutonomousVmCluster"
+        },
+        {
+          "service": "odb",
+          "operation": "GetCloudVmCluster"
         }
       ]
     },
@@ -76497,6 +76817,54 @@
     },
     {
       "module_path": "resiliencehubv2",
+      "class_name": "assertionResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateAssertion"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "assertionResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteAssertion"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "assertionResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "ListAssertions"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "assertionResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdateAssertion"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
       "class_name": "inputSourceResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -76576,6 +76944,54 @@
         {
           "service": "resiliencehubv2",
           "operation": "UpdatePolicy"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceFunctionResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateServiceFunction"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceFunctionResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteServiceFunction"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceFunctionResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "ListServiceFunctions"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "serviceFunctionResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdateServiceFunction"
         }
       ]
     },
@@ -76700,6 +77116,54 @@
         {
           "service": "resiliencehubv2",
           "operation": "UpdateSystem"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "userJourneyResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "CreateUserJourney"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "userJourneyResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "DeleteUserJourney"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "userJourneyResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "GetUserJourney"
+        }
+      ]
+    },
+    {
+      "module_path": "resiliencehubv2",
+      "class_name": "userJourneyResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "resiliencehubv2",
+          "operation": "UpdateUserJourney"
         }
       ]
     },
@@ -87596,6 +88060,50 @@
         {
           "service": "securityhub",
           "operation": "UpdateConnectorV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "featureV2Resource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DisableSecurityHubFeatureV2"
+        },
+        {
+          "service": "securityhub",
+          "operation": "EnableSecurityHubFeatureV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "featureV2Resource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DescribeSecurityHubV2"
+        }
+      ]
+    },
+    {
+      "module_path": "securityhub",
+      "class_name": "featureV2Resource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "securityhub",
+          "operation": "DisableSecurityHubFeatureV2"
+        },
+        {
+          "service": "securityhub",
+          "operation": "EnableSecurityHubFeatureV2"
         }
       ]
     },
