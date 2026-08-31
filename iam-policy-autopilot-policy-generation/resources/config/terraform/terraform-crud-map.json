@@ -10367,6 +10367,13 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*eventDestinationResource).Delete"
   },
   {
+    "resource_type": "aws_pinpointsmsvoicev2_keyword",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*keywordResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*keywordResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*keywordResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*keywordResource).Delete"
+  },
+  {
     "resource_type": "aws_pinpointsmsvoicev2_opt_out_list",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*optOutListResource).Create",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/pinpointsmsvoicev2.(*optOutListResource).Read",
@@ -13528,6 +13535,17 @@
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.resourceEmailIdentityPolicyRead",
     "update": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.resourceEmailIdentityPolicyUpdate",
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.resourceEmailIdentityPolicyDelete"
+  },
+  {
+    "resource_type": "aws_sesv2_multi_region_endpoint",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.(*multiRegionEndpointResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.(*multiRegionEndpointResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.(*multiRegionEndpointResource).Delete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/sesv2.(*servicePackage).UpdateTags"
+    }
   },
   {
     "resource_type": "aws_sesv2_tenant",

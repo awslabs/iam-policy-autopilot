@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.61.0",
+  "version": "v6.62.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -70473,6 +70473,58 @@
     },
     {
       "module_path": "pinpointsmsvoicev2",
+      "class_name": "keywordResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "PutKeyword"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "keywordResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DeleteKeyword"
+        },
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeKeywords"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "keywordResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "DescribeKeywords"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
+      "class_name": "keywordResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "pinpoint-sms-voice-v2",
+          "operation": "PutKeyword"
+        }
+      ]
+    },
+    {
+      "module_path": "pinpointsmsvoicev2",
       "class_name": "optOutListResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -86955,6 +87007,10 @@
       "sdk_operations": [
         {
           "service": "secretsmanager",
+          "operation": "CancelRotateSecret"
+        },
+        {
+          "service": "secretsmanager",
           "operation": "DescribeSecret"
         },
         {
@@ -86993,6 +87049,10 @@
       "function_name": "resourceSecretRotationUpdate",
       "call_type": "function",
       "sdk_operations": [
+        {
+          "service": "secretsmanager",
+          "operation": "CancelRotateSecret"
+        },
         {
           "service": "secretsmanager",
           "operation": "DescribeSecret"
@@ -91164,6 +91224,50 @@
         {
           "service": "sesv2",
           "operation": "PutAccountSuppressionAttributes"
+        }
+      ]
+    },
+    {
+      "module_path": "sesv2",
+      "class_name": "multiRegionEndpointResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sesv2",
+          "operation": "CreateMultiRegionEndpoint"
+        },
+        {
+          "service": "sesv2",
+          "operation": "GetMultiRegionEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "sesv2",
+      "class_name": "multiRegionEndpointResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sesv2",
+          "operation": "DeleteMultiRegionEndpoint"
+        },
+        {
+          "service": "sesv2",
+          "operation": "GetMultiRegionEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "sesv2",
+      "class_name": "multiRegionEndpointResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "sesv2",
+          "operation": "GetMultiRegionEndpoint"
         }
       ]
     },
