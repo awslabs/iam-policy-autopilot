@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.62.0",
+  "version": "v6.63.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -256,6 +256,86 @@
         {
           "service": "account",
           "operation": "GetRegionOptStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "CreateApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "TagResource"
+        },
+        {
+          "service": "account-access",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "DeleteApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "TagResource"
+        },
+        {
+          "service": "account-access",
+          "operation": "UntagResource"
         }
       ]
     },
@@ -23200,6 +23280,50 @@
         {
           "service": "datazone",
           "operation": "UpdateGlossaryTerm"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "AddPolicyGrant"
+        },
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
+        },
+        {
+          "service": "datazone",
+          "operation": "RemovePolicyGrant"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
         }
       ]
     },
@@ -57785,6 +57909,50 @@
     },
     {
       "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "RunMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "TerminateMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -61972,6 +62140,66 @@
         {
           "service": "macie2",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateArchive"
         }
       ]
     },
