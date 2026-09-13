@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.62.0",
+  "version": "v6.64.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -256,6 +256,126 @@
         {
           "service": "account",
           "operation": "GetRegionOptStatus"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "CreateApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "TagResource"
+        },
+        {
+          "service": "account-access",
+          "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "DeleteApplication"
+        },
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "applicationResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "GetApplication"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "entitlementResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "CreateEntitlement"
+        },
+        {
+          "service": "account-access",
+          "operation": "GetEntitlement"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "entitlementResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "DeleteEntitlement"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "entitlementResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "GetEntitlement"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "accountaccess",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "account-access",
+          "operation": "TagResource"
+        },
+        {
+          "service": "account-access",
+          "operation": "UntagResource"
         }
       ]
     },
@@ -636,6 +756,94 @@
         {
           "service": "acm-pca",
           "operation": "UntagCertificateAuthority"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "registryResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "CreateRegistry"
+        },
+        {
+          "service": "agent-registry-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "registryResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "DeleteRegistry"
+        },
+        {
+          "service": "agent-registry-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "registryResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "GetRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "registryResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "GetRegistry"
+        },
+        {
+          "service": "agent-registry-control",
+          "operation": "UpdateRegistry"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "ListTagsForResource"
+        }
+      ]
+    },
+    {
+      "module_path": "agentregistry",
+      "class_name": "servicePackage",
+      "function_name": "UpdateTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "agent-registry-control",
+          "operation": "TagResource"
+        },
+        {
+          "service": "agent-registry-control",
+          "operation": "UntagResource"
         }
       ]
     },
@@ -9841,6 +10049,50 @@
     },
     {
       "module_path": "bedrock",
+      "class_name": "modelInvocationJobResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "CreateModelInvocationJob"
+        },
+        {
+          "service": "bedrock",
+          "operation": "GetModelInvocationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "modelInvocationJobResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetModelInvocationJob"
+        },
+        {
+          "service": "bedrock",
+          "operation": "StopModelInvocationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
+      "class_name": "modelInvocationJobResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "bedrock",
+          "operation": "GetModelInvocationJob"
+        }
+      ]
+    },
+    {
+      "module_path": "bedrock",
       "class_name": "modelInvocationLoggingConfigurationResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -11143,6 +11395,10 @@
         },
         {
           "service": "bedrock-agentcore-control",
+          "operation": "DeleteHarness"
+        },
+        {
+          "service": "bedrock-agentcore-control",
           "operation": "GetHarness"
         },
         {
@@ -11288,6 +11544,10 @@
         {
           "service": "bedrock-agentcore-control",
           "operation": "DeleteOauth2CredentialProvider"
+        },
+        {
+          "service": "bedrock-agentcore-control",
+          "operation": "GetOauth2CredentialProvider"
         }
       ]
     },
@@ -23205,6 +23465,50 @@
     },
     {
       "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "AddPolicyGrant"
+        },
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
+        },
+        {
+          "service": "datazone",
+          "operation": "RemovePolicyGrant"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
+      "class_name": "policyGrantResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "datazone",
+          "operation": "ListPolicyGrants"
+        }
+      ]
+    },
+    {
+      "module_path": "datazone",
       "class_name": "projectResource",
       "function_name": "Create",
       "call_type": "instance_method",
@@ -26140,6 +26444,102 @@
         {
           "service": "dms",
           "operation": "ModifyEndpoint"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "dataProviderResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "CreateDataProvider"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "dataProviderResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "DeleteDataProvider"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "dataProviderResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "DescribeDataProviders"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "dataProviderResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "ModifyDataProvider"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "instanceProfileResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "CreateInstanceProfile"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "instanceProfileResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "DeleteInstanceProfile"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "instanceProfileResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "DescribeInstanceProfiles"
+        }
+      ]
+    },
+    {
+      "module_path": "dms",
+      "class_name": "instanceProfileResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "dms",
+          "operation": "ModifyInstanceProfile"
         }
       ]
     },
@@ -44377,6 +44777,50 @@
     },
     {
       "module_path": "fis",
+      "class_name": "safetyLeverStateResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "fis",
+          "operation": "GetSafetyLever"
+        },
+        {
+          "service": "fis",
+          "operation": "UpdateSafetyLeverState"
+        }
+      ]
+    },
+    {
+      "module_path": "fis",
+      "class_name": "safetyLeverStateResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "fis",
+          "operation": "GetSafetyLever"
+        }
+      ]
+    },
+    {
+      "module_path": "fis",
+      "class_name": "safetyLeverStateResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "fis",
+          "operation": "GetSafetyLever"
+        },
+        {
+          "service": "fis",
+          "operation": "UpdateSafetyLeverState"
+        }
+      ]
+    },
+    {
+      "module_path": "fis",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -57785,6 +58229,50 @@
     },
     {
       "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "RunMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        },
+        {
+          "service": "lambda-microvms",
+          "operation": "TerminateMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
+      "class_name": "microVMResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "lambda-microvms",
+          "operation": "GetMicrovm"
+        }
+      ]
+    },
+    {
+      "module_path": "lambdamicrovms",
       "class_name": "servicePackage",
       "function_name": "ListTags",
       "call_type": "instance_method",
@@ -61972,6 +62460,66 @@
         {
           "service": "macie2",
           "operation": "UntagResource"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "CreateArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "DeleteArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        }
+      ]
+    },
+    {
+      "module_path": "mailmanager",
+      "class_name": "archiveResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "mailmanager",
+          "operation": "GetArchive"
+        },
+        {
+          "service": "mailmanager",
+          "operation": "UpdateArchive"
         }
       ]
     },
@@ -73067,6 +73615,10 @@
         },
         {
           "service": "rds",
+          "operation": "DescribeEvents"
+        },
+        {
+          "service": "rds",
           "operation": "DescribeGlobalClusters"
         },
         {
@@ -73191,6 +73743,10 @@
         },
         {
           "service": "rds",
+          "operation": "DescribeEvents"
+        },
+        {
+          "service": "rds",
           "operation": "ModifyDBInstance"
         },
         {
@@ -73252,6 +73808,10 @@
         {
           "service": "rds",
           "operation": "DescribeDBInstances"
+        },
+        {
+          "service": "rds",
+          "operation": "DescribeEvents"
         },
         {
           "service": "rds",
@@ -73484,6 +74044,10 @@
         {
           "service": "rds",
           "operation": "DescribeDBClusters"
+        },
+        {
+          "service": "rds",
+          "operation": "DescribeEvents"
         },
         {
           "service": "rds",
@@ -73783,6 +74347,10 @@
         },
         {
           "service": "rds",
+          "operation": "DescribeEvents"
+        },
+        {
+          "service": "rds",
           "operation": "ModifyDBInstance"
         },
         {
@@ -73904,6 +74472,10 @@
         {
           "service": "rds",
           "operation": "DescribeDBInstances"
+        },
+        {
+          "service": "rds",
+          "operation": "DescribeEvents"
         },
         {
           "service": "rds",

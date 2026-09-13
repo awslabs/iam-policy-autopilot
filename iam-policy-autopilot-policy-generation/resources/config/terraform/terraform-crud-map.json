@@ -40,6 +40,23 @@
     "delete": "github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema.NoopContext"
   },
   {
+    "resource_type": "aws_accountaccess_application",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*applicationResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*applicationResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*applicationResource).Delete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*servicePackage).UpdateTags"
+    }
+  },
+  {
+    "resource_type": "aws_accountaccess_entitlement",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*entitlementResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*entitlementResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/accountaccess.(*entitlementResource).Delete"
+  },
+  {
     "resource_type": "aws_acm_certificate",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/acm.resourceCertificateCreate",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/acm.resourceCertificateRead",
@@ -93,6 +110,18 @@
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/acmpca.resourcePolicyRead",
     "update": "github.com/hashicorp/terraform-provider-aws/internal/service/acmpca.resourcePolicyPut",
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/acmpca.resourcePolicyDelete"
+  },
+  {
+    "resource_type": "aws_agentregistry_registry",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*registryResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*registryResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*registryResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*registryResource).Delete",
+    "tags": {
+      "identifier_attribute": "registry_arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/agentregistry.(*servicePackage).UpdateTags"
+    }
   },
   {
     "resource_type": "aws_alb",
@@ -1572,6 +1601,12 @@
       "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/bedrock.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/bedrock.(*servicePackage).UpdateTags"
     }
+  },
+  {
+    "resource_type": "aws_bedrock_model_invocation_job",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/bedrock.(*modelInvocationJobResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/bedrock.(*modelInvocationJobResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/bedrock.(*modelInvocationJobResource).Delete"
   },
   {
     "resource_type": "aws_bedrock_model_invocation_logging_configuration",
@@ -3861,6 +3896,12 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*glossaryTermResource).Delete"
   },
   {
+    "resource_type": "aws_datazone_policy_grant",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*policyGrantResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*policyGrantResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*policyGrantResource).Delete"
+  },
+  {
     "resource_type": "aws_datazone_project",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*projectResource).Create",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/datazone.(*projectResource).Read",
@@ -4335,6 +4376,18 @@
     }
   },
   {
+    "resource_type": "aws_dms_data_provider",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*dataProviderResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*dataProviderResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*dataProviderResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*dataProviderResource).Delete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*servicePackage).UpdateTags"
+    }
+  },
+  {
     "resource_type": "aws_dms_endpoint",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.resourceEndpointCreate",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.resourceEndpointRead",
@@ -4352,6 +4405,18 @@
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.resourceEventSubscriptionRead",
     "update": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.resourceEventSubscriptionUpdate",
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.resourceEventSubscriptionDelete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*servicePackage).UpdateTags"
+    }
+  },
+  {
+    "resource_type": "aws_dms_instance_profile",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*instanceProfileResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*instanceProfileResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*instanceProfileResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*instanceProfileResource).Delete",
     "tags": {
       "identifier_attribute": "arn",
       "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/dms.(*servicePackage).ListTags",
@@ -6237,6 +6302,12 @@
       "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/fis.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/fis.(*servicePackage).UpdateTags"
     }
+  },
+  {
+    "resource_type": "aws_fis_safety_lever_state",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/fis.(*safetyLeverStateResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/fis.(*safetyLeverStateResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/fis.(*safetyLeverStateResource).Update"
   },
   {
     "resource_type": "aws_fis_target_account_configuration",
@@ -8207,6 +8278,12 @@
     }
   },
   {
+    "resource_type": "aws_lambdamicrovms_microvm",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/lambdamicrovms.(*microVMResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/lambdamicrovms.(*microVMResource).Read",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/lambdamicrovms.(*microVMResource).Delete"
+  },
+  {
     "resource_type": "aws_launch_configuration",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/autoscaling.resourceLaunchConfigurationCreate",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/autoscaling.resourceLaunchConfigurationRead",
@@ -8818,6 +8895,18 @@
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/macie2.(*organizationConfigurationResource).Create",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/macie2.(*organizationConfigurationResource).Read",
     "update": "github.com/hashicorp/terraform-provider-aws/internal/service/macie2.(*organizationConfigurationResource).Update"
+  },
+  {
+    "resource_type": "aws_mailmanager_archive",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*archiveResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*archiveResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*archiveResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*archiveResource).Delete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/mailmanager.(*servicePackage).UpdateTags"
+    }
   },
   {
     "resource_type": "aws_mailmanager_ingress_point",
