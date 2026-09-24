@@ -228,7 +228,10 @@ impl ResourceMatcher {
 
         let mut enriched_actions = vec![];
 
-        for op in fas_expansion.operations() {
+        let mut sorted_ops: Vec<_> = fas_expansion.operations().collect();
+        sorted_ops.sort_by_key(|op| op.service_operation_name());
+
+        for op in sorted_ops {
             log::debug!(
                 "Creating actions for operation {:?}",
                 op.service_operation_name()

@@ -6,7 +6,7 @@
 //! - Resolve `var.xxx` references from defaults and `.tfvars` files
 //! - Parse `terraform.tfstate` files for deployed resource ARNs
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -94,7 +94,7 @@ pub(crate) struct TerraformResource {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct TerraformResources {
     /// Discovered AWS resource blocks keyed by `(resource_type, local_name)`
-    resources: HashMap<(String, String), TerraformResource>,
+    resources: BTreeMap<(String, String), TerraformResource>,
     /// Warnings encountered during parsing (e.g., syntax errors in individual files)
     warnings: Vec<String>,
 }
@@ -104,7 +104,7 @@ impl TerraformResources {
     #[must_use]
     pub(crate) fn default() -> Self {
         Self {
-            resources: HashMap::new(),
+            resources: BTreeMap::new(),
             warnings: Vec::new(),
         }
     }

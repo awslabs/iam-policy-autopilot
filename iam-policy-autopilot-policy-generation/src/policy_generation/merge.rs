@@ -431,9 +431,11 @@ impl PolicyMerger {
         let mut sorted_resources: Vec<_> = group.resources.iter().cloned().collect();
         sorted_resources.sort();
 
-        let condition: Vec<_> = group.conditions.iter().cloned().collect();
+        let mut sorted_conditions: Vec<_> = group.conditions.iter().cloned().collect();
+        sorted_conditions.sort();
 
-        let result = Statement::allow(sorted_actions, sorted_resources).with_conditions(condition);
+        let result =
+            Statement::allow(sorted_actions, sorted_resources).with_conditions(sorted_conditions);
 
         log::debug!("From group:\n{group:?}\ncreated statement:\n{result:?}");
 
