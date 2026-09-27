@@ -1,7 +1,7 @@
 {
   "library_name": "terraform-provider-aws",
   "language": "go",
-  "version": "v6.65.0",
+  "version": "v6.66.0",
   "call_patterns": [
     {
       "module_path": "accessanalyzer",
@@ -54488,6 +54488,78 @@
         {
           "service": "kafka",
           "operation": "DescribeVpcConnection"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "channelResource",
+      "function_name": "Create",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "CreateChannel"
+        },
+        {
+          "service": "kafka",
+          "operation": "DescribeChannel"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "channelResource",
+      "function_name": "Delete",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DeleteChannel"
+        },
+        {
+          "service": "kafka",
+          "operation": "DescribeChannel"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "channelResource",
+      "function_name": "Read",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DescribeChannel"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "channelResource",
+      "function_name": "Update",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "DescribeChannel"
+        },
+        {
+          "service": "kafka",
+          "operation": "UpdateChannel"
+        }
+      ]
+    },
+    {
+      "module_path": "kafka",
+      "class_name": "servicePackage",
+      "function_name": "ListTags",
+      "call_type": "instance_method",
+      "sdk_operations": [
+        {
+          "service": "kafka",
+          "operation": "ListTagsForResource"
         }
       ]
     },

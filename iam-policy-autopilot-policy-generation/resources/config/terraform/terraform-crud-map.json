@@ -9208,6 +9208,18 @@
     }
   },
   {
+    "resource_type": "aws_msk_channel",
+    "create": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*channelResource).Create",
+    "read": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*channelResource).Read",
+    "update": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*channelResource).Update",
+    "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*channelResource).Delete",
+    "tags": {
+      "identifier_attribute": "arn",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).ListTags",
+      "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).UpdateTags"
+    }
+  },
+  {
     "resource_type": "aws_msk_cluster",
     "create": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceClusterCreate",
     "read": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceClusterRead",
@@ -9215,6 +9227,7 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceClusterDelete",
     "tags": {
       "identifier_attribute": "id",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).UpdateTags"
     }
   },
@@ -9240,6 +9253,7 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceReplicatorDelete",
     "tags": {
       "identifier_attribute": "id",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).UpdateTags"
     }
   },
@@ -9258,6 +9272,7 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceClusterDelete",
     "tags": {
       "identifier_attribute": "id",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).UpdateTags"
     }
   },
@@ -9282,6 +9297,7 @@
     "delete": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.resourceVPCConnectionDelete",
     "tags": {
       "identifier_attribute": "id",
+      "list_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).ListTags",
       "update_tags_symbol": "github.com/hashicorp/terraform-provider-aws/internal/service/kafka.(*servicePackage).UpdateTags"
     }
   },
