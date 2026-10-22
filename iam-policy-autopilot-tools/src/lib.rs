@@ -82,6 +82,7 @@ pub struct BatchUploadResponse {
 
 impl PolicyUploader {
     /// Create a new PolicyUploader with default AWS configuration
+    #[allow(clippy::result_large_err)]
     pub async fn new() -> UploaderResult<Self> {
         let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
@@ -134,6 +135,7 @@ impl PolicyUploader {
     }
 
     /// List all IAM policies in the account
+    #[allow(clippy::result_large_err)]
     async fn list_policies(&self) -> UploaderResult<Vec<String>> {
         let mut policy_names = Vec::new();
         let mut marker = None;
@@ -230,6 +232,7 @@ impl PolicyUploader {
     /// # Returns
     ///
     /// A `BatchUploadResponse` containing successful uploads and any failures
+    #[allow(clippy::result_large_err)]
     pub async fn upload_policies(
         &self,
         policies: &[PolicyWithMetadata],
@@ -278,6 +281,7 @@ impl PolicyUploader {
 
     /// Helper method to upload a single policy with a pre-fetched existing policies list
     #[allow(clippy::ptr_arg)]
+    #[allow(clippy::result_large_err)]
     async fn upload_single_policy_with_existing(
         &self,
         policy: &IamPolicy,

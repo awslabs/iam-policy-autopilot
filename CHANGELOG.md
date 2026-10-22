@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Changed
+
+- Added file path safety guidance to the MCP server instructions, the `generate_application_policies` tool description, and the Kiro power: agents must resolve input paths to canonical absolute paths, verify they are within the user's workspace, and reject paths containing shell metacharacters. Agent runtimes and hosting environments that invoke the CLI directly must use array-based subprocess execution instead of shell string interpolation.
+
 ### Fixed
 
 - AWS profiles configured with `aws login` now work with credential-dependent commands such as `--upload-policies` and `fix-access-denied`. (#276)

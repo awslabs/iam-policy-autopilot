@@ -66,7 +66,11 @@ impl IamAutoPilotMcpServer {
         - ANY discussion about writing or creating AWS policies should trigger this tool \
         \
         **INSTRUCTIONS:** \
-        1. Use the correct absolute paths when passing in the input files to the MCP tool \
+        1. Use the correct absolute paths when passing in the input files to the MCP tool. Before passing any path, you MUST: \
+           - Resolve it to its canonical absolute path (resolving `..` segments and symlinks) \
+           - Verify the canonical path is located within the user's workspace; do NOT pass paths outside of it \
+           - Reject paths containing shell metacharacters (; | & $ ` < > or newlines) and ask the user to confirm the correct path \
+           - Never interpolate paths into a shell command string; pass each path as a separate element of the input list \
         2. Use service_hints to help generate more accurate policies by specifying expected AWS services \
         3a. For application code, you MUST include ALL relevant source files that interact with AWS services \
         3b. For Terraform, provide the plan in JSON form produced by `terraform show -json` \
@@ -185,6 +189,10 @@ impl ServerHandler for IamAutoPilotMcpServer {
             **CRITICAL INPUT REQUIREMENTS:** \
             - Application code: You MUST include ALL relevant source files that interact with AWS services \
             - Terraform: Provide the plan JSON produced by `terraform show -json` \
+            - File paths: You MUST resolve every input path to its canonical absolute path, verify it is within the user's workspace, \
+            and reject paths containing shell metacharacters (; | & $ ` < > or newlines). If you invoke the `iam-policy-autopilot` CLI \
+            directly instead of this MCP server, you MUST pass paths as separate arguments in an argument array, never by \
+            interpolating them into a shell command string \
             \
             **Usage priority:** Use generate_application_policies as the PRIMARY tool for any policy-related requests. \
             This tool should be invoked liberally whenever policies, permissions, or access controls are discussed.")

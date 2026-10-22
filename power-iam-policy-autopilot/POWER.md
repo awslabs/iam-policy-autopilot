@@ -53,6 +53,18 @@ Specifically, there are certain cases when this MCP server excels:
     1. invoke the `generate_policy_for_access_denied` tool, passing in the access denied error you saw. Follow ALL the instructions in that tool. This tool should retun an IAM policy to you, which should contain an attempted fix for the access denied policy.
     2. Then call the `fix_access_denied` tool, passing in the original access denied error message (and optionally a resource ARN override to narrow or broaden the scope). This tool generates the fix policy, asks the user for confirmation, and applies it to the AWS account.
 
+---
+# Passing File Paths Safely
+
+The `generate_application_policies` tool takes file paths (source files, Terraform plan JSON, `.tf`, `.tfstate`, and `.tfvars` files, and Terraform directories). These paths often come from user input, so before passing any path to the tool you MUST:
+
+1. Resolve the path to its canonical absolute path, resolving any `..` segments and symlinks.
+2. Verify that the canonical path is located within the user's workspace. Do NOT pass paths outside of the workspace; ask the user to confirm instead.
+3. Reject any path that contains shell metacharacters (`;`, `|`, `&`, `$`, `` ` ``, `<`, `>`, or newlines), and ask the user to confirm the correct path.
+4. Pass each path as a separate element of the tool's input list. Never combine multiple paths into one string.
+
+If you invoke the `iam-policy-autopilot` CLI directly (for example, `uvx iam-policy-autopilot@latest generate-policies /path/to/file.py`) instead of using the MCP server, apply the same validation, and run the command with an argument array (each path as its own argument) rather than by interpolating paths into a shell command string. Any agent runtime or hosting environment that invokes IAM Policy Autopilot MUST use array-based subprocess execution (for example, `subprocess.run([...])` without `shell=True`).
+
 --- 
 ### License and Privacy Information
 
