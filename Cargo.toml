@@ -122,6 +122,8 @@ tuple_array_conversions = "allow"
 unnecessary_debug_formatting = "allow"
 unnecessary_wraps = "allow"
 unused_async = "allow"
+# Clippy 1.99 flags inherent `async fn`s without `.await`, overlapping with `unused_async` above
+unused_async_trait_impl = "allow"
 unused_self = "allow"
 or_fun_call = "allow"
 default_trait_access = "allow"
