@@ -30,12 +30,21 @@ const NAME_SPEC_LINK: &str = "https://docs.aws.amazon.com/IAM/latest/UserGuide/r
 #[derive(Error, Debug)]
 pub enum UploaderError {
     /// AWS IAM list policies error
+    ///
+    /// Boxed because `SdkError` is several hundred bytes and would otherwise
+    /// make every `UploaderResult` large.
     #[error("AWS IAM list policies error: {0}")]
-    ListPolicies(#[from] SdkError<ListPoliciesError, aws_smithy_runtime_api::http::Response>),
+    ListPolicies(
+        #[source] Box<SdkError<ListPoliciesError, aws_smithy_runtime_api::http::Response>>,
+    ),
 
     /// AWS IAM create policy error
+    ///
+    /// Boxed for the same reason as `ListPolicies`.
     #[error("AWS IAM create policy error: {0}")]
-    CreatePolicy(#[from] SdkError<CreatePolicyError, aws_smithy_runtime_api::http::Response>),
+    CreatePolicy(
+        #[source] Box<SdkError<CreatePolicyError, aws_smithy_runtime_api::http::Response>>,
+    ),
 
     /// JSON serialization error
     #[error("JSON serialization error: {0}")]
@@ -48,6 +57,18 @@ pub enum UploaderError {
     /// Invalid policy name error
     #[error("Invalid policy name: '{0}': {1}")]
     InvalidPolicyName(String, String),
+}
+
+impl From<SdkError<ListPoliciesError, aws_smithy_runtime_api::http::Response>> for UploaderError {
+    fn from(err: SdkError<ListPoliciesError, aws_smithy_runtime_api::http::Response>) -> Self {
+        Self::ListPolicies(Box::new(err))
+    }
+}
+
+impl From<SdkError<CreatePolicyError, aws_smithy_runtime_api::http::Response>> for UploaderError {
+    fn from(err: SdkError<CreatePolicyError, aws_smithy_runtime_api::http::Response>) -> Self {
+        Self::CreatePolicy(Box::new(err))
+    }
 }
 
 /// Result type for uploader operations
@@ -82,7 +103,6 @@ pub struct BatchUploadResponse {
 
 impl PolicyUploader {
     /// Create a new PolicyUploader with default AWS configuration
-    #[allow(clippy::result_large_err)]
     pub async fn new() -> UploaderResult<Self> {
         let config = aws_config::defaults(BehaviorVersion::latest()).load().await;
 
@@ -100,7 +120,6 @@ impl PolicyUploader {
     /// Validate that a policy name follows AWS naming requirements
     /// Names must be alphanumeric, including: plus (+), equals (=), comma (,),
     /// period (.), at (@), underscore (_), and hyphen (-)
-    #[allow(clippy::result_large_err)]
     fn validate_policy_name(name: &str) -> UploaderResult<()> {
         if name.is_empty() {
             return Err(UploaderError::InvalidPolicyName(
@@ -135,7 +154,6 @@ impl PolicyUploader {
     }
 
     /// List all IAM policies in the account
-    #[allow(clippy::result_large_err)]
     async fn list_policies(&self) -> UploaderResult<Vec<String>> {
         let mut policy_names = Vec::new();
         let mut marker = None;
@@ -179,7 +197,6 @@ impl PolicyUploader {
     /// # Returns
     ///
     /// A unique policy name following the pattern <prefix>Policy<n> where n starts from 1
-    #[allow(clippy::result_large_err)]
     fn generate_policy_name(
         existing_policies: &[String],
         custom_name: Option<&str>,
@@ -232,7 +249,6 @@ impl PolicyUploader {
     /// # Returns
     ///
     /// A `BatchUploadResponse` containing successful uploads and any failures
-    #[allow(clippy::result_large_err)]
     pub async fn upload_policies(
         &self,
         policies: &[PolicyWithMetadata],
@@ -281,7 +297,6 @@ impl PolicyUploader {
 
     /// Helper method to upload a single policy with a pre-fetched existing policies list
     #[allow(clippy::ptr_arg)]
-    #[allow(clippy::result_large_err)]
     async fn upload_single_policy_with_existing(
         &self,
         policy: &IamPolicy,
