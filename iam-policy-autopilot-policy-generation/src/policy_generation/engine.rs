@@ -277,7 +277,7 @@ impl<'a> Engine<'a> {
 
         // Flag statements that fell back to Resource "*" so consumers can
         // surface them for review
-        let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
+        let warnings = PolicyWarning::warnings_for_policies(&policies);
 
         Ok(GeneratePoliciesResultBuilder::default()
             .policies(policies)

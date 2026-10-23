@@ -79,6 +79,7 @@ impl SharedConfig {
 
 /// Configuration specific to generate-policies subcommand
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 struct GeneratePolicyCliConfig {
     /// Shared configuration
     shared: SharedConfig,
@@ -92,6 +93,8 @@ struct GeneratePolicyCliConfig {
     upload_policies: Option<String>,
     /// Enable minimal policy size by allowing cross-service merging
     minimal_policy_size: bool,
+    /// Allow overpermissive wildcard actions to reduce policy size
+    allow_overpermissive_action_wildcards: bool,
     /// Disable file system caching for service references
     disable_cache: bool,
     /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
@@ -371,6 +374,18 @@ service, so a single service's actions may be spread across multiple statements 
         )]
         #[telemetry(value)]
         minimal_policy_size: bool,
+
+        /// Allow overpermissive wildcard actions to reduce policy size
+        #[arg(
+            long = "allow-overpermissive-action-wildcards",
+            long_help = "When enabled, replaces two or more same-service actions that share a \
+word-aligned prefix with a shorter wildcard action during policy merging. For example, \
+'s3:GetObject' and 's3:GetObjectVersion' become 's3:GetObject*'. This reduces policy size but \
+intentionally produces an overpermissive policy that can grant actions not observed in the \
+analyzed source. It never produces a blanket service wildcard such as 's3:*'."
+        )]
+        #[telemetry(value)]
+        allow_overpermissive_action_wildcards: bool,
 
         /// Disable file system caching for service references
         #[arg(
@@ -685,6 +700,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
+        allow_overpermissive_action_wildcards: config.allow_overpermissive_action_wildcards,
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
         terraform_dir: config.tf_dir.clone(),
@@ -880,6 +896,7 @@ async fn main() {
             individual_policies,
             upload_policies,
             minimal_policy_size,
+            allow_overpermissive_action_wildcards,
             disable_cache,
             resource_cutoff,
             service_hints,
@@ -909,6 +926,7 @@ async fn main() {
                 individual_policies,
                 upload_policies,
                 minimal_policy_size,
+                allow_overpermissive_action_wildcards,
                 disable_cache,
                 resource_cutoff,
                 explain,

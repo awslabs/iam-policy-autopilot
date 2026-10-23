@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- New opt-in `--allow-overpermissive-action-wildcards` CLI flag, `allow_overpermissive_action_wildcards` library setting, and `AllowOverpermissiveActionWildcards` MCP input. When enabled, the suffixes of same-service actions sharing a common word-aligned prefix can be replaced by a wildcard (for example, `s3:GetObject` and `s3:GetObjectVersion` become `s3:GetObject*`) to reduce policy size. This intentionally produces a more permissive policy and remains disabled by default. Statements containing wildcard actions emit a `WildcardAction` warning for review.
+
 ### Changed
 
 - Added file path safety guidance to the MCP server instructions, the `generate_application_policies` tool description, and the Kiro power: agents must resolve input paths to canonical absolute paths, verify they are within the user's workspace, and reject paths containing shell metacharacters. Agent runtimes and hosting environments that invoke the CLI directly must use array-based subprocess execution instead of shell string interpolation.

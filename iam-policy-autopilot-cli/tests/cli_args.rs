@@ -27,6 +27,20 @@ fn help_shows_no_features() {
 }
 
 #[test]
+fn generate_policies_help_shows_overpermissive_action_wildcard_option() {
+    let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["generate-policies", "--help"])
+        .output()
+        .expect("failed to run generate-policies --help");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("--allow-overpermissive-action-wildcards"),
+        "generate-policies help should mention --allow-overpermissive-action-wildcards: {}",
+        stdout
+    );
+}
+
+#[test]
 fn test_fix_access_denied_implicit_deny() {
     let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
         .args(["fix-access-denied", IMPLICIT_DENY])

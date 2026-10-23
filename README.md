@@ -348,6 +348,7 @@ Options:
 - `--region <REGION>` - AWS region for resource ARNs
 - `--account <ACCOUNT>` - AWS account ID for resource ARNs
 - `--service-hints <SERVICES>` - Limit analysis to only the services your application actually uses if you know them. This helps reduce unnecessary permissions.
+- `--allow-overpermissive-action-wildcards` - Reduce policy size by replacing the suffixes of same-service actions sharing a common word-aligned prefix with a wildcard. For example, `s3:GetObject` and `s3:GetObjectVersion` become `s3:GetObject*`. This intentionally produces a more permissive policy, emits a `WildcardAction` warning for each affected statement, and is disabled by default.
 - `--upload-policies <PREFIX>` - Upload generated policies to AWS IAM with the specified prefix
 - `--pretty` - Pretty-print JSON output
 

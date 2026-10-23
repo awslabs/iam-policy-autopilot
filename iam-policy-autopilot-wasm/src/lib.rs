@@ -45,6 +45,9 @@ struct GenerateInput {
     /// Enable minimal policy size by allowing cross-service merging. Defaults to false.
     #[serde(default)]
     minimize_policy_size: bool,
+    /// Collapse action suffixes when actions share a common word-aligned prefix.
+    #[serde(default)]
+    allow_overpermissive_action_wildcards: bool,
 }
 
 #[derive(Deserialize)]
@@ -167,6 +170,7 @@ fn run_generate(input_json: &str) -> String {
             language,
             aws_context,
             minimize_policy_size: input.minimize_policy_size,
+            allow_overpermissive_action_wildcards: input.allow_overpermissive_action_wildcards,
         };
 
         generate_policies_from_source(&config).await

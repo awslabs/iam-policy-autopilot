@@ -1,5 +1,6 @@
 //! Defined model for API
 use derive_builder::Builder;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::enrichment::terraform::ResourceBindingExplanation;
@@ -11,6 +12,7 @@ use std::path::PathBuf;
 
 /// Configuration for generate_policies API
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct GeneratePolicyConfig {
     /// Config used to extract sdk calls for policy generation
     pub extract_sdk_calls_config: ExtractSdkCallsConfig,
@@ -20,6 +22,11 @@ pub struct GeneratePolicyConfig {
     pub individual_policies: bool,
     /// Enable policy size minimization
     pub minimize_policy_size: bool,
+    /// Collapse action suffixes when actions share a common word-aligned prefix.
+    ///
+    /// This can reduce policy size but may grant actions that were not
+    /// observed in the analyzed source. Disabled by default by callers.
+    pub allow_overpermissive_action_wildcards: bool,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
     /// Generate explanations for why actions were added, filtered by patterns.
@@ -66,7 +73,7 @@ pub struct GeneratePoliciesResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
-    /// Warnings about statements that could not be scoped to specific resources
+    /// Warnings about statements containing broad resource or action wildcards
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub warnings: Vec<PolicyWarning>,
@@ -75,9 +82,9 @@ pub struct GeneratePoliciesResult {
 /// Machine-recognizable category of a [`PolicyWarning`].
 ///
 /// Callers should branch on this type (rather than parsing `message`) to
-/// construct their own messages from the warning's `sid` and `actions`
-/// metadata.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+/// construct their own messages using the statement identified by
+/// [`PolicyWarning::location`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[non_exhaustive]
 pub enum PolicyWarningType {
     /// The statement's `Resource` fell back to the `"*"` wildcard because no
@@ -85,6 +92,9 @@ pub enum PolicyWarningType {
     /// an empty resource list, or the resource list was collapsed by the
     /// resource cutoff).
     WildcardResource,
+    /// The statement contains an action wildcard and may grant actions that
+    /// were not expected by the caller.
+    WildcardAction,
 }
 
 /// Location of a statement within a generated policy result, expressed as
@@ -94,7 +104,7 @@ pub enum PolicyWarningType {
 /// The location is currently resolved to the statement level. If finer
 /// precision is needed later (e.g., a specific action or condition), add
 /// further optional index fields here so an existing consumer keeps working.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyLocation {
     /// Index of the policy in `policies`
@@ -110,7 +120,7 @@ pub struct PolicyLocation {
 /// producing their own messages should branch on `warning_type` and read
 /// any details (actions, resources) from the located statement itself;
 /// `message` is a convenience English rendering for CLI users.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyWarning {
     /// Machine-recognizable warning category
@@ -122,6 +132,31 @@ pub struct PolicyWarning {
 }
 
 impl PolicyWarning {
+    /// Scan generated policies for all statements that need wildcard review.
+    ///
+    /// Resource warnings are emitted before action warnings for a statement
+    /// that contains both kinds of wildcard.
+    #[must_use]
+    pub fn warnings_for_policies(policies: &[PolicyWithMetadata]) -> Vec<Self> {
+        let mut warnings = Vec::new();
+        for (policy_index, policy_with_metadata) in policies.iter().enumerate() {
+            for (statement_index, statement) in
+                policy_with_metadata.policy.statements.iter().enumerate()
+            {
+                if statement.resource.iter().any(|resource| resource == "*") {
+                    warnings.push(Self::wildcard_resource_warning(
+                        policy_index,
+                        statement_index,
+                    ));
+                }
+                if statement.action.iter().any(|action| action.contains('*')) {
+                    warnings.push(Self::wildcard_action_warning(policy_index, statement_index));
+                }
+            }
+        }
+        warnings
+    }
+
     /// Scan generated policies for statements whose `Resource` contains the
     /// `"*"` wildcard and produce one warning per flagged statement.
     #[must_use]
@@ -132,21 +167,58 @@ impl PolicyWarning {
                 policy_with_metadata.policy.statements.iter().enumerate()
             {
                 if statement.resource.iter().any(|resource| resource == "*") {
-                    warnings.push(Self {
-                        warning_type: PolicyWarningType::WildcardResource,
-                        location: PolicyLocation {
-                            policy_index,
-                            statement_index,
-                        },
-                        message: "Statement could not be scoped to specific resources and \
-                                  uses Resource \"*\". Review whether broad resource access \
-                                  is intended."
-                            .to_string(),
-                    });
+                    warnings.push(Self::wildcard_resource_warning(
+                        policy_index,
+                        statement_index,
+                    ));
                 }
             }
         }
         warnings
+    }
+
+    /// Scan generated policies for statements containing `*` in any action
+    /// and produce one warning per flagged statement.
+    #[must_use]
+    pub fn wildcard_action_warnings(policies: &[PolicyWithMetadata]) -> Vec<Self> {
+        let mut warnings = Vec::new();
+        for (policy_index, policy_with_metadata) in policies.iter().enumerate() {
+            for (statement_index, statement) in
+                policy_with_metadata.policy.statements.iter().enumerate()
+            {
+                if statement.action.iter().any(|action| action.contains('*')) {
+                    warnings.push(Self::wildcard_action_warning(policy_index, statement_index));
+                }
+            }
+        }
+        warnings
+    }
+
+    fn wildcard_resource_warning(policy_index: usize, statement_index: usize) -> Self {
+        Self {
+            warning_type: PolicyWarningType::WildcardResource,
+            location: PolicyLocation {
+                policy_index,
+                statement_index,
+            },
+            message: "Statement could not be scoped to specific resources and \
+                      uses Resource \"*\". Review whether broad resource access \
+                      is intended."
+                .to_string(),
+        }
+    }
+
+    fn wildcard_action_warning(policy_index: usize, statement_index: usize) -> Self {
+        Self {
+            warning_type: PolicyWarningType::WildcardAction,
+            location: PolicyLocation {
+                policy_index,
+                statement_index,
+            },
+            message: "Statement contains a wildcard in Action and may be more permissive \
+                      than expected. Review whether broad action access is intended."
+                .to_string(),
+        }
     }
 }
 
@@ -259,18 +331,12 @@ mod tests {
 
     /// Expected warning for a statement, matching the message produced by
     /// `wildcard_resource_warnings`.
-    fn wildcard_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
-        PolicyWarning {
-            warning_type: PolicyWarningType::WildcardResource,
-            location: PolicyLocation {
-                policy_index,
-                statement_index,
-            },
-            message: "Statement could not be scoped to specific resources and \
-                      uses Resource \"*\". Review whether broad resource access \
-                      is intended."
-                .to_string(),
-        }
+    fn wildcard_resource_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
+        PolicyWarning::wildcard_resource_warning(policy_index, statement_index)
+    }
+
+    fn wildcard_action_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
+        PolicyWarning::wildcard_action_warning(policy_index, statement_index)
     }
 
     /// Property: `wildcard_resource_warnings` flags exactly the statements
@@ -296,7 +362,10 @@ mod tests {
                 vec!["*".to_string()],
             )]),
         ],
-        vec![wildcard_warning(0, 1), wildcard_warning(1, 0)]
+        vec![
+            wildcard_resource_warning(0, 1),
+            wildcard_resource_warning(1, 0)
+        ]
     )]
     // Fully scoped statements produce no warnings
     #[case::all_scoped(
@@ -325,10 +394,44 @@ mod tests {
         );
     }
 
+    #[rstest::rstest]
+    #[case::embedded_wildcard("s3:Get*", true)]
+    #[case::bare_wildcard("*", true)]
+    #[case::exact_action("s3:GetObject", false)]
+    fn test_wildcard_action_warnings(#[case] action: &str, #[case] should_warn: bool) {
+        let policies = vec![policy_with_statements(vec![Statement::allow(
+            vec![action.to_string()],
+            vec!["arn:aws:s3:::my-bucket/*".to_string()],
+        )])];
+
+        let expected = if should_warn {
+            vec![wildcard_action_warning(0, 0)]
+        } else {
+            vec![]
+        };
+        assert_eq!(PolicyWarning::wildcard_action_warnings(&policies), expected);
+    }
+
+    #[test]
+    fn test_warnings_for_policies_includes_resource_and_action_warnings() {
+        let policies = vec![policy_with_statements(vec![Statement::allow(
+            vec!["s3:Get*".to_string()],
+            vec!["*".to_string()],
+        )])];
+
+        assert_eq!(
+            PolicyWarning::warnings_for_policies(&policies),
+            vec![
+                wildcard_resource_warning(0, 0),
+                wildcard_action_warning(0, 0)
+            ]
+        );
+    }
+
     #[test]
     fn test_policy_warning_serialization() {
         let warning = PolicyWarning {
-            warning_type: PolicyWarningType::WildcardResource,
+            warning_type: PolicyWarningType::WildcardAction,
             location: PolicyLocation {
                 policy_index: 0,
                 statement_index: 1,
@@ -337,7 +440,7 @@ mod tests {
         };
 
         let json = serde_json::to_value(&warning).unwrap();
-        assert_eq!(json["WarningType"], "WildcardResource");
+        assert_eq!(json["WarningType"], "WildcardAction");
         assert_eq!(json["Location"]["PolicyIndex"], 0);
         assert_eq!(json["Location"]["StatementIndex"], 1);
         assert_eq!(json["Message"], "test message");

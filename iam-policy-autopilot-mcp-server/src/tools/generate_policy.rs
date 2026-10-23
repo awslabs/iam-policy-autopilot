@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, PolicyWarning, ServiceHints,
 };
 use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
 use schemars::JsonSchema;
@@ -77,6 +77,12 @@ pub struct GeneratePoliciesInput {
     )]
     #[telemetry(value, if_present)]
     pub resource_cutoff: Option<usize>,
+
+    #[schemars(
+        description = "Collapse two or more same-service actions with a common word-aligned prefix to a wildcard action (for example, s3:GetObject and s3:GetObjectVersion become s3:GetObject*). This reduces policy size but may grant additional actions. Default: false."
+    )]
+    #[telemetry(value, if_present)]
+    pub allow_overpermissive_action_wildcards: Option<bool>,
 }
 
 // Output struct for the generated IAM policy
@@ -86,6 +92,11 @@ pub struct GeneratePoliciesInput {
 pub struct GeneratePoliciesOutput {
     #[schemars(description = "List of policies with their associated types.")]
     pub policies: Vec<String>,
+    #[schemars(
+        description = "Warnings for generated statements containing broad resource or action wildcards."
+    )]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PolicyWarning>,
 }
 
 pub async fn generate_application_policies(
@@ -94,6 +105,8 @@ pub async fn generate_application_policies(
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
     let resource_cutoff = input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF);
+    let allow_overpermissive_action_wildcards =
+        input.allow_overpermissive_action_wildcards.unwrap_or(false);
 
     // Convert service_hints from Vec<String> to ServiceHints if provided
     let service_hints = input.service_hints.map(|hints| ServiceHints {
@@ -114,6 +127,7 @@ pub async fn generate_application_policies(
         },
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
+        allow_overpermissive_action_wildcards,
 
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
@@ -145,13 +159,14 @@ pub async fn generate_application_policies(
 
     let result = api::generate_policies(&config).await?;
 
+    let warnings = result.warnings;
     let policies = result
         .policies
         .into_iter()
         .map(|policy| serde_json::to_string(&policy.policy).context("Failed to serialize policy"))
         .collect::<Result<Vec<String>, Error>>()?;
 
-    Ok(GeneratePoliciesOutput { policies })
+    Ok(GeneratePoliciesOutput { policies, warnings })
 }
 
 // Mock the api call
@@ -169,6 +184,8 @@ mod api {
         OnceLock::new();
 
     static MOCK_RESOURCE_CUTOFF: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+    static MOCK_ALLOW_OVERPERMISSIVE_ACTION_WILDCARDS: OnceLock<Mutex<Option<bool>>> =
+        OnceLock::new();
 
     pub async fn generate_policies(
         config: &GeneratePolicyConfig,
@@ -176,6 +193,11 @@ mod api {
         let cutoff_mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
         let mut cutoff_guard = cutoff_mutex.lock().unwrap();
         *cutoff_guard = Some(config.resource_cutoff);
+
+        let wildcard_mutex =
+            MOCK_ALLOW_OVERPERMISSIVE_ACTION_WILDCARDS.get_or_init(|| Mutex::new(None));
+        let mut wildcard_guard = wildcard_mutex.lock().unwrap();
+        *wildcard_guard = Some(config.allow_overpermissive_action_wildcards);
 
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
@@ -195,6 +217,12 @@ mod api {
         let mut guard = mutex.lock().unwrap();
         guard.take()
     }
+
+    pub fn take_allow_overpermissive_action_wildcards() -> Option<bool> {
+        let mutex = MOCK_ALLOW_OVERPERMISSIVE_ACTION_WILDCARDS.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard.take()
+    }
 }
 
 #[cfg(test)]
@@ -204,8 +232,8 @@ mod tests {
 
     use super::*;
     use iam_policy_autopilot_policy_generation::{
-        api::model::GeneratePoliciesResult, Explanations, IamPolicy, PolicyType,
-        PolicyWithMetadata, Statement,
+        api::model::{GeneratePoliciesResult, PolicyLocation, PolicyWarning, PolicyWarningType},
+        Explanations, IamPolicy, PolicyType, PolicyWithMetadata, Statement,
     };
 
     use anyhow::anyhow;
@@ -223,6 +251,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            allow_overpermissive_action_wildcards: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -270,6 +299,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            allow_overpermissive_action_wildcards: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -290,6 +320,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: Some(0),
+            allow_overpermissive_action_wildcards: None,
         };
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
@@ -304,6 +335,44 @@ mod tests {
         assert_eq!(api::take_resource_cutoff(), Some(0));
     }
 
+    #[tokio::test]
+    async fn test_generate_application_policies_allows_overpermissive_action_wildcards() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: Some("us-east-1".to_string()),
+            account: Some("123456789012".to_string()),
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: None,
+            allow_overpermissive_action_wildcards: Some(true),
+        };
+
+        let warning = PolicyWarning {
+            warning_type: PolicyWarningType::WildcardAction,
+            location: PolicyLocation {
+                policy_index: 0,
+                statement_index: 0,
+            },
+            message: "Statement may be more permissive than expected.".to_string(),
+        };
+        api::set_mock_return(Ok(GeneratePoliciesResult {
+            policies: vec![],
+            explanations: Explanations::default(),
+            resource_binding_explanations: None,
+            warnings: vec![warning.clone()],
+        }));
+        let result = generate_application_policies(input).await.unwrap();
+
+        assert_eq!(
+            api::take_allow_overpermissive_action_wildcards(),
+            Some(true)
+        );
+        assert_eq!(result.warnings, vec![warning]);
+    }
+
     #[test]
     fn test_generate_policies_input_serialization() {
         let input = GeneratePoliciesInput {
@@ -316,6 +385,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            allow_overpermissive_action_wildcards: Some(true),
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -323,6 +393,7 @@ mod tests {
         assert!(json.contains("\"SourceFiles\":"));
         assert!(json.contains("\"Region\":\"us-west-2\""));
         assert!(json.contains("\"Account\":\"987654321098\""));
+        assert!(json.contains("\"AllowOverpermissiveActionWildcards\":true"));
     }
 
     #[test]
@@ -332,6 +403,7 @@ mod tests {
                 "{\"Version\":\"2012-10-17\"}".to_string(),
                 "{\"Version\":\"2012-10-17\"}".to_string(),
             ],
+            warnings: vec![],
         };
 
         let json = serde_json::to_string(&output).unwrap();
@@ -352,6 +424,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            allow_overpermissive_action_wildcards: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
