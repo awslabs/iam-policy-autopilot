@@ -16,7 +16,7 @@ use std::{
 use crate::{
     embedded_data::PythonNameMap,
     enrichment::operation_fas_map::{FasContext, FasOperation},
-    extraction::SdkMethodCallMetadata,
+    extraction::{SdkMethodCallMetadata, ServiceDiscovery},
     service_configuration::ServiceConfiguration,
     SdkMethodCall, SdkType,
 };
@@ -99,22 +99,7 @@ impl Operation {
                 .map(std::string::ToString::to_string)
                 .unwrap_or_else(|| call.name.to_case(Case::Pascal))
         } else if sdk == SdkType::JavaV2 {
-            // Java SDK v2 extracts method names in camelCase (e.g. `listObjectsV2`, `putObject`).
-            // The service reference operation map uses PascalCase keys (e.g. `ListObjectsV2`).
-            // A simple first-letter capitalisation (`to_case(Case::Pascal)`) is sufficient and
-            // correct even for names that look tricky:
-            //
-            // * Version suffixes (V2, V3, …): In Java camelCase the digit is glued to the `V`
-            //   with no word boundary, so `listObjectsV2` → `ListObjectsV2` (not `ListObjectsV 2`).
-            //   This is the *opposite* of the Python problem, where snake_case splits `V2` into
-            //   `_v_2` and requires a post-processing fix.
-            //
-            // * Mixed-case brand names (WhatsApp, DynamoDB, …): Java SDK v2 preserves the
-            //   internal capitalisation in its camelCase names (e.g. `sendWhatsAppMessage`).
-            //   `convert_case` treats every uppercase letter as a word boundary, so
-            //   `sendWhatsAppMessage` → `SendWhatsAppMessage` — exactly the PascalCase key used
-            //   in the service reference.
-            call.name.to_case(Case::Pascal)
+            ServiceDiscovery::java_method_to_operation_name(&call.name)
         } else {
             // For non-Boto3, non-Java SDKs (Go, JS, TS) the extracted name is already PascalCase.
             call.name.clone()
@@ -1147,6 +1132,24 @@ mod location_tests {
             let op = Operation::from(fas_operation);
             assert_eq!(op.service_operation_name(), "kms:Decrypt");
             assert_eq!(op.context(), &context);
+        }
+
+        for (method_name, operation_name) in [
+            ("createDBCluster", "CreateDBCluster"),
+            ("createDBInstance", "CreateDBInstance"),
+            ("createDBSnapshot", "CreateDBSnapshot"),
+            ("deleteDBSnapshot", "DeleteDBSnapshot"),
+            ("describeDBClusters", "DescribeDBClusters"),
+        ] {
+            let call = SdkMethodCall {
+                name: method_name.to_string(),
+                possible_services: vec!["rds".to_string()],
+                metadata: None,
+            };
+            let op = Operation::from_call(&call, "rds", &service_cfg, SdkType::JavaV2)
+                .await
+                .unwrap();
+            assert_eq!(op.service_operation_name(), format!("rds:{operation_name}"));
         }
     }
 }

@@ -9,7 +9,6 @@
 //! [`utils::find_receiver_declaration`].
 
 use ast_grep_language::Java;
-use convert_case::{Case, Casing};
 
 use crate::extraction::framework::SdkExtractor;
 use crate::extraction::java::extractors::utils;
@@ -76,13 +75,12 @@ all:
             None => return,
         };
 
-        // Strip the "waitUntil" prefix and convert to camelCase so that waiter_type
-        // matches the waiter_lookup index keys produced by ServiceDiscovery
-        // (e.g. "waitUntilBucketExists" → strip → "BucketExists" → camel → "bucketExists").
+        // Java codegen emits waiter methods as "waitUntil" followed by the modeled
+        // waiter key verbatim, so stripping the prefix yields the lookup key.
         let waiter_type = full_method
             .strip_prefix("waitUntil")
             .unwrap_or(&full_method)
-            .to_case(Case::Camel);
+            .to_string();
 
         let node = node_match.get_node();
         let location = Location::from_node(source_file.path.clone(), node);

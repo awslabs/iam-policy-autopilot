@@ -222,21 +222,21 @@
     ]
   },
   "WaiterLookup": {
-    "bucketExists": [
+    "BucketExists": [
       { "service_name": "s3", "operation_name": "HeadBucket" }
     ],
-    "tableExists": [
+    "TableExists": [
       { "service_name": "dynamodb",   "operation_name": "DescribeTable" },
       { "service_name": "dynamodbv2", "operation_name": "DescribeTable" }
     ],
-    "tableNotExists": [
+    "TableNotExists": [
       { "service_name": "dynamodb", "operation_name": "DescribeTable" }
     ],
-    "resourceReady": [
+    "ResourceReady": [
       { "service_name": "cloudvault", "operation_name": "DescribeResource" },
       { "service_name": "datastore",  "operation_name": "DescribeResource" }
     ],
-    "clusterActive": [
+    "ClusterActive": [
       { "service_name": "cloudcluster", "operation_name": "DescribeCluster" },
       { "service_name": "datacluster",  "operation_name": "GetCluster" }
     ]

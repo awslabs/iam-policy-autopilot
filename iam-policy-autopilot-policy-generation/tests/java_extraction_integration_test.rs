@@ -119,6 +119,107 @@ public class S3Example {
 }
 
 #[tokio::test]
+async fn test_java_sdk_v2_rds_acronym_operations() {
+    let java_source = r#"
+import software.amazon.awssdk.services.rds.RdsClient;
+
+public class RdsExample {
+    public static void main(String[] args) {
+        RdsClient rds = RdsClient.builder().build();
+        rds.createDBCluster();
+        rds.createDBInstance();
+        rds.createDBSnapshot();
+        rds.deleteDBSnapshot();
+        rds.describeDBClusters();
+    }
+}
+    "#;
+    let source_file = SourceFile::with_language(
+        PathBuf::from("RdsExample.java"),
+        java_source.to_string(),
+        Language::Java,
+    );
+    let extracted_methods = ExtractionEngine::new()
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
+        .await
+        .expect("Java SDK v2 RDS extraction should succeed");
+
+    for expected_name in [
+        "createDBCluster",
+        "createDBInstance",
+        "createDBSnapshot",
+        "deleteDBSnapshot",
+        "describeDBClusters",
+    ] {
+        let call = extracted_methods
+            .methods
+            .iter()
+            .find(|call| call.name == expected_name)
+            .unwrap_or_else(|| panic!("Should find {expected_name} operation"));
+        assert_eq!(call.possible_services, vec!["rds"]);
+    }
+}
+
+#[tokio::test]
+async fn test_java_sdk_v2_acronym_paginator() {
+    let java_source = r#"
+import software.amazon.awssdk.services.rds.RdsClient;
+
+public class RdsPaginatorExample {
+    public static void main(String[] args) {
+        RdsClient rds = RdsClient.builder().build();
+        rds.describeDBClustersPaginator();
+    }
+}
+    "#;
+    let source_file = SourceFile::with_language(
+        PathBuf::from("RdsPaginatorExample.java"),
+        java_source.to_string(),
+        Language::Java,
+    );
+    let extracted_methods = ExtractionEngine::new()
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
+        .await
+        .expect("Java SDK v2 RDS paginator extraction should succeed");
+
+    let call = extracted_methods
+        .methods
+        .iter()
+        .find(|call| call.name == "describeDBClusters")
+        .expect("Should resolve the acronym paginator to DescribeDBClusters");
+    assert_eq!(call.possible_services, vec!["rds"]);
+}
+
+#[tokio::test]
+async fn test_java_sdk_v2_acronym_waiter() {
+    let java_source = r#"
+import software.amazon.awssdk.services.acmpca.waiters.AcmPcaWaiter;
+
+public class AcmPcaExample {
+    public static void waitForCertificateAuthority(AcmPcaWaiter waiter) {
+        waiter.waitUntilCertificateAuthorityCSRCreated();
+    }
+}
+    "#;
+    let source_file = SourceFile::with_language(
+        PathBuf::from("AcmPcaExample.java"),
+        java_source.to_string(),
+        Language::Java,
+    );
+    let extracted_methods = ExtractionEngine::new()
+        .extract_sdk_method_calls(Language::Java, vec![source_file])
+        .await
+        .expect("Java SDK v2 ACM PCA waiter extraction should succeed");
+
+    let call = extracted_methods
+        .methods
+        .iter()
+        .find(|call| call.name == "getCertificateAuthorityCsr")
+        .expect("Should resolve the acronym waiter to GetCertificateAuthorityCsr");
+    assert_eq!(call.possible_services, vec!["acm-pca"]);
+}
+
+#[tokio::test]
 async fn test_java_no_sdk_calls() {
     let java_source = r#"
 public class NoSdkExample {

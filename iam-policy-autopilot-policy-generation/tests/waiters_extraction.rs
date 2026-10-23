@@ -672,8 +672,8 @@ class WaiterTest {{
     /// underlying operation name via `ServiceModelIndex::waiter_lookup`.
     async fn test_java(&self) {
         let code = self.generate_java_code();
-        // Java emits the underlying operation in camelCase (e.g. "describeTable")
-        let expected = self.waiter.operation.to_case(Case::Camel);
+        let expected =
+            ServiceDiscovery::operation_to_method_name(&self.waiter.operation, Language::Java);
         self.test_language("Java", "java", code, &expected).await;
     }
 }

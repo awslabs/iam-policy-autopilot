@@ -3,16 +3,19 @@ name: Weekly Submodule Update Check
 # Weekly refresh of every vendored upstream we consume, in one PR:
 #
 #   * boto3 / botocore-data — SDK data embedded at compile time.
+#   * aws-sdk-java-v2 — source of Java SDK naming behavior, checked against
+#     the Rust implementation.
 #   * terraform-provider-aws — source for the generated Terraform CRUD map and
 #     Terraform external model, regenerated here via xtask (needs Go + gopls).
 #
-# All three embed a content data_hash into the binary, surfaced by
-# `--version --verbose`. We bump every submodule to its latest tag, build once,
-# and compare the built hashes against the published PyPI wheel. If any changed,
-# we open a single PR pinning the bumps (and the regenerated Terraform
-# artifacts). The Terraform model is regenerated before the build so the same
-# build that produces the compared hashes also embeds the new artifacts. Those
-# artifacts are passed to the PR job rather than regenerated a second time.
+# The three data-backed inputs embed a content data_hash into the binary,
+# surfaced by `--version --verbose`. We bump every submodule to its latest tag,
+# regenerate derived artifacts, build once, and compare the built hashes against
+# the published PyPI wheel. Java changes are detected from the submodule pin, and
+# its codegen pipeline verifies that the Rust naming implementation has not
+# drifted. If anything changed, we open a single PR pinning the bumps and
+# regenerated artifacts. Those artifacts are passed to the PR job rather than
+# regenerated a second time.
 
 on:
   schedule:
@@ -30,6 +33,7 @@ jobs:
       built_output: ${{ steps.built.outputs.output }}
       boto3_tag: ${{ steps.submodules.outputs.boto3_tag }}
       botocore_tag: ${{ steps.submodules.outputs.botocore_tag }}
+      java_tag: ${{ steps.submodules.outputs.java_tag }}
       terraform_tag: ${{ steps.submodules.outputs.terraform_tag }}
     steps:
     - name: Get PyPI version output
@@ -65,6 +69,13 @@ jobs:
         git checkout $BOTOCORE_TAG
         echo "botocore_tag=$BOTOCORE_TAG" >> $GITHUB_OUTPUT
 
+        cd ../aws-sdk-java-v2
+        git fetch --tags
+        JAVA_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
+        echo "Updating aws-sdk-java-v2 to $JAVA_TAG"
+        git checkout "$JAVA_TAG"
+        echo "java_tag=$JAVA_TAG" >> $GITHUB_OUTPUT
+
         cd ../../terraform/terraform-provider-aws
         git fetch --tags --force
         TERRAFORM_TAG=$(git describe --tags $(git rev-list --tags --max-count=1))
@@ -84,8 +95,21 @@ jobs:
     - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: corretto
+        java-version: '17'
+        cache: maven
+
     - name: Build xtask
       run: cargo build -p xtask
+
+    - name: Verify Java operation names
+      run: >-
+        ./target/debug/xtask verify-java-operation-names
+        --java-sdk-root
+        iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2
 
     - name: Regenerate Terraform artifacts
       run: |
@@ -121,22 +145,30 @@ jobs:
       run: |
         extract_hash() { echo "$1" | grep "^$2 version:" | sed 's/.*data_hash=\([^ ]*\).*/\1/'; }
 
+        has_diff=false
+
+        if ! git diff --quiet -- \
+          iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2; then
+          echo "aws-sdk-java-v2: submodule pin changed"
+          has_diff=true
+        fi
+
         for name in boto3 botocore terraform-provider-aws; do
           pypi=$(extract_hash "$PYPI_OUTPUT" "$name")
           built=$(extract_hash "$BUILT_OUTPUT" "$name")
           echo "$name: PyPI=$pypi built=$built"
           if [[ "$pypi" != "$built" ]]; then
-            echo "has_diff=true" >> $GITHUB_OUTPUT
-            exit 0
+            has_diff=true
           fi
         done
-        echo "has_diff=false" >> $GITHUB_OUTPUT
 
-    - name: Upload regenerated Terraform artifacts
+        echo "has_diff=$has_diff" >> $GITHUB_OUTPUT
+
+    - name: Upload regenerated artifacts
       if: steps.compare.outputs.has_diff == 'true'
       uses: actions/upload-artifact@v7
       with:
-        name: regenerated-terraform-artifacts
+        name: regenerated-config-artifacts
         path: |
           iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-crud-map.json
           iam-policy-autopilot-policy-generation/resources/config/terraform/terraform-model.json
@@ -165,6 +197,7 @@ jobs:
       env:
         BOTO3_TAG: ${{ needs.check_versions.outputs.boto3_tag }}
         BOTOCORE_TAG: ${{ needs.check_versions.outputs.botocore_tag }}
+        JAVA_TAG: ${{ needs.check_versions.outputs.java_tag }}
         TERRAFORM_TAG: ${{ needs.check_versions.outputs.terraform_tag }}
       run: |
         cd iam-policy-autopilot-policy-generation/resources/config/sdks/boto3
@@ -175,15 +208,19 @@ jobs:
         git fetch --tags
         git checkout "$BOTOCORE_TAG"
 
+        cd ../aws-sdk-java-v2
+        git fetch --tags
+        git checkout "$JAVA_TAG"
+
         cd ../../terraform/terraform-provider-aws
         git fetch --tags --force
         git checkout "$TERRAFORM_TAG"
 
-    - name: Download regenerated Terraform artifacts
+    - name: Download regenerated artifacts
       uses: actions/download-artifact@v8
       with:
-        name: regenerated-terraform-artifacts
-        path: iam-policy-autopilot-policy-generation/resources/config/terraform
+        name: regenerated-config-artifacts
+        path: iam-policy-autopilot-policy-generation/resources/config
 
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@v8
@@ -195,6 +232,12 @@ jobs:
         title: "chore: update submodules"
         body: |
           Automated submodule update detected version differences:
+
+          **Pinned SDK/provider tags:**
+          - boto3: `${{ needs.check_versions.outputs.boto3_tag }}`
+          - botocore: `${{ needs.check_versions.outputs.botocore_tag }}`
+          - aws-sdk-java-v2: `${{ needs.check_versions.outputs.java_tag }}`
+          - terraform-provider-aws: `${{ needs.check_versions.outputs.terraform_tag }}`
 
           **PyPI (current release):**
           ```

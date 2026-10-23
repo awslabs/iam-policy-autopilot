@@ -107,8 +107,8 @@ pub(crate) struct ReceiverDeclaration {
 pub(crate) struct Waiter {
     /// Raw expression of the `waitUntil*` call
     pub(crate) expr: String,
-    /// The wait method name with the `"waitUntil"` prefix stripped and converted to camelCase,
-    /// e.g. `"bucketExists"` for `waitUntilBucketExists`
+    /// The modeled waiter key with the `"waitUntil"` prefix stripped,
+    /// e.g. `"BucketExists"` for `waitUntilBucketExists`
     pub(crate) name: String,
     /// Positional arguments passed to the `waitUntil*` call
     pub(crate) parameters: Vec<Parameter>,
