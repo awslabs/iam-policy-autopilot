@@ -38,12 +38,14 @@
 //!
 //! [`service_call`]: super::service_call
 
-use convert_case::{Case, Casing};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::extraction::java::types::{ExtractionResult, Import};
-use crate::extraction::{SdkMethodCall, SdkMethodCallMetadata, ServiceModelIndex};
+use crate::extraction::{
+    SdkMethodCall, SdkMethodCallMetadata, ServiceDiscovery, ServiceModelIndex,
+};
+use crate::Language;
 
 /// Match waiter calls from an [`ExtractionResult`].
 ///
@@ -71,8 +73,8 @@ pub(crate) fn match_waiters(
     for waiter in &result.waiters {
         let waiter_type = &waiter.name;
 
-        // waiter_type is already camelCase (converted at extraction time by the extractor).
-        // The waiter_lookup is keyed by the same camelCase names, so a direct lookup suffices.
+        // waiter_type is the modeled waiter key with the `waitUntil` prefix stripped.
+        // The waiter_lookup is keyed by the same names, so a direct lookup suffices.
         let refs = service_index.waiter_lookup.get(waiter_type);
 
         let Some(refs) = refs else { continue };
@@ -132,7 +134,10 @@ pub(crate) fn match_waiters(
             if !services.contains(&ref_entry.service_name) {
                 continue;
             }
-            let method_name = ref_entry.operation_name.to_case(Case::Camel);
+            let method_name = ServiceDiscovery::operation_to_method_name(
+                &ref_entry.operation_name,
+                Language::Java,
+            );
             if let Some(group) = by_operation.iter_mut().find(|(op, _)| op == &method_name) {
                 group.1.push(ref_entry.service_name.clone());
             } else {

@@ -2,7 +2,7 @@
   "ExpectedWaiters": [
     {
       "Expr": "waiter.waitUntilTableExists(r -> r.tableName(\"myTable\"))",
-      "Name": "tableExists",
+      "Name": "TableExists",
       "Parameters": [
         {
           "Positional": {

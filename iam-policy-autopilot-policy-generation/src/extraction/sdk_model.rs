@@ -326,8 +326,13 @@ impl ServiceDiscovery {
             }
             if let Some(waiters) = waiters {
                 for (waiter_name, waiter_entry) in waiters {
-                    let method_name =
-                        ServiceDiscovery::operation_to_method_name(&waiter_name, language);
+                    // Java SDK v2 generates waiter methods as `waitUntil` followed by the
+                    // modeled waiter key verbatim. The Java extractor strips only that prefix.
+                    let method_name = if language == Language::Java {
+                        waiter_name
+                    } else {
+                        ServiceDiscovery::operation_to_method_name(&waiter_name, language)
+                    };
                     waiter_lookup
                         .entry(method_name.clone())
                         .or_default()
@@ -391,12 +396,13 @@ impl ServiceDiscovery {
     ///
     /// # Returns
     ///
-    /// Language-specific method name (e.g., "`get_object`", "listBuckets")
+    /// Language-specific method name (e.g., "`get_object`", "`createDBCluster`")
     ///
     /// # Language Mappings
     ///
     /// - **Python (boto3)**: `PascalCase` → `snake_case` (`GetObject` → `get_object`)
-    /// - **TypeScript/JavaScript**: `PascalCase` → camelCase (`GetObject` → getObject)
+    /// - **Java**: SDK codegen method name (`CreateDBCluster` → `createDBCluster`)
+    /// - **TypeScript/JavaScript**: modeled `PascalCase` command name
     /// - **Go**: `PascalCase` unchanged (`GetObject` → `GetObject`)
     // Not part of the stable public API. Exposed only so that integration tests in tests/
     // can call this without duplicating the conversion logic (including the PythonNameMap
@@ -418,23 +424,51 @@ impl ServiceDiscovery {
                 // Go uses PascalCase unchanged (GetObject -> GetObject)
                 operation_name.to_string()
             }
-            Language::Java => {
-                // Java SDK v2 uses camelCase (e.g. `PutObject` → `putObject`,
-                // `ListObjectsV2` → `listObjectsV2`).
-                //
-                // A simple `to_case(Case::Camel)` is correct even for names that look tricky:
-                //
-                // * Version suffixes (V2, V3, …): `convert_case` keeps the digit glued to the
-                //   `V` with no extra word boundary, so `ListObjectsV2` → `listObjectsV2`
-                //   (not `listObjectsV 2`).
-                //
-                // * Mixed-case brand names (WhatsApp, DynamoDB, …): `convert_case` treats every
-                //   uppercase letter as a word boundary, so `SendWhatsAppMessage` →
-                //   `sendWhatsAppMessage` — exactly the camelCase name used by the Java SDK v2.
-                use convert_case::{Case, Casing};
-                operation_name.to_case(Case::Camel)
+            Language::Java => Self::java_uncapitalize(operation_name),
+        }
+    }
+
+    /// Convert a Java SDK v2 method name back to its modeled operation name.
+    ///
+    /// The pinned SDK models currently make this the inverse of
+    /// [`Self::java_uncapitalize`]. The Java codegen conformance check verifies
+    /// that this remains true for every generated operation.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn java_method_to_operation_name(method_name: &str) -> String {
+        let mut chars = method_name.chars();
+        chars
+            .next()
+            .map(|first| first.to_uppercase().chain(chars).collect())
+            .unwrap_or_default()
+    }
+
+    /// Mirrors `Utils.unCapitalize`, which `OperationModel.getMethodName` calls:
+    /// <https://github.com/aws/aws-sdk-java-v2/blob/master/codegen/src/main/java/software/amazon/awssdk/codegen/internal/Utils.java#L108-L124>
+    fn java_uncapitalize(name: &str) -> String {
+        assert!(
+            !name.trim().is_empty(),
+            "Java operation name cannot be empty"
+        );
+
+        let chars: Vec<char> = name.chars().collect();
+        let mut result = String::with_capacity(name.len());
+        let mut index = 0;
+
+        loop {
+            result.extend(chars[index].to_lowercase());
+            index += 1;
+
+            let next_is_part_of_initialism = index < chars.len()
+                && chars[index].is_uppercase()
+                && !(index + 1 < chars.len() && chars[index + 1].is_lowercase());
+            if !next_is_part_of_initialism {
+                break;
             }
         }
+
+        result.extend(chars[index..].iter());
+        result
     }
 
     /// Convert AWS operation names to Python method names.
@@ -600,6 +634,26 @@ mod tests {
     #[case("GetObject", Language::JavaScript, "GetObject")]
     #[case("GetObject", Language::TypeScript, "GetObject")]
     #[case("GetObject", Language::Go, "GetObject")]
+    #[case("CreateDBCluster", Language::JavaScript, "CreateDBCluster")]
+    #[case("CreateDBCluster", Language::TypeScript, "CreateDBCluster")]
+    #[case("CreateDBCluster", Language::Go, "CreateDBCluster")]
+    // Java SDK v2 preserves the initial acronym from the modeled operation name.
+    #[case("CreateDBCluster", Language::Java, "createDBCluster")]
+    #[case("CreateDBInstance", Language::Java, "createDBInstance")]
+    #[case("CreateDBSnapshot", Language::Java, "createDBSnapshot")]
+    #[case("DeleteDBSnapshot", Language::Java, "deleteDBSnapshot")]
+    #[case("DescribeDBClusters", Language::Java, "describeDBClusters")]
+    #[case("CreateACL", Language::Java, "createACL")]
+    #[case("GetBackendAPI", Language::Java, "getBackendAPI")]
+    #[case("CreateEnvironmentEC2", Language::Java, "createEnvironmentEC2")]
+    #[case("A", Language::Java, "a")]
+    #[case("AB", Language::Java, "ab")]
+    #[case("ABC", Language::Java, "abc")]
+    #[case("AToken", Language::Java, "aToken")]
+    #[case("MFAToken", Language::Java, "mfaToken")]
+    #[case("AWSRequest", Language::Java, "awsRequest")]
+    #[case("MfaToken", Language::Java, "mfaToken")]
+    #[case("AwsRequest", Language::Java, "awsRequest")]
     fn test_method_name_conversion(
         #[case] operation: &str,
         #[case] language: Language,
@@ -607,6 +661,16 @@ mod tests {
     ) {
         assert_eq!(
             ServiceDiscovery::operation_to_method_name(operation, language),
+            expected
+        );
+    }
+
+    #[rstest]
+    #[case("createDBCluster", "CreateDBCluster")]
+    #[case("getBackendAPI", "GetBackendAPI")]
+    fn test_java_method_to_operation_name(#[case] method: &str, #[case] expected: &str) {
+        assert_eq!(
+            ServiceDiscovery::java_method_to_operation_name(method),
             expected
         );
     }

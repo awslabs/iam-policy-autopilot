@@ -15,6 +15,7 @@ jobs:
       rust: ${{ steps.filter.outputs.rust }}
       config: ${{ steps.filter.outputs.config }}
       python: ${{ steps.filter.outputs.python }}
+      java_operation_names: ${{ steps.filter.outputs.java_operation_names }}
       should_test: ${{ steps.filter.outputs.rust == 'true' || steps.filter.outputs.config == 'true' }}
     steps:
       - uses: actions/checkout@v4
@@ -35,6 +36,14 @@ jobs:
             python:
               - 'iam-policy-autopilot-policy-generation/scripts/**/*.py'
               - 'pyproject.toml'
+            java_operation_names:
+              - 'Cargo.lock'
+              - 'xtask/Cargo.toml'
+              - 'xtask/java/**/*.java'
+              - 'xtask/src/main.rs'
+              - 'xtask/src/verify_java_operation_names.rs'
+              - 'iam-policy-autopilot-policy-generation/src/extraction/sdk_model.rs'
+              - 'iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2'
 
   test-linux:
     name: Test Linux
@@ -185,6 +194,34 @@ jobs:
       - uses: astral-sh/ruff-action@v3
         with:
           args: "format --check ."
+
+  java-operation-names:
+    name: Java Operation Names
+    needs: [changes]
+    if: needs.changes.outputs.java_operation_names == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: corretto
+          java-version: '17'
+          cache: maven
+
+      - name: Verify Java operation names
+        run: >-
+          cargo xtask verify-java-operation-names
+          --java-sdk-root
+          iam-policy-autopilot-policy-generation/resources/config/sdks/aws-sdk-java-v2
 
   lsp-integration:
     name: LSP Integration Tests

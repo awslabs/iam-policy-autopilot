@@ -6,6 +6,7 @@ use std::{fs, path::Path};
 mod build_terraform_model;
 mod extract_terraform_crud_map;
 mod utils;
+mod verify_java_operation_names;
 
 #[derive(Parser)]
 #[command(name = "xtask", about = "Repository maintenance tasks")]
@@ -18,6 +19,13 @@ struct Cli {
 enum Task {
     /// Regenerate tests/java/service_name_test_cases.txt
     RegenerateServiceNames,
+
+    /// Verify Rust operation naming against the Java SDK v2 codegen pipeline.
+    VerifyJavaOperationNames {
+        /// Root of the aws-sdk-java-v2 checkout.
+        #[arg(long)]
+        java_sdk_root: PathBuf,
+    },
 
     /// Extract the Terraform resource → CRUD-handler map from the provider.
     ///
@@ -66,6 +74,13 @@ fn main() {
     let cli = Cli::parse();
     match cli.task {
         Task::RegenerateServiceNames => regenerate_service_names(),
+        Task::VerifyJavaOperationNames { java_sdk_root } => {
+            let opts = verify_java_operation_names::VerifyOptions { java_sdk_root };
+            if let Err(e) = verify_java_operation_names::run(opts) {
+                eprintln!("error: {e:#}");
+                std::process::exit(1);
+            }
+        }
         Task::ExtractTerraformCrudMap {
             terraform_provider_aws_root,
             output,
