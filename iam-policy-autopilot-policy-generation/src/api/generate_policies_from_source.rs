@@ -9,7 +9,9 @@ use anyhow::{Context, Result};
 use log::debug;
 
 use crate::{
-    api::model::{AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder},
+    api::model::{
+        AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder, PolicyWarning,
+    },
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
 };
@@ -25,6 +27,8 @@ pub struct GenerateFromSourceConfig {
     pub aws_context: AwsContext,
     /// Enable minimal policy size by allowing cross-service merging.
     pub minimize_policy_size: bool,
+    /// Collapse action suffixes when actions share a common word-aligned prefix.
+    pub allow_overpermissive_action_wildcards: bool,
 }
 
 /// Generate IAM policies from in-memory source code.
@@ -69,6 +73,7 @@ pub async fn generate_policies_from_source(
     // 3. Generate policies
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
+        allow_overpermissive_action_wildcards: config.allow_overpermissive_action_wildcards,
     };
     let policy_engine = PolicyGenerationEngine::with_merger_config(
         &config.aws_context.partition,
@@ -84,6 +89,7 @@ pub async fn generate_policies_from_source(
     let merged = policy_engine
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
+    let warnings = PolicyWarning::warnings_for_policies(&merged);
 
     // Explanations are omitted in the WASM/from-source path: the browser consumer only
     // needs the final policies, and including per-action explanations would significantly
@@ -91,6 +97,7 @@ pub async fn generate_policies_from_source(
     // CLI/MCP paths via generate_policies().
     Ok(GeneratePoliciesResultBuilder::default()
         .policies(merged)
+        .warnings(warnings)
         .build()
         .expect("GeneratePoliciesResultBuilder missing required policies"))
 }

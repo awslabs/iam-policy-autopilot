@@ -34,6 +34,11 @@ export interface GenerateInput {
   account?: string;
   /** Language override (auto-detected from filename if omitted) */
   language?: string;
+  /**
+   * Collapse action suffixes when actions share a common word-aligned prefix.
+   * This may grant actions that were not observed in the source (default: false).
+   */
+  allowOverpermissiveActionWildcards?: boolean;
 }
 
 export interface PolicyStatement {
@@ -47,8 +52,18 @@ export interface Policy {
   Statement: PolicyStatement[];
 }
 
+export interface PolicyWarning {
+  WarningType: 'WildcardResource' | 'WildcardAction';
+  Location: {
+    PolicyIndex: number;
+    StatementIndex: number;
+  };
+  Message: string;
+}
+
 export interface GenerateResult {
   Policies: Policy[];
+  Warnings?: PolicyWarning[];
 }
 
 export interface GenerateError {
@@ -193,6 +208,7 @@ export async function generatePolicies(input: GenerateInput): Promise<GenerateRe
     region: input.region ?? '*',
     account: input.account ?? '*',
     language: input.language,
+    allowOverpermissiveActionWildcards: input.allowOverpermissiveActionWildcards ?? false,
   });
 
   // Allocate input string in WASM memory

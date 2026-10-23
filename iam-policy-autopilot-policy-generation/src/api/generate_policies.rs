@@ -311,6 +311,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Create policy generation engine with AWS context and merger configuration
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
+        allow_overpermissive_action_wildcards: config.allow_overpermissive_action_wildcards,
     };
 
     let policy_engine = PolicyGenerationEngine::with_merger_config(
@@ -352,7 +353,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     // Recompute warnings against the final (possibly merged) policies so
     // policy indices and statements match what the caller receives
-    let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&final_policies);
+    let warnings = crate::api::model::PolicyWarning::warnings_for_policies(&final_policies);
 
     #[cfg(feature = "telemetry")]
     {
@@ -381,7 +382,12 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         );
         iam_policy_autopilot_common::telemetry::span::record_result_number(
             "num_wildcard_resource_statements",
-            warnings.len(),
+            warnings
+                .iter()
+                .filter(|warning| {
+                    warning.warning_type == crate::api::model::PolicyWarningType::WildcardResource
+                })
+                .count(),
         );
     }
 

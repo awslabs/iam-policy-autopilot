@@ -14,7 +14,7 @@ use crate::{
     errors::{ExtractorError, Result},
 };
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 /// IAM managed policy size limit in characters (excluding whitespace)
 /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
@@ -78,6 +78,12 @@ pub struct PolicyMergerConfig {
     /// first action only, so the remaining services' actions can land in a
     /// non-adjacent statement.
     pub(crate) allow_cross_service_merging: bool,
+    /// Collapse action suffixes when actions share a common word-aligned prefix.
+    ///
+    /// For example, `s3:GetObject` and `s3:GetObjectVersion` become
+    /// `s3:GetObject*`. This is disabled by default because the wildcard can
+    /// grant actions that were not observed in the analyzed source.
+    pub(crate) allow_overpermissive_action_wildcards: bool,
 }
 
 /// Policy merger for combining multiple IAM policies into a single optimized policy
@@ -427,6 +433,7 @@ impl PolicyMerger {
         // Sort actions and resources for consistent output
         let mut sorted_actions: Vec<_> = all_actions.into_iter().collect();
         sorted_actions.sort();
+        sorted_actions = self.collapse_action_suffixes_for_common_prefixes(sorted_actions);
 
         let mut sorted_resources: Vec<_> = group.resources.iter().cloned().collect();
         sorted_resources.sort();
@@ -438,6 +445,151 @@ impl PolicyMerger {
         log::debug!("From group:\n{group:?}\ncreated statement:\n{result:?}");
 
         Ok(result)
+    }
+
+    /// Replace groups of same-service actions with a shorter wildcard action.
+    ///
+    /// Actions are first grouped by their leading action word (`Get`, `List`,
+    /// `Describe`, and so on). Each group is collapsed at its longest common,
+    /// word-aligned prefix, and only when doing so makes the serialized Action
+    /// list smaller. The service-only prefix is never considered, so this
+    /// cannot produce `service:*`.
+    fn collapse_action_suffixes_for_common_prefixes(&self, actions: Vec<String>) -> Vec<String> {
+        if !self.config.allow_overpermissive_action_wildcards {
+            return actions;
+        }
+
+        let mut groups: BTreeMap<(String, String), Vec<String>> = BTreeMap::new();
+        let mut unchanged = Vec::new();
+
+        for action in actions {
+            let Some((service, operation)) = action.split_once(':') else {
+                unchanged.push(action);
+                continue;
+            };
+
+            // Generated IAM actions are ASCII alphanumeric names. Leave any
+            // pre-existing wildcard or malformed action untouched.
+            if operation.contains('*')
+                || operation.is_empty()
+                || !operation.chars().all(|ch| ch.is_ascii_alphanumeric())
+            {
+                unchanged.push(action);
+                continue;
+            }
+
+            let leading_word = Self::leading_action_word(operation);
+            groups
+                .entry((service.to_string(), leading_word.to_string()))
+                .or_default()
+                .push(action);
+        }
+
+        for ((service, _), group) in groups {
+            if group.len() < 2 {
+                unchanged.extend(group);
+                continue;
+            }
+
+            let operations: Vec<&str> = group
+                .iter()
+                .filter_map(|action| action.split_once(':').map(|(_, operation)| operation))
+                .collect();
+            let Some(prefix) = Self::common_word_aligned_prefix(&operations) else {
+                unchanged.extend(group);
+                continue;
+            };
+
+            let wildcard = format!("{service}:{prefix}*");
+            if Self::serialized_action_list_size(std::slice::from_ref(&wildcard))
+                < Self::serialized_action_list_size(&group)
+            {
+                unchanged.push(wildcard);
+            } else {
+                unchanged.extend(group);
+            }
+        }
+
+        unchanged.sort();
+        unchanged.dedup();
+        unchanged
+    }
+
+    /// Return the leading PascalCase word of an IAM operation name.
+    fn leading_action_word(operation: &str) -> &str {
+        let boundaries = Self::action_word_boundaries(operation);
+        boundaries
+            .first()
+            .map_or(operation, |boundary| &operation[..*boundary])
+    }
+
+    /// Find the longest common prefix that ends at an action-word boundary.
+    ///
+    /// When one complete action is itself the common prefix (for example,
+    /// `GetObject` and `GetObjectVersion`), that complete action is retained as
+    /// the prefix even though it is not a boundary inside the shorter string.
+    fn common_word_aligned_prefix<'a>(operations: &[&'a str]) -> Option<&'a str> {
+        let first = *operations.first()?;
+        let common_len = operations
+            .iter()
+            .skip(1)
+            .fold(first.len(), |len, operation| {
+                first
+                    .as_bytes()
+                    .iter()
+                    .zip(operation.as_bytes())
+                    .take(len)
+                    .take_while(|(left, right)| left == right)
+                    .count()
+            });
+
+        if common_len == 0 {
+            return None;
+        }
+
+        let prefix_len = if operations
+            .iter()
+            .any(|operation| operation.len() == common_len)
+        {
+            common_len
+        } else {
+            Self::action_word_boundaries(first)
+                .into_iter()
+                .rfind(|boundary| *boundary <= common_len)?
+        };
+
+        (prefix_len > 0).then(|| &first[..prefix_len])
+    }
+
+    /// Byte offsets before each subsequent PascalCase word.
+    fn action_word_boundaries(operation: &str) -> Vec<usize> {
+        let bytes = operation.as_bytes();
+        let mut boundaries = Vec::new();
+
+        for index in 1..bytes.len() {
+            let previous = bytes[index - 1];
+            let current = bytes[index];
+            let next = bytes.get(index + 1).copied();
+
+            let lower_to_upper = previous.is_ascii_lowercase() && current.is_ascii_uppercase();
+            let acronym_to_word = previous.is_ascii_uppercase()
+                && current.is_ascii_uppercase()
+                && next.is_some_and(|byte| byte.is_ascii_lowercase());
+            let digit_transition = current.is_ascii_digit() && !previous.is_ascii_digit();
+
+            if lower_to_upper || acronym_to_word || digit_transition {
+                boundaries.push(index);
+            }
+        }
+
+        boundaries
+    }
+
+    /// Compact JSON size contributed by the strings and separators in an
+    /// Action array. Brackets are omitted because they are constant.
+    fn serialized_action_list_size(actions: &[String]) -> usize {
+        actions.iter().map(|action| action.len() + 2).sum::<usize>()
+            + actions.len().saturating_sub(1)
     }
 
     /// Determine the relationship between two resources
@@ -920,6 +1072,105 @@ mod tests {
         assert!(statement.action.contains(&"s3:GetObject".to_string()));
         assert!(statement.action.contains(&"s3:PutObject".to_string()));
         assert_eq!(statement.resource, vec!["arn:aws:s3:::bucket/*"]);
+    }
+
+    #[test]
+    fn test_action_suffix_collapsing_is_opt_in() {
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::bucket/*"]),
+            create_test_statement(vec!["s3:GetObjectVersion"], vec!["arn:aws:s3:::bucket/*"]),
+        ];
+
+        let default_result = PolicyMerger::new().merge_statements(&statements).unwrap();
+        assert_eq!(
+            default_result[0].statements[0].action,
+            vec!["s3:GetObject", "s3:GetObjectVersion"]
+        );
+
+        let collapsing_merger = PolicyMerger::with_config(PolicyMergerConfig {
+            allow_cross_service_merging: false,
+            allow_overpermissive_action_wildcards: true,
+        });
+        let collapsed = collapsing_merger.merge_statements(&statements).unwrap();
+        assert_eq!(collapsed[0].statements[0].action, vec!["s3:GetObject*"]);
+    }
+
+    #[test]
+    fn test_action_suffix_collapsing_uses_word_boundaries() {
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            allow_cross_service_merging: false,
+            allow_overpermissive_action_wildcards: true,
+        });
+        let statements = vec![
+            create_test_statement(vec!["ec2:DescribeInstances"], vec!["*"]),
+            create_test_statement(vec!["ec2:DescribeVolumes"], vec!["*"]),
+            create_test_statement(vec!["ec2:RunInstances"], vec!["*"]),
+        ];
+
+        let collapsed = merger.merge_statements(&statements).unwrap();
+        assert_eq!(
+            collapsed[0].statements[0].action,
+            vec!["ec2:Describe*", "ec2:RunInstances"]
+        );
+    }
+
+    #[test]
+    fn test_action_suffix_collapsing_uses_broad_prefix_for_nested_prefixes() {
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            allow_cross_service_merging: false,
+            allow_overpermissive_action_wildcards: true,
+        });
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["*"]),
+            create_test_statement(vec!["s3:GetObjectAttributes"], vec!["*"]),
+            create_test_statement(vec!["s3:GetObjectVersion"], vec!["*"]),
+            create_test_statement(vec!["s3:GetBucketAcl"], vec!["*"]),
+        ];
+
+        let collapsed = merger.merge_statements(&statements).unwrap();
+        assert_eq!(collapsed[0].statements[0].action, vec!["s3:Get*"]);
+    }
+
+    #[test]
+    fn test_action_suffix_collapsing_never_creates_service_wildcard() {
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            allow_cross_service_merging: false,
+            allow_overpermissive_action_wildcards: true,
+        });
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["*"]),
+            create_test_statement(vec!["s3:PutObject"], vec!["*"]),
+        ];
+
+        let collapsed = merger.merge_statements(&statements).unwrap();
+        assert_eq!(
+            collapsed[0].statements[0].action,
+            vec!["s3:GetObject", "s3:PutObject"]
+        );
+        assert!(!collapsed[0].statements[0]
+            .action
+            .iter()
+            .any(|action| action == "s3:*"));
+    }
+
+    #[test]
+    fn test_action_suffix_collapsing_stays_within_each_service() {
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            allow_cross_service_merging: true,
+            allow_overpermissive_action_wildcards: true,
+        });
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["*"]),
+            create_test_statement(vec!["s3:GetObjectVersion"], vec!["*"]),
+            create_test_statement(vec!["dynamodb:GetItem"], vec!["*"]),
+            create_test_statement(vec!["dynamodb:GetItemInput"], vec!["*"]),
+        ];
+
+        let collapsed = merger.merge_statements(&statements).unwrap();
+        assert_eq!(
+            collapsed[0].statements[0].action,
+            vec!["dynamodb:GetItem*", "s3:GetObject*"]
+        );
     }
 
     #[test]
