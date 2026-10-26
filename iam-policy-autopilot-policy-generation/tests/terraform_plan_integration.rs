@@ -44,6 +44,7 @@ fn plan_only_config(plan_paths: Vec<std::path::PathBuf>) -> GeneratePolicyConfig
         aws_context: AwsContext::new("us-east-1".to_string(), "123456789012".to_string()).unwrap(),
         individual_policies: false,
         minimize_policy_size: false,
+        max_policy_size: iam_policy_autopilot_policy_generation::DEFAULT_MAX_POLICY_SIZE,
         disable_file_system_cache: false,
         resource_cutoff: iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF,
         explain_filters: None,

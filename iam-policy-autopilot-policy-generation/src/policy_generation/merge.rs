@@ -12,13 +12,13 @@ use super::{Effect, IamPolicy, Statement};
 use crate::{
     enrichment::{Condition, Operator},
     errors::{ExtractorError, Result},
+    DEFAULT_MAX_POLICY_SIZE,
 };
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-/// IAM managed policy size limit in characters (excluding whitespace)
-/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html
-const IAM_MANAGED_POLICY_SIZE_LIMIT: usize = 6144;
+#[cfg(test)]
+const IAM_MANAGED_POLICY_SIZE_LIMIT: usize = DEFAULT_MAX_POLICY_SIZE;
 
 /// Represents the relationship between two resources
 #[derive(Debug, Clone, PartialEq)]
@@ -65,7 +65,7 @@ impl ResourceGroup {
 }
 
 /// Configuration for policy merging behavior
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PolicyMergerConfig {
     /// Allow merging actions from different services into the same statement.
     ///
@@ -78,6 +78,17 @@ pub struct PolicyMergerConfig {
     /// first action only, so the remaining services' actions can land in a
     /// non-adjacent statement.
     pub(crate) allow_cross_service_merging: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    pub(crate) max_policy_size: usize,
+}
+
+impl Default for PolicyMergerConfig {
+    fn default() -> Self {
+        Self {
+            allow_cross_service_merging: false,
+            max_policy_size: DEFAULT_MAX_POLICY_SIZE,
+        }
+    }
 }
 
 /// Policy merger for combining multiple IAM policies into a single optimized policy
@@ -118,7 +129,7 @@ impl PolicyMerger {
         let mut test_policy = policy.clone();
         test_policy.add_statement(statement.clone());
         let size = self.calculate_policy_size(&test_policy)?;
-        Ok(size > IAM_MANAGED_POLICY_SIZE_LIMIT)
+        Ok(size > self.config.max_policy_size)
     }
 
     /// Merge multiple IAM policies into optimized policies with size limits
@@ -193,9 +204,11 @@ impl PolicyMerger {
 
                 // Check if this single statement policy is still too large
                 let single_statement_size = self.calculate_policy_size(&current_policy)?;
-                if single_statement_size > IAM_MANAGED_POLICY_SIZE_LIMIT {
+                if single_statement_size > self.config.max_policy_size {
                     log::warn!(
-                        "Single merged statement exceeds policy size limit ({single_statement_size} chars), including anyway"
+                        "Single merged statement exceeds policy size limit ({} > {} chars), including anyway",
+                        single_statement_size,
+                        self.config.max_policy_size
                     );
                 }
             } else {
@@ -348,7 +361,7 @@ impl PolicyMerger {
         temp_policy.add_statement(merged_statement);
 
         let size = self.calculate_policy_size(&temp_policy)?;
-        Ok(size > IAM_MANAGED_POLICY_SIZE_LIMIT)
+        Ok(size > self.config.max_policy_size)
     }
 
     /// Check if a statement can be merged with an existing group
@@ -1723,6 +1736,69 @@ mod tests {
         assert!(!merger
             .would_merged_statement_exceed_limit(&group, &statement2)
             .unwrap());
+    }
+
+    #[test]
+    fn test_configurable_max_policy_size_controls_splitting() {
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::example-bucket/*"]),
+            create_test_statement(
+                vec!["dynamodb:GetItem"],
+                vec!["arn:aws:dynamodb:us-east-1:123456789012:table/example"],
+            ),
+        ];
+        let policy = IamPolicy {
+            id: "IamPolicyAutoPilot".to_string(),
+            version: "2012-10-17".to_string(),
+            statements: statements.clone(),
+        };
+
+        let default_merger = PolicyMerger::new();
+        assert_eq!(
+            default_merger
+                .merge_policies(std::slice::from_ref(&policy))
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let max_single_statement_size = statements
+            .into_iter()
+            .map(|statement| {
+                let mut policy = IamPolicy::new();
+                policy.add_statement(statement);
+                default_merger.calculate_policy_size(&policy).unwrap()
+            })
+            .max()
+            .unwrap();
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            max_policy_size: max_single_statement_size,
+            ..PolicyMergerConfig::default()
+        });
+
+        let result = merger.merge_policies(&[policy]).unwrap();
+
+        assert_eq!(result.len(), 2);
+        assert!(result.iter().all(|policy| {
+            merger.calculate_policy_size(policy).unwrap() <= max_single_statement_size
+        }));
+    }
+
+    #[test]
+    fn test_zero_max_policy_size_splits_every_statement() {
+        let merger = PolicyMerger::with_config(PolicyMergerConfig {
+            max_policy_size: 0,
+            ..PolicyMergerConfig::default()
+        });
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::example-bucket/*"]),
+            create_test_statement(vec!["s3:PutObject"], vec!["arn:aws:s3:::example-bucket/*"]),
+        ];
+
+        let result = merger.merge_statements(&statements).unwrap();
+
+        assert_eq!(result.len(), statements.len());
+        assert!(result.iter().all(|policy| policy.statements.len() == 1));
     }
 
     #[test]

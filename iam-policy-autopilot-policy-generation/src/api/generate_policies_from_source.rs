@@ -9,7 +9,9 @@ use anyhow::{Context, Result};
 use log::debug;
 
 use crate::{
-    api::model::{AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder},
+    api::model::{
+        AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder, PolicyWarning,
+    },
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
 };
@@ -25,6 +27,12 @@ pub struct GenerateFromSourceConfig {
     pub aws_context: AwsContext,
     /// Enable minimal policy size by allowing cross-service merging.
     pub minimize_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    ///
+    /// Statements that do not fit start a new policy. Oversized
+    /// single-statement policies are still emitted with a warning; generation
+    /// continues.
+    pub max_policy_size: usize,
 }
 
 /// Generate IAM policies from in-memory source code.
@@ -69,6 +77,7 @@ pub async fn generate_policies_from_source(
     // 3. Generate policies
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
+        max_policy_size: config.max_policy_size,
     };
     let policy_engine = PolicyGenerationEngine::with_merger_config(
         &config.aws_context.partition,
@@ -84,6 +93,7 @@ pub async fn generate_policies_from_source(
     let merged = policy_engine
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
+    let warnings = PolicyWarning::warnings_for_generation(&merged, config.max_policy_size);
 
     // Explanations are omitted in the WASM/from-source path: the browser consumer only
     // needs the final policies, and including per-action explanations would significantly
@@ -91,6 +101,7 @@ pub async fn generate_policies_from_source(
     // CLI/MCP paths via generate_policies().
     Ok(GeneratePoliciesResultBuilder::default()
         .policies(merged)
+        .warnings(warnings)
         .build()
         .expect("GeneratePoliciesResultBuilder missing required policies"))
 }
