@@ -378,9 +378,9 @@ service, so a single service's actions may be spread across multiple statements 
         #[arg(
             long = "max-policy-size",
             value_name = "CHARACTERS",
-            long_help = "Split generated policies before they exceed this many non-whitespace \
-JSON characters. Accepts non-negative values. If a policy containing a single statement cannot \
-fit within the configured size, it is still emitted with a warning. Defaults to 6144, the AWS IAM \
+            long_help = "Maximum policy size in non-whitespace JSON characters. Accepts \
+non-negative values. Statements that do not fit start a new policy. Oversized single-statement \
+policies are still emitted with a warning; generation continues. Defaults to 6144, the AWS IAM \
 managed policy size limit."
         )]
         #[telemetry(value, if_present)]

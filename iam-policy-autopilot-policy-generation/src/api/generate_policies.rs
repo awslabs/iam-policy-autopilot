@@ -353,7 +353,10 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
 
     // Recompute warnings against the final (possibly merged) policies so
     // policy indices and statements match what the caller receives
-    let warnings = crate::api::model::PolicyWarning::wildcard_resource_warnings(&final_policies);
+    let warnings = crate::api::model::PolicyWarning::warnings_for_generation(
+        &final_policies,
+        config.max_policy_size,
+    );
 
     #[cfg(feature = "telemetry")]
     {
@@ -382,7 +385,12 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         );
         iam_policy_autopilot_common::telemetry::span::record_result_number(
             "num_wildcard_resource_statements",
-            warnings.len(),
+            warnings
+                .iter()
+                .filter(|warning| {
+                    warning.warning_type() == crate::api::model::PolicyWarningType::WildcardResource
+                })
+                .count(),
         );
     }
 

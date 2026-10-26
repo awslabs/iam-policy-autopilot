@@ -46,8 +46,8 @@ struct GenerateInput {
     #[serde(default)]
     minimize_policy_size: bool,
     /// Maximum generated policy size in non-whitespace JSON characters.
-    /// Accepts non-negative values. Single-statement policies that cannot fit
-    /// are still emitted with a warning.
+    /// Statements that do not fit start a new policy. Oversized
+    /// single-statement policies are still emitted with a warning.
     #[serde(default = "default_max_policy_size")]
     max_policy_size: usize,
 }

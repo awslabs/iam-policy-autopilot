@@ -35,6 +35,8 @@ fn generate_policies_help_shows_max_policy_size() {
     let stdout = String::from_utf8_lossy(&out.stdout);
 
     assert!(stdout.contains("--max-policy-size"));
+    assert!(stdout.contains("start a new policy"));
+    assert!(stdout.contains("still emitted"));
 }
 
 #[test]

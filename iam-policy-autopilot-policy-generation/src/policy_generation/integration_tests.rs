@@ -417,8 +417,11 @@ mod tests {
         // so consumers can call them out for review
         assert_eq!(result.warnings.len(), 2);
         for (index, warning) in result.warnings.iter().enumerate() {
-            assert_eq!(warning.location.policy_index, 0);
-            assert_eq!(warning.location.statement_index, index);
+            let location = warning
+                .location()
+                .expect("wildcard resource warning should have a statement location");
+            assert_eq!(location.policy_index, 0);
+            assert_eq!(location.statement_index, index);
         }
     }
 

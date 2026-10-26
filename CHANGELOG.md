@@ -2,7 +2,7 @@
 
 ### Added
 
-- The policy split size is now configurable through the `--max-policy-size` CLI option, the `max_policy_size` library setting, the `MaxPolicySize` MCP input, and the `maxPolicySize` WASM option. It accepts non-negative values and defaults to the existing 6,144 non-whitespace character limit. If a policy containing a single statement cannot fit within the configured size, it is still emitted with a warning.
+- Policy split size is configurable through `--max-policy-size`, the `max_policy_size` library setting, the `MaxPolicySize` MCP input, and the `maxPolicySize` WASM option. It accepts non-negative values and defaults to 6,144 non-whitespace characters. Statements that do not fit start a new policy; oversized single-statement policies are emitted with a warning.
 
 ### Changed
 

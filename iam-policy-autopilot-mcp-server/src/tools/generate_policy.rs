@@ -2,7 +2,7 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, PolicyWarning, ServiceHints,
 };
 use iam_policy_autopilot_policy_generation::{DEFAULT_MAX_POLICY_SIZE, DEFAULT_RESOURCE_CUTOFF};
 use schemars::JsonSchema;
@@ -79,7 +79,7 @@ pub struct GeneratePoliciesInput {
     pub resource_cutoff: Option<usize>,
 
     #[schemars(
-        description = "Split generated policies before they exceed this many non-whitespace JSON characters. Accepts non-negative values. If a policy containing a single statement cannot fit within the configured size, it is still emitted with a warning. Default: 6144, the AWS IAM managed policy size limit.",
+        description = "Maximum policy size in non-whitespace JSON characters. Accepts non-negative values. Statements that do not fit start a new policy. Oversized single-statement policies are still emitted with a warning; generation continues. Default: 6144, the AWS IAM managed policy size limit.",
         range(min = 0)
     )]
     #[telemetry(value, if_present)]
@@ -93,6 +93,9 @@ pub struct GeneratePoliciesInput {
 pub struct GeneratePoliciesOutput {
     #[schemars(description = "List of policies with their associated types.")]
     pub policies: Vec<String>,
+    #[schemars(description = "Warnings about generated statements and policy sizing.")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PolicyWarning>,
 }
 
 pub async fn generate_application_policies(
@@ -154,13 +157,14 @@ pub async fn generate_application_policies(
 
     let result = api::generate_policies(&config).await?;
 
+    let warnings = result.warnings;
     let policies = result
         .policies
         .into_iter()
         .map(|policy| serde_json::to_string(&policy.policy).context("Failed to serialize policy"))
         .collect::<Result<Vec<String>, Error>>()?;
 
-    Ok(GeneratePoliciesOutput { policies })
+    Ok(GeneratePoliciesOutput { policies, warnings })
 }
 
 // Mock the api call
@@ -348,6 +352,33 @@ mod tests {
         assert_eq!(api::take_max_policy_size(), Some(0));
     }
 
+    #[tokio::test]
+    async fn test_generate_application_policies_returns_warnings() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: None,
+            account: None,
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: None,
+            max_policy_size: Some(0),
+        };
+        let warning = PolicyWarning::PolicyExceedsMaximumSize {
+            policy_index: 0,
+            message: "test warning".to_string(),
+        };
+        let mut result = GeneratePoliciesResult::empty();
+        result.warnings.push(warning.clone());
+        api::set_mock_return(Ok(result));
+
+        let output = generate_application_policies(input).await.unwrap();
+
+        assert_eq!(output.warnings, vec![warning]);
+    }
+
     #[test]
     fn test_generate_policies_input_serialization() {
         let input = GeneratePoliciesInput {
@@ -377,12 +408,17 @@ mod tests {
                 "{\"Version\":\"2012-10-17\"}".to_string(),
                 "{\"Version\":\"2012-10-17\"}".to_string(),
             ],
+            warnings: vec![PolicyWarning::PolicyExceedsMaximumSize {
+                policy_index: 0,
+                message: "test warning".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&output).unwrap();
 
         assert!(json.contains("\"Policies\":"));
         assert!(json.contains("[\"{"));
+        assert!(json.contains("\"WarningType\":\"PolicyExceedsMaximumSize\""));
     }
 
     #[tokio::test]

@@ -34,7 +34,7 @@ export interface GenerateInput {
   account?: string;
   /** Language override (auto-detected from filename if omitted) */
   language?: string;
-  /** Maximum generated policy size in non-whitespace JSON characters. Accepts non-negative values; single-statement policies that cannot fit are still emitted with a warning (default: 6144). */
+  /** Maximum policy size in non-whitespace JSON characters. Statements that do not fit start a new policy; oversized single-statement policies are emitted with a warning (default: 6144). */
   maxPolicySize?: number;
 }
 

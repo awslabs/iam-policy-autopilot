@@ -348,7 +348,7 @@ Options:
 - `--region <REGION>` - AWS region for resource ARNs
 - `--account <ACCOUNT>` - AWS account ID for resource ARNs
 - `--service-hints <SERVICES>` - Limit analysis to only the services your application actually uses if you know them. This helps reduce unnecessary permissions.
-- `--max-policy-size <CHARACTERS>` - Split generated policies before they exceed this many non-whitespace JSON characters. Accepts non-negative values. If a policy containing a single statement cannot fit within the configured size, it is still emitted with a warning. Defaults to `6144`, the AWS IAM managed policy size limit.
+- `--max-policy-size <CHARACTERS>` - Maximum policy size in non-whitespace JSON characters. Accepts non-negative values. Statements that do not fit start a new policy. Oversized single-statement policies are still emitted with a warning; generation continues. Defaults to `6144`, the AWS IAM managed policy size limit.
 - `--upload-policies <PREFIX>` - Upload generated policies to AWS IAM with the specified prefix
 - `--pretty` - Pretty-print JSON output
 
