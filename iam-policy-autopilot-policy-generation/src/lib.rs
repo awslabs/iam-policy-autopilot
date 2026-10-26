@@ -62,6 +62,12 @@ use crate::errors::ExtractorError;
 /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
 pub const DEFAULT_RESOURCE_CUTOFF: usize = 4;
 
+/// Default maximum generated policy size in non-whitespace JSON characters.
+///
+/// This matches the AWS IAM managed policy size limit.
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_iam-quotas.html>
+pub const DEFAULT_MAX_POLICY_SIZE: usize = 6144;
+
 /// Language that is analyzed
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize, Eq, PartialEq, Hash)]
 #[serde(rename_all = "lowercase")]

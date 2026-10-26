@@ -1,5 +1,6 @@
 //! Defined model for API
 use derive_builder::Builder;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::enrichment::terraform::ResourceBindingExplanation;
@@ -20,6 +21,15 @@ pub struct GeneratePolicyConfig {
     pub individual_policies: bool,
     /// Enable policy size minimization
     pub minimize_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    ///
+    /// Statements that do not fit start a new policy. Oversized
+    /// single-statement policies are still emitted with a warning; generation
+    /// continues.
+    ///
+    /// Use [`crate::DEFAULT_MAX_POLICY_SIZE`] for the AWS IAM managed policy
+    /// default.
+    pub max_policy_size: usize,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
     /// Generate explanations for why actions were added, filtered by patterns.
@@ -66,18 +76,24 @@ pub struct GeneratePoliciesResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[builder(default, setter(strip_option))]
     pub resource_binding_explanations: Option<Vec<ResourceBindingExplanation>>,
-    /// Warnings about statements that could not be scoped to specific resources
+    /// Warnings about generated statements and policy sizing
     #[serde(skip_serializing_if = "Vec::is_empty")]
     #[builder(default)]
     pub warnings: Vec<PolicyWarning>,
 }
 
+/// Compact JSON size used by IAM policy limits.
+#[must_use]
+pub(crate) fn compact_policy_size(policy: &crate::policy_generation::IamPolicy) -> usize {
+    serde_json::to_string(policy)
+        .expect("IAM policies are always serializable")
+        .chars()
+        .filter(|character| !character.is_whitespace())
+        .count()
+}
+
 /// Machine-recognizable category of a [`PolicyWarning`].
-///
-/// Callers should branch on this type (rather than parsing `message`) to
-/// construct their own messages from the warning's `sid` and `actions`
-/// metadata.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[non_exhaustive]
 pub enum PolicyWarningType {
     /// The statement's `Resource` fell back to the `"*"` wildcard because no
@@ -85,6 +101,8 @@ pub enum PolicyWarningType {
     /// an empty resource list, or the resource list was collapsed by the
     /// resource cutoff).
     WildcardResource,
+    /// A policy could not be split further without splitting a statement.
+    PolicyExceedsMaximumSize,
 }
 
 /// Location of a statement within a generated policy result, expressed as
@@ -94,7 +112,7 @@ pub enum PolicyWarningType {
 /// The location is currently resolved to the statement level. If finer
 /// precision is needed later (e.g., a specific action or condition), add
 /// further optional index fields here so an existing consumer keeps working.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "PascalCase")]
 pub struct PolicyLocation {
     /// Index of the policy in `policies`
@@ -103,25 +121,73 @@ pub struct PolicyLocation {
     pub statement_index: usize,
 }
 
-/// Warning attached to a generated policy statement that needs review.
-///
-/// The `warning_type` identifies the warning programmatically, and
-/// `location` points at the flagged statement in the result. Callers
-/// producing their own messages should branch on `warning_type` and read
-/// any details (actions, resources) from the located statement itself;
-/// `message` is a convenience English rendering for CLI users.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "PascalCase")]
-pub struct PolicyWarning {
-    /// Machine-recognizable warning category
-    pub warning_type: PolicyWarningType,
-    /// Location of the flagged statement within the generated policies
-    pub location: PolicyLocation,
-    /// Human-readable description of the warning (English only)
-    pub message: String,
+/// Warning attached to generated policy output.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, JsonSchema)]
+#[serde(tag = "WarningType")]
+#[non_exhaustive]
+pub enum PolicyWarning {
+    /// A statement uses the broad resource wildcard.
+    WildcardResource {
+        /// Location of the flagged statement.
+        #[serde(rename = "Location")]
+        location: PolicyLocation,
+        /// Human-readable description.
+        #[serde(rename = "Message")]
+        message: String,
+    },
+    /// A policy could not be split further without splitting a statement.
+    PolicyExceedsMaximumSize {
+        /// Index of the oversized policy in the result.
+        #[serde(rename = "PolicyIndex")]
+        policy_index: usize,
+        /// Human-readable description, including configured and actual sizes.
+        #[serde(rename = "Message")]
+        message: String,
+    },
 }
 
 impl PolicyWarning {
+    /// Return the machine-recognizable warning category.
+    #[must_use]
+    pub fn warning_type(&self) -> PolicyWarningType {
+        match self {
+            Self::WildcardResource { .. } => PolicyWarningType::WildcardResource,
+            Self::PolicyExceedsMaximumSize { .. } => PolicyWarningType::PolicyExceedsMaximumSize,
+        }
+    }
+
+    /// Return the statement location for statement-scoped warnings.
+    #[must_use]
+    pub fn location(&self) -> Option<&PolicyLocation> {
+        match self {
+            Self::WildcardResource { location, .. } => Some(location),
+            Self::PolicyExceedsMaximumSize { .. } => None,
+        }
+    }
+
+    /// Build warnings for the final generated output.
+    #[must_use]
+    pub(crate) fn warnings_for_generation(
+        policies: &[PolicyWithMetadata],
+        maximum_size: usize,
+    ) -> Vec<Self> {
+        let mut warnings = Self::wildcard_resource_warnings(policies);
+
+        for (policy_index, policy) in policies.iter().enumerate() {
+            let actual_size = compact_policy_size(&policy.policy);
+            if actual_size > maximum_size {
+                warnings.push(Self::PolicyExceedsMaximumSize {
+                    policy_index,
+                    message: format!(
+                        "Policy {policy_index} is {actual_size} characters, exceeding the configured maximum of {maximum_size}, because it contains a statement that cannot be split further."
+                    ),
+                });
+            }
+        }
+
+        warnings
+    }
+
     /// Scan generated policies for statements whose `Resource` contains the
     /// `"*"` wildcard and produce one warning per flagged statement.
     #[must_use]
@@ -132,8 +198,7 @@ impl PolicyWarning {
                 policy_with_metadata.policy.statements.iter().enumerate()
             {
                 if statement.resource.iter().any(|resource| resource == "*") {
-                    warnings.push(Self {
-                        warning_type: PolicyWarningType::WildcardResource,
+                    warnings.push(Self::WildcardResource {
                         location: PolicyLocation {
                             policy_index,
                             statement_index,
@@ -260,8 +325,7 @@ mod tests {
     /// Expected warning for a statement, matching the message produced by
     /// `wildcard_resource_warnings`.
     fn wildcard_warning(policy_index: usize, statement_index: usize) -> PolicyWarning {
-        PolicyWarning {
-            warning_type: PolicyWarningType::WildcardResource,
+        PolicyWarning::WildcardResource {
             location: PolicyLocation {
                 policy_index,
                 statement_index,
@@ -327,8 +391,7 @@ mod tests {
 
     #[test]
     fn test_policy_warning_serialization() {
-        let warning = PolicyWarning {
-            warning_type: PolicyWarningType::WildcardResource,
+        let warning = PolicyWarning::WildcardResource {
             location: PolicyLocation {
                 policy_index: 0,
                 statement_index: 1,
@@ -341,6 +404,31 @@ mod tests {
         assert_eq!(json["Location"]["PolicyIndex"], 0);
         assert_eq!(json["Location"]["StatementIndex"], 1);
         assert_eq!(json["Message"], "test message");
+    }
+
+    #[test]
+    fn test_oversized_policy_warning() {
+        let policies = vec![policy_with_statements(vec![Statement::allow(
+            vec!["s3:GetObject".to_string()],
+            vec!["arn:aws:s3:::my-bucket/*".to_string()],
+        )])];
+        let actual_size = compact_policy_size(&policies[0].policy);
+
+        let warnings = PolicyWarning::warnings_for_generation(&policies, actual_size - 1);
+
+        assert_eq!(
+            warnings,
+            vec![PolicyWarning::PolicyExceedsMaximumSize {
+                policy_index: 0,
+                message: format!(
+                    "Policy 0 is {actual_size} characters, exceeding the configured maximum of {}, because it contains a statement that cannot be split further.",
+                    actual_size - 1
+                ),
+            }]
+        );
+        let json = serde_json::to_value(&warnings[0]).unwrap();
+        assert_eq!(json["WarningType"], "PolicyExceedsMaximumSize");
+        assert_eq!(json["PolicyIndex"], 0);
     }
 
     #[test]

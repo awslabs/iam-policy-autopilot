@@ -1,5 +1,9 @@
 ## [Unreleased]
 
+### Added
+
+- Policy split size is configurable through `--max-policy-size`, the `max_policy_size` library setting, the `MaxPolicySize` MCP input, and the `maxPolicySize` WASM option. It accepts non-negative values and defaults to 6,144 non-whitespace characters. Statements that do not fit start a new policy; oversized single-statement policies are emitted with a warning.
+
 ### Changed
 
 - Added file path safety guidance to the MCP server instructions, the `generate_application_policies` tool description, and the Kiro power: agents must resolve input paths to canonical absolute paths, verify they are within the user's workspace, and reject paths containing shell metacharacters. Agent runtimes and hosting environments that invoke the CLI directly must use array-based subprocess execution instead of shell string interpolation.

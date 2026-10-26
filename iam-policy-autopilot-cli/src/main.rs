@@ -29,7 +29,7 @@ use iam_policy_autopilot_policy_generation::api::model::{
 };
 use iam_policy_autopilot_policy_generation::api::{extract_sdk_calls, generate_policies};
 use iam_policy_autopilot_policy_generation::extraction::SdkMethodCall;
-use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
+use iam_policy_autopilot_policy_generation::{DEFAULT_MAX_POLICY_SIZE, DEFAULT_RESOURCE_CUTOFF};
 use iam_policy_autopilot_tools::PolicyUploader;
 use log::{debug, info, trace};
 
@@ -92,6 +92,8 @@ struct GeneratePolicyCliConfig {
     upload_policies: Option<String>,
     /// Enable minimal policy size by allowing cross-service merging
     minimal_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters
+    max_policy_size: Option<usize>,
     /// Disable file system caching for service references
     disable_cache: bool,
     /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
@@ -371,6 +373,18 @@ service, so a single service's actions may be spread across multiple statements 
         )]
         #[telemetry(value)]
         minimal_policy_size: bool,
+
+        /// Maximum generated policy size in non-whitespace JSON characters
+        #[arg(
+            long = "max-policy-size",
+            value_name = "CHARACTERS",
+            long_help = "Maximum policy size in non-whitespace JSON characters. Accepts \
+non-negative values. Statements that do not fit start a new policy. Oversized single-statement \
+policies are still emitted with a warning; generation continues. Defaults to 6144, the AWS IAM \
+managed policy size limit."
+        )]
+        #[telemetry(value, if_present)]
+        max_policy_size: Option<usize>,
 
         /// Disable file system caching for service references
         #[arg(
@@ -685,6 +699,7 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         aws_context: AwsContext::new(config.region.clone(), config.account.clone())?,
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
+        max_policy_size: config.max_policy_size.unwrap_or(DEFAULT_MAX_POLICY_SIZE),
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
         terraform_dir: config.tf_dir.clone(),
@@ -880,6 +895,7 @@ async fn main() {
             individual_policies,
             upload_policies,
             minimal_policy_size,
+            max_policy_size,
             disable_cache,
             resource_cutoff,
             service_hints,
@@ -909,6 +925,7 @@ async fn main() {
                 individual_policies,
                 upload_policies,
                 minimal_policy_size,
+                max_policy_size,
                 disable_cache,
                 resource_cutoff,
                 explain,

@@ -188,3 +188,32 @@ pub(crate) fn output_iam_policies(
     debug!("Policy output JSON written to stdout");
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iam_policy_autopilot_policy_generation::api::model::PolicyWarning;
+
+    #[test]
+    fn policy_output_includes_generation_warnings() {
+        let mut result = GeneratePoliciesResult::empty();
+        result
+            .warnings
+            .push(PolicyWarning::PolicyExceedsMaximumSize {
+                policy_index: 0,
+                message: "test warning".to_string(),
+            });
+
+        let output = serde_json::to_value(PolicyOutput {
+            result,
+            upload_result: None,
+        })
+        .unwrap();
+
+        assert_eq!(
+            output["Warnings"][0]["WarningType"],
+            "PolicyExceedsMaximumSize"
+        );
+        assert_eq!(output["Warnings"][0]["PolicyIndex"], 0);
+    }
+}

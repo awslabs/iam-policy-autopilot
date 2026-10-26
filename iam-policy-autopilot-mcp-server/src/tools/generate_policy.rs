@@ -2,9 +2,9 @@ use anyhow::Context;
 use anyhow::Error;
 use anyhow::Result;
 use iam_policy_autopilot_policy_generation::api::model::{
-    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, ServiceHints,
+    AwsContext, ExtractSdkCallsConfig, GeneratePolicyConfig, PolicyWarning, ServiceHints,
 };
-use iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF;
+use iam_policy_autopilot_policy_generation::{DEFAULT_MAX_POLICY_SIZE, DEFAULT_RESOURCE_CUTOFF};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -77,6 +77,13 @@ pub struct GeneratePoliciesInput {
     )]
     #[telemetry(value, if_present)]
     pub resource_cutoff: Option<usize>,
+
+    #[schemars(
+        description = "Maximum policy size in non-whitespace JSON characters. Accepts non-negative values. Statements that do not fit start a new policy. Oversized single-statement policies are still emitted with a warning; generation continues. Default: 6144, the AWS IAM managed policy size limit.",
+        range(min = 0)
+    )]
+    #[telemetry(value, if_present)]
+    pub max_policy_size: Option<usize>,
 }
 
 // Output struct for the generated IAM policy
@@ -86,6 +93,9 @@ pub struct GeneratePoliciesInput {
 pub struct GeneratePoliciesOutput {
     #[schemars(description = "List of policies with their associated types.")]
     pub policies: Vec<String>,
+    #[schemars(description = "Warnings about generated statements and policy sizing.")]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub warnings: Vec<PolicyWarning>,
 }
 
 pub async fn generate_application_policies(
@@ -94,6 +104,7 @@ pub async fn generate_application_policies(
     let region = input.region.unwrap_or("*".to_string());
     let account = input.account.unwrap_or("*".to_string());
     let resource_cutoff = input.resource_cutoff.unwrap_or(DEFAULT_RESOURCE_CUTOFF);
+    let max_policy_size = input.max_policy_size.unwrap_or(DEFAULT_MAX_POLICY_SIZE);
 
     // Convert service_hints from Vec<String> to ServiceHints if provided
     let service_hints = input.service_hints.map(|hints| ServiceHints {
@@ -114,6 +125,7 @@ pub async fn generate_application_policies(
         },
         aws_context: AwsContext::new(region, account)?,
         minimize_policy_size: false,
+        max_policy_size,
 
         // true by default, if we want to allow the user to change it we should
         // accept it as part of the cli input when starting the mcp server
@@ -145,13 +157,14 @@ pub async fn generate_application_policies(
 
     let result = api::generate_policies(&config).await?;
 
+    let warnings = result.warnings;
     let policies = result
         .policies
         .into_iter()
         .map(|policy| serde_json::to_string(&policy.policy).context("Failed to serialize policy"))
         .collect::<Result<Vec<String>, Error>>()?;
 
-    Ok(GeneratePoliciesOutput { policies })
+    Ok(GeneratePoliciesOutput { policies, warnings })
 }
 
 // Mock the api call
@@ -169,6 +182,7 @@ mod api {
         OnceLock::new();
 
     static MOCK_RESOURCE_CUTOFF: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
+    static MOCK_MAX_POLICY_SIZE: OnceLock<Mutex<Option<usize>>> = OnceLock::new();
 
     pub async fn generate_policies(
         config: &GeneratePolicyConfig,
@@ -176,6 +190,10 @@ mod api {
         let cutoff_mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
         let mut cutoff_guard = cutoff_mutex.lock().unwrap();
         *cutoff_guard = Some(config.resource_cutoff);
+
+        let max_size_mutex = MOCK_MAX_POLICY_SIZE.get_or_init(|| Mutex::new(None));
+        let mut max_size_guard = max_size_mutex.lock().unwrap();
+        *max_size_guard = Some(config.max_policy_size);
 
         let mutex = MOCK_RETURN_VALUE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
@@ -192,6 +210,12 @@ mod api {
 
     pub fn take_resource_cutoff() -> Option<usize> {
         let mutex = MOCK_RESOURCE_CUTOFF.get_or_init(|| Mutex::new(None));
+        let mut guard = mutex.lock().unwrap();
+        guard.take()
+    }
+
+    pub fn take_max_policy_size() -> Option<usize> {
+        let mutex = MOCK_MAX_POLICY_SIZE.get_or_init(|| Mutex::new(None));
         let mut guard = mutex.lock().unwrap();
         guard.take()
     }
@@ -223,6 +247,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            max_policy_size: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
@@ -270,6 +295,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            max_policy_size: None,
         };
 
         api::set_mock_return(Err(anyhow!("Failed to generate policies")));
@@ -290,6 +316,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: Some(0),
+            max_policy_size: None,
         };
 
         api::set_mock_return(Ok(GeneratePoliciesResult {
@@ -304,6 +331,54 @@ mod tests {
         assert_eq!(api::take_resource_cutoff(), Some(0));
     }
 
+    #[tokio::test]
+    async fn test_generate_application_policies_forwards_max_policy_size() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: None,
+            account: None,
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: None,
+            max_policy_size: Some(0),
+        };
+
+        api::set_mock_return(Ok(GeneratePoliciesResult::empty()));
+        generate_application_policies(input).await.unwrap();
+
+        assert_eq!(api::take_max_policy_size(), Some(0));
+    }
+
+    #[tokio::test]
+    async fn test_generate_application_policies_returns_warnings() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: None,
+            account: None,
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: None,
+            max_policy_size: Some(0),
+        };
+        let warning = PolicyWarning::PolicyExceedsMaximumSize {
+            policy_index: 0,
+            message: "test warning".to_string(),
+        };
+        let mut result = GeneratePoliciesResult::empty();
+        result.warnings.push(warning.clone());
+        api::set_mock_return(Ok(result));
+
+        let output = generate_application_policies(input).await.unwrap();
+
+        assert_eq!(output.warnings, vec![warning]);
+    }
+
     #[test]
     fn test_generate_policies_input_serialization() {
         let input = GeneratePoliciesInput {
@@ -316,6 +391,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            max_policy_size: None,
         };
 
         let json = serde_json::to_string(&input).unwrap();
@@ -332,12 +408,17 @@ mod tests {
                 "{\"Version\":\"2012-10-17\"}".to_string(),
                 "{\"Version\":\"2012-10-17\"}".to_string(),
             ],
+            warnings: vec![PolicyWarning::PolicyExceedsMaximumSize {
+                policy_index: 0,
+                message: "test warning".to_string(),
+            }],
         };
 
         let json = serde_json::to_string(&output).unwrap();
 
         assert!(json.contains("\"Policies\":"));
         assert!(json.contains("[\"{"));
+        assert!(json.contains("\"WarningType\":\"PolicyExceedsMaximumSize\""));
     }
 
     #[tokio::test]
@@ -352,6 +433,7 @@ mod tests {
             tfstate: None,
             tfvars: None,
             resource_cutoff: None,
+            max_policy_size: None,
         };
 
         let expected_output = include_str!("../testdata/test_generate_application_policy");
