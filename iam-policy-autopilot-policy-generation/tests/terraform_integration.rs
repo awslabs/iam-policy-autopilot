@@ -84,6 +84,7 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
         individual_policies: inputs.individual_policies,
         minimize_policy_size: false,
         max_policy_size: iam_policy_autopilot_policy_generation::DEFAULT_MAX_POLICY_SIZE,
+        allow_overpermissive_wildcards_to_limit_total_output_size: None,
         disable_file_system_cache: false,
         explain_filters: None,
         terraform_dir: if inputs.tf_dir {

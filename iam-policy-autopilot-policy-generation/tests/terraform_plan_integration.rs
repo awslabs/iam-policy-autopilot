@@ -45,6 +45,7 @@ fn plan_only_config(plan_paths: Vec<std::path::PathBuf>) -> GeneratePolicyConfig
         individual_policies: false,
         minimize_policy_size: false,
         max_policy_size: iam_policy_autopilot_policy_generation::DEFAULT_MAX_POLICY_SIZE,
+        allow_overpermissive_wildcards_to_limit_total_output_size: None,
         disable_file_system_cache: false,
         resource_cutoff: iam_policy_autopilot_policy_generation::DEFAULT_RESOURCE_CUTOFF,
         explain_filters: None,

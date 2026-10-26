@@ -34,6 +34,12 @@ export interface GenerateInput {
   account?: string;
   /** Language override (auto-detected from filename if omitted) */
   language?: string;
+  /**
+   * Best-effort combined compact policy size target. Exact actions are used first;
+   * meeting the target may introduce action wildcards that grant additional actions.
+   * Must be at least maxPolicySize.
+   */
+  allowOverpermissiveWildcardsToLimitTotalOutputSize?: number;
   /** Maximum policy size in non-whitespace JSON characters. Statements that do not fit start a new policy; oversized single-statement policies are emitted with a warning (default: 6144). */
   maxPolicySize?: number;
 }
@@ -49,8 +55,28 @@ export interface Policy {
   Statement: PolicyStatement[];
 }
 
+export type PolicyWarning =
+  | {
+      WarningType: 'WildcardResource' | 'WildcardAction';
+      Location: {
+        PolicyIndex: number;
+        StatementIndex: number;
+      };
+      Message: string;
+    }
+  | {
+      WarningType: 'PolicyExceedsMaximumSize';
+      PolicyIndex: number;
+      Message: string;
+    }
+  | {
+      WarningType: 'TotalOutputSizeTargetNotMet';
+      Message: string;
+    };
+
 export interface GenerateResult {
   Policies: Policy[];
+  Warnings?: PolicyWarning[];
 }
 
 export interface GenerateError {
@@ -196,6 +222,8 @@ export async function generatePolicies(input: GenerateInput): Promise<GenerateRe
     account: input.account ?? '*',
     language: input.language,
     maxPolicySize: input.maxPolicySize,
+    allowOverpermissiveWildcardsToLimitTotalOutputSize:
+      input.allowOverpermissiveWildcardsToLimitTotalOutputSize,
   });
 
   // Allocate input string in WASM memory

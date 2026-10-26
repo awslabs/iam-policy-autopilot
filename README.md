@@ -349,6 +349,7 @@ Options:
 - `--account <ACCOUNT>` - AWS account ID for resource ARNs
 - `--service-hints <SERVICES>` - Limit analysis to only the services your application actually uses if you know them. This helps reduce unnecessary permissions.
 - `--max-policy-size <CHARACTERS>` - Maximum policy size in non-whitespace JSON characters. Accepts non-negative values. Statements that do not fit start a new policy. Oversized single-statement policies are still emitted with a warning; generation continues. Defaults to `6144`, the AWS IAM managed policy size limit.
+- `--allow-overpermissive-wildcards-to-limit-total-output-size <CHARACTERS>` - Set a best-effort combined policy size target. Exact actions are used first; if the target is exceeded, word-aligned action wildcards may be introduced, which can grant additional actions. The target must be at least `--max-policy-size`.
 - `--upload-policies <PREFIX>` - Upload generated policies to AWS IAM with the specified prefix
 - `--pretty` - Pretty-print JSON output
 

@@ -20,9 +20,10 @@ mod tests {
         }
     }
 
-    /// Security invariant: generated policies must NEVER contain a wildcard
+    /// Default security invariant: unless size-driven action wildcarding is
+    /// explicitly requested, generated policies must never contain a wildcard
     /// in any Action entry — neither a bare `"*"` nor an embedded wildcard
-    /// like `"s3:*"` or `"dynamodb:Get*"`. Actions must always be fully
+    /// like `"s3:*"` or `"dynamodb:Get*"`. Actions must remain fully
     /// enumerated (e.g., `"s3:GetObject"`).
     ///
     /// Resource wildcards (`"*"` in Resource) are ALLOWED and intentionally
@@ -189,9 +190,10 @@ mod tests {
         ]
     }
 
-    /// End-to-end regression test: even when the analyzed code uses EVERY
-    /// action a service defines, the generated policy still enumerates each
-    /// action individually instead of collapsing to a service wildcard.
+    /// End-to-end regression test: without explicit wildcard opt-in, even when
+    /// the analyzed code uses EVERY action a service defines, the generated
+    /// policy still enumerates each action individually instead of collapsing
+    /// to a service wildcard.
     ///
     /// Unlike the fixture-based tests below (which feed pre-enriched calls
     /// directly into the generation engine), this test runs the real
@@ -338,9 +340,10 @@ mod tests {
         }
     }
 
-    /// Property: a generation run over many SDK calls across multiple
-    /// services never emits a wildcard Action, with or without policy
-    /// merging (including cross-service merging via minimize_policy_size).
+    /// Property: without a wildcard size target, a generation run over
+    /// many SDK calls across multiple services never emits a wildcard Action,
+    /// with or without policy merging (including cross-service merging via
+    /// minimize_policy_size).
     /// The merge cases guard the merge path in merge.rs, where resource
     /// wildcard logic could conceivably be extended to actions.
     #[rstest::rstest]
