@@ -20,7 +20,9 @@
             "Condition": {
               "StringEquals": {
                 "kms:ViaService": [
-                  "kinesis.us-east-1.amazonaws.com"
+                  "kinesis.us-east-1.amazonaws.com",
+                  "s3.us-east-1.amazonaws.com",
+                  "sns.us-east-1.amazonaws.com"
                 ]
               }
             },
@@ -31,12 +33,13 @@
           },
           {
             "Action": [
-              "kms:Decrypt",
-              "kms:GenerateDataKey"
+              "kms:Decrypt"
             ],
             "Condition": {
               "StringEquals": {
                 "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com",
+                  "s3.us-east-1.amazonaws.com",
                   "sns.us-east-1.amazonaws.com"
                 ]
               }
@@ -53,23 +56,6 @@
             "Effect": "Allow",
             "Resource": [
               "arn:aws:sns:us-east-1:123456789012:app-notifications"
-            ]
-          },
-          {
-            "Action": [
-              "kms:Decrypt",
-              "kms:GenerateDataKey"
-            ],
-            "Condition": {
-              "StringEquals": {
-                "kms:ViaService": [
-                  "s3.us-east-1.amazonaws.com"
-                ]
-              }
-            },
-            "Effect": "Allow",
-            "Resource": [
-              "arn:aws:kms:us-east-1:123456789012:key/*"
             ]
           },
           {
@@ -102,22 +88,6 @@
             "Resource": [
               "arn:aws:s3:::*/*",
               "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
-            ]
-          },
-          {
-            "Action": [
-              "kms:Decrypt"
-            ],
-            "Condition": {
-              "StringEquals": {
-                "kms:ViaService": [
-                  "dynamodb.us-east-1.amazonaws.com"
-                ]
-              }
-            },
-            "Effect": "Allow",
-            "Resource": [
-              "arn:aws:kms:us-east-1:123456789012:key/*"
             ]
           },
           {
