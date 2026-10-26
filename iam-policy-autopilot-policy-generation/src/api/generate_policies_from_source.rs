@@ -25,6 +25,12 @@ pub struct GenerateFromSourceConfig {
     pub aws_context: AwsContext,
     /// Enable minimal policy size by allowing cross-service merging.
     pub minimize_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    ///
+    /// Accepts non-negative values. If a policy containing a single statement
+    /// cannot fit within the configured size, it is still emitted with a
+    /// warning.
+    pub max_policy_size: usize,
 }
 
 /// Generate IAM policies from in-memory source code.
@@ -69,6 +75,7 @@ pub async fn generate_policies_from_source(
     // 3. Generate policies
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
+        max_policy_size: config.max_policy_size,
     };
     let policy_engine = PolicyGenerationEngine::with_merger_config(
         &config.aws_context.partition,

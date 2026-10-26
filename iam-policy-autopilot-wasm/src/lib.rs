@@ -25,7 +25,7 @@ use iam_policy_autopilot_policy_generation::api::generate_policies_from_source;
 use iam_policy_autopilot_policy_generation::api::model::AwsContext;
 use iam_policy_autopilot_policy_generation::api::GenerateFromSourceConfig;
 use iam_policy_autopilot_policy_generation::extraction::SourceFile;
-use iam_policy_autopilot_policy_generation::Language;
+use iam_policy_autopilot_policy_generation::{Language, DEFAULT_MAX_POLICY_SIZE};
 use serde::Deserialize;
 
 /// Input format for the WASM entry point.
@@ -45,6 +45,11 @@ struct GenerateInput {
     /// Enable minimal policy size by allowing cross-service merging. Defaults to false.
     #[serde(default)]
     minimize_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    /// Accepts non-negative values. Single-statement policies that cannot fit
+    /// are still emitted with a warning.
+    #[serde(default = "default_max_policy_size")]
+    max_policy_size: usize,
 }
 
 #[derive(Deserialize)]
@@ -57,6 +62,10 @@ struct FileInput {
 
 fn default_wildcard() -> String {
     "*".to_string()
+}
+
+fn default_max_policy_size() -> usize {
+    DEFAULT_MAX_POLICY_SIZE
 }
 
 /// Main entry point exposed to JavaScript via Emscripten.
@@ -167,6 +176,7 @@ fn run_generate(input_json: &str) -> String {
             language,
             aws_context,
             minimize_policy_size: input.minimize_policy_size,
+            max_policy_size: input.max_policy_size,
         };
 
         generate_policies_from_source(&config).await

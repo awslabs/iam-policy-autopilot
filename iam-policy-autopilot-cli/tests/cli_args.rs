@@ -27,6 +27,33 @@ fn help_shows_no_features() {
 }
 
 #[test]
+fn generate_policies_help_shows_max_policy_size() {
+    let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["generate-policies", "--help"])
+        .output()
+        .expect("failed to run generate-policies --help");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(stdout.contains("--max-policy-size"));
+}
+
+#[test]
+fn generate_policies_accepts_zero_max_policy_size() {
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args([
+            "generate-policies",
+            "example.py",
+            "--max-policy-size",
+            "0",
+            "--help",
+        ])
+        .output()
+        .expect("failed to run generate-policies with zero max policy size");
+
+    assert!(output.status.success());
+}
+
+#[test]
 fn test_fix_access_denied_implicit_deny() {
     let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
         .args(["fix-access-denied", IMPLICIT_DENY])

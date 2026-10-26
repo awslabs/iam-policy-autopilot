@@ -311,6 +311,7 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
     // Create policy generation engine with AWS context and merger configuration
     let merger_config = PolicyMergerConfig {
         allow_cross_service_merging: config.minimize_policy_size,
+        max_policy_size: config.max_policy_size,
     };
 
     let policy_engine = PolicyGenerationEngine::with_merger_config(

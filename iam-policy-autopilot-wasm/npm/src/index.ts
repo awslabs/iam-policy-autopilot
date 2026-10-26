@@ -34,6 +34,8 @@ export interface GenerateInput {
   account?: string;
   /** Language override (auto-detected from filename if omitted) */
   language?: string;
+  /** Maximum generated policy size in non-whitespace JSON characters. Accepts non-negative values; single-statement policies that cannot fit are still emitted with a warning (default: 6144). */
+  maxPolicySize?: number;
 }
 
 export interface PolicyStatement {
@@ -193,6 +195,7 @@ export async function generatePolicies(input: GenerateInput): Promise<GenerateRe
     region: input.region ?? '*',
     account: input.account ?? '*',
     language: input.language,
+    maxPolicySize: input.maxPolicySize,
   });
 
   // Allocate input string in WASM memory

@@ -305,6 +305,7 @@ mod tests {
                 "123456789012",
                 PolicyMergerConfig {
                     allow_cross_service_merging,
+                    ..PolicyMergerConfig::default()
                 },
             );
 
@@ -355,6 +356,7 @@ mod tests {
             "123456789012",
             PolicyMergerConfig {
                 allow_cross_service_merging: merging.unwrap_or_default(),
+                ..PolicyMergerConfig::default()
             },
         );
         let enriched_calls = multi_service_fixture(&sdk_call);

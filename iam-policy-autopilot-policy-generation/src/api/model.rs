@@ -20,6 +20,15 @@ pub struct GeneratePolicyConfig {
     pub individual_policies: bool,
     /// Enable policy size minimization
     pub minimize_policy_size: bool,
+    /// Maximum generated policy size in non-whitespace JSON characters.
+    ///
+    /// Accepts non-negative values. If a policy containing a single statement
+    /// cannot fit within the configured size, it is still emitted with a
+    /// warning.
+    ///
+    /// Use [`crate::DEFAULT_MAX_POLICY_SIZE`] for the AWS IAM managed policy
+    /// default.
+    pub max_policy_size: usize,
     /// Disable file system caching for service references
     pub disable_file_system_cache: bool,
     /// Generate explanations for why actions were added, filtered by patterns.

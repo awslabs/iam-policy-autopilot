@@ -83,6 +83,7 @@ fn build_config(fixture_dir: &Path, inputs: &TestInputs) -> GeneratePolicyConfig
         aws_context: AwsContext::new(inputs.region.clone(), inputs.account.clone()).unwrap(),
         individual_policies: inputs.individual_policies,
         minimize_policy_size: false,
+        max_policy_size: iam_policy_autopilot_policy_generation::DEFAULT_MAX_POLICY_SIZE,
         disable_file_system_cache: false,
         explain_filters: None,
         terraform_dir: if inputs.tf_dir {
