@@ -37,22 +37,7 @@
             "Condition": {
               "StringEquals": {
                 "kms:ViaService": [
-                  "s3.us-east-1.amazonaws.com"
-                ]
-              }
-            },
-            "Effect": "Allow",
-            "Resource": [
-              "arn:aws:kms:us-east-1:123456789012:key/*"
-            ]
-          },
-          {
-            "Action": [
-              "kms:GenerateDataKey"
-            ],
-            "Condition": {
-              "StringEquals": {
-                "kms:ViaService": [
+                  "s3.us-east-1.amazonaws.com",
                   "sqs.us-east-1.amazonaws.com"
                 ]
               }

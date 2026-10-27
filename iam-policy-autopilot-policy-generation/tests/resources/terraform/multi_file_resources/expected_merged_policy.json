@@ -11,6 +11,7 @@
             "Condition": {
               "StringEquals": {
                 "kms:ViaService": [
+                  "dynamodb.us-east-1.amazonaws.com",
                   "s3.us-east-1.amazonaws.com"
                 ]
               }
@@ -42,22 +43,6 @@
             "Resource": [
               "arn:aws:s3:::*/*",
               "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
-            ]
-          },
-          {
-            "Action": [
-              "kms:Decrypt"
-            ],
-            "Condition": {
-              "StringEquals": {
-                "kms:ViaService": [
-                  "dynamodb.us-east-1.amazonaws.com"
-                ]
-              }
-            },
-            "Effect": "Allow",
-            "Resource": [
-              "arn:aws:kms:us-east-1:123456789012:key/*"
             ]
           },
           {
