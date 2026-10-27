@@ -10,6 +10,7 @@
 
 ### Fixed
 
+- Policy statements with identical effects, actions, resources, and a shared condition operator/key now merge their condition values into one sorted, deduplicated list.
 - Java SDK v2 calls whose operation names contain consecutive capitals, such as `rds.createDBCluster()` and `rds.describeDBClusters()`, are now included in generated policies.
 - AWS profiles configured with `aws login` now work with credential-dependent commands such as `--upload-policies` and `fix-access-denied`. (#276)
 

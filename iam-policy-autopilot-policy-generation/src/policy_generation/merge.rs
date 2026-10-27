@@ -10,12 +10,12 @@
 
 use super::{Effect, IamPolicy, Statement};
 use crate::{
-    enrichment::Condition,
+    enrichment::{Condition, Operator},
     errors::{ExtractorError, Result},
     DEFAULT_MAX_POLICY_SIZE,
 };
 use regex::Regex;
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 
 #[cfg(test)]
 const IAM_MANAGED_POLICY_SIZE_LIMIT: usize = DEFAULT_MAX_POLICY_SIZE;
@@ -373,22 +373,12 @@ impl PolicyMerger {
         log::debug!("  Statement conditions: {:?}", statement.condition);
         log::debug!("  Group conditions: {:?}", group.conditions);
 
-        // Convert statement conditions to HashSet for comparison
-        let stmt_conditions_set: std::collections::HashSet<_> =
-            statement.condition.iter().collect();
-
-        // Convert group conditions to HashSet for comparison
-        let group_conditions_set: std::collections::HashSet<_> = group.conditions.iter().collect();
-
-        // Conditions must be exactly the same to merge
-        if stmt_conditions_set != group_conditions_set {
-            log::debug!("Conditions differ, not merging:");
-            log::debug!("  Statement condition set: {stmt_conditions_set:?}");
-            log::debug!("  Group condition set: {group_conditions_set:?}");
+        if !Self::conditions_are_mergeable(statement, group) {
+            log::debug!("Conditions are not safely mergeable");
             return Ok(false);
         }
 
-        log::debug!("Conditions match, checking resources...");
+        log::debug!("Conditions are mergeable, checking resources...");
 
         // Check for cross-service merging if not allowed
         if !self.config.allow_cross_service_merging {
@@ -426,6 +416,85 @@ impl PolicyMerger {
         Ok(true)
     }
 
+    /// Determine whether combining the conditions preserves statement semantics.
+    ///
+    /// Exactly equal normalized conditions retain the existing merge behavior.
+    /// Different values can also be unioned when both sides contain one shared
+    /// operator/key and the effect, actions, and resources are identical.
+    /// Requiring identical statement scope prevents the union from granting an
+    /// action or resource under a condition value that originally applied only
+    /// to another statement.
+    fn conditions_are_mergeable(statement: &Statement, group: &ResourceGroup) -> bool {
+        let statement_conditions = Self::normalize_conditions(statement.condition.iter());
+        let group_conditions = Self::normalize_conditions(group.conditions.iter());
+
+        if statement_conditions == group_conditions {
+            return true;
+        }
+
+        if statement_conditions.len() != 1
+            || group_conditions.len() != 1
+            || statement_conditions.keys().next() != group_conditions.keys().next()
+        {
+            return false;
+        }
+
+        let same_effect = group
+            .statements
+            .iter()
+            .all(|group_statement| group_statement.effect == statement.effect);
+        let statement_actions: HashSet<&String> = statement.action.iter().collect();
+        let group_actions: HashSet<&String> = group
+            .statements
+            .iter()
+            .flat_map(|group_statement| group_statement.action.iter())
+            .collect();
+        let statement_resources: HashSet<&String> = statement.resource.iter().collect();
+        let group_resources: HashSet<&String> = group.resources.iter().collect();
+
+        same_effect && statement_actions == group_actions && statement_resources == group_resources
+    }
+
+    fn normalize_conditions<'a>(
+        conditions: impl IntoIterator<Item = &'a Condition>,
+    ) -> HashMap<(Operator, String), BTreeSet<String>> {
+        let mut normalized: HashMap<(Operator, String), BTreeSet<String>> = HashMap::new();
+
+        for condition in conditions {
+            normalized
+                .entry((condition.operator.clone(), condition.key.clone()))
+                .or_default()
+                .extend(condition.values.iter().cloned());
+        }
+
+        normalized
+    }
+
+    fn merged_conditions(group: &ResourceGroup) -> Vec<Condition> {
+        let mut conditions: Vec<_> = Self::normalize_conditions(group.conditions.iter())
+            .into_iter()
+            .map(|((operator, key), values)| Condition {
+                operator,
+                key,
+                values: values.into_iter().collect(),
+            })
+            .collect();
+
+        conditions.sort_by(|left, right| {
+            Self::operator_sort_key(&left.operator)
+                .cmp(&Self::operator_sort_key(&right.operator))
+                .then_with(|| left.key.cmp(&right.key))
+        });
+        conditions
+    }
+
+    fn operator_sort_key(operator: &Operator) -> u8 {
+        match operator {
+            Operator::StringEquals => 0,
+            Operator::StringLike => 1,
+        }
+    }
+
     /// Create a merged statement from a resource group
     fn create_merged_statement_from_group(&self, group: &ResourceGroup) -> Result<Statement> {
         let mut all_actions = HashSet::new();
@@ -444,7 +513,7 @@ impl PolicyMerger {
         let mut sorted_resources: Vec<_> = group.resources.iter().cloned().collect();
         sorted_resources.sort();
 
-        let condition: Vec<_> = group.conditions.iter().cloned().collect();
+        let condition = Self::merged_conditions(group);
 
         let result = Statement::allow(sorted_actions, sorted_resources).with_conditions(condition);
 
@@ -735,12 +804,352 @@ impl Default for PolicyMerger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use proptest::prelude::*;
 
     fn create_test_statement(actions: Vec<&str>, resources: Vec<&str>) -> Statement {
         Statement::allow(
             actions.into_iter().map(String::from).collect(),
             resources.into_iter().map(String::from).collect(),
         )
+    }
+
+    fn create_condition(operator: Operator, key: &str, values: &[&str]) -> Condition {
+        Condition {
+            operator,
+            key: key.to_string(),
+            values: values.iter().map(|value| (*value).to_string()).collect(),
+        }
+    }
+
+    fn create_conditional_statement(
+        action: &str,
+        resource: &str,
+        operator: Operator,
+        key: &str,
+        values: &[&str],
+    ) -> Statement {
+        create_test_statement(vec![action], vec![resource])
+            .with_conditions(vec![create_condition(operator, key, values)])
+    }
+
+    fn statement_allows(
+        statement: &Statement,
+        action: &str,
+        resource: &str,
+        context: &HashMap<String, String>,
+    ) -> bool {
+        let value_matches = |operator: &Operator, actual: &str, expected: &str| match operator {
+            Operator::StringEquals => actual == expected,
+            Operator::StringLike => {
+                let escaped = regex::escape(expected).replace(r"\*", ".*");
+                Regex::new(&format!("^{escaped}$"))
+                    .expect("test condition pattern should compile")
+                    .is_match(actual)
+            }
+        };
+
+        statement.effect == Effect::Allow
+            && statement.action.iter().any(|candidate| candidate == action)
+            && statement
+                .resource
+                .iter()
+                .any(|candidate| candidate == resource)
+            && statement.condition.iter().all(|condition| {
+                context.get(&condition.key).is_some_and(|actual| {
+                    // Serialization combines repeated entries with the same
+                    // operator/key into one value list. Evaluate that IAM
+                    // OR-of-values behavior directly, without calling the
+                    // production normalization code under test.
+                    statement
+                        .condition
+                        .iter()
+                        .filter(|candidate| {
+                            candidate.operator == condition.operator
+                                && candidate.key == condition.key
+                        })
+                        .flat_map(|candidate| &candidate.values)
+                        .any(|expected| value_matches(&condition.operator, actual, expected))
+                })
+            })
+    }
+
+    fn policies_allow(
+        policies: &[IamPolicy],
+        action: &str,
+        resource: &str,
+        context: &HashMap<String, String>,
+    ) -> bool {
+        policies.iter().any(|policy| {
+            policy
+                .statements
+                .iter()
+                .any(|statement| statement_allows(statement, action, resource, context))
+        })
+    }
+
+    #[test]
+    fn test_merges_matching_condition_values_sorted_and_deduplicated() {
+        let merger = PolicyMerger::new();
+        let statements = vec![
+            create_conditional_statement(
+                "iam:PassRole",
+                "*",
+                Operator::StringEquals,
+                "iam:PassedToService",
+                &["s3.amazonaws.com", "lambda.amazonaws.com"],
+            ),
+            create_conditional_statement(
+                "iam:PassRole",
+                "*",
+                Operator::StringEquals,
+                "iam:PassedToService",
+                &["lambda.amazonaws.com", "ec2.amazonaws.com"],
+            ),
+        ];
+
+        let policies = merger.merge_statements(&statements).unwrap();
+
+        assert_eq!(policies.len(), 1);
+        assert_eq!(policies[0].statements.len(), 1);
+        assert_eq!(
+            policies[0].statements[0].condition,
+            vec![create_condition(
+                Operator::StringEquals,
+                "iam:PassedToService",
+                &[
+                    "ec2.amazonaws.com",
+                    "lambda.amazonaws.com",
+                    "s3.amazonaws.com",
+                ],
+            )]
+        );
+    }
+
+    #[test]
+    fn test_merges_identical_multi_operator_conditions_preserving_semantics() {
+        let merger = PolicyMerger::new();
+        let conditions = vec![
+            create_condition(
+                Operator::StringEquals,
+                "aws:RequestedRegion",
+                &["us-east-1"],
+            ),
+            create_condition(
+                Operator::StringLike,
+                "aws:PrincipalArn",
+                &["arn:aws:iam::123456789012:role/app-*"],
+            ),
+        ];
+        let statements = vec![
+            create_test_statement(vec!["s3:GetObject"], vec!["arn:aws:s3:::example-bucket/*"])
+                .with_conditions(conditions.clone()),
+            create_test_statement(vec!["s3:PutObject"], vec!["arn:aws:s3:::example-bucket/*"])
+                .with_conditions(conditions.clone()),
+        ];
+
+        let policies = merger.merge_statements(&statements).unwrap();
+
+        assert_eq!(policies.len(), 1);
+        assert_eq!(policies[0].statements.len(), 1);
+        assert_eq!(policies[0].statements[0].condition, conditions);
+
+        let contexts = [
+            (
+                HashMap::from([
+                    ("aws:RequestedRegion".to_string(), "us-east-1".to_string()),
+                    (
+                        "aws:PrincipalArn".to_string(),
+                        "arn:aws:iam::123456789012:role/app-reader".to_string(),
+                    ),
+                ]),
+                true,
+            ),
+            (
+                HashMap::from([
+                    ("aws:RequestedRegion".to_string(), "us-west-2".to_string()),
+                    (
+                        "aws:PrincipalArn".to_string(),
+                        "arn:aws:iam::123456789012:role/app-reader".to_string(),
+                    ),
+                ]),
+                false,
+            ),
+            (
+                HashMap::from([
+                    ("aws:RequestedRegion".to_string(), "us-east-1".to_string()),
+                    (
+                        "aws:PrincipalArn".to_string(),
+                        "arn:aws:iam::123456789012:role/admin".to_string(),
+                    ),
+                ]),
+                false,
+            ),
+        ];
+        let original_policies = [IamPolicy {
+            id: "original".to_string(),
+            version: "2012-10-17".to_string(),
+            statements,
+        }];
+
+        for action in ["s3:GetObject", "s3:PutObject"] {
+            for (context, expected) in &contexts {
+                let original_allows = policies_allow(
+                    &original_policies,
+                    action,
+                    "arn:aws:s3:::example-bucket/*",
+                    context,
+                );
+                let merged_allows =
+                    policies_allow(&policies, action, "arn:aws:s3:::example-bucket/*", context);
+
+                assert_eq!(original_allows, *expected);
+                assert_eq!(merged_allows, original_allows);
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_unioning_condition_values_preserves_semantics(
+            operator in prop_oneof![
+                Just(Operator::StringEquals),
+                Just(Operator::StringLike),
+            ],
+            left_values in proptest::collection::vec(("[a-z]{1,4}", any::<bool>()), 1..5),
+            right_values in proptest::collection::vec(("[a-z]{1,4}", any::<bool>()), 1..5),
+            request_value in "[a-z]{1,6}",
+            include_context_key in any::<bool>(),
+        ) {
+            let make_values = |values: Vec<(String, bool)>| {
+                values
+                    .into_iter()
+                    .map(|(value, wildcard)| {
+                        if wildcard {
+                            format!("{value}*")
+                        } else {
+                            value
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            };
+            let left_values = make_values(left_values);
+            let right_values = make_values(right_values);
+            let make_statement = |values: &[String]| {
+                create_test_statement(vec!["iam:PassRole"], vec!["*"]).with_conditions(vec![
+                    Condition {
+                        operator: operator.clone(),
+                        key: "iam:PassedToService".to_string(),
+                        values: values.to_vec(),
+                    },
+                ])
+            };
+            let statements = vec![
+                make_statement(&left_values),
+                make_statement(&right_values),
+            ];
+            let original_policies = [IamPolicy {
+                id: "original".to_string(),
+                version: "2012-10-17".to_string(),
+                statements: statements.clone(),
+            }];
+            let merged_policies = PolicyMerger::new().merge_statements(&statements).unwrap();
+            let context = if include_context_key {
+                HashMap::from([(
+                    "iam:PassedToService".to_string(),
+                    request_value,
+                )])
+            } else {
+                HashMap::new()
+            };
+
+            prop_assert_eq!(merged_policies[0].statements.len(), 1);
+            prop_assert_eq!(
+                policies_allow(&merged_policies, "iam:PassRole", "*", &context),
+                policies_allow(&original_policies, "iam:PassRole", "*", &context),
+            );
+        }
+    }
+
+    #[test]
+    fn test_does_not_merge_condition_values_across_unsafe_differences() {
+        let merger = PolicyMerger::new();
+        let base = create_conditional_statement(
+            "iam:PassRole",
+            "arn:aws:iam::123456789012:role/lambda-role",
+            Operator::StringEquals,
+            "iam:PassedToService",
+            &["lambda.amazonaws.com"],
+        );
+        let candidates = vec![
+            (
+                "different actions",
+                create_conditional_statement(
+                    "iam:GetRole",
+                    "arn:aws:iam::123456789012:role/lambda-role",
+                    Operator::StringEquals,
+                    "iam:PassedToService",
+                    &["s3.amazonaws.com"],
+                ),
+            ),
+            (
+                "different resources",
+                create_conditional_statement(
+                    "iam:PassRole",
+                    "arn:aws:iam::123456789012:role/s3-role",
+                    Operator::StringEquals,
+                    "iam:PassedToService",
+                    &["s3.amazonaws.com"],
+                ),
+            ),
+            (
+                "different operators",
+                create_conditional_statement(
+                    "iam:PassRole",
+                    "arn:aws:iam::123456789012:role/lambda-role",
+                    Operator::StringLike,
+                    "iam:PassedToService",
+                    &["s3.amazonaws.com"],
+                ),
+            ),
+            (
+                "different keys",
+                create_conditional_statement(
+                    "iam:PassRole",
+                    "arn:aws:iam::123456789012:role/lambda-role",
+                    Operator::StringEquals,
+                    "aws:RequestedRegion",
+                    &["us-east-1"],
+                ),
+            ),
+            (
+                "multiple condition keys",
+                create_test_statement(
+                    vec!["iam:PassRole"],
+                    vec!["arn:aws:iam::123456789012:role/lambda-role"],
+                )
+                .with_conditions(vec![
+                    create_condition(
+                        Operator::StringEquals,
+                        "iam:PassedToService",
+                        &["s3.amazonaws.com"],
+                    ),
+                    create_condition(
+                        Operator::StringEquals,
+                        "aws:RequestedRegion",
+                        &["us-west-2"],
+                    ),
+                ]),
+            ),
+        ];
+
+        for (difference, candidate) in candidates {
+            let policies = merger.merge_statements(&[base.clone(), candidate]).unwrap();
+            assert_eq!(
+                policies[0].statements.len(),
+                2,
+                "must not merge statements with {difference}"
+            );
+        }
     }
 
     #[test]
