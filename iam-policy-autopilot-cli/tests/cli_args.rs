@@ -27,18 +27,31 @@ fn help_shows_no_features() {
 }
 
 #[test]
-fn generate_policies_help_shows_size_options() {
+fn generate_policies_help_shows_max_policy_size() {
     let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
         .args(["generate-policies", "--help"])
         .output()
         .expect("failed to run generate-policies --help");
     let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(stdout.contains("--max-policy-size"));
+    assert!(stdout.contains("start a new policy"));
+    assert!(stdout.contains("still emitted"));
+}
+
+#[test]
+fn generate_policies_help_shows_total_output_size_target() {
+    let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["generate-policies", "--help"])
+        .output()
+        .expect("failed to run generate-policies --help");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
     assert!(
         stdout.contains("--allow-overpermissive-wildcards-to-limit-total-output-size"),
         "generate-policies help should mention the wildcard total-size option: {}",
         stdout
     );
-    assert!(stdout.contains("--max-policy-size"));
 }
 
 #[test]

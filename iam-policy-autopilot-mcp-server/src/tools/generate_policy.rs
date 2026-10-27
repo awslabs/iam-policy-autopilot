@@ -354,7 +354,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_generate_application_policies_forwards_size_configuration() {
+    async fn test_generate_application_policies_forwards_max_policy_size() {
         let input = GeneratePoliciesInput {
             source_files: vec!["path/to/source/file".to_string()],
             region: None,
@@ -366,14 +366,35 @@ mod tests {
             tfvars: None,
             resource_cutoff: None,
             max_policy_size: Some(0),
-            allow_overpermissive_wildcards_to_limit_total_output_size: Some(0),
+            allow_overpermissive_wildcards_to_limit_total_output_size: None,
         };
 
         api::set_mock_return(Ok(GeneratePoliciesResult::empty()));
         generate_application_policies(input).await.unwrap();
 
         assert_eq!(api::take_max_policy_size(), Some(0));
-        assert_eq!(api::take_total_output_target(), Some(Some(0)));
+    }
+
+    #[tokio::test]
+    async fn test_generate_application_policies_forwards_total_output_target() {
+        let input = GeneratePoliciesInput {
+            source_files: vec!["path/to/source/file".to_string()],
+            region: None,
+            account: None,
+            service_hints: None,
+            tf_dir: None,
+            tf_files: None,
+            tfstate: None,
+            tfvars: None,
+            resource_cutoff: None,
+            max_policy_size: None,
+            allow_overpermissive_wildcards_to_limit_total_output_size: Some(8192),
+        };
+
+        api::set_mock_return(Ok(GeneratePoliciesResult::empty()));
+        generate_application_policies(input).await.unwrap();
+
+        assert_eq!(api::take_total_output_target(), Some(Some(8192)));
     }
 
     #[tokio::test]
@@ -435,20 +456,33 @@ mod tests {
                 "{\"Version\":\"2012-10-17\"}".to_string(),
                 "{\"Version\":\"2012-10-17\"}".to_string(),
             ],
+            warnings: vec![PolicyWarning::PolicyExceedsMaximumSize {
+                policy_index: 0,
+                message: "test warning".to_string(),
+            }],
+        };
+
+        let json = serde_json::to_string(&output).unwrap();
+
+        assert!(json.contains("\"Policies\":"));
+        assert!(json.contains("[\"{"));
+        assert!(json.contains("\"WarningType\":\"PolicyExceedsMaximumSize\""));
+    }
+
+    #[test]
+    fn test_generate_policies_output_serializes_total_output_warning() {
+        let output = GeneratePoliciesOutput {
+            policies: vec!["{\"Version\":\"2012-10-17\"}".to_string()],
             warnings: vec![PolicyWarning::TotalOutputSizeTargetNotMet {
                 message: "target not met".to_string(),
             }],
         };
 
         let json = serde_json::to_value(&output).unwrap();
-
         assert_eq!(
             json,
             serde_json::json!({
-                "Policies": [
-                    "{\"Version\":\"2012-10-17\"}",
-                    "{\"Version\":\"2012-10-17\"}"
-                ],
+                "Policies": ["{\"Version\":\"2012-10-17\"}"],
                 "Warnings": [{
                     "WarningType": "TotalOutputSizeTargetNotMet",
                     "Message": "target not met"

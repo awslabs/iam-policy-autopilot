@@ -575,6 +575,9 @@ mod tests {
                 ),
             }]
         );
+        let json = serde_json::to_value(&warnings[0]).unwrap();
+        assert_eq!(json["WarningType"], "PolicyExceedsMaximumSize");
+        assert_eq!(json["PolicyIndex"], 0);
     }
 
     #[test]
