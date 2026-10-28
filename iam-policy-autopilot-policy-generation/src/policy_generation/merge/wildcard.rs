@@ -281,7 +281,19 @@ impl PolicyMerger {
         (prefix_len > 0).then(|| &first[..prefix_len])
     }
 
-    /// Byte offsets before each subsequent PascalCase word.
+    /// Find byte offsets where a new word begins in an IAM operation name.
+    ///
+    /// Candidate operations are restricted to ASCII alphanumeric characters,
+    /// so byte offsets are also valid string-slice boundaries. The offsets let
+    /// `common_word_aligned_prefix` shorten a character-level common prefix to
+    /// a complete action word before appending `*`. For example,
+    /// `DescribeInstances` has a boundary before `Instances`, allowing
+    /// `DescribeInstances` and `DescribeVolumes` to collapse to `Describe*`.
+    ///
+    /// Besides ordinary lower-to-upper PascalCase transitions, this recognizes
+    /// the end of an acronym (`GetDBInstance`) and the end of a component with
+    /// a numeric suffix (`CreateV2Endpoint`). Digits stay attached to the
+    /// preceding component, producing `Create|V2|Endpoint`.
     fn action_word_boundaries(operation: &str) -> Vec<usize> {
         let bytes = operation.as_bytes();
         let mut boundaries = Vec::new();
@@ -295,9 +307,9 @@ impl PolicyMerger {
             let acronym_to_word = previous.is_ascii_uppercase()
                 && current.is_ascii_uppercase()
                 && next.is_some_and(|byte| byte.is_ascii_lowercase());
-            let digit_transition = current.is_ascii_digit() && !previous.is_ascii_digit();
+            let numeric_suffix_to_word = previous.is_ascii_digit() && current.is_ascii_alphabetic();
 
-            if lower_to_upper || acronym_to_word || digit_transition {
+            if lower_to_upper || acronym_to_word || numeric_suffix_to_word {
                 boundaries.push(index);
             }
         }
@@ -306,7 +318,12 @@ impl PolicyMerger {
     }
 
     /// Compact JSON size contributed by the strings and separators in an
-    /// Action array. Brackets are omitted because they are constant.
+    /// Action array.
+    ///
+    /// `Statement::action` is a `Vec<String>` with standard Serde
+    /// serialization, so it is always emitted as a JSON array, including when
+    /// it contains only one action. Brackets are omitted here because both the
+    /// original and replacement action lists contain the same two brackets.
     fn serialized_action_list_size(actions: &[String]) -> usize {
         actions.iter().map(|action| action.len() + 2).sum::<usize>()
             + actions.len().saturating_sub(1)
@@ -329,6 +346,43 @@ mod tests {
             service.to_string(),
             actions.iter().map(|action| (*action).to_string()).collect(),
         )])
+    }
+
+    // Expected values are zero-based byte offsets immediately before each new
+    // component: `[3, 5]` splits `GetDBInstance` into `Get|DB|Instance`, and
+    // `[6, 8]` splits `CreateV2Endpoint` into `Create|V2|Endpoint`.
+    #[rstest::rstest]
+    #[case::acronym_to_word("GetDBInstance", vec![3, 5])]
+    #[case::numeric_suffix_to_word("CreateV2Endpoint", vec![6, 8])]
+    fn test_action_word_boundaries(
+        #[case] operation: &str,
+        #[case] expected_boundaries: Vec<usize>,
+    ) {
+        assert_eq!(
+            PolicyMerger::action_word_boundaries(operation),
+            expected_boundaries
+        );
+    }
+
+    #[test]
+    fn test_action_wildcarding_keeps_numeric_suffix_in_prefix() {
+        let merger = PolicyMerger::new();
+        let exact = merger
+            .merge_statements(&[
+                statement(vec!["example:CreateV2Endpoint"], vec!["*"]),
+                statement(vec!["example:CreateV2Resource"], vec!["*"]),
+            ])
+            .unwrap();
+
+        let collapsed = merger
+            .optimize_total_output_size(
+                &exact,
+                &catalog("example", &["CreateV2Endpoint", "CreateV2Resource"]),
+                0,
+            )
+            .unwrap();
+
+        assert_eq!(collapsed[0].statements[0].action, vec!["example:CreateV2*"]);
     }
 
     #[test]
