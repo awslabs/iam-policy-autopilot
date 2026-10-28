@@ -50,6 +50,9 @@ struct GenerateInput {
     /// single-statement policies are still emitted with a warning.
     #[serde(default = "default_max_policy_size")]
     max_policy_size: usize,
+    /// Best-effort combined output size target. Meeting it may introduce
+    /// overpermissive action wildcards.
+    allow_overpermissive_wildcards_to_limit_total_output_size: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -177,6 +180,8 @@ fn run_generate(input_json: &str) -> String {
             aws_context,
             minimize_policy_size: input.minimize_policy_size,
             max_policy_size: input.max_policy_size,
+            allow_overpermissive_wildcards_to_limit_total_output_size: input
+                .allow_overpermissive_wildcards_to_limit_total_output_size,
         };
 
         generate_policies_from_source(&config).await

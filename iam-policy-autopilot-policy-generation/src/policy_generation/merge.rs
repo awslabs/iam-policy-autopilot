@@ -17,6 +17,10 @@ use crate::{
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap, HashSet};
 
+mod wildcard;
+
+pub(crate) use wildcard::ServiceActionCatalogs;
+
 #[cfg(test)]
 const IAM_MANAGED_POLICY_SIZE_LIMIT: usize = DEFAULT_MAX_POLICY_SIZE;
 
@@ -112,7 +116,7 @@ impl PolicyMerger {
 
     /// Calculate the size of a policy in characters, excluding whitespace
     /// This matches AWS IAM's policy size calculation for managed policies
-    fn calculate_policy_size(&self, policy: &IamPolicy) -> Result<usize> {
+    pub(crate) fn calculate_policy_size(&self, policy: &IamPolicy) -> Result<usize> {
         let json = serde_json::to_string(policy).map_err(|e| {
             ExtractorError::policy_generation(format!(
                 "Failed to serialize policy for size calculation: {e}"
@@ -186,35 +190,25 @@ impl PolicyMerger {
             .collect::<Result<Vec<_>>>()?;
         Self::sort_statements_by_service(&mut merged_statements);
 
+        self.pack_statements(merged_statements)
+    }
+
+    /// Pack already-merged statements into policy documents.
+    fn pack_statements(&self, mut statements: Vec<Statement>) -> Result<Vec<IamPolicy>> {
+        Self::sort_statements_by_service(&mut statements);
         let mut policies = Vec::new();
         let mut current_policy = IamPolicy::new();
 
         // Distribute the pre-sorted statements across policies with size checking
-        for merged_statement in merged_statements {
+        for merged_statement in statements {
             // Check if adding this statement would exceed the size limit
-            if self.would_exceed_size_limit(&current_policy, &merged_statement)? {
-                // If current policy is not empty, save it and start a new one
-                if !current_policy.statements.is_empty() {
-                    policies.push(current_policy);
-                    current_policy = IamPolicy::new();
-                }
-
-                // Add the statement to the new policy
-                current_policy.add_statement(merged_statement);
-
-                // Check if this single statement policy is still too large
-                let single_statement_size = self.calculate_policy_size(&current_policy)?;
-                if single_statement_size > self.config.max_policy_size {
-                    log::warn!(
-                        "Single merged statement exceeds policy size limit ({} > {} chars), including anyway",
-                        single_statement_size,
-                        self.config.max_policy_size
-                    );
-                }
-            } else {
-                // Safe to add this statement to current policy
-                current_policy.add_statement(merged_statement);
+            if self.would_exceed_size_limit(&current_policy, &merged_statement)?
+                && !current_policy.statements.is_empty()
+            {
+                policies.push(current_policy);
+                current_policy = IamPolicy::new();
             }
+            current_policy.add_statement(merged_statement);
         }
 
         // Add the last policy if it has statements

@@ -79,6 +79,7 @@ impl SharedConfig {
 
 /// Configuration specific to generate-policies subcommand
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 struct GeneratePolicyCliConfig {
     /// Shared configuration
     shared: SharedConfig,
@@ -94,6 +95,8 @@ struct GeneratePolicyCliConfig {
     minimal_policy_size: bool,
     /// Maximum generated policy size in non-whitespace JSON characters
     max_policy_size: Option<usize>,
+    /// Best-effort total output size target using overpermissive action wildcards
+    allow_overpermissive_wildcards_to_limit_total_output_size: Option<usize>,
     /// Disable file system caching for service references
     disable_cache: bool,
     /// Resource lists with more than this many entries are collapsed to '*' instead of emitting every resource-specific ARN. Use 0 to collapse every non-empty resource list. Default: 4.
@@ -385,6 +388,20 @@ managed policy size limit."
         )]
         #[telemetry(value, if_present)]
         max_policy_size: Option<usize>,
+
+        /// Allow overpermissive action wildcards to meet a total output size target
+        #[arg(
+            long = "allow-overpermissive-wildcards-to-limit-total-output-size",
+            value_name = "CHARACTERS",
+            conflicts_with = "individual_policies",
+            long_help = "Best-effort target for the combined compact size of all generated IAM \
+policy documents. Exact actions are generated first. If they exceed the target, action groups \
+may be replaced with word-aligned wildcards that grant additional actions. Candidates are chosen \
+to minimize added permissions per character saved. The target must be at least --max-policy-size \
+(6144 by default), and the result may still exceed the target when no eligible wildcard remains."
+        )]
+        #[telemetry(value, if_present)]
+        allow_overpermissive_wildcards_to_limit_total_output_size: Option<usize>,
 
         /// Disable file system caching for service references
         #[arg(
@@ -700,6 +717,8 @@ async fn handle_generate_policy(config: &GeneratePolicyCliConfig) -> Result<()> 
         individual_policies: config.individual_policies,
         minimize_policy_size: config.minimal_policy_size,
         max_policy_size: config.max_policy_size.unwrap_or(DEFAULT_MAX_POLICY_SIZE),
+        allow_overpermissive_wildcards_to_limit_total_output_size: config
+            .allow_overpermissive_wildcards_to_limit_total_output_size,
         disable_file_system_cache: config.disable_cache,
         explain_filters: config.explain.clone(),
         terraform_dir: config.tf_dir.clone(),
@@ -896,6 +915,7 @@ async fn main() {
             upload_policies,
             minimal_policy_size,
             max_policy_size,
+            allow_overpermissive_wildcards_to_limit_total_output_size,
             disable_cache,
             resource_cutoff,
             service_hints,
@@ -926,6 +946,7 @@ async fn main() {
                 upload_policies,
                 minimal_policy_size,
                 max_policy_size,
+                allow_overpermissive_wildcards_to_limit_total_output_size,
                 disable_cache,
                 resource_cutoff,
                 explain,

@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 
-use super::merge::{PolicyMerger, PolicyMergerConfig};
+use super::merge::{PolicyMerger, PolicyMergerConfig, ServiceActionCatalogs};
 use super::utils::{ArnParser, ConditionValueProcessor};
 use super::{IamPolicy, Statement};
 use crate::api::model::{GeneratePoliciesResult, GeneratePoliciesResultBuilder, PolicyWarning};
@@ -253,6 +253,38 @@ impl<'a> Engine<'a> {
         }
     }
 
+    pub(crate) fn optimize_total_output_size(
+        &self,
+        policies: &[PolicyWithMetadata],
+        catalogs: &ServiceActionCatalogs,
+        target_size: usize,
+    ) -> Result<Vec<PolicyWithMetadata>> {
+        match policies.first() {
+            None => Ok(vec![]),
+            Some(first) if policies.iter().any(|p| p.policy_type != first.policy_type) => Err(
+                ExtractorError::policy_generation("Cannot optimize policies with different types"),
+            ),
+            Some(first) => {
+                let policies = policies
+                    .iter()
+                    .map(|policy| policy.policy.clone())
+                    .collect::<Vec<_>>();
+                let optimized = self.policy_merger.optimize_total_output_size(
+                    &policies,
+                    catalogs,
+                    target_size,
+                )?;
+                Ok(optimized
+                    .into_iter()
+                    .map(|policy| PolicyWithMetadata {
+                        policy,
+                        policy_type: first.policy_type,
+                    })
+                    .collect())
+            }
+        }
+    }
+
     /// Generate IAM policies with explanations from enriched method calls
     ///
     /// This method generates policies and collects explanations for why each action
@@ -277,7 +309,7 @@ impl<'a> Engine<'a> {
 
         // Flag statements that fell back to Resource "*" so consumers can
         // surface them for review
-        let warnings = PolicyWarning::wildcard_resource_warnings(&policies);
+        let warnings = PolicyWarning::warnings_for_policies(&policies);
 
         Ok(GeneratePoliciesResultBuilder::default()
             .policies(policies)

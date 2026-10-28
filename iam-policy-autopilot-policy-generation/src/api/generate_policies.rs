@@ -1,5 +1,5 @@
-use anyhow::{Context, Result};
-use std::collections::BTreeMap;
+use anyhow::{anyhow, Context, Result};
+use std::collections::{BTreeMap, BTreeSet};
 use std::time::Instant;
 
 use log::{debug, info, trace, warn};
@@ -8,14 +8,17 @@ use crate::{
     api::{
         extract_sdk_calls::extract_sdk_calls,
         input_kind::{classify_inputs, ClassifiedInputs, IacFormat},
-        model::{GeneratePoliciesResult, GeneratePoliciesResultBuilder, GeneratePolicyConfig},
+        model::{
+            compact_policy_size, GeneratePoliciesResult, GeneratePoliciesResultBuilder,
+            GeneratePolicyConfig, PolicyWarning,
+        },
     },
     enrichment::{
         terraform::{resource_binder::TerraformResourceResolver, ResourceBindingExplanation},
         Explanation, Explanations,
     },
     extraction::terraform::plan_to_calls::{self, PlannedResource},
-    policy_generation::merge::PolicyMergerConfig,
+    policy_generation::merge::{PolicyMergerConfig, ServiceActionCatalogs},
     EnrichmentEngine, ExtractedMethods, PolicyGenerationEngine,
 };
 
@@ -191,6 +194,11 @@ fn extract_plan_resources(source_files: &[std::path::PathBuf]) -> Option<Vec<Pla
 /// 2. Resolves Terraform resource types to IAM service/resource mappings
 /// 3. Substitutes ARN placeholders with concrete Terraform resource names
 pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<GeneratePoliciesResult> {
+    validate_size_configuration(
+        config.max_policy_size,
+        config.allow_overpermissive_wildcards_to_limit_total_output_size,
+        config.individual_policies,
+    )?;
     let pipeline_start = Instant::now();
 
     debug!(
@@ -351,11 +359,25 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
             .context("Failed to merge IAM policies")?;
     }
 
+    if let Some(target_size) = config.allow_overpermissive_wildcards_to_limit_total_output_size {
+        let exact_size: usize = final_policies
+            .iter()
+            .map(|policy| compact_policy_size(&policy.policy))
+            .sum();
+        if exact_size > target_size {
+            let catalogs = load_action_catalogs(&enrichment_engine, &final_policies).await;
+            final_policies = policy_engine
+                .optimize_total_output_size(&final_policies, &catalogs, target_size)
+                .context("Failed to optimize total policy output size")?;
+        }
+    }
+
     // Recompute warnings against the final (possibly merged) policies so
     // policy indices and statements match what the caller receives
-    let warnings = crate::api::model::PolicyWarning::warnings_for_generation(
+    let warnings = PolicyWarning::warnings_for_generation(
         &final_policies,
         config.max_policy_size,
+        config.allow_overpermissive_wildcards_to_limit_total_output_size,
     );
 
     #[cfg(feature = "telemetry")]
@@ -407,10 +429,79 @@ pub async fn generate_policies(config: &GeneratePolicyConfig) -> Result<Generate
         .expect("GeneratePoliciesResultBuilder missing required policies"))
 }
 
+pub(crate) fn validate_size_configuration(
+    max_policy_size: usize,
+    total_output_target: Option<usize>,
+    individual_policies: bool,
+) -> Result<()> {
+    let Some(target) = total_output_target else {
+        return Ok(());
+    };
+    if individual_policies {
+        return Err(anyhow!(
+            "allow_overpermissive_wildcards_to_limit_total_output_size cannot be used with individual_policies"
+        ));
+    }
+    if target < max_policy_size {
+        return Err(anyhow!(
+            "total output size target ({target}) must be at least the maximum policy size ({max_policy_size})"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) async fn load_action_catalogs(
+    enrichment_engine: &EnrichmentEngine,
+    policies: &[crate::PolicyWithMetadata],
+) -> ServiceActionCatalogs {
+    let services: BTreeSet<String> = policies
+        .iter()
+        .flat_map(|policy| &policy.policy.statements)
+        .flat_map(|statement| &statement.action)
+        .filter_map(|action| {
+            action
+                .split_once(':')
+                .map(|(service, _)| service.to_string())
+        })
+        .collect();
+    let loader = enrichment_engine.service_reference_loader();
+    let mut catalogs = BTreeMap::new();
+
+    for service in services {
+        match loader.load(&service).await {
+            Ok(Some(reference)) if !reference.actions.is_empty() => {
+                catalogs.insert(service, reference.actions.into_keys().collect());
+            }
+            Ok(_) => debug!("No complete action catalog available for {service}"),
+            Err(error) => debug!("Could not load action catalog for {service}: {error}"),
+        }
+    }
+    catalogs
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use rstest::rstest;
+
+    #[test]
+    fn test_size_configuration_rejects_target_below_maximum() {
+        let error = validate_size_configuration(6144, Some(4096), false).unwrap_err();
+        assert!(error
+            .to_string()
+            .contains("must be at least the maximum policy size"));
+    }
+
+    #[test]
+    fn test_size_configuration_rejects_target_with_individual_policies() {
+        let error = validate_size_configuration(6144, Some(8192), true).unwrap_err();
+        assert!(error.to_string().contains("individual_policies"));
+    }
+
+    #[test]
+    fn test_size_configuration_accepts_equal_target_and_maximum() {
+        validate_size_configuration(4096, Some(4096), false).unwrap();
+    }
 
     #[test]
     fn test_action_matches_pattern_exact_match() {

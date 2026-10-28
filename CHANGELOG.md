@@ -3,6 +3,7 @@
 ### Added
 
 - Policy split size is configurable through `--max-policy-size`, the `max_policy_size` library setting, the `MaxPolicySize` MCP input, and the `maxPolicySize` WASM option. It accepts non-negative values and defaults to 6,144 non-whitespace characters. Statements that do not fit start a new policy; oversized single-statement policies are emitted with a warning.
+- The opt-in `--allow-overpermissive-wildcards-to-limit-total-output-size` target can introduce word-aligned action wildcards when exact policies exceed the requested combined size. Equivalent library, MCP, WASM, TypeScript, and telemetry fields are included. Wildcard statements and unmet targets include structured warnings.
 
 ### Changed
 

@@ -9,8 +9,10 @@ use anyhow::{Context, Result};
 use log::debug;
 
 use crate::{
+    api::generate_policies::{load_action_catalogs, validate_size_configuration},
     api::model::{
-        AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder, PolicyWarning,
+        compact_policy_size, AwsContext, GeneratePoliciesResult, GeneratePoliciesResultBuilder,
+        PolicyWarning,
     },
     policy_generation::merge::PolicyMergerConfig,
     EnrichmentEngine, ExtractionEngine, Language, PolicyGenerationEngine, SourceFile,
@@ -33,6 +35,9 @@ pub struct GenerateFromSourceConfig {
     /// single-statement policies are still emitted with a warning; generation
     /// continues.
     pub max_policy_size: usize,
+    /// Best-effort total output size target that may be met by introducing
+    /// overpermissive action wildcards.
+    pub allow_overpermissive_wildcards_to_limit_total_output_size: Option<usize>,
 }
 
 /// Generate IAM policies from in-memory source code.
@@ -43,6 +48,11 @@ pub struct GenerateFromSourceConfig {
 pub async fn generate_policies_from_source(
     config: &GenerateFromSourceConfig,
 ) -> Result<GeneratePoliciesResult> {
+    validate_size_configuration(
+        config.max_policy_size,
+        config.allow_overpermissive_wildcards_to_limit_total_output_size,
+        false,
+    )?;
     if config.source_files.is_empty() {
         return Ok(GeneratePoliciesResult::empty());
     }
@@ -90,10 +100,26 @@ pub async fn generate_policies_from_source(
         .generate_policies(&enriched)
         .context("Failed to generate IAM policies")?;
 
-    let merged = policy_engine
+    let mut merged = policy_engine
         .merge_policies(&result.policies)
         .context("Failed to merge IAM policies")?;
-    let warnings = PolicyWarning::warnings_for_generation(&merged, config.max_policy_size);
+    if let Some(target_size) = config.allow_overpermissive_wildcards_to_limit_total_output_size {
+        let exact_size: usize = merged
+            .iter()
+            .map(|policy| compact_policy_size(&policy.policy))
+            .sum();
+        if exact_size > target_size {
+            let catalogs = load_action_catalogs(&enrichment_engine, &merged).await;
+            merged = policy_engine
+                .optimize_total_output_size(&merged, &catalogs, target_size)
+                .context("Failed to optimize total policy output size")?;
+        }
+    }
+    let warnings = PolicyWarning::warnings_for_generation(
+        &merged,
+        config.max_policy_size,
+        config.allow_overpermissive_wildcards_to_limit_total_output_size,
+    );
 
     // Explanations are omitted in the WASM/from-source path: the browser consumer only
     // needs the final policies, and including per-action explanations would significantly

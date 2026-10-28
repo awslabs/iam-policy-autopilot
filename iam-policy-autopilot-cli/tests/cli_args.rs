@@ -40,6 +40,21 @@ fn generate_policies_help_shows_max_policy_size() {
 }
 
 #[test]
+fn generate_policies_help_shows_total_output_size_target() {
+    let out = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args(["generate-policies", "--help"])
+        .output()
+        .expect("failed to run generate-policies --help");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        stdout.contains("--allow-overpermissive-wildcards-to-limit-total-output-size"),
+        "generate-policies help should mention the wildcard total-size option: {}",
+        stdout
+    );
+}
+
+#[test]
 fn generate_policies_accepts_zero_max_policy_size() {
     let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
         .args([
@@ -53,6 +68,23 @@ fn generate_policies_accepts_zero_max_policy_size() {
         .expect("failed to run generate-policies with zero max policy size");
 
     assert!(output.status.success());
+}
+
+#[test]
+fn generate_policies_rejects_wildcard_target_with_individual_policies() {
+    let output = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"))
+        .args([
+            "generate-policies",
+            "example.py",
+            "--individual-policies",
+            "--allow-overpermissive-wildcards-to-limit-total-output-size",
+            "8192",
+        ])
+        .output()
+        .expect("failed to run generate-policies with conflicting size options");
+
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("cannot be used with"));
 }
 
 #[test]
