@@ -70,7 +70,7 @@ git log --grep="^fix:" --oneline
 
 ### 2. Update Version
 
-Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in both `Cargo.toml` and `pyproject.toml`:
+Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in `Cargo.toml`, `pyproject.toml` and `package.json`:
 
 ```bash
 # Edit Cargo.toml - update version field under [workspace.package]
@@ -78,6 +78,10 @@ Update the [version](https://doc.rust-lang.org/cargo/reference/semver.html) in b
 # To:     version = "X.Y.Z"
 
 # Edit pyproject.toml - update version field under [project]
+# Change: version = "0.1.0"
+# To:     version = "X.Y.Z"
+
+# Edit package.json - update version in iam-policy-autopilot-wasm/npm/package.json
 # Change: version = "0.1.0"
 # To:     version = "X.Y.Z"
 ```
