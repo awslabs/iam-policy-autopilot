@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fixed
+
+- Calls on a boto3 client or resource created with a non-literal service name, e.g. `boto3.client(name)`, are no longer dropped from generated policies.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
