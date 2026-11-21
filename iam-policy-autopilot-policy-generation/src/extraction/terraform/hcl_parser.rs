@@ -35,9 +35,17 @@ impl TerraformResources {
         let count_before = self.len();
 
         for tf_file in &tf_files {
+            if let Some(path) = super::normalized_source(tf_file) {
+                self.local_files.entry(path).or_default();
+            }
             match Self::parse_file(tf_file) {
                 Ok(file_result) => self.merge(file_result),
                 Err(e) => {
+                    if let Some(dir) = super::normalized_source(tf_file)
+                        .and_then(|p| p.parent().map(Path::to_path_buf))
+                    {
+                        self.failed_local_dirs.insert(dir);
+                    }
                     let warning = format!("{}: {e}", tf_file.display());
                     log::warn!("Failed to parse Terraform file: {warning}");
                     self.add_warning(warning);
@@ -67,9 +75,17 @@ impl TerraformResources {
         let count_before = self.len();
 
         for tf_file in files {
+            if let Some(path) = super::normalized_source(tf_file) {
+                self.local_files.entry(path).or_default();
+            }
             match Self::parse_file(tf_file) {
                 Ok(file_result) => self.merge(file_result),
                 Err(e) => {
+                    if let Some(dir) = super::normalized_source(tf_file)
+                        .and_then(|p| p.parent().map(Path::to_path_buf))
+                    {
+                        self.failed_local_dirs.insert(dir);
+                    }
                     let warning = format!("{}: {e}", tf_file.display());
                     log::warn!("Failed to parse Terraform file: {warning}");
                     self.add_warning(warning);
@@ -104,6 +120,24 @@ fn parse_terraform_content(content: &str, source_path: &Path) -> Result<Terrafor
 
     for structure in body {
         if let hcl::Structure::Block(block) = structure {
+            if block.identifier.as_str() == "locals" && block.labels.is_empty() {
+                if let Some(path) = super::normalized_source(source_path) {
+                    let locals = result.local_files.entry(path).or_default();
+                    for item in &block.body {
+                        if let hcl::Structure::Attribute(attr) = item {
+                            let value = match &attr.expr {
+                                hcl::Expression::String(s)
+                                    if !s.contains("${") && !s.contains("%{") =>
+                                {
+                                    Some(s.clone())
+                                }
+                                _ => None,
+                            };
+                            locals.push((attr.key.as_str().to_string(), value));
+                        }
+                    }
+                }
+            }
             if block.identifier.as_str() == "resource" {
                 if let Some(resource) = extract_resource_block(&block, source_path, content) {
                     result.insert(resource);
@@ -186,6 +220,13 @@ fn extract_block_attributes(body: &hcl::Body) -> HashMap<String, AttributeValue>
 /// Plain string literals become `Literal`; everything else becomes `Expression`.
 fn expression_to_attribute_value(expr: &hcl::Expression) -> AttributeValue {
     match expr {
+        hcl::Expression::Traversal(traversal) if matches!(&traversal.expr, hcl::Expression::Variable(v) if v.as_str() == "local") => {
+            if let [hcl::expr::TraversalOperator::GetAttr(name)] = traversal.operators.as_slice() {
+                AttributeValue::LocalReference(name.as_str().to_string())
+            } else {
+                AttributeValue::Expression(format!("{expr}"))
+            }
+        }
         hcl::Expression::String(s) => {
             // Check if the string contains interpolation markers
             if s.contains("${") || s.contains("%{") {
@@ -293,6 +334,184 @@ mod tests {
         /// Expected location (None = don't check).
         /// When provided, validates line and column positions.
         expected_location: Option<(usize, usize, usize, usize)>, // (start_line, start_col, end_line, end_col)
+    }
+
+    #[test]
+    fn local_declarations_resolve_only_unambiguous_plain_strings() {
+        for (declarations, reference, expected) in [
+            (
+                "bucket_name = \"bucket-a\"",
+                "local.bucket_name",
+                Some("bucket-a"),
+            ),
+            ("bucket_name = var.name", "local.bucket_name", None),
+            ("bucket_name = local.other", "local.bucket_name", None),
+            ("other = \"bucket-a\"", "local.bucket_name", None),
+            (
+                "bucket_name = \"bucket-a\"\n}\nlocals {\n bucket_name = var.name",
+                "local.bucket_name",
+                None,
+            ),
+            (
+                "bucket_name = \"bucket-a\"",
+                "local.bucket_name.value",
+                None,
+            ),
+            ("bucket_name = \"bucket-a\"", "local[\"bucket_name\"]", None),
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("main.tf"),
+                format!("resource \"aws_s3_bucket\" \"data\" {{\n bucket = {reference}\n}}\n"),
+            )
+            .unwrap();
+            std::fs::write(
+                dir.path().join("locals.tf"),
+                format!("locals {{\n {declarations}\n}}\n"),
+            )
+            .unwrap();
+            let mut result = TerraformResources::default();
+            result.parse_directory(dir.path()).unwrap();
+            assert!(
+                result.warnings().is_empty(),
+                "unexpected parse failure: {:?}",
+                result.warnings()
+            );
+            result.resolve_local_references();
+            let actual = &result.get("aws_s3_bucket", "data").unwrap().attributes["bucket"];
+            match expected {
+                Some(value) => assert_eq!(
+                    actual,
+                    &AttributeValue::Literal(value.into()),
+                    "{reference}, {declarations}"
+                ),
+                None => assert!(
+                    !matches!(actual, AttributeValue::Literal(_)),
+                    "{reference}, {declarations}: {actual:?}"
+                ),
+            }
+        }
+    }
+
+    #[test]
+    fn rejected_sibling_disables_only_its_module_for_both_ingestion_modes() {
+        for directory_input in [true, false] {
+            let dir = tempfile::tempdir().unwrap();
+            let a = dir.path().join("a");
+            let b = dir.path().join("b");
+            std::fs::create_dir_all(&a).unwrap();
+            std::fs::create_dir_all(&b).unwrap();
+            for (module, name) in [(&a, "a"), (&b, "b")] {
+                std::fs::write(module.join("main.tf"), format!("resource \"aws_s3_bucket\" \"{name}\" {{\n bucket = local.bucket_name\n}}\nlocals {{\n bucket_name = \"bucket-{name}\"\n}}\n")).unwrap();
+            }
+            std::fs::write(
+                a.join("bad.tf"),
+                "locals {\n bucket_name = \"duplicate\"\n bucket_name = var.name\n}\n",
+            )
+            .unwrap();
+            let mut result = TerraformResources::default();
+            if directory_input {
+                result.parse_directory(dir.path()).unwrap();
+            } else {
+                result
+                    .parse_files(&[a.join("main.tf"), a.join("bad.tf"), b.join("main.tf")])
+                    .unwrap();
+            }
+            assert_eq!(result.warnings().len(), 1);
+            result.resolve_local_references();
+            assert_eq!(
+                result.get("aws_s3_bucket", "a").unwrap().attributes["bucket"],
+                AttributeValue::LocalReference("bucket_name".into())
+            );
+            assert_eq!(
+                result.get("aws_s3_bucket", "b").unwrap().attributes["bucket"],
+                AttributeValue::Literal("bucket-b".into())
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_utf8_override_filename_disables_local_binding() {
+        use std::os::unix::ffi::OsStringExt;
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.tf"), "locals {\n name = \"bucket-a\"\n}\nresource \"aws_s3_bucket\" \"data\" {\n bucket = local.name\n}\n").unwrap();
+        let name = std::ffi::OsString::from_vec(b"\xff_override.tf".to_vec());
+        let mut result = TerraformResources::default();
+        result.parse_directory(dir.path()).unwrap();
+        result
+            .local_files
+            .insert(dir.path().canonicalize().unwrap().join(name), Vec::new());
+        result.resolve_local_references();
+        assert_eq!(
+            result.get("aws_s3_bucket", "data").unwrap().attributes["bucket"],
+            AttributeValue::LocalReference("name".into())
+        );
+    }
+
+    #[test]
+    fn local_files_are_deduplicated_and_overrides_disable_binding() {
+        for override_name in [None, Some("override.tf"), Some("extra_override.tf")] {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(
+                dir.path().join("main.tf"),
+                "resource \"aws_s3_bucket\" \"data\" {\n bucket = local.bucket_name\n}\n",
+            )
+            .unwrap();
+            let locals = dir.path().join("locals.tf");
+            std::fs::write(&locals, "locals {\n bucket_name = \"bucket-a\"\n}\n").unwrap();
+            if let Some(name) = override_name {
+                std::fs::write(dir.path().join(name), "").unwrap();
+            }
+            let mut result = TerraformResources::default();
+            result.parse_directory(dir.path()).unwrap();
+            result
+                .parse_files(&[dir.path().join(".").join("locals.tf")])
+                .unwrap();
+            result.resolve_local_references();
+            let actual = &result.get("aws_s3_bucket", "data").unwrap().attributes["bucket"];
+            if override_name.is_some() {
+                assert_eq!(
+                    actual,
+                    &AttributeValue::LocalReference("bucket_name".into())
+                );
+            } else {
+                assert_eq!(actual, &AttributeValue::Literal("bucket-a".into()));
+            }
+        }
+    }
+
+    #[test]
+    fn locals_are_scoped_to_modules_and_collisions_never_bind() {
+        for reversed in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let a = dir.path().join("a");
+            let b = dir.path().join("b");
+            std::fs::create_dir_all(&a).unwrap();
+            std::fs::create_dir_all(&b).unwrap();
+            for (module, value, other) in [(&a, "bucket-a", "one"), (&b, "bucket-b", "two")] {
+                std::fs::write(module.join("main.tf"), format!("locals {{\n name = \"{value}\"\n}}\nresource \"aws_s3_bucket\" \"shared\" {{\n bucket = local.name\n}}\nresource \"aws_s3_bucket\" \"{other}\" {{\n bucket = local.name\n}}\n")).unwrap();
+            }
+            let mut paths = vec![a.join("main.tf"), b.join("main.tf")];
+            if reversed {
+                paths.reverse();
+            }
+            let mut result = TerraformResources::default();
+            result.parse_files(&paths).unwrap();
+            result.resolve_local_references();
+            assert_eq!(
+                result.get("aws_s3_bucket", "shared").unwrap().attributes["bucket"],
+                AttributeValue::LocalReference("name".into())
+            );
+            assert_eq!(
+                result.get("aws_s3_bucket", "one").unwrap().attributes["bucket"],
+                AttributeValue::Literal("bucket-a".into())
+            );
+            assert_eq!(
+                result.get("aws_s3_bucket", "two").unwrap().attributes["bucket"],
+                AttributeValue::Literal("bucket-b".into())
+            );
+        }
     }
 
     /// Shared assertion: parse HCL content and compare against expected resources.
