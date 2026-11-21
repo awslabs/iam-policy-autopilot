@@ -6,7 +6,8 @@
 //! - Resolve `var.xxx` references from defaults and `.tfvars` files
 //! - Parse `terraform.tfstate` files for deployed resource ARNs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -47,6 +48,7 @@ pub(crate) enum AttributeValue {
     Literal(String),
     /// An unresolvable expression preserved as-is (e.g., `"${var.prefix}-bucket"`)
     Expression(String),
+    LocalReference(String),
 }
 
 impl AttributeValue {
@@ -57,7 +59,7 @@ impl AttributeValue {
     #[cfg(test)]
     pub(crate) fn as_str(&self) -> &str {
         match self {
-            Self::Literal(s) | Self::Expression(s) => s,
+            Self::Literal(s) | Self::Expression(s) | Self::LocalReference(s) => s,
         }
     }
 
@@ -97,15 +99,78 @@ pub(crate) struct TerraformResources {
     resources: HashMap<(String, String), TerraformResource>,
     /// Warnings encountered during parsing (e.g., syntax errors in individual files)
     warnings: Vec<String>,
+    local_files: HashMap<PathBuf, Vec<(String, Option<String>)>>,
+    collisions: HashSet<(String, String)>,
+    failed_local_dirs: HashSet<PathBuf>,
+}
+
+fn normalized_source(path: &Path) -> Option<PathBuf> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    Some(parent.canonicalize().ok()?.join(path.file_name()?))
 }
 
 impl TerraformResources {
+    pub(crate) fn resolve_local_references(&mut self) {
+        let mut declarations: HashMap<PathBuf, HashMap<String, Option<String>>> = HashMap::new();
+        let mut overrides = HashSet::new();
+        for (file, values) in &self.local_files {
+            let Some(dir) = file.parent() else { continue };
+            let Some(name) = file.file_name() else {
+                continue;
+            };
+            let name = name.as_encoded_bytes();
+            if name == b"override.tf" || name.ends_with(b"_override.tf") {
+                overrides.insert(dir.to_path_buf());
+            }
+            let locals = declarations.entry(dir.to_path_buf()).or_default();
+            for (name, value) in values {
+                use std::collections::hash_map::Entry;
+                match locals.entry(name.clone()) {
+                    Entry::Vacant(entry) => {
+                        entry.insert(value.clone());
+                    }
+                    Entry::Occupied(mut entry) => {
+                        entry.insert(None);
+                    }
+                }
+            }
+        }
+        for (key, resource) in &mut self.resources {
+            if self.collisions.contains(key) {
+                continue;
+            }
+            let Some(file) = normalized_source(&resource.location.file_path) else {
+                continue;
+            };
+            let Some(dir) = file.parent() else { continue };
+            if overrides.contains(dir) || self.failed_local_dirs.contains(dir) {
+                continue;
+            }
+            let Some(locals) = declarations.get(dir) else {
+                continue;
+            };
+            for attr in resource.attributes.values_mut() {
+                if let AttributeValue::LocalReference(name) = attr {
+                    if let Some(Some(value)) = locals.get(name) {
+                        *attr = AttributeValue::Literal(value.clone());
+                    }
+                }
+            }
+        }
+    }
+
     /// Create an empty collection.
     #[must_use]
     pub(crate) fn default() -> Self {
         Self {
             resources: HashMap::new(),
             warnings: Vec::new(),
+            local_files: HashMap::new(),
+            collisions: HashSet::new(),
+            failed_local_dirs: HashSet::new(),
         }
     }
 
@@ -170,6 +235,21 @@ impl TerraformResources {
     /// contain a resource with the same `(type, local_name)` key, the one
     /// from `other` wins (last-write-wins).
     pub(crate) fn merge(&mut self, other: Self) {
+        for (key, resource) in &other.resources {
+            if let Some(existing) = self.resources.get(key) {
+                let left = normalized_source(&existing.location.file_path);
+                let right = normalized_source(&resource.location.file_path);
+                if left.as_ref().and_then(|p| p.parent()) != right.as_ref().and_then(|p| p.parent())
+                    || left.is_none()
+                    || right.is_none()
+                {
+                    self.collisions.insert(key.clone());
+                }
+            }
+        }
+        self.collisions.extend(other.collisions);
+        self.failed_local_dirs.extend(other.failed_local_dirs);
+        self.local_files.extend(other.local_files);
         self.resources.extend(other.resources);
         self.warnings.extend(other.warnings);
     }

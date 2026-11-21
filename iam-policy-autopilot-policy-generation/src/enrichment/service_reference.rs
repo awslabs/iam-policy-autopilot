@@ -410,6 +410,28 @@ impl RemoteServiceReferenceLoader {
         Ok(loader)
     }
 
+    #[cfg(test)]
+    pub(crate) async fn s3_loader_for_tests() -> crate::errors::Result<Self> {
+        let loader = Self::empty_loader_for_tests()?;
+        loader
+            .cache
+            .insert(
+                "s3".into(),
+                ServiceReference {
+                    actions: HashMap::new(),
+                    service_name: "s3".into(),
+                    resources: HashMap::from([(
+                        "bucket".into(),
+                        vec!["arn:${Partition}:s3:::${BucketName}".into()],
+                    )]),
+                    operation_to_authorized_actions: None,
+                    boto3_method_to_operation: HashMap::new(),
+                },
+            )
+            .await;
+        Ok(loader)
+    }
+
     /// Sets a custom mapping URL (e.g., a mock server) and resets the cached mapping
     /// so the next call fetches from the new URL.
     #[cfg(test)]

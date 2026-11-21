@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Fixed
+
+- Terraform resource names can now resolve direct references to unambiguous string locals in the same module when narrowing policy ARNs.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
