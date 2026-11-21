@@ -39,3 +39,5 @@ pub(crate) const CALL: &str = "call";
 
 /// An attribute access node (e.g., `obj.attr`)
 pub(crate) const ATTRIBUTE: &str = "attribute";
+
+pub(crate) const RETURN_STATEMENT: &str = "return_statement";

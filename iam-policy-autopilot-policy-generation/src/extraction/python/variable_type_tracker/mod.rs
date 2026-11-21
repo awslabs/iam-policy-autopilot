@@ -6,7 +6,6 @@
 //!
 //! ## Not Yet Supported
 //!
-//! - **Function return values**: `def create_client(): return boto3.client('s3')`
 //! - **Class attributes**: `self.client = boto3.client('s3')`
 
 mod lookup;

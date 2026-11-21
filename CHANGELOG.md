@@ -1,5 +1,9 @@
 ## Unreleased
 
+### Added
+
+- Variable type tracking follows boto3 clients and resources returned from top-level functions in the same file, e.g. `client = create_client()`. (#234)
+
 ### Fixed
 
 - Resources for an action that belongs to a different service than the operation authorizing it are now taken from the action's own service reference. Previously they were looked up in the operation's service reference by bare action name, so `iam:PassRole` fell back to `Resource: "*"` and `s3-object-lambda:GetObject` or `s3express:PutLifecycleConfiguration` were scoped to S3 general purpose bucket ARNs that never match those actions.
