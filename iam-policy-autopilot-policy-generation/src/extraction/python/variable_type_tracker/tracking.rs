@@ -1,6 +1,7 @@
 use super::types::{SdkObjectKind, VariableTypeInfo, VariableTypeTracker};
+use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::python::node_kinds;
-use crate::extraction::AstWithSourceFile;
+use crate::extraction::{AstWithSourceFile, ParameterValue};
 use ast_grep_language::Python;
 use std::collections::{HashMap, HashSet};
 
@@ -185,8 +186,6 @@ impl VariableTypeTracker {
         }
     }
 
-    /// Extract the first positional string argument from a matched `$$$ARGS` list.
-    /// Skips keyword arguments and commas; returns the unquoted string content.
     fn extract_first_positional_string_arg(
         env: &ast_grep_core::meta_var::MetaVarEnv<ast_grep_core::tree_sitter::StrDoc<Python>>,
     ) -> Option<String> {
@@ -200,7 +199,10 @@ impl VariableTypeTracker {
             if arg_node.kind() == node_kinds::KEYWORD_ARGUMENT {
                 continue;
             }
-            return Some(Self::extract_string_literal(trimmed));
+            return match ArgumentExtractor::extract_parameter_value(trimmed) {
+                ParameterValue::Resolved(service) => Some(service),
+                _ => None,
+            };
         }
         None
     }
@@ -854,20 +856,6 @@ impl VariableTypeTracker {
                 );
             }
         }
-    }
-
-    /// Extract string content from a string literal
-    ///
-    /// Handles both single and double quotes:
-    /// - `'s3'` -> `s3`
-    /// - `"dynamodb"` -> `dynamodb`
-    pub(super) fn extract_string_literal(raw: &str) -> String {
-        raw.trim()
-            .trim_start_matches('\'')
-            .trim_start_matches('"')
-            .trim_end_matches('\'')
-            .trim_end_matches('"')
-            .to_string()
     }
 }
 
