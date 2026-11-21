@@ -12,7 +12,9 @@ use ast_grep_core::matcher::Pattern;
 use ast_grep_core::{tree_sitter, MatchStrictness, NodeMatch};
 use ast_grep_core::{Doc, Node};
 
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 fn parse_object_literal(obj_text: &str) -> HashMap<String, String> {
     let mut result = HashMap::new();
@@ -100,6 +102,49 @@ fn parse_key_value_pair(pair: &str, result: &mut HashMap<String, String>) {
     }
 }
 
+#[derive(Clone)]
+struct FixedPatterns {
+    named_import: Pattern,
+    wildcard_import: Pattern,
+    requires: [Pattern; 3],
+    client_instantiations: [Pattern; 2],
+    method_call: Pattern,
+}
+
+impl FixedPatterns {
+    fn new(language: ast_grep_language::SupportLang) -> Self {
+        let build = |pattern: &str| {
+            Pattern::new(pattern, language).with_strictness(MatchStrictness::Relaxed)
+        };
+        Self {
+            named_import: build("import $IMPORTS from $MODULE"),
+            wildcard_import: build("import * as $NAMESPACE from $MODULE"),
+            requires: [
+                build("const $IMPORTS = require($MODULE)"),
+                build("let $IMPORTS = require($MODULE)"),
+                build("var $IMPORTS = require($MODULE)"),
+            ],
+            client_instantiations: [
+                build("const $VAR = new $CLIENT($ARGS)"),
+                build("let $VAR = new $CLIENT($ARGS)"),
+            ],
+            method_call: build("$VAR.$METHOD($ARGS)"),
+        }
+    }
+
+    fn for_language(language: ast_grep_language::SupportLang) -> Cow<'static, Self> {
+        static JAVASCRIPT: OnceLock<FixedPatterns> = OnceLock::new();
+        static TYPESCRIPT: OnceLock<FixedPatterns> = OnceLock::new();
+
+        let shared = match language {
+            ast_grep_language::SupportLang::JavaScript => &JAVASCRIPT,
+            ast_grep_language::SupportLang::TypeScript => &TYPESCRIPT,
+            _ => return Cow::Owned(Self::new(language)),
+        };
+        Cow::Borrowed(shared.get_or_init(|| Self::new(language)))
+    }
+}
+
 /// Core AST scanner for JavaScript/TypeScript AWS SDK usage patterns
 pub(crate) struct ASTScanner<T>
 where
@@ -108,6 +153,7 @@ where
     /// Pre-built AST grep root passed from extractor
     pub(crate) ast_grep: AstWithSourceFile<T>,
     pub(crate) language: ast_grep_language::SupportLang,
+    fixed: Cow<'static, FixedPatterns>,
 }
 
 impl<T> ASTScanner<T>
@@ -119,7 +165,11 @@ where
         ast_grep: AstWithSourceFile<T>,
         language: ast_grep_language::SupportLang,
     ) -> Self {
-        Self { ast_grep, language }
+        Self {
+            ast_grep,
+            language,
+            fixed: FixedPatterns::for_language(language),
+        }
     }
 
     fn parse_and_add_imports(
@@ -184,13 +234,14 @@ where
         &self,
         pattern: &str,
     ) -> Result<Vec<NodeMatch<'_, tree_sitter::StrDoc<T>>>, String> {
-        let root = self.ast_grep.ast.root();
-
-        // Build pattern with relaxed strictness to handle inline comments
         let pattern_obj =
             Pattern::new(pattern, self.language).with_strictness(MatchStrictness::Relaxed);
 
-        Ok(root.find_all(pattern_obj).collect())
+        Ok(self.find_all_with(&pattern_obj))
+    }
+
+    fn find_all_with(&self, pattern: &Pattern) -> Vec<NodeMatch<'_, tree_sitter::StrDoc<T>>> {
+        self.ast_grep.ast.root().find_all(pattern).collect()
     }
 
     /// Find Command instantiation and extract its arguments
@@ -404,10 +455,10 @@ where
     }
 
     /// Scan AWS import/require statements generically
-    fn scan_aws_statements(&self, pattern: &str) -> Result<Vec<SublibraryInfo>, String> {
+    fn scan_aws_statements(&self, pattern: &Pattern) -> Result<Vec<SublibraryInfo>, String> {
         let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
 
-        let matches = self.find_all_matches(pattern)?;
+        let matches = self.find_all_with(pattern);
         self.process_import_matches(matches, &mut sublibrary_data)?;
 
         Ok(sublibrary_data.into_values().collect())
@@ -456,11 +507,11 @@ where
         let mut sublibrary_data: HashMap<String, SublibraryInfo> = HashMap::new();
 
         // Named imports: import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
-        let named_matches = self.find_all_matches("import $IMPORTS from $MODULE")?;
+        let named_matches = self.find_all_with(&self.fixed.named_import);
         self.process_import_matches(named_matches, &mut sublibrary_data)?;
 
         // Wildcard imports: import * as S3 from '@aws-sdk/client-s3'
-        let wildcard_matches = self.find_all_matches("import * as $NAMESPACE from $MODULE")?;
+        let wildcard_matches = self.find_all_with(&self.fixed.wildcard_import);
         self.process_wildcard_import_matches(wildcard_matches, &mut sublibrary_data);
 
         Ok(sublibrary_data.into_values().collect())
@@ -499,16 +550,9 @@ where
 
     /// Scan for AWS SDK CommonJS requires
     pub(crate) fn scan_aws_requires(&mut self) -> Result<Vec<SublibraryInfo>, String> {
-        // Support multiple require patterns (const, let, var - both destructuring and default imports)
-        const REQUIRE_PATTERNS: &[&str] = &[
-            "const $IMPORTS = require($MODULE)", // Destructuring: const { S3Client } = require(...)
-            "let $IMPORTS = require($MODULE)",   // Destructuring: let { S3Client } = require(...)
-            "var $IMPORTS = require($MODULE)", // Destructuring: var { S3Client } = require(...) [legacy]
-        ];
-
         let mut all_requires = Vec::new();
 
-        for pattern in REQUIRE_PATTERNS {
+        for pattern in &self.fixed.requires {
             let mut requires = self.scan_aws_statements(pattern)?;
             all_requires.append(&mut requires);
         }
@@ -564,12 +608,6 @@ where
     pub(crate) fn scan_client_instantiations(
         &mut self,
     ) -> Result<Vec<ClientInstantiation>, String> {
-        // Patterns to match client instantiations
-        const PATTERNS: &[&str] = &[
-            "const $VAR = new $CLIENT($ARGS)",
-            "let $VAR = new $CLIENT($ARGS)",
-        ];
-
         let client_info = self.get_valid_client_types()?;
 
         if client_info.is_empty() {
@@ -578,8 +616,8 @@ where
 
         let mut results = Vec::new();
 
-        for pattern in PATTERNS {
-            let matches = self.find_all_matches(pattern)?;
+        for pattern in &self.fixed.client_instantiations {
+            let matches = self.find_all_with(pattern);
             Self::process_client_instantiation_matches(
                 matches,
                 &client_info.client_types,
@@ -725,7 +763,7 @@ where
             .collect();
 
         // Single pattern to match method calls (covers both awaited and non-awaited)
-        let matches = self.find_all_matches("$VAR.$METHOD($ARGS)")?;
+        let matches = self.find_all_with(&self.fixed.method_call);
         self.process_method_call_matches(matches, &client_info_map, &mut results)?;
 
         Ok(results)
