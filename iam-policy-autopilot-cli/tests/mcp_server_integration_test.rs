@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use iam_policy_autopilot_common::telemetry::TELEMETRY_ENV_VAR;
+
 use rmcp::model::InitializeRequestParams;
 use rmcp::RoleClient;
 use rmcp::{
@@ -14,29 +16,14 @@ use tokio::net::TcpStream;
 use tokio::process::{Child, Command};
 use tokio::time::{sleep, Duration};
 
-/// Resolve the `iam-policy-autopilot` CLI binary from the test executable's own
-/// location instead of hardcoding `../target/debug`. The integration test binary
-/// lives in `target/<profile>/deps/` (or `target/llvm-cov-target/<profile>/deps/`
-/// under `cargo llvm-cov`), and the CLI binary is built into the sibling
-/// `target/<profile>/` directory, so deriving the path keeps this working under
-/// coverage builds that use a different target dir.
-fn cli_binary_path() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().expect("failed to locate test executable");
-    path.pop(); // drop the test binary file name -> .../deps
-    if path.ends_with("deps") {
-        path.pop(); // -> .../<profile>
-    }
-    path.push(format!(
-        "iam-policy-autopilot{}",
-        std::env::consts::EXE_SUFFIX
-    ));
-    path
-}
+const CLI_BIN: &str = env!("CARGO_BIN_EXE_iam-policy-autopilot");
 
 async fn setup_stdio() -> RunningService<RoleClient, ()> {
-    // Create MCP client using TokioChildProcess with debug binary
-    let mut command = Command::new(cli_binary_path());
-    command.args(&["mcp-server"]);
+    let mut command = Command::new(CLI_BIN);
+    command
+        .args(["mcp-server"])
+        .env(TELEMETRY_ENV_VAR, "true")
+        .kill_on_drop(true);
 
     ().serve(
         TokioChildProcess::new(command)
@@ -64,10 +51,9 @@ async fn setup_http_with_bind_address(
     port: u16,
     bind_address: &str,
 ) -> (RunningService<RoleClient, InitializeRequestParams>, Child) {
-    // Start HTTP server as a background process using debug binary
-    let mut command = Command::new(cli_binary_path());
+    let mut command = Command::new(CLI_BIN);
     command
-        .args(&[
+        .args([
             "mcp-server",
             "--transport",
             "http",
@@ -76,20 +62,19 @@ async fn setup_http_with_bind_address(
             "--bind-address",
             bind_address,
         ])
+        .env(TELEMETRY_ENV_VAR, "true")
+        .kill_on_drop(true)
         .stderr(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped());
 
     let server_process = command.spawn().expect("Failed to start HTTP server");
 
-    // Wait for server to be ready with proper timeout
     if !wait_for_server_ready(bind_address, port, 100).await {
         panic!("Server failed to start within timeout period on {bind_address}:{port}",);
     }
 
-    // Give a bit more time for the MCP service to be fully initialized
     sleep(Duration::from_millis(500)).await;
 
-    // Create HTTP client transport
     let transport =
         StreamableHttpClientTransport::from_uri(format!("http://{bind_address}:{port}/mcp"));
     let client_info = ClientInfo::new(
@@ -110,19 +95,15 @@ async fn setup_http() -> (RunningService<RoleClient, InitializeRequestParams>, C
 async fn test_stdio_list_tools() {
     let client = setup_stdio().await;
 
-    // Call list_tools to get available tools
     let tools_result = client.list_tools(None).await.unwrap();
 
-    // Verify we have the expected tools
     assert_eq!(tools_result.tools.len(), 3);
 
-    // Check that all expected tools are present
     let tool_names: Vec<&str> = tools_result.tools.iter().map(|t| t.name.as_ref()).collect();
     assert!(tool_names.contains(&"generate_application_policies"));
     assert!(tool_names.contains(&"generate_policy_for_access_denied"));
     assert!(tool_names.contains(&"fix_access_denied"));
 
-    // Verify tool descriptions are present
     for tool in &tools_result.tools {
         if let Some(description) = &tool.description {
             assert!(
@@ -138,9 +119,7 @@ async fn test_stdio_list_tools() {
 
 #[tokio::test]
 async fn test_stdio_generate_policy() {
-    let test_file = std::env::current_dir()
-        .unwrap()
-        .join(Path::new("tests/test_data/lambda.py"));
+    let test_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_data/lambda.py");
 
     let client = setup_stdio().await;
     let tool_result = client
@@ -188,13 +167,10 @@ async fn test_stdio_generate_policy_for_access_denied() {
 async fn test_http_list_tools() {
     let (client, mut server_process) = setup_http().await;
 
-    // Call list_tools to get available tools
     let tools_result = client.list_tools(None).await.unwrap();
 
-    // Verify we have the expected tools
     assert_eq!(tools_result.tools.len(), 3);
 
-    // Check that all expected tools are present
     let tool_names: Vec<&str> = tools_result.tools.iter().map(|t| t.name.as_ref()).collect();
 
     println!("tool_names: {tool_names:#?}");
@@ -202,7 +178,6 @@ async fn test_http_list_tools() {
     assert!(tool_names.contains(&"generate_policy_for_access_denied"));
     assert!(tool_names.contains(&"fix_access_denied"));
 
-    // Verify tool descriptions are present
     for tool in &tools_result.tools {
         if let Some(description) = &tool.description {
             assert!(
@@ -215,16 +190,13 @@ async fn test_http_list_tools() {
         }
     }
 
-    // Clean up: kill the server process
     let _ = server_process.kill().await;
 }
 
 #[tokio::test]
 #[serial]
 async fn test_http_generate_policy() {
-    let test_file = std::env::current_dir()
-        .unwrap()
-        .join(Path::new("tests/test_data/lambda.py"));
+    let test_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/test_data/lambda.py");
 
     let (client, mut server_process) = setup_http_with_bind_address(8002, "127.0.0.1").await;
     let tool_result = client
@@ -245,7 +217,6 @@ async fn test_http_generate_policy() {
 
     assert_eq!(tool_result.is_error, Some(false));
 
-    // Clean up: kill the server process
     let _ = server_process.kill().await;
 }
 
@@ -270,7 +241,6 @@ async fn test_http_generate_policy_for_access_denied() {
 
     assert_eq!(tool_result.is_error, Some(false));
 
-    // Clean up: kill the server process
     let _ = server_process.start_kill();
     let _ = server_process.wait().await;
 }
@@ -282,7 +252,6 @@ async fn test_http_custom_bind_address_list_tools() {
 
     let tools_result = client.list_tools(None).await.unwrap();
 
-    // Verify we have the expected tools
     assert_eq!(tools_result.tools.len(), 3);
 
     let tool_names: Vec<&str> = tools_result.tools.iter().map(|t| t.name.as_ref()).collect();
@@ -290,6 +259,5 @@ async fn test_http_custom_bind_address_list_tools() {
     assert!(tool_names.contains(&"generate_policy_for_access_denied"));
     assert!(tool_names.contains(&"fix_access_denied"));
 
-    // Clean up
     let _ = server_process.kill().await;
 }
