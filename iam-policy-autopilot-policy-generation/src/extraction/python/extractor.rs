@@ -367,4 +367,27 @@ cloudwatch_client.put_metric_alarm(
             panic!("Expected metadata to be present");
         }
     }
+
+    #[tokio::test]
+    async fn test_return_value_narrows_possible_services() {
+        let source_code = r#"
+import boto3
+
+def create_client():
+    return boto3.client('s3')
+
+client = create_client()
+client.get_object(Bucket='b', Key='k')
+"#;
+        let source_file =
+            SourceFile::with_language(PathBuf::new(), source_code.to_string(), Language::Python);
+        let result = PythonExtractor::new().parse(&source_file).await;
+
+        let call = result
+            .method_calls_ref()
+            .iter()
+            .find(|call| call.name == "get_object")
+            .unwrap();
+        assert_eq!(call.possible_services, vec!["s3".to_string()]);
+    }
 }
