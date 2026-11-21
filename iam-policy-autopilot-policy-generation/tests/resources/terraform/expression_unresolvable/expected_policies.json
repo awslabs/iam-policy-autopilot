@@ -27,8 +27,7 @@
             ],
             "Effect": "Allow",
             "Resource": [
-              "arn:aws:s3:::*/*",
-              "arn:aws:s3:us-east-1:123456789012:accesspoint/*/object/*"
+              "arn:aws:s3-object-lambda:us-east-1:123456789012:accesspoint/*"
             ],
             "Sid": "AllowS3GetObject"
           },
