@@ -103,6 +103,10 @@ http-body-util = "0.1"
 pem = "3"
 iam-policy-autopilot-policy-generation = { path = ".", features = ["integ-test"]}
 
+[[bench]]
+name = "js_ts_extraction"
+harness = false
+
 # Documentation configuration
 [package.metadata.docs.rs]
 all-features = true
