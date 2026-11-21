@@ -42,11 +42,6 @@ iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-polic
 iam-policy-autopilot-common = { path = "../iam-policy-autopilot-common" }
 serial_test.workspace = true
 reqwest.workspace = true
-rstest.workspace = true
-rmcp = { version = "^1.6" , features = [
-    "transport-child-process",
-    "transport-streamable-http-client-reqwest",
-]}
 tokio = {version = "^1", features = ["full"]}
 
 [lints]

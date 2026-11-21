@@ -1,41 +1,17 @@
-//! Integration tests for telemetry notice via MCP `notifications/message` protocol.
-//!
-//! Verifies that the MCP server sends the telemetry notice after the handshake
-//! only when the user hasn't made an explicit telemetry choice, and suppresses
-//! it when they have (via config file or env var).
-
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 
-use iam_policy_autopilot_common::telemetry::{TelemetryChoice, TELEMETRY_NOTICE};
+use iam_policy_autopilot_common::telemetry::{
+    TelemetryChoice, TelemetryConfig, TELEMETRY_ENV_VAR, TELEMETRY_NOTICE,
+};
 use rmcp::{
     handler::client::ClientHandler, model::LoggingMessageNotificationParam,
     service::NotificationContext, transport::TokioChildProcess, RmcpError, RoleClient, ServiceExt,
 };
 use rstest::rstest;
-use serial_test::serial;
 use tokio::process::Command;
 use tokio::time::{sleep, Duration};
 
-/// Resolve the `iam-policy-autopilot` CLI binary from the test executable's own
-/// location instead of hardcoding `../target/debug`. The integration test binary
-/// lives in `target/<profile>/deps/` (or `target/llvm-cov-target/<profile>/deps/`
-/// under `cargo llvm-cov`), and the CLI binary is built into the sibling
-/// `target/<profile>/` directory, so deriving the path keeps this working under
-/// coverage builds that use a different target dir.
-fn cli_binary_path() -> std::path::PathBuf {
-    let mut path = std::env::current_exe().expect("failed to locate test executable");
-    path.pop(); // drop the test binary file name -> .../deps
-    if path.ends_with("deps") {
-        path.pop(); // -> .../<profile>
-    }
-    path.push(format!(
-        "iam-policy-autopilot{}",
-        std::env::consts::EXE_SUFFIX
-    ));
-    path
-}
-
-/// A custom MCP client handler that captures `notifications/message` notifications.
 #[derive(Clone)]
 struct NotificationCapture {
     messages: Arc<Mutex<Vec<LoggingMessageNotificationParam>>>,
@@ -70,16 +46,18 @@ impl ClientHandler for NotificationCapture {
     }
 }
 
-/// Connect to the MCP server as a stdio child process, optionally setting an env var override.
 async fn connect_mcp_client(
+    home: &Path,
     env_override: Option<(&str, &str)>,
 ) -> (NotificationCapture, impl std::any::Any) {
     let capture = NotificationCapture::new();
 
-    let mut command = Command::new(cli_binary_path());
-    command.args(["mcp-server"]);
-    // Default: clear env var so config file choice takes effect
-    command.env_remove("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY");
+    let mut command = Command::new(env!("CARGO_BIN_EXE_iam-policy-autopilot"));
+    command
+        .args(["mcp-server"])
+        .env("HOME", home)
+        .env_remove(TELEMETRY_ENV_VAR)
+        .kill_on_drop(true);
 
     if let Some((key, value)) = env_override {
         command.env(key, value);
@@ -101,18 +79,27 @@ async fn connect_mcp_client(
 #[case::notice_sent_when_not_set(TelemetryChoice::NotSet, None, true)]
 #[case::notice_suppressed_when_disabled(TelemetryChoice::Disabled, None, false)]
 #[case::notice_suppressed_when_enabled(TelemetryChoice::Enabled, None, false)]
-#[case::env_var_disables_overrides_config(TelemetryChoice::NotSet, Some(("DISABLE_IAM_POLICY_AUTOPILOT_TELEMETRY", "true")), false)]
+#[case::env_var_disables_overrides_config(TelemetryChoice::NotSet, Some((TELEMETRY_ENV_VAR, "true")), false)]
 #[tokio::test]
-#[serial]
 async fn test_telemetry_notification(
     #[case] config_choice: TelemetryChoice,
     #[case] env_override: Option<(&str, &str)>,
     #[case] expect_notice: bool,
 ) {
-    // Set the persistent config choice (shared between test process and child server)
-    iam_policy_autopilot_common::telemetry::set_telemetry_choice(config_choice);
+    let home = tempfile::tempdir().unwrap();
+    let config_dir = home.path().join(".iam-policy-autopilot");
+    std::fs::create_dir(&config_dir).unwrap();
+    let config = TelemetryConfig {
+        installation_id: "00000000-0000-0000-0000-000000000000".into(),
+        telemetry_choice: config_choice,
+    };
+    std::fs::write(
+        config_dir.join("config.json"),
+        serde_json::to_vec(&config).unwrap(),
+    )
+    .unwrap();
 
-    let (capture, _client) = connect_mcp_client(env_override).await;
+    let (capture, _client) = connect_mcp_client(home.path(), env_override).await;
     let notice = capture.find_telemetry_notice();
 
     if expect_notice {
@@ -146,7 +133,4 @@ async fn test_telemetry_notification(
             capture.get_messages()
         );
     }
-
-    // Restore config to NotSet for subsequent tests
-    iam_policy_autopilot_common::telemetry::set_telemetry_choice(TelemetryChoice::NotSet);
 }
