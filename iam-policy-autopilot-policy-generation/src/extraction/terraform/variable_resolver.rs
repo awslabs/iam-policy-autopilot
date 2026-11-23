@@ -219,7 +219,7 @@ impl VariableContext {
     /// Returns `Some(Literal(...))` if fully resolved, `None` if unresolvable.
     pub(crate) fn try_resolve(&self, value: &AttributeValue) -> Option<AttributeValue> {
         match value {
-            AttributeValue::Literal(_) => None, // Already resolved
+            AttributeValue::Literal(_) | AttributeValue::LocalReference(_) => None,
             AttributeValue::Expression(expr) => {
                 let trimmed = expr.trim();
 
@@ -244,7 +244,6 @@ impl VariableContext {
                     return Some(AttributeValue::Expression(resolved));
                 }
 
-                // Case 3: local reference like `local.xxx` — not supported yet
                 None
             }
         }

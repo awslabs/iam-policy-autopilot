@@ -180,6 +180,7 @@ impl TerraformResourceResolver {
         } else {
             VariableContext::default()
         };
+        tf_result.resolve_local_references();
         var_ctx.resolve_attributes(&mut tf_result);
 
         debug!("Parsed {} Terraform resources", tf_result.len());
@@ -631,6 +632,7 @@ async fn resolve_terraform_resources<'a>(
                 if let Some(attr_value) = resource.attributes.get(&naming_attr) {
                     let resolved_value = match attr_value {
                         AttributeValue::Literal(s) => Some(s.clone()),
+                        AttributeValue::LocalReference(_) => None,
                         AttributeValue::Expression(_) => {
                             var_ctx.try_resolve(attr_value).and_then(|v| match v {
                                 AttributeValue::Literal(s) => Some(s),
@@ -835,6 +837,80 @@ mod tests {
 
     fn empty_var_ctx() -> VariableContext {
         VariableContext::default()
+    }
+
+    #[tokio::test]
+    async fn local_bucket_name_narrows_sdk_object_arn() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("main.tf"),
+            "resource \"aws_s3_bucket\" \"data\" {\n bucket = local.bucket_name\n}\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("locals.tf"),
+            "locals {\n bucket_name = \"my-app-data-bucket\"\n}\n",
+        )
+        .unwrap();
+        let loader = ServiceReferenceLoader::s3_loader_for_tests().await.unwrap();
+        let resolver = TerraformResourceResolver::new(Some(dir.path()), &[], &[], &[], &loader)
+            .await
+            .unwrap();
+        let sdk_call = make_sdk_call();
+        let calls = vec![EnrichedSdkMethodCall {
+            method_name: "get_object".into(),
+            service: "s3".into(),
+            actions: vec![Action::new(
+                "s3:GetObject".into(),
+                vec![Resource::new(
+                    "object".into(),
+                    Some(vec!["arn:aws:s3:::${BucketName}/${ObjectName}".into()]),
+                )],
+                vec![],
+                Explanation::default(),
+            )],
+            sdk_method_call: &sdk_call,
+        }];
+        let result = resolver.substitute_enriched_calls(&calls);
+        assert_eq!(
+            result[0].actions[0].resources[0]
+                .arn_patterns
+                .as_ref()
+                .unwrap(),
+            &["arn:aws:s3:::my-app-data-bucket/*"]
+        );
+        std::fs::write(
+            dir.path().join("duplicate.tf"),
+            "locals {\n bucket_name = var.name\n}\n",
+        )
+        .unwrap();
+        let resolver = TerraformResourceResolver::new(Some(dir.path()), &[], &[], &[], &loader)
+            .await
+            .unwrap();
+        assert!(resolver.warnings.is_empty());
+        let result = resolver.substitute_enriched_calls(&calls);
+        assert_eq!(
+            result[0].actions[0].resources[0]
+                .arn_patterns
+                .as_ref()
+                .unwrap(),
+            &["arn:aws:s3:::${BucketName}/${ObjectName}"]
+        );
+        std::fs::remove_file(dir.path().join("duplicate.tf")).unwrap();
+        let state = dir.path().join("terraform.tfstate");
+        std::fs::write(&state, r#"{"version":4,"resources":[{"mode":"managed","type":"aws_s3_bucket","name":"data","instances":[{"attributes":{"arn":"arn:aws:s3:::state-bucket"}}]}]}"#).unwrap();
+        let resolver =
+            TerraformResourceResolver::new(Some(dir.path()), &[], &[state], &[], &loader)
+                .await
+                .unwrap();
+        let result = resolver.substitute_enriched_calls(&calls);
+        assert_eq!(
+            result[0].actions[0].resources[0]
+                .arn_patterns
+                .as_ref()
+                .unwrap(),
+            &["arn:aws:s3:::state-bucket/*"]
+        );
     }
 
     fn make_sdk_call() -> SdkMethodCall {
