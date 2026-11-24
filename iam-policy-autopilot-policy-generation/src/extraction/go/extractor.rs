@@ -444,7 +444,7 @@ rule:
               pattern: $OBJ
     - has:
         field: arguments
-        pattern: $$$ARGS
+        pattern: $ARGS
         kind: argument_list
         ";
 
