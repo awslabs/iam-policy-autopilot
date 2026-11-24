@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use super::{Action, Context, EnrichedSdkMethodCall, Explanation, OperationKey, Reason, Resource};
 use crate::enrichment::operation_fas_map::{OperationFasMap, OperationFasMaps};
-use crate::enrichment::service_reference::ServiceReference;
+use crate::enrichment::service_reference::{AuthorizedAction, ServiceReference};
 use crate::enrichment::{Condition, Operation, ServiceReferenceLoader};
 use crate::errors::{ExtractorError, Result};
 use crate::service_configuration::ServiceConfiguration;
@@ -259,10 +259,12 @@ impl ResourceMatcher {
                             for action in &operation_to_authorized_action.authorized_actions {
                                 let action_name = action.name.clone();
                                 let enriched_resources = self
-                                    .find_resources_for_action_in_service_reference(
-                                        &action_name,
+                                    .find_resources_for_authorized_action(
+                                        action,
                                         &service_reference,
-                                    )?;
+                                        service_reference_loader,
+                                    )
+                                    .await?;
                                 let enriched_resources =
                                     self.apply_resource_cutoff(enriched_resources);
 
@@ -371,6 +373,44 @@ impl ResourceMatcher {
             vec![Resource::new("*".to_string(), None)]
         } else {
             resources
+        }
+    }
+
+    /// Find resources for an action authorized by an operation.
+    ///
+    /// An operation can authorize actions of another service, for example
+    /// `lambda:CreateFunction` authorizes `iam:PassRole`. The resources of such
+    /// an action are defined in the service reference of the action's own
+    /// service, not in the one of the operation.
+    async fn find_resources_for_authorized_action(
+        &self,
+        action: &AuthorizedAction,
+        operation_service_reference: &ServiceReference,
+        service_reference_loader: &ServiceReferenceLoader,
+    ) -> Result<Vec<Resource>> {
+        let action_service = action.service.to_lowercase();
+        if action_service == operation_service_reference.service_name.to_lowercase() {
+            return self.find_resources_for_action_in_service_reference(
+                &action.name,
+                operation_service_reference,
+            );
+        }
+
+        if let Some(action_service_reference) =
+            service_reference_loader.load(&action_service).await?
+        {
+            self.find_resources_for_action_in_service_reference(
+                &action.name,
+                &action_service_reference,
+            )
+        } else {
+            // Resources of another service cannot be right for this action,
+            // so leave the list empty and let policy generation fall back to "*".
+            log::debug!(
+                "No service reference for '{action_service}', cannot resolve resources for {}",
+                action.name
+            );
+            Ok(vec![])
         }
     }
 
@@ -1580,5 +1620,248 @@ mod tests {
         assert_eq!(enriched_calls[0].service, "rds");
         // Should use the operation name directly without any transformation
         assert_eq!(enriched_calls[0].actions[0].name, "rds:ModifyDBCluster");
+    }
+
+    /// Mount a service reference index and one document per given service.
+    async fn mock_service_references(
+        mock_server: &wiremock::MockServer,
+        service_references: &[serde_json::Value],
+    ) {
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, ResponseTemplate};
+
+        let index: Vec<_> = service_references
+            .iter()
+            .map(|service_reference| {
+                let name = service_reference["Name"].as_str().unwrap();
+                serde_json::json!({
+                    "service": name,
+                    "url": format!("{}/{name}.json", mock_server.uri())
+                })
+            })
+            .collect();
+        Mock::given(method("GET"))
+            .and(path("/"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(index))
+            .mount(mock_server)
+            .await;
+
+        for service_reference in service_references {
+            let name = service_reference["Name"].as_str().unwrap();
+            Mock::given(method("GET"))
+                .and(path(format!("/{name}.json")))
+                .respond_with(ResponseTemplate::new(200).set_body_json(service_reference))
+                .mount(mock_server)
+                .await;
+        }
+    }
+
+    /// `lambda:CreateFunction` authorizes `iam:PassRole`, which `lambda` does not define.
+    fn lambda_service_reference_authorizing_pass_role() -> serde_json::Value {
+        serde_json::json!({
+            "Name": "lambda",
+            "Actions": [
+                { "Name": "CreateFunction", "Resources": [{ "Name": "function" }] }
+            ],
+            "Resources": [
+                {
+                    "Name": "function",
+                    "ARNFormats": [
+                        "arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"
+                    ]
+                }
+            ],
+            "Operations": [
+                {
+                    "Name": "CreateFunction",
+                    "AuthorizedActions": [
+                        { "Name": "CreateFunction", "Service": "lambda" },
+                        {
+                            "Name": "PassRole",
+                            "Service": "iam",
+                            "Context": { "iam:PassedToService": ["lambda.amazonaws.com"] }
+                        }
+                    ]
+                }
+            ]
+        })
+    }
+
+    fn resource_arn_patterns(action: &Action) -> Vec<(String, Option<Vec<String>>)> {
+        action
+            .resources
+            .iter()
+            .map(|resource| (resource.name.clone(), resource.arn_patterns.clone()))
+            .collect()
+    }
+
+    async fn enrich_single_call(
+        mock_server: &wiremock::MockServer,
+        service: &str,
+        operation: &str,
+    ) -> Vec<Action> {
+        let matcher = ResourceMatcher::new(
+            create_empty_service_config(),
+            HashMap::new(),
+            SdkType::Other,
+            crate::DEFAULT_RESOURCE_CUTOFF,
+        );
+        let loader = ServiceReferenceLoader::new(true)
+            .unwrap()
+            .with_mapping_url(mock_server.uri());
+        let parsed_call = SdkMethodCall {
+            name: operation.to_string(),
+            possible_services: vec![service.to_string()],
+            metadata: None,
+        };
+
+        let mut enriched_calls = matcher
+            .enrich_method_call(&parsed_call, &loader)
+            .await
+            .unwrap();
+        assert_eq!(enriched_calls.len(), 1);
+        enriched_calls.remove(0).actions
+    }
+
+    fn find_action<'a>(actions: &'a [Action], name: &str) -> &'a Action {
+        actions
+            .iter()
+            .find(|action| action.name == name)
+            .unwrap_or_else(|| panic!("missing action {name}"))
+    }
+
+    #[tokio::test]
+    async fn test_cross_service_action_uses_resources_of_its_own_service() {
+        let mock_server = wiremock::MockServer::start().await;
+        mock_service_references(
+            &mock_server,
+            &[
+                lambda_service_reference_authorizing_pass_role(),
+                serde_json::json!({
+                    "Name": "iam",
+                    "Actions": [
+                        { "Name": "PassRole", "Resources": [{ "Name": "role" }] }
+                    ],
+                    "Resources": [
+                        {
+                            "Name": "role",
+                            "ARNFormats": [
+                                "arn:${Partition}:iam::${Account}:role/${RoleNameWithPath}"
+                            ]
+                        }
+                    ]
+                }),
+            ],
+        )
+        .await;
+
+        let actions = enrich_single_call(&mock_server, "lambda", "CreateFunction").await;
+
+        assert_eq!(
+            resource_arn_patterns(find_action(&actions, "iam:PassRole")),
+            vec![(
+                "role".to_string(),
+                Some(vec![
+                    "arn:${Partition}:iam::${Account}:role/${RoleNameWithPath}".to_string()
+                ])
+            )]
+        );
+        assert_eq!(
+            resource_arn_patterns(find_action(&actions, "lambda:CreateFunction")),
+            vec![(
+                "function".to_string(),
+                Some(vec![
+                    "arn:${Partition}:lambda:${Region}:${Account}:function:${FunctionName}"
+                        .to_string()
+                ])
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cross_service_action_ignores_same_named_action_of_operation_service() {
+        // Both `s3` and `s3-object-lambda` define `GetObject`, with different resources.
+        let mock_server = wiremock::MockServer::start().await;
+        mock_service_references(
+            &mock_server,
+            &[
+                serde_json::json!({
+                    "Name": "s3",
+                    "Actions": [
+                        { "Name": "GetObject", "Resources": [{ "Name": "object" }] }
+                    ],
+                    "Resources": [
+                        {
+                            "Name": "object",
+                            "ARNFormats": ["arn:${Partition}:s3:::${BucketName}/${ObjectName}"]
+                        }
+                    ],
+                    "Operations": [
+                        {
+                            "Name": "GetObject",
+                            "AuthorizedActions": [
+                                { "Name": "GetObject", "Service": "s3" },
+                                { "Name": "GetObject", "Service": "s3-object-lambda" }
+                            ]
+                        }
+                    ]
+                }),
+                serde_json::json!({
+                    "Name": "s3-object-lambda",
+                    "Actions": [
+                        {
+                            "Name": "GetObject",
+                            "Resources": [{ "Name": "objectlambdaaccesspoint" }]
+                        }
+                    ],
+                    "Resources": [
+                        {
+                            "Name": "objectlambdaaccesspoint",
+                            "ARNFormats": [
+                                "arn:${Partition}:s3-object-lambda:${Region}:${Account}:accesspoint/${AccessPointName}"
+                            ]
+                        }
+                    ]
+                }),
+            ],
+        )
+        .await;
+
+        let actions = enrich_single_call(&mock_server, "s3", "GetObject").await;
+
+        assert_eq!(
+            resource_arn_patterns(find_action(&actions, "s3-object-lambda:GetObject")),
+            vec![(
+                "objectlambdaaccesspoint".to_string(),
+                Some(vec![
+                    "arn:${Partition}:s3-object-lambda:${Region}:${Account}:accesspoint/${AccessPointName}"
+                        .to_string()
+                ])
+            )]
+        );
+        assert_eq!(
+            resource_arn_patterns(find_action(&actions, "s3:GetObject")),
+            vec![(
+                "object".to_string(),
+                Some(vec![
+                    "arn:${Partition}:s3:::${BucketName}/${ObjectName}".to_string()
+                ])
+            )]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_cross_service_action_without_service_reference_has_no_resources() {
+        // `iam` is not in the index, so the resources of `iam:PassRole` are unknown.
+        let mock_server = wiremock::MockServer::start().await;
+        mock_service_references(
+            &mock_server,
+            &[lambda_service_reference_authorizing_pass_role()],
+        )
+        .await;
+
+        let actions = enrich_single_call(&mock_server, "lambda", "CreateFunction").await;
+
+        assert!(find_action(&actions, "iam:PassRole").resources.is_empty());
     }
 }
