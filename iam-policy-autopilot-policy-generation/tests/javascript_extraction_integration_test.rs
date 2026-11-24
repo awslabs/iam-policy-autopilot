@@ -333,6 +333,44 @@ for await (const page of paginator) {
 }
 ";
 
+// Packages whose name is the Smithy service name, not the botocore one:
+// `cloudwatch-logs` is `logs`, `eventbridge` is `events`, `sfn` is `stepfunctions`.
+const RENAMED_SERVICE_COMMANDS_SOURCE: &str = r#"
+import { CloudWatchLogsClient, ListTagsForResourceCommand } from "@aws-sdk/client-cloudwatch-logs";
+import { EventBridgeClient, PutEventsCommand } from "@aws-sdk/client-eventbridge";
+const { SFNClient, StartExecutionCommand } = require("@aws-sdk/client-sfn");
+
+const logs = new CloudWatchLogsClient({});
+await logs.send(new ListTagsForResourceCommand({ resourceArn: "arn" }));
+await new EventBridgeClient({}).send(new PutEventsCommand({ Entries: [] }));
+await new SFNClient({}).send(new StartExecutionCommand({ stateMachineArn: "arn" }));
+"#;
+
+const RENAMED_SERVICE_WAITERS_SOURCE: &str = r#"
+import {
+  ElasticLoadBalancingV2Client,
+  waitUntilLoadBalancerAvailable,
+} from "@aws-sdk/client-elastic-load-balancing-v2";
+import { Route53Client, waitUntilResourceRecordSetsChanged } from "@aws-sdk/client-route-53";
+
+const elb = new ElasticLoadBalancingV2Client({});
+await waitUntilLoadBalancerAvailable({ client: elb, maxWaitTime: 60 }, { Names: ["demo"] });
+await waitUntilResourceRecordSetsChanged(
+  { client: new Route53Client({}), maxWaitTime: 60 },
+  { Id: "demo" }
+);
+"#;
+
+const RENAMED_SERVICE_PAGINATOR_AND_METHOD_SOURCE: &str = r#"
+import { CloudWatchLogs, paginateDescribeLogGroups } from "@aws-sdk/client-cloudwatch-logs";
+
+const logs = new CloudWatchLogs({});
+await logs.listTagsForResource({ resourceArn: "arn" });
+for await (const page of paginateDescribeLogGroups({ client: logs }, {})) {
+  console.log(page.logGroups);
+}
+"#;
+
 // ---------------------------------------------------------------------------
 // Parameterized extraction test
 // ---------------------------------------------------------------------------
@@ -343,6 +381,19 @@ for await (const page of paginator) {
 #[case::client_send(CLIENT_SEND_SOURCE, &[ExpectedOp { name: "ListTables", service: "dynamodb" }])]
 #[case::multiple_s3_operations(MULTIPLE_S3_OPS_SOURCE, S3_CRUD_OPS)]
 #[case::pagination(PAGINATION_SOURCE, &[ExpectedOp { name: "Query", service: "dynamodb" }])]
+#[case::renamed_service_commands(RENAMED_SERVICE_COMMANDS_SOURCE, &[
+    ExpectedOp { name: "ListTagsForResource", service: "logs" },
+    ExpectedOp { name: "PutEvents", service: "events" },
+    ExpectedOp { name: "StartExecution", service: "stepfunctions" },
+])]
+#[case::renamed_service_waiters(RENAMED_SERVICE_WAITERS_SOURCE, &[
+    ExpectedOp { name: "DescribeLoadBalancers", service: "elbv2" },
+    ExpectedOp { name: "GetChange", service: "route53" },
+])]
+#[case::renamed_service_paginator_and_method(RENAMED_SERVICE_PAGINATOR_AND_METHOD_SOURCE, &[
+    ExpectedOp { name: "ListTagsForResource", service: "logs" },
+    ExpectedOp { name: "DescribeLogGroups", service: "logs" },
+])]
 #[tokio::test]
 async fn test_javascript_extraction(#[case] source: &str, #[case] expected_ops: &[ExpectedOp]) {
     let source_file = SourceFile::with_language(
