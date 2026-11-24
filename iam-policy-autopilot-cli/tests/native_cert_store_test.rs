@@ -160,7 +160,7 @@ async fn run_cli_against_tls_server(
         .unwrap();
     py_file.flush().unwrap();
 
-    let cli_bin = assert_cmd::cargo::cargo_bin("iam-policy-autopilot");
+    let cli_bin = env!("CARGO_BIN_EXE_iam-policy-autopilot");
 
     let mut cmd = std::process::Command::new(&cli_bin);
     cmd.args([
