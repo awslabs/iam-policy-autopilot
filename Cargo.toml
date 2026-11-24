@@ -28,9 +28,9 @@ serde = { version = "1.0", features = ["derive", "rc"] }
 futures = "0.3"
 thiserror = "1.0"
 anyhow = "1.0"
-ast-grep-language = "0.39"
-ast-grep-config = "0.39"
-ast-grep-core = "0.39"
+ast-grep-language = { version = "0.51", default-features = false, features = ["tree-sitter-javascript","tree-sitter-typescript","tree-sitter-python","tree-sitter-go","tree-sitter-java","tree-sitter-hcl","tree-sitter-json"] }
+ast-grep-config = "0.51"
+ast-grep-core = "0.51"
 schemars = { version = "^1", features = ["derive"] }
 rust-embed = { version = "8.11", features = ["compression", "include-exclude"] }
 reqwest = { version = "0.13.3", features = ["rustls"], default-features = false }
