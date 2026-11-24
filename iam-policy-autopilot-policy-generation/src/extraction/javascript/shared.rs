@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 use crate::extraction::javascript::types::{ImportInfo, JavaScriptScanResults};
 use crate::extraction::{Parameter, ParameterValue, SdkMethodCall, SdkMethodCallMetadata};
+use crate::service_configuration::sdk_import_service_map;
 use crate::Location;
 use rust_embed::RustEmbed;
 use serde::Deserialize;
@@ -586,14 +587,26 @@ impl ExtractionUtils {
         }
     }
 
-    /// Extract service name from sublibrary name
-    /// Returns Some(service) if the sublibrary matches a known pattern, None otherwise
+    /// Extract the botocore service name from a sublibrary name.
+    ///
+    /// Returns `None` when the sublibrary is neither a `client-` nor a `lib-` package.
+    ///
+    /// A `client-` package is named after the Smithy service, which is not always the
+    /// botocore name the rest of the pipeline uses, so it is translated through the
+    /// shared [`sdk_import_service_map`], as the Go and Java import segments are.
+    /// That map is keyed by the dash-free name, hence the dashes are dropped for the
+    /// lookup only.
+    ///
+    /// # Examples
+    /// - `"client-s3"` → `Some("s3")`
+    /// - `"client-cloudwatch-logs"` → `Some("logs")`
+    /// - `"client-bedrock-runtime"` → `Some("bedrock-runtime")`
+    /// - `"lib-dynamodb"` → `Some("dynamodb")`
     pub(crate) fn extract_service_from_sublibrary(sublibrary: &str) -> Option<String> {
-        // Handle common patterns:
-        // "client-s3" -> Some("s3")
-        // "lib-dynamodb" -> Some("dynamodb")
-        // "client-lambda" -> Some("lambda")
-        if let Some(service) = sublibrary.strip_prefix("client-") {
+        if let Some(package) = sublibrary.strip_prefix("client-") {
+            let service = sdk_import_service_map()
+                .get(&package.replace('-', ""))
+                .map_or(package, String::as_str);
             Some(service.to_string())
         } else {
             sublibrary
@@ -703,6 +716,59 @@ mod tests {
             None
         );
         assert_eq!(ExtractionUtils::extract_service_from_sublibrary(""), None);
+    }
+
+    #[test]
+    fn test_extract_service_from_sublibrary_uses_botocore_names() {
+        // Packages named after a Smithy service that botocore names differently
+        for (sublibrary, service) in [
+            ("client-cloudwatch-logs", "logs"),
+            ("client-sfn", "stepfunctions"),
+            ("client-eventbridge", "events"),
+            ("client-cognito-identity-provider", "cognito-idp"),
+            ("client-elastic-load-balancing-v2", "elbv2"),
+            ("client-auto-scaling", "autoscaling"),
+            ("client-secrets-manager", "secretsmanager"),
+        ] {
+            assert_eq!(
+                ExtractionUtils::extract_service_from_sublibrary(sublibrary),
+                Some(service.to_string()),
+                "{sublibrary}"
+            );
+        }
+
+        // Packages whose name is the botocore name keep it, dashes included
+        for service in ["bedrock-runtime", "cognito-identity", "s3", "sqs"] {
+            assert_eq!(
+                ExtractionUtils::extract_service_from_sublibrary(&format!("client-{service}")),
+                Some(service.to_string()),
+                "client-{service}"
+            );
+        }
+
+        // A package of no known service is passed through
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("client-not-a-service"),
+            Some("not-a-service".to_string())
+        );
+
+        // `lib-` packages are not named after a service and are not translated
+        assert_eq!(
+            ExtractionUtils::extract_service_from_sublibrary("lib-secrets-manager"),
+            Some("secrets-manager".to_string())
+        );
+    }
+
+    #[test]
+    fn test_every_renamed_smithy_service_resolves_from_its_client_package() {
+        let config = crate::service_configuration::load_service_configuration().unwrap();
+        for (smithy_name, botocore_name) in &config.smithy_botocore_service_name_mapping {
+            assert_eq!(
+                ExtractionUtils::extract_service_from_sublibrary(&format!("client-{smithy_name}")),
+                Some(botocore_name.clone()),
+                "client-{smithy_name}"
+            );
+        }
     }
 
     #[test]

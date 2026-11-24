@@ -3,6 +3,7 @@
 ### Fixed
 
 - Resources for an action that belongs to a different service than the operation authorizing it are now taken from the action's own service reference. Previously they were looked up in the operation's service reference by bare action name, so `iam:PassRole` fell back to `Resource: "*"` and `s3-object-lambda:GetObject` or `s3express:PutLifecycleConfiguration` were scoped to S3 general purpose bucket ARNs that never match those actions.
+- JavaScript and TypeScript calls imported from an `@aws-sdk/client-*` package whose name differs from the service's botocore name, such as `client-cloudwatch-logs`, `client-eventbridge` or `client-sfn`, are now attributed to that service only. Previously the operation was attributed to every service that has an operation of the same name, so one `ListTagsForResourceCommand` from `client-cloudwatch-logs` produced the `ListTagsForResource` action of more than 250 services, and waiters imported from such a package were dropped.
 
 ## [0.4.0] - 2026-10-29
 
