@@ -22,7 +22,14 @@ log = { workspace = true }
 [dev-dependencies]
 assert_cmd = "2.2"
 predicates = "3.1"
+rmcp = { version = "^1.6", features = [
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
+rstest.workspace = true
+serial_test.workspace = true
 tempfile = "3.27"
+tokio = { workspace = true, features = ["net", "process", "time"] }
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", features=["integ-test"] }
 
 [features]
