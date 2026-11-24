@@ -20,9 +20,26 @@ env_logger = { workspace = true }
 log = { workspace = true }
 
 [dev-dependencies]
+# TLS integration test (native_cert_store_test): verifies the CLI respects the OS certificate
+# store (corporate CAs trusted via SSL_CERT_FILE) when connecting to the service reference endpoint
+rcgen = "0.14"
+tokio-rustls = "0.26"
+rustls = "0.23"
+rustls-pki-types = "1"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+pem = "3"
 assert_cmd = "2.2"
 predicates = "3.1"
+rmcp = { version = "^1.6", features = [
+    "transport-child-process",
+    "transport-streamable-http-client-reqwest",
+] }
+rstest.workspace = true
+serial_test.workspace = true
 tempfile = "3.27"
+tokio = { workspace = true, features = ["net", "process", "time"] }
 iam-policy-autopilot-policy-generation = { path = "../iam-policy-autopilot-policy-generation", features=["integ-test"] }
 
 [features]
