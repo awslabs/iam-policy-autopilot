@@ -1,7 +1,12 @@
 use super::types::{SdkObjectKind, VariableTypeInfo, VariableTypeTracker};
+use crate::extraction::python::common::ArgumentExtractor;
 use crate::extraction::python::node_kinds;
-use crate::extraction::AstWithSourceFile;
+use crate::extraction::{AstWithSourceFile, ParameterValue};
+use ast_grep_core::matcher::{KindMatcher, MatcherExt};
+use ast_grep_core::tree_sitter::StrDoc;
+use ast_grep_core::Node;
 use ast_grep_language::Python;
+use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
 impl VariableTypeTracker {
@@ -25,6 +30,9 @@ impl VariableTypeTracker {
         self.track_session_variables(&root);
         self.track_session_factory_assignments(&root, "client", SdkObjectKind::Client);
         self.track_session_factory_assignments(&root, "resource", SdkObjectKind::Resource);
+        let def_counts = count_function_definitions(&root);
+        let return_types = self.infer_function_return_types(&root, &def_counts);
+        self.track_return_value_assignments(&root, &return_types, &def_counts);
         self.track_aliases(&root);
         self.track_function_calls(&root);
         self.track_resource_derived_variables(&root);
@@ -185,8 +193,6 @@ impl VariableTypeTracker {
         }
     }
 
-    /// Extract the first positional string argument from a matched `$$$ARGS` list.
-    /// Skips keyword arguments and commas; returns the unquoted string content.
     fn extract_first_positional_string_arg(
         env: &ast_grep_core::meta_var::MetaVarEnv<ast_grep_core::tree_sitter::StrDoc<Python>>,
     ) -> Option<String> {
@@ -200,7 +206,10 @@ impl VariableTypeTracker {
             if arg_node.kind() == node_kinds::KEYWORD_ARGUMENT {
                 continue;
             }
-            return Some(Self::extract_string_literal(trimmed));
+            return match ArgumentExtractor::extract_parameter_value(trimmed) {
+                ParameterValue::Resolved(service) => Some(service),
+                _ => None,
+            };
         }
         None
     }
@@ -301,27 +310,8 @@ impl VariableTypeTracker {
                     continue;
                 };
 
-                // Check function scope first, then fall back to module scope.
-                // Skip module fallback if the name is locally assigned within this
-                // function (shadowed), even if it's not a boto3 assignment we track.
-                let in_func_sessions = self
-                    .session_variables
-                    .get(&Some(func_name.clone()))
-                    .is_some_and(|vars| vars.contains(&session_name));
-
-                if !in_func_sessions {
-                    let locally_shadowed = self
-                        .local_assignments
-                        .get(&func_name)
-                        .is_some_and(|vars| vars.contains(&session_name));
-                    let in_module_sessions = !locally_shadowed
-                        && self
-                            .session_variables
-                            .get(&None)
-                            .is_some_and(|vars| vars.contains(&session_name));
-                    if !in_module_sessions {
-                        continue;
-                    }
+                if !self.is_known_session(&session_name, Some(&func_name)) {
+                    continue;
                 }
 
                 let var_name = if let Some(var_node) = assign_env.get_match("VAR") {
@@ -363,13 +353,7 @@ impl VariableTypeTracker {
                 continue;
             };
 
-            // Module-level: only check module-scope sessions
-            let is_known_session = self
-                .session_variables
-                .get(&None)
-                .is_some_and(|vars| vars.contains(&session_name));
-
-            if !is_known_session {
+            if !self.is_known_session(&session_name, None) {
                 continue;
             }
 
@@ -390,6 +374,211 @@ impl VariableTypeTracker {
                 var_name,
                 VariableTypeInfo::from_service_with_kind(service_name, kind.clone()),
             );
+        }
+    }
+
+    fn is_known_session(&self, name: &str, func_name: Option<&str>) -> bool {
+        let in_scope = |scope: Option<&str>| {
+            self.session_variables
+                .get(&scope.map(str::to_string))
+                .is_some_and(|vars| vars.contains(name))
+        };
+        match func_name {
+            None => in_scope(None),
+            Some(func) => {
+                in_scope(Some(func))
+                    || (!self
+                        .local_assignments
+                        .get(func)
+                        .is_some_and(|vars| vars.contains(name))
+                        && in_scope(None))
+            }
+        }
+    }
+
+    fn infer_function_return_types(
+        &self,
+        root: &Node<StrDoc<Python>>,
+        def_counts: &HashMap<String, usize>,
+    ) -> HashMap<String, VariableTypeInfo> {
+        let mut return_types = HashMap::new();
+        for func in root
+            .dfs()
+            .filter(|n| n.kind() == node_kinds::FUNCTION_DEFINITION)
+        {
+            let Some(name) = func.field("name").map(|n| n.text().to_string()) else {
+                continue;
+            };
+            let eligible = def_counts.get(&name) == Some(&1)
+                && !func.text().starts_with("async")
+                && !func.ancestors().any(|a| {
+                    a.kind() == node_kinds::FUNCTION_DEFINITION
+                        || a.kind() == node_kinds::CLASS_DEFINITION
+                })
+                && has_only_cache_decorators(&func);
+            if !eligible {
+                continue;
+            }
+            if let Some(info) = self.infer_return_type(&func, &name) {
+                return_types.insert(name, info);
+            }
+        }
+        if return_types.is_empty() {
+            return return_types;
+        }
+
+        let mut rebound: HashSet<String> = root
+            .find_all("$VAR = $$$RHS")
+            .filter_map(|m| m.get_env().get_match("VAR").map(|n| n.text().to_string()))
+            .collect();
+        for import in root
+            .find_all("from $MODULE import $$$NAMES")
+            .chain(root.find_all("import $$$MODULES"))
+        {
+            rebound.extend(
+                import
+                    .get_node()
+                    .dfs()
+                    .filter(|n| n.kind() == node_kinds::IDENTIFIER)
+                    .map(|n| n.text().to_string()),
+            );
+        }
+        rebound.extend(
+            root.dfs()
+                .filter(|n| n.kind() == node_kinds::CLASS_DEFINITION)
+                .filter_map(|n| n.field("name"))
+                .map(|n| n.text().to_string()),
+        );
+        return_types.retain(|name, _| !rebound.contains(name));
+        return_types
+    }
+
+    fn infer_return_type(
+        &self,
+        func: &Node<StrDoc<Python>>,
+        func_name: &str,
+    ) -> Option<VariableTypeInfo> {
+        let params = parameter_names(func);
+        let mut inferred: Option<VariableTypeInfo> = None;
+        for ret in func.find_all(KindMatcher::new(node_kinds::RETURN_STATEMENT, Python)) {
+            if has_intervening_function(&ret, func.node_id()) {
+                continue;
+            }
+            let Some(value) = ret.get_node().child(1).filter(|v| v.text() != "None") else {
+                continue;
+            };
+            let info = if value.kind() == node_kinds::IDENTIFIER {
+                let var = value.text();
+                let assignments = func
+                    .find_all("$VAR = $$$RHS")
+                    .filter(|m| {
+                        !has_intervening_function(m, func.node_id())
+                            && m.get_env()
+                                .get_match("VAR")
+                                .is_some_and(|n| n.text() == var)
+                    })
+                    .count();
+                if assignments != 1 || params.contains(var.as_ref()) {
+                    return None;
+                }
+                self.function_scopes
+                    .get(func_name)?
+                    .get(var.as_ref())?
+                    .clone()
+            } else {
+                let call = "$OBJ.$METHOD($$$ARGS)".match_node(value.clone())?;
+                let env = call.get_env();
+                let kind = match env.get_match("METHOD")?.text().as_ref() {
+                    "client" => SdkObjectKind::Client,
+                    "resource" => SdkObjectKind::Resource,
+                    _ => return None,
+                };
+                let obj = env.get_match("OBJ")?.text();
+                if obj != "boto3"
+                    && (func.field("return_type").is_some()
+                        || params.contains(obj.as_ref())
+                        || !self.is_known_session(&obj, Some(func_name)))
+                {
+                    return None;
+                }
+                VariableTypeInfo::from_service_with_kind(
+                    Self::extract_first_positional_string_arg(env)?,
+                    kind,
+                )
+            };
+            if inferred.as_ref().is_some_and(|prev| *prev != info) {
+                return None;
+            }
+            inferred = Some(info);
+        }
+        inferred
+    }
+
+    fn track_return_value_assignments(
+        &mut self,
+        root: &Node<StrDoc<Python>>,
+        return_types: &HashMap<String, VariableTypeInfo>,
+        def_counts: &HashMap<String, usize>,
+    ) {
+        let mut candidates: HashMap<(Option<String>, String), Vec<&VariableTypeInfo>> =
+            HashMap::new();
+        for node_match in root.find_all("$VAR = $FUNC($$$ARGS)") {
+            let env = node_match.get_env();
+            let (Some(var), Some(factory)) = (env.get_match("VAR"), env.get_match("FUNC")) else {
+                continue;
+            };
+            let Some(info) = return_types.get(factory.text().as_ref()) else {
+                continue;
+            };
+            let node = node_match.get_node();
+            if var.kind() != node_kinds::IDENTIFIER
+                || node
+                    .ancestors()
+                    .any(|a| a.kind() == node_kinds::CLASS_DEFINITION)
+            {
+                continue;
+            }
+            let mut callers = node
+                .ancestors()
+                .filter(|a| a.kind() == node_kinds::FUNCTION_DEFINITION);
+            let scope = match (callers.next(), callers.next()) {
+                (None, _) => None,
+                (Some(caller), None) => {
+                    let caller_name = caller
+                        .field("name")
+                        .map(|n| n.text().to_string())
+                        .unwrap_or_default();
+                    if def_counts.get(&caller_name) != Some(&1)
+                        || parameter_names(&caller).contains(factory.text().as_ref())
+                    {
+                        continue;
+                    }
+                    Some(caller_name)
+                }
+                _ => continue,
+            };
+            candidates
+                .entry((scope, var.text().to_string()))
+                .or_default()
+                .push(info);
+        }
+
+        for ((scope, var), infos) in candidates {
+            let [info] = infos[..] else {
+                continue;
+            };
+            let vars = match &scope {
+                Some(func_name) => self.function_scopes.entry(func_name.clone()).or_default(),
+                None => &mut self.module_scope,
+            };
+            if let Entry::Vacant(entry) = vars.entry(var) {
+                log::debug!(
+                    "Tracked return value assignment in scope {scope:?}: {} -> {}",
+                    entry.key(),
+                    info.service_name
+                );
+                entry.insert(info.clone());
+            }
         }
     }
 
@@ -855,20 +1044,6 @@ impl VariableTypeTracker {
             }
         }
     }
-
-    /// Extract string content from a string literal
-    ///
-    /// Handles both single and double quotes:
-    /// - `'s3'` -> `s3`
-    /// - `"dynamodb"` -> `dynamodb`
-    pub(super) fn extract_string_literal(raw: &str) -> String {
-        raw.trim()
-            .trim_start_matches('\'')
-            .trim_start_matches('"')
-            .trim_end_matches('\'')
-            .trim_end_matches('"')
-            .to_string()
-    }
 }
 
 /// Check if a matched node is inside a function definition
@@ -903,6 +1078,43 @@ fn has_intervening_function(
         current = node.parent();
     }
     false
+}
+
+fn count_function_definitions(root: &Node<StrDoc<Python>>) -> HashMap<String, usize> {
+    let mut counts = HashMap::new();
+    for name in root
+        .dfs()
+        .filter(|n| n.kind() == node_kinds::FUNCTION_DEFINITION)
+        .filter_map(|n| n.field("name"))
+    {
+        *counts.entry(name.text().to_string()).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn parameter_names(func: &Node<StrDoc<Python>>) -> HashSet<String> {
+    func.field("parameters")
+        .map(|params| {
+            params
+                .children()
+                .filter_map(|param| param.dfs().find(|n| n.kind() == node_kinds::IDENTIFIER))
+                .map(|n| n.text().to_string())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn has_only_cache_decorators(func: &Node<StrDoc<Python>>) -> bool {
+    func.parent()
+        .is_none_or(|p| p.kind() != node_kinds::DECORATED_DEFINITION)
+        || func.prev_all().all(|decorator| {
+            let text = decorator.text();
+            let name = text.split(['@', '(']).nth(1).unwrap_or_default().trim();
+            matches!(
+                name.strip_prefix("functools.").unwrap_or(name),
+                "cache" | "lru_cache"
+            )
+        })
 }
 
 /// Check if a function definition is a method (immediate child of a class body)

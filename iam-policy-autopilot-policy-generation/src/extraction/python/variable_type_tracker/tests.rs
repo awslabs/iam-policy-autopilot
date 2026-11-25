@@ -182,24 +182,527 @@ def create_clients():
     );
 }
 
-#[test]
-fn test_return_value_not_tracked() {
-    // Return value tracking is not yet supported — documenting the limitation.
-    let source_code = r#"
-import boto3
-
+#[rstest]
+#[case::session_factory(
+    r#"
 def create_client():
     session = boto3.Session()
     return session.client('s3')
 
 client = create_client()
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::annotated_boto3_client(
+    r#"
+def create_client() -> S3Client:
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::boto3_resource(
+    r#"
+def create_client():
+    return boto3.resource('dynamodb')
+
+client = create_client()
+"#,
+    None,
+    "dynamodb",
+    SdkObjectKind::Resource
+)]
+#[case::module_session(
+    r#"
+session = boto3.Session()
+
+def create_client():
+    return session.client('ec2')
+
+client = create_client()
+"#,
+    None,
+    "ec2",
+    SdkObjectKind::Client
+)]
+#[case::returned_local(
+    r#"
+def create_client():
+    c = boto3.client('s3')
+    return c
+
+client = create_client()
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::two_same_service_returns_keyword_args(
+    r#"
+def create_client(region):
+    if region:
+        return boto3.client('s3', region_name=region)
+    return boto3.client('s3')
+
+client = create_client(region='us-west-2')
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::lru_cache(
+    r#"
+import functools
+
+@functools.lru_cache(maxsize=None)
+def create_client():
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::try_except(
+    r#"
+def create_client():
+    try:
+        return boto3.client('s3')
+    except Exception:
+        log()
+
+client = create_client()
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::caller_in_function_before_factory(
+    r#"
+def handler(event):
+    client = create_client()
+
+def create_client():
+    return boto3.client('s3')
+"#,
+    Some("handler"),
+    "s3",
+    SdkObjectKind::Client
+)]
+#[case::none_and_bare_returns(
+    r#"
+def create_client(mode):
+    if mode == 'off':
+        return None
+    if mode == 'skip':
+        return
+    return boto3.client('s3')
+
+client = create_client('on')
+"#,
+    None,
+    "s3",
+    SdkObjectKind::Client
+)]
+fn test_return_value_tracked(
+    #[case] body: &str,
+    #[case] scope: Option<&str>,
+    #[case] expected_service: &str,
+    #[case] expected_kind: SdkObjectKind,
+) {
+    let ast = create_ast(&format!("import boto3\n{body}"));
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    let info = tracker
+        .get_type_info_for_variable_in_context("client", scope)
+        .unwrap();
+    assert_eq!(info.service_name, expected_service);
+    assert_eq!(info.kind, Some(expected_kind));
+    if scope.is_some() {
+        assert_eq!(tracker.get_service_for_variable("client"), None);
+    }
+}
+
+#[rstest]
+#[case::different_services(
+    r#"
+def create_client(region):
+    if region:
+        return boto3.client('s3')
+    return boto3.client('ec2')
+
+client = create_client(None)
+"#,
+    "client",
+    None
+)]
+#[case::conditional_local_assignment(
+    r#"
+def create_client(debug):
+    c = boto3.client('s3')
+    if debug:
+        c = DebugClient(c)
+    return c
+
+client = create_client(True)
+"#,
+    "client",
+    None
+)]
+#[case::two_factories_one_variable(
+    r#"
+def create_s3():
+    return boto3.client('s3')
+
+def create_ec2():
+    return boto3.client('ec2')
+
+client = create_s3()
+client = create_ec2()
+"#,
+    "client",
+    None
+)]
+#[case::class_body_call(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+class Config:
+    client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::wrapped_return(
+    r#"
+def create_client():
+    return wrap(boto3.client('s3'))
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::chained_factory(
+    r#"
+def b():
+    return boto3.client('s3')
+
+def create_client():
+    return b()
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::recursion(
+    r#"
+def create_client(retries):
+    if retries == 0:
+        return boto3.client('s3')
+    return create_client(retries - 1)
+
+client = create_client(3)
+"#,
+    "client",
+    None
+)]
+#[case::nested_def_return(
+    r#"
+def create_client():
+    def build():
+        return boto3.client('s3')
+    register(build)
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::async_def(
+    r#"
+async def create_client():
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::other_decorator(
+    r#"
+@retry(max_attempts=3)
+def create_client():
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::parameter_service_name(
+    r#"
+def create_client(name):
+    return boto3.client(name)
+
+client = create_client('s3')
+"#,
+    "client",
+    None
+)]
+#[case::session_parameter(
+    r#"
+session = boto3.Session()
+
+def create_client(session):
+    return session.client('s3')
+
+client = create_client(other_session)
+"#,
+    "client",
+    None
+)]
+#[case::returns_parameter(
+    r#"
+def create_client(c=None):
+    if c is None:
+        c = boto3.client('s3')
+    return c
+
+client = create_client(boto3.client('ec2'))
+"#,
+    "client",
+    None
+)]
+#[case::returns_module_global(
+    r#"
+s3 = boto3.client('s3')
+
+def create_client():
+    return s3
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::duplicate_annotated_def(
+    r#"
+def create_client():
+    return boto3.client('ec2')
+
+def create_client() -> S3Client:
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::annotated_factory_shadowed_session(
+    r#"
+session = boto3.Session()
+
+def create_client() -> S3Client:
+    session = Other()
+    return session.client('s3')
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::callee_reassigned(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+create_client = other
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::callee_imported(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+from lib import create_client
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::caller_parameter_shadows_callee(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+def handler(create_client):
+    client = create_client()
+"#,
+    "client",
+    Some("handler")
+)]
+#[case::callee_class_name(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+class create_client:
+    pass
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::nested_factory(
+    r#"
+session = boto3.Session()
+
+def outer():
+    session = Other()
+
+    def make():
+        return session.client('s3')
+
+    client = make()
+"#,
+    "client",
+    Some("outer")
+)]
+#[case::duplicate_caller(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+def handler() -> None:
+    client = create_client()
+
+def handler():
+    client = other()
+"#,
+    "client",
+    Some("handler")
+)]
+#[case::same_named_method(
+    r#"
+class Other:
+    def create_client(self):
+        return boto3.client('ec2')
+
+def create_client():
+    return boto3.client('s3')
+
+client = create_client()
+"#,
+    "client",
+    None
+)]
+#[case::nested_function_caller(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+def outer():
+    def inner():
+        client = create_client()
+"#,
+    "client",
+    Some("inner")
+)]
+#[case::method_factory(
+    r#"
+class Service:
+    def make(self):
+        return boto3.client('s3')
+
+    def run(self):
+        client = self.make()
+"#,
+    "client",
+    Some("run")
+)]
+#[case::attribute_target(
+    r#"
+def create_client():
+    return boto3.client('s3')
+
+def init(obj):
+    obj.client = create_client()
+"#,
+    "obj.client",
+    Some("init")
+)]
+fn test_return_value_not_tracked_cases(
+    #[case] body: &str,
+    #[case] var_name: &str,
+    #[case] scope: Option<&str>,
+) {
+    let ast = create_ast(&format!("import boto3\n{body}"));
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert_eq!(
+        tracker.get_service_for_variable_in_context(var_name, scope),
+        None
+    );
+}
+
+#[test]
+fn test_return_value_feeds_parameter_inference() {
+    let source_code = r#"
+import boto3
+
+def create_client():
+    return boto3.client('s3')
+
+def upload(client):
+    client.put_object(Bucket='b', Key='k', Body=b'data')
+
+c = create_client()
+upload(c)
 "#;
     let ast = create_ast(source_code);
     let mut tracker = VariableTypeTracker::new();
     tracker.track_boto3_assignments(&ast);
 
-    // The return value of create_client() is not tracked
-    assert!(tracker.get_service_for_variable("client").is_none());
+    assert_eq!(
+        tracker.get_services_for_parameter("upload", "client"),
+        Some(std::collections::HashSet::from(["s3".to_string()]))
+    );
+}
+
+#[test]
+fn test_return_assignment_keeps_existing_entry() {
+    let source_code = r#"
+import boto3
+
+def create_s3():
+    return boto3.client('s3')
+
+client = boto3.client('ec2')
+client = create_s3()
+"#;
+    let ast = create_ast(source_code);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+
+    assert_eq!(
+        tracker.get_service_for_variable("client"),
+        Some(&"ec2".to_string())
+    );
 }
 
 #[test]
@@ -1178,4 +1681,14 @@ def process_data():
     let function_service =
         tracker.get_service_for_variable_in_context("client", Some("process_data"));
     assert_ne!(module_service, function_service);
+}
+
+#[test]
+fn test_non_literal_service_assignment_not_tracked() {
+    let source = "import boto3\nsvc = 's3'\nclient = boto3.client(svc)\nsession = boto3.Session()\nother = session.client(svc)\n";
+    let ast = create_ast(source);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+    assert_eq!(tracker.get_service_for_variable("client"), None);
+    assert_eq!(tracker.get_service_for_variable("other"), None);
 }
