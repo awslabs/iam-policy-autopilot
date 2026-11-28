@@ -1179,3 +1179,13 @@ def process_data():
         tracker.get_service_for_variable_in_context("client", Some("process_data"));
     assert_ne!(module_service, function_service);
 }
+
+#[test]
+fn test_non_literal_service_assignment_not_tracked() {
+    let source = "import boto3\nsvc = 's3'\nclient = boto3.client(svc)\nsession = boto3.Session()\nother = session.client(svc)\n";
+    let ast = create_ast(source);
+    let mut tracker = VariableTypeTracker::new();
+    tracker.track_boto3_assignments(&ast);
+    assert_eq!(tracker.get_service_for_variable("client"), None);
+    assert_eq!(tracker.get_service_for_variable("other"), None);
+}
